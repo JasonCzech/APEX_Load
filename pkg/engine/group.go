@@ -31,6 +31,9 @@ type GroupConfig struct {
 	// and archive sinks observe a result. Scripts cannot create this dimension.
 	Region string
 	Script *dsl.Script
+	// RunID is the managed test identity exposed to {{run.id}} at execution.
+	// Direct/library callers may leave it empty; that template then fails closed.
+	RunID string
 	// ScenarioID is the managed execution identity exposed to protocol
 	// runtimes. Direct/library callers may leave it empty to fall back to the
 	// script artifact ID.
@@ -1751,6 +1754,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 		ParameterAllocation:          groupParameterAllocation(group, 0),
 		Group:                        group.Name,
 		Region:                       group.Region,
+		RunID:                        group.RunID,
 		Proto:                        vuProto,
 		Script:                       group.Script,
 		Metrics:                      mge.metrics,
@@ -2002,6 +2006,7 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 			ParameterAllocation:          groupParameterAllocation(prepared.group, prepared.identity.local),
 			Group:                        prepared.group.Name,
 			Region:                       prepared.group.Region,
+			RunID:                        prepared.group.RunID,
 			Proto:                        prepared.proto,
 			Script:                       prepared.group.Script,
 			Metrics:                      mge.metrics,
@@ -2507,6 +2512,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 			ID:                           runtimeVUserID,
 			Group:                        group.Name,
 			Region:                       group.Region,
+			RunID:                        group.RunID,
 			Proto:                        vuProto,
 			Script:                       iterationScript,
 			Metrics:                      mge.metrics,

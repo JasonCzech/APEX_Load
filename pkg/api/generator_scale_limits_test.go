@@ -139,7 +139,10 @@ func TestAttachGeneratorScaleLimitRequiresWorkloadOwnerAndOrdinal(t *testing.T) 
 func TestGeneratorScaleLimitJoinsObservedInventory(t *testing.T) {
 	entries := []GeneratorInventoryEntry{{Target: "10.0.0.1:9090", GeneratorID: "gen-0", Status: "connected"}}
 	s, _, kube, _ := newRestartServer(t, entries)
-	kube.setPods([]KubePodRef{{Name: "gen-0", Namespace: "apex", UID: "pod", IP: "10.0.0.1", NodeName: "worker", Phase: "Running", Ready: true, StatefulSetName: "gen", StatefulSetUID: "workload"}})
+	kube.setPods([]KubePodRef{
+		{Name: "gen-0", Namespace: "apex", UID: "pod", IP: "10.0.0.1", NodeName: "worker", Phase: "Running", Ready: true, StatefulSetName: "gen", StatefulSetUID: "workload"},
+		{Name: "gen-1", Namespace: "apex", UID: "pending", Phase: "Pending", Ready: false, StatefulSetName: "gen", StatefulSetUID: "workload"},
+	})
 	limit := kubeops.StatefulSetAutoscalingLimit{Namespace: "apex", Workload: "gen", WorkloadUID: "workload", MaximumReplicas: 4}
 	s.kubeRestarter = &scaleLimitReaderFake{KubeRestarter: kube, read: func(context.Context) (kubeops.StatefulSetAutoscalingLimit, error) { return limit, nil }}
 	s.k8sRestart.GeneratorStatefulSet = "gen"
@@ -150,5 +153,8 @@ func TestGeneratorScaleLimitJoinsObservedInventory(t *testing.T) {
 	inventory.Generators[0].PodPlacement.scaleLimit.MaximumReplicas = 100
 	if s.runner.cachedGeneratorInventory()[0].PodPlacement.scaleLimit.MaximumReplicas != 4 {
 		t.Fatal("caller changed cached replica bound")
+	}
+	if pods := s.runner.livePodSnapshot.pods; len(pods) != 2 || pods[1].Name != "gen-1" {
+		t.Fatalf("DNS-absent pending ordinal was omitted from cached pod snapshot: %+v", pods)
 	}
 }

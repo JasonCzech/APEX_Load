@@ -106,8 +106,9 @@ func (s *SQLiteStore) GetRunArchiveFailure(testID string) (*RunArchiveFailure, e
 		FROM run_archive_failures f JOIN tests t ON t.id = f.test_id
 		WHERE f.test_id = ? AND f.project_id = COALESCE(NULLIF(t.project_id, ''), 'unassigned')
 		AND f.test_start_time = t.start_time AND f.test_end_time = t.end_time AND f.test_status = t.status
+		AND (f.reason <> ? OR t.started_at IS NOT NULL)
 		AND NOT EXISTS (SELECT 1 FROM run_archives a WHERE a.test_id = f.test_id)
-		AND NOT EXISTS (SELECT 1 FROM archive_finalization_jobs j WHERE j.test_id = f.test_id)`, testID).Scan(
+		AND NOT EXISTS (SELECT 1 FROM archive_finalization_jobs j WHERE j.test_id = f.test_id)`, testID, RunArchiveFailureUnconfirmed).Scan(
 		&failure.TestID, &failure.ProjectID, &failure.StartTime, &failure.EndTime, &failure.Status, &failure.Reason, &failure.RecordedAt)
 	if err != nil {
 		return nil, err
@@ -116,9 +117,11 @@ func (s *SQLiteStore) GetRunArchiveFailure(testID string) (*RunArchiveFailure, e
 }
 
 // recordUnconfirmedTerminalArchive shares the lifecycle transaction: a terminal
-// row cannot commit without either existing publication evidence or a durable
-// explanation that collection has not been confirmed. A later observed failure
-// replaces this placeholder; catalog/publication intent always takes precedence.
+// run row cannot commit without either existing publication evidence or a durable
+// explanation that collection has not been confirmed. A pre-run terminal row
+// has no execution archive to collect and does not receive this marker. A later
+// observed failure replaces this placeholder; catalog/publication intent always
+// takes precedence.
 // Identity comes from the locked/updated database row, including its native time
 // precision. This is deliberately not a collection retry or proof of data loss.
 func recordUnconfirmedTerminalArchive(tx *storeTx, id, status string) error {
@@ -127,7 +130,7 @@ func recordUnconfirmedTerminalArchive(tx *storeTx, id, status string) error {
 	}
 	_, err := tx.Exec(`INSERT INTO run_archive_failures (test_id, project_id, test_start_time, test_end_time, test_status, reason, recorded_at)
  SELECT id, COALESCE(NULLIF(project_id, ''), 'unassigned'), start_time, end_time, status, ?, ? FROM tests
- WHERE id = ? AND status = ? AND end_time IS NOT NULL
+ WHERE id = ? AND status = ? AND end_time IS NOT NULL AND started_at IS NOT NULL
  AND NOT EXISTS (SELECT 1 FROM run_archives a WHERE a.test_id = tests.id)
  AND NOT EXISTS (SELECT 1 FROM archive_finalization_jobs j WHERE j.test_id = tests.id)
  ON CONFLICT(test_id) DO UPDATE SET project_id = excluded.project_id, test_start_time = excluded.test_start_time,

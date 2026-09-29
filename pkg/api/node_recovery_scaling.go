@@ -2,12 +2,47 @@ package api
 
 import (
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/kubeops"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type recoveryPodSnapshot struct {
+	pods       []KubePodRef
+	limit      kubeops.StatefulSetAutoscalingLimit
+	observedAt time.Time
+	available  bool
+	oversized  bool
+}
+
+// The Kubernetes list includes occupied ordinals that headless DNS omits.
+// Bind every counted pod to the same StatefulSet incarnation as the HPA/KEDA
+// limit; a name alone cannot prove which workload owns an ordinal.
+func observedAutoscalingPodReservations(snapshot recoveryPodSnapshot, limit kubeops.StatefulSetAutoscalingLimit) ([]storage.PodCapacityReservation, map[string]string, bool) {
+	if snapshot.oversized || !snapshot.available || snapshot.limit != limit {
+		return nil, nil, false
+	}
+	reservations := make([]storage.PodCapacityReservation, 0, len(snapshot.pods))
+	identities := make(map[string]string, len(snapshot.pods))
+	for _, pod := range snapshot.pods {
+		if pod.Namespace != limit.Namespace || pod.StatefulSetUID != limit.WorkloadUID || pod.StatefulSetName != limit.Workload {
+			continue
+		}
+		ordinal, err := strconv.Atoi(strings.TrimPrefix(pod.Name, limit.Workload+"-"))
+		if pod.UID == "" || err != nil || ordinal < 0 || ordinal >= maxRecoveryCapacityPlanPods || pod.Name != limit.Workload+"-"+strconv.Itoa(ordinal) {
+			return nil, nil, false
+		}
+		if _, duplicate := identities[pod.Name]; duplicate {
+			return nil, nil, false
+		}
+		identities[pod.Name] = pod.UID
+		reservations = append(reservations, storage.PodCapacityReservation{Target: pod.Name, RecoveryPlacement: &storage.PodCapacityRecoveryPlacement{PodName: pod.Name}})
+	}
+	return reservations, identities, true
+}
 
 // Before reservation, VUser demand alone can round down to too few whole pods
 // for an indivisible source plus its spare. This bounded, conservative floor
@@ -32,21 +67,31 @@ func (tr *TestRunner) recoveryAdmissionReplicaFloor(tests []*ManagedTest, settin
 	if at.IsZero() || len(entries) > maxRecoveryCapacityPlanPods {
 		return base, false
 	}
+	tr.liveInventoryMu.RLock()
+	podSnapshot := tr.livePodSnapshot
+	podSnapshot.pods = cloneKubePodRefs(podSnapshot.pods)
+	tr.liveInventoryMu.RUnlock()
+	if podSnapshot.available && (podSnapshot.observedAt != at || podSnapshot.oversized) {
+		return base, false
+	}
 	loads := map[string]generatorLoadSnapshot{}
 	placements := map[string]*GeneratorPodPlacement{}
 	var observedPods []storage.PodCapacityReservation
 	var limit kubeops.StatefulSetAutoscalingLimit
 	for _, e := range entries {
 		p := e.PodPlacement
-		if p == nil || !p.Ready || p.Terminating || !recoveryScaleLimitFresh(p.scaleLimit) {
+		if p == nil || !recoveryScaleLimitFresh(p.scaleLimit) {
 			continue
 		}
 		if limit.WorkloadUID != "" && limit != p.scaleLimit {
 			return base, false
 		}
 		limit = p.scaleLimit
+		// An identified NotReady or terminating ordinal still occupies a StatefulSet replica.
+		// Count it before checking execution eligibility so a request for one
+		// more usable spare asks KEDA for a genuinely new ordinal.
 		observedPods = append(observedPods, storage.PodCapacityReservation{Target: p.Name, RecoveryPlacement: &storage.PodCapacityRecoveryPlacement{PodName: p.Name}})
-		if !generatorInventoryEntryReachable(e) || e.Cordoned || e.DrainState != "active" || e.CompatibilityState != "compatible" || b.generatorDrainState(e.Target) != "active" {
+		if !p.Ready || p.Terminating || !generatorInventoryEntryReachable(e) || e.Cordoned || e.DrainState != "active" || e.CompatibilityState != "compatible" || b.generatorDrainState(e.Target) != "active" {
 			continue
 		}
 		placements[e.Target] = p
@@ -54,6 +99,20 @@ func (tr *TestRunner) recoveryAdmissionReplicaFloor(tests []*ManagedTest, settin
 	}
 	if limit.MaximumReplicas <= 0 {
 		return base, false
+	}
+	if podSnapshot.available {
+		var identities map[string]string
+		var complete bool
+		observedPods, identities, complete = observedAutoscalingPodReservations(podSnapshot, limit)
+		if !complete {
+			return base, false
+		}
+		for _, entry := range entries {
+			p := entry.PodPlacement
+			if p != nil && p.scaleLimit == limit && identities[p.Name] != p.UID {
+				return base, false
+			}
+		}
 	}
 	configurePodLoads(settings, loads)
 	compatibility := newGeneratorCompatibilityIndex(tr.enrichGeneratorTargetSpecsWithLabels(b.configuredTargetSpecs()), loads)
@@ -118,6 +177,12 @@ func (tr *TestRunner) recoveryAdmissionReplicaFloor(tests []*ManagedTest, settin
 			sources = min(maximum, sources+needed)
 		}
 		floor = min(maximum, floor+min(maximum, 2*sources))
+		// The ordinary 2*sources floor counts replicas, not usable pods. When
+		// existing incompatible or NotReady ordinals already occupy that floor,
+		// request enough additional ordinals to cover the missing eligible pods.
+		if missing := min(maximum, 2*sources) - len(eligiblePods); missing > 0 {
+			floor = max(floor, min(maximum, observedFloor+missing))
+		}
 		// Existing pods can all fit the VUser envelope but share one worker.
 		// Ask for new ordinals beyond those already observed; otherwise a small
 		// queued run can wait forever for a cross-worker spare that KEDA never

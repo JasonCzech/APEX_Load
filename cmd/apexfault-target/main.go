@@ -31,6 +31,9 @@ type targetConfig struct {
 
 var runPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 var tokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{32,128}$`)
+var testIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,252}$`)
+
+const maxTestCounters = 2000
 
 func readConfig(path string) (targetConfig, error) {
 	var c targetConfig
@@ -66,7 +69,7 @@ type target struct {
 	instance string
 	started  float64
 	mu       sync.Mutex
-	count    uint64
+	counts   map[string]uint64
 }
 
 func unixNow() float64 { return float64(time.Now().UnixNano()) / 1e9 }
@@ -76,7 +79,15 @@ func newTarget(c targetConfig) (*target, error) {
 	if _, err := rand.Read(id[:]); err != nil {
 		return nil, errors.New("cannot generate target instance identity")
 	}
-	return &target{config: c, instance: hex.EncodeToString(id[:]), started: unixNow()}, nil
+	return &target{config: c, instance: hex.EncodeToString(id[:]), started: unixNow(), counts: make(map[string]uint64)}, nil
+}
+
+func requestedTestID(r *http.Request) (string, bool) {
+	values := r.Header.Values("X-Apexload-Fault-Test")
+	if len(values) != 1 || !testIDPattern.MatchString(values[0]) {
+		return "", false
+	}
+	return values[0], true
 }
 
 func authorized(r *http.Request, token string) bool {
@@ -108,13 +119,19 @@ func (t *target) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "run mismatch", http.StatusConflict)
 			return
 		}
-		t.mu.Lock()
-		if t.count == ^uint64(0) {
-			t.mu.Unlock()
-			http.Error(w, "counter exhausted", http.StatusServiceUnavailable)
+		testID, ok := requestedTestID(r)
+		if !ok {
+			http.Error(w, "invalid test identity", http.StatusBadRequest)
 			return
 		}
-		t.count++
+		t.mu.Lock()
+		count, exists := t.counts[testID]
+		if (!exists && len(t.counts) >= maxTestCounters) || count == ^uint64(0) {
+			t.mu.Unlock()
+			http.Error(w, "counter unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		t.counts[testID] = count + 1
 		t.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	case "/snapshot":
@@ -122,15 +139,21 @@ func (t *target) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		testID, ok := requestedTestID(r)
+		if !ok {
+			http.Error(w, "invalid test identity", http.StatusBadRequest)
+			return
+		}
 		t.mu.Lock()
 		snapshot := struct {
 			SchemaVersion    int     `json:"schema_version"`
 			RunID            string  `json:"run_id"`
+			TestID           string  `json:"test_id"`
 			TargetInstanceID string  `json:"target_instance_id"`
 			StartedAt        float64 `json:"started_at_unix"`
 			ObservedAt       float64 `json:"observed_at_unix"`
 			TargetRequests   uint64  `json:"target_requests"`
-		}{1, t.config.RunID, t.instance, t.started, unixNow(), t.count}
+		}{2, t.config.RunID, testID, t.instance, t.started, unixNow(), t.counts[testID]}
 		t.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(snapshot)

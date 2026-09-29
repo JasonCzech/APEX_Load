@@ -69,6 +69,27 @@ func TestParallelBranchesMergeExtractionsInDeclarationNamespaces(t *testing.T) {
 	}
 }
 
+func TestParallelBranchesInheritManagedRunIdentity(t *testing.T) {
+	vu := &VUser{
+		ID: 3, Group: "parallel", RunID: "managed-test", Proto: &parallelTestProtocol{},
+		Variables: map[string]string{}, Metrics: NewMetricsCollector(32),
+		Script: &dsl.Script{Protocol: parallelTestProtocolName,
+			Actions: []dsl.Action{{Name: "unused", Type: "GET", Target: "/"}}},
+	}
+	control := &dsl.ControlFlow{Concurrency: 2, Branches: []dsl.ParallelBranch{
+		{Name: "catalog", Steps: []dsl.Action{{Name: "catalog-call", Type: "GET", Target: "/{{run.id}}/catalog"}}},
+		{Name: "cart", Steps: []dsl.Action{{Name: "cart-call", Type: "GET", Target: "/{{run.id}}/cart"}}},
+	}}
+	if !vu.runParallelBranches(context.Background(), control, "action") {
+		t.Fatal("parallel branches failed")
+	}
+	for key, want := range map[string]string{"parallel.catalog.observed": "/managed-test/catalog", "parallel.cart.observed": "/managed-test/cart"} {
+		if got := vu.Variables[key]; got != want {
+			t.Fatalf("%s = %q, want %q", key, got, want)
+		}
+	}
+}
+
 func TestParallelRuntimeSafetyRejectsNestedParallel(t *testing.T) {
 	branches := []dsl.ParallelBranch{{Name: "unsafe", Steps: []dsl.Action{{
 		Name: "nested", Type: "control_parallel", Control: &dsl.ControlFlow{},

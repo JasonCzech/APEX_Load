@@ -31,11 +31,13 @@ class RunObservationTest(unittest.TestCase):
                     'continuity': {'armed': True, 'execution_generation': 7},
                     'live_metrics': {'timestamp': ts(-1), 'observation_valid_until': ts(3), 'active_vusers': 80},
                     'generator_shards': [{'group': 'load', 'target': '10.0.0.2:9090'}]}
-        self.target = {'run_id': self.run_id, 'target_instance_id': 'b' * 32, 'observed_at_unix': self.now - .1, 'target_requests': 1000}
+        self.target = {'schema_version': 2, 'run_id': self.run_id, 'test_id': 'test-id',
+                       'target_instance_id': 'b' * 32, 'observed_at_unix': self.now - .1, 'target_requests': 1000}
+        self.inventory = {'tests': [dict(self.run)], 'count': 1, 'total': 1, 'limit': 2000, 'offset': 0}
 
     def observe(self):
         return project_observation(self.config, self.run_id, self.cluster, self.namespace, self.pods,
-                                   self.endpoint, self.run, self.target, 80., now=self.now)
+                                   self.endpoint, self.run, self.target, 80., self.inventory, now=self.now)
 
     def test_binds_run_leader_pod_and_independent_counter(self):
         result = self.observe()
@@ -50,13 +52,61 @@ class RunObservationTest(unittest.TestCase):
     def test_namespace_run_and_target_changes_are_safety_failures(self):
         for obj, key, value in [(self.namespace['metadata'], 'uid', 'other'), (self.run, 'id', 'other'),
                                 (self.run, 'project_id', 'other'), (self.target, 'run_id', 'other'),
-                                (self.target, 'target_instance_id', 'c' * 32), (self.run, 'created_at', '2026-01-01T00:00:00Z')]:
+                                (self.target, 'target_instance_id', 'c' * 32), (self.target, 'test_id', 'other-test'),
+                                (self.target, 'schema_version', 1), (self.run, 'created_at', '2026-01-01T00:00:00Z')]:
             old = obj[key]
             with self.subTest(key=key):
                 obj[key] = value
                 with self.assertRaises(ObservationSafetyError):
                     self.observe()
                 obj[key] = old
+
+    def test_competing_test_cannot_supply_counter_increase(self):
+        before = self.now - 1
+        selected = self.inventory['tests'][0]
+        cases = [
+            {'id': 'other', 'project_id': 'another-project', 'created_at': selected['created_at'], 'status': 'RUNNING'},
+            {'id': 'other', 'project_id': self.config['project_id'], 'created_at': selected['created_at'],
+             'status': 'COMPLETE', 'ended_at': datetime.datetime.fromtimestamp(before, datetime.timezone.utc).isoformat()},
+        ]
+        for competing in cases:
+            with self.subTest(status=competing['status']):
+                self.inventory['tests'].append(competing)
+                self.inventory['count'] = self.inventory['total'] = 2
+                self.target['target_requests'] += 1000  # another test supplied the apparent increase
+                with self.assertRaisesRegex(ObservationSafetyError, 'another test could contribute target traffic'):
+                    self.observe()
+                self.inventory['tests'].pop()
+                self.inventory['count'] = self.inventory['total'] = 1
+
+    def test_completed_test_before_selected_run_is_harmless(self):
+        earlier = datetime.datetime.fromtimestamp(self.now - 120, datetime.timezone.utc).isoformat()
+        self.inventory['tests'].append({'id': 'old-test', 'status': 'COMPLETE', 'ended_at': earlier})
+        self.inventory['count'] = self.inventory['total'] = 2
+        self.assertEqual(self.observe()['target_requests'], 1000)
+
+    def test_inconsistent_inventory_status_fails_closed(self):
+        self.inventory['tests'][0]['status'] = 'STOPPING'
+        with self.assertRaisesRegex(ObservationSafetyError, 'selected test inventory identity changed'):
+            self.observe()
+        self.inventory['tests'][0]['status'] = 'RUNNING'
+        earlier = datetime.datetime.fromtimestamp(self.now - 120, datetime.timezone.utc).isoformat()
+        self.inventory['tests'].append({'id': 'other', 'status': 'RUNNING', 'ended_at': earlier})
+        self.inventory['count'] = self.inventory['total'] = 2
+        with self.assertRaisesRegex(ObservationSafetyError, 'another test could contribute target traffic'):
+            self.observe()
+
+    def test_incomplete_or_ambiguous_test_inventory_fails_closed(self):
+        for change in ({'total': 2001}, {'count': 0}, {'offset': 1}, {'limit': 200},
+                       {'tests': []}, {'tests': [dict(self.run), dict(self.run)]}):
+            with self.subTest(change=change):
+                old = self.inventory
+                self.inventory = {**old, **change}
+                if len(self.inventory['tests']) == 2:
+                    self.inventory['count'] = self.inventory['total'] = 2
+                with self.assertRaises(ObservationSafetyError):
+                    self.observe()
+                self.inventory = old
 
     def test_stale_metrics_old_leadership_and_missing_assignments_refuse_observation(self):
         for obj, key, value in [(self.run['continuity'], 'armed', False),
@@ -103,6 +153,7 @@ class RunObservationTest(unittest.TestCase):
 
     def test_terminal_run_is_returned_for_immediate_driver_rejection(self):
         self.run['status'] = 'FAILED'
+        self.inventory['tests'][0]['status'] = 'FAILED'
         self.run.pop('live_metrics')
         self.run.pop('generator_shards')
         result = self.observe()
@@ -166,9 +217,13 @@ class RunObservationTest(unittest.TestCase):
                 if '/tests/' in url:
                     self.assertEqual(headers['X-APEXLoad-Proxy-Secret'], 'private-http')
                     return self.run
+                if '/tests?' in url:
+                    self.assertEqual(headers['X-APEXLoad-Proxy-Secret'], 'private-http')
+                    return self.inventory
                 if '/query?' in url: return {'status': 'success', 'data': {'result': [{'value': [self.now, '80']}]}}
                 if '/snapshot' in url:
                     self.assertEqual(headers['Authorization'], 'Bearer private-observer')
+                    self.assertEqual(headers['X-Apexload-Fault-Test'], self.config['test_id'])
                     return self.target
                 self.fail('unexpected HTTP read')
             reader.request = request

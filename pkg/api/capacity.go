@@ -426,6 +426,10 @@ func (tr *TestRunner) liveAvailableGeneratorCount(ctx context.Context) *int {
 }
 
 func (tr *TestRunner) setCachedGeneratorInventory(entries []GeneratorInventoryEntry, now time.Time) {
+	tr.setCachedGeneratorInventoryWithPodSnapshot(entries, recoveryPodSnapshot{}, now)
+}
+
+func (tr *TestRunner) setCachedGeneratorInventoryWithPodSnapshot(entries []GeneratorInventoryEntry, pods recoveryPodSnapshot, now time.Time) {
 	if tr == nil {
 		return
 	}
@@ -433,6 +437,14 @@ func (tr *TestRunner) setCachedGeneratorInventory(entries []GeneratorInventoryEn
 	defer tr.liveInventoryMu.Unlock()
 	tr.liveInventory = cloneGeneratorInventoryEntries(entries)
 	tr.liveInventoryAt = now.UTC()
+	tr.livePodSnapshot = pods
+	if len(pods.pods) > maxRecoveryCapacityPlanPods {
+		tr.livePodSnapshot.pods = nil
+		tr.livePodSnapshot.oversized = true
+	} else {
+		tr.livePodSnapshot.pods = cloneKubePodRefs(pods.pods)
+	}
+	tr.livePodSnapshot.observedAt = now.UTC()
 }
 
 // cachedLiveAvailableGeneratorCount returns the live-available generator count

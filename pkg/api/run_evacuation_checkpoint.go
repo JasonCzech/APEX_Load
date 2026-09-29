@@ -13,10 +13,11 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-// Version 2 is deliberately not adoptable by the version-1 reader, including
-// older controllers. A successor may promote only an acknowledged replacement
-// commit; earlier phases remain fail-closed and never replay generator work.
-const runEvacuationCheckpointVersion = 2
+// Version 3 commits only after the replacement's duration adjustment is
+// acknowledged. A v2 replacement_committed record may have been written before
+// that RPC, so successors must keep all v2 guards fail-closed instead of
+// adopting work that could exceed the run's remaining duration.
+const runEvacuationCheckpointVersion = 3
 
 const (
 	runEvacuationPhasePrepared             = "prepared"
@@ -426,5 +427,5 @@ func (tr *TestRunner) promoteCommittedRunEvacuationCheckpoint(ctx context.Contex
 
 func interruptedRunEvacuation(raw string) bool {
 	var guard runEvacuationCheckpoint
-	return json.Unmarshal([]byte(raw), &guard) == nil && guard.Version == runEvacuationCheckpointVersion && guard.Source != ""
+	return json.Unmarshal([]byte(raw), &guard) == nil && (guard.Version == 2 || guard.Version == runEvacuationCheckpointVersion) && guard.Source != ""
 }

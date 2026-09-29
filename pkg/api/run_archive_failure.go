@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -26,10 +27,10 @@ func (tr *TestRunner) recordRemoteArchiveFailure(test *ManagedTest, reason strin
 // recordRunArchiveFailure cannot use its in-memory ownership check. The store
 // independently checks the exact terminal incarnation, leader lease, catalog,
 // and publication job before replacing the atomic unconfirmed marker.
-func (tr *TestRunner) recordInterruptedEvacuationArchiveFailure(test *ManagedTest) {
+func (tr *TestRunner) recordInterruptedEvacuationArchiveFailure(test *ManagedTest) error {
 	store := tr.archiveFailureStore()
 	if store == nil || test == nil || test.EndedAt == nil {
-		return
+		return nil
 	}
 	// The start path may already have bound an expected-source collection intent.
 	// Leave its atomic unconfirmed marker in place while the recovery worker can
@@ -38,18 +39,18 @@ func (tr *TestRunner) recordInterruptedEvacuationArchiveFailure(test *ManagedTes
 	if collection := tr.archiveCollectionStore(); collection != nil {
 		intent, err := collection.GetRunArchiveCollection(test.ID)
 		if err == nil && intent != nil {
-			return
+			return nil
 		}
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			slog.Error("failed to inspect interrupted evacuation archive collection", "test_id", test.ID, "error", err)
-			return
+			return fmt.Errorf("inspect interrupted evacuation archive collection: %w", err)
 		}
 	}
 	leaseName, leaseOwner := "", ""
 	if tr.durableExecutionFence {
 		leaseName, leaseOwner = executionLeaseName, test.executionFence
 		if leaseOwner == "" {
-			return
+			return errNotExecutionLeader
 		}
 	}
 	failure := &storage.RunArchiveFailure{TestID: test.ID, ProjectID: test.ProjectID,
@@ -61,7 +62,9 @@ func (tr *TestRunner) recordInterruptedEvacuationArchiveFailure(test *ManagedTes
 	}); err != nil {
 		// Terminality is already durable; its unconfirmed marker remains visible.
 		slog.Error("failed to persist interrupted evacuation archive failure", "test_id", test.ID, "error", err)
+		return fmt.Errorf("persist interrupted evacuation archive failure: %w", err)
 	}
+	return nil
 }
 
 // Called under the archive fence after local finalization, and again after a

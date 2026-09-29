@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -124,6 +125,53 @@ func TestRunEvacuationCheckpointInterruptionAndCompletion(t *testing.T) {
 	}
 }
 
+func TestInterruptedEvacuationPhasesRemainStoppingAfterTakeover(t *testing.T) {
+	for _, phase := range []string{runEvacuationPhasePrepared, runEvacuationPhaseStaged, runEvacuationPhaseSourceFenced} {
+		t.Run(phase, func(t *testing.T) {
+			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+			tr.armRunContinuity(nil, test, generation, owner, token, previous)
+			guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if phase != runEvacuationPhasePrepared {
+				guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if phase == runEvacuationPhaseSourceFenced {
+				guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := store.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {
+				t.Fatal(err)
+			}
+			successor := newExecutionLeadership(store, "evacuation-successor")
+			successor.tick()
+			tr.leadership = successor
+			record, err := store.GetTest(test.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			restored := &ManagedTest{ID: test.ID, Status: record.Status, Assignment: test.Assignment, CreatedAt: record.StartTime, ProjectID: record.ProjectID}
+			setContinuityCheckpointLocked(restored, guard)
+			if err := tr.reconcileStoredActiveTest(restored); err != nil {
+				t.Fatal(err)
+			}
+			durable, err := store.GetTest(test.ID)
+			if err != nil || durable.Status != "STOPPING" || durable.EndTime != nil || restored.Status != "STOPPING" {
+				t.Fatalf("phase %s was terminal before cleanup proof: memory=%s durable=%+v err=%v", phase, restored.Status, durable, err)
+			}
+			if !strings.Contains(durable.Error, "generator evacuation state is uncertain") {
+				t.Fatalf("phase %s lost uncertainty reason: %q", phase, durable.Error)
+			}
+		})
+	}
+}
+
 func TestRunEvacuationCommittedSuccessorAdoptsExistingReplacement(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	tr.armRunContinuity(nil, test, generation, owner, token, previous)
@@ -171,6 +219,63 @@ func TestRunEvacuationCommittedSuccessorAdoptsExistingReplacement(t *testing.T) 
 	}
 	if _, committed := committedRunEvacuationCheckpoint(guard, test.ID); !committed {
 		t.Fatal("original committed guard lost its proof")
+	}
+}
+
+func TestLegacyCommittedEvacuationWaitsForCleanupProof(t *testing.T) {
+	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+	tr.armRunContinuity(nil, test, generation, owner, token, previous)
+	guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationReplacementCommitted(nil, test, guard, generation, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy runEvacuationCheckpoint
+	if err := json.Unmarshal([]byte(guard), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	legacy.Version = 2 // v2 committed before replacement duration adjustment was acknowledged.
+	legacy.Prior.Failovers = []RunFailover{{PriorGeneration: 1, Generation: 2, AdoptedAt: time.Now().UTC()}}
+	raw, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, err := store.UpdateTestContinuityCheckpointIfLeaseHeld(test.ID, string(raw), executionLeaseName, owner); err != nil || result != storage.TestStatusTransitionUpdated {
+		t.Fatalf("persist legacy journal: %v, %v", result, err)
+	}
+	setContinuityCheckpointLocked(test, string(raw))
+	if len(test.continuityFailovers) != 1 {
+		t.Fatal("legacy guard lost prior failover history")
+	}
+	if _, accepted := committedRunEvacuationCheckpoint(string(raw), test.ID); accepted || !interruptedRunEvacuation(string(raw)) {
+		t.Fatal("v2 committed guard was promoted despite uncertain duration adjustment")
+	}
+	if err := store.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {
+		t.Fatal(err)
+	}
+	successor := newExecutionLeadership(store, "legacy-guard-successor")
+	successor.tick()
+	tr.leadership = successor
+	if tr.isRunAdoptionCandidate(test) {
+		t.Fatal("legacy guard became adoptable")
+	}
+	if err := tr.reconcileStoredActiveTest(test); err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.GetTest(test.ID)
+	if err != nil || test.Status != "STOPPING" || record.Status != "STOPPING" || record.EndTime != nil {
+		t.Fatalf("legacy guard was terminal before cleanup proof: memory=%s durable=%+v err=%v", test.Status, record, err)
 	}
 }
 
@@ -555,17 +660,15 @@ func TestRunEvacuationCheckpointRejectedCompletionRemainsUnarmed(t *testing.T) {
 	if err := tr.reconcileStoredActiveTest(restored); err != nil {
 		t.Fatal(err)
 	}
-	if restored.Status != "FAILED" || !strings.Contains(restored.Error, "during generator evacuation") {
+	if restored.Status != "STOPPING" || !strings.Contains(restored.Error, "generator evacuation state is uncertain") {
 		t.Fatalf("interrupted outcome: %s %s", restored.Status, restored.Error)
 	}
-	failure, err := store.GetRunArchiveFailure(test.ID)
-	if err != nil || failure.Reason != storage.RunArchiveFailureRemoteCollection || failure.Status != "FAILED" {
-		t.Fatalf("interrupted archive failure = %+v, %v", failure, err)
+	durable, err := store.GetTest(test.ID)
+	if err != nil || durable.Status != "STOPPING" || durable.EndTime != nil {
+		t.Fatalf("interrupted durable outcome = %+v, %v", durable, err)
 	}
-	tr.tests[test.ID] = restored
-	tr.attachRunArchiveFailure(restored)
-	if restored.ArchiveFailure == nil || restored.ArchiveFailure.Reason != storage.RunArchiveFailureRemoteCollection {
-		t.Fatalf("single-run archive failure projection = %+v", restored.ArchiveFailure)
+	if failure, err := store.GetRunArchiveFailure(test.ID); failure != nil || !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("archive failure was published before cleanup proof: %+v, %v", failure, err)
 	}
 }
 
@@ -711,7 +814,7 @@ func (*unavailableArchiveFailureStore) SaveRunArchiveFailure(*storage.RunArchive
 	return false, errors.New("injected archive failure store outage")
 }
 
-func TestRunEvacuationCheckpointRecoveryKeepsUnconfirmedMarkerWhenFailureWriteUnavailable(t *testing.T) {
+func TestRunEvacuationCheckpointRecoveryDefersArchiveMarkerWhenCleanupIsUnproven(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
 	if err != nil {
@@ -728,12 +831,12 @@ func TestRunEvacuationCheckpointRecoveryKeepsUnconfirmedMarkerWhenFailureWriteUn
 	if err := tr.reconcileStoredActiveTest(restored); err != nil {
 		t.Fatal(err)
 	}
-	if restored.Status != "FAILED" {
-		t.Fatalf("terminal status = %q", restored.Status)
+	if restored.Status != "STOPPING" {
+		t.Fatalf("unproven cleanup status = %q", restored.Status)
 	}
 	failure, err := store.GetRunArchiveFailure(test.ID)
-	if err != nil || failure.Reason != storage.RunArchiveFailureUnconfirmed {
-		t.Fatalf("durable fallback marker = %+v, %v", failure, err)
+	if failure != nil || !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("premature archive failure marker = %+v, %v", failure, err)
 	}
 }
 
@@ -759,18 +862,15 @@ func TestRunEvacuationCheckpointRecoveryPreservesPendingArchiveCollection(t *tes
 		t.Fatal(err)
 	}
 	failure, err := store.GetRunArchiveFailure(test.ID)
-	if err != nil || failure.Reason != storage.RunArchiveFailureUnconfirmed {
-		t.Fatalf("pending collection failure = %+v, %v", failure, err)
+	if failure != nil || !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("pending collection was marked failed before terminal proof = %+v, %v", failure, err)
 	}
-	if claimed, err := store.ClaimRunArchiveCollectionAttempt(test.ID, intent.IntentToken, 0, executionLeaseName, owner); err != nil || !claimed {
-		t.Fatalf("claim archive collection = %v, %v", claimed, err)
+	retained, err := store.GetRunArchiveCollection(test.ID)
+	if err != nil || retained.IntentToken != intent.IntentToken {
+		t.Fatalf("pending collection intent was lost: %+v, %v", retained, err)
 	}
-	if exhausted, err := store.ExhaustRunArchiveCollection(test.ID, intent.IntentToken, 1, executionLeaseName, owner); err != nil || !exhausted {
-		t.Fatalf("exhaust archive collection = %v, %v", exhausted, err)
-	}
-	failure, err = store.GetRunArchiveFailure(test.ID)
-	if err != nil || failure.Reason != storage.RunArchiveFailureRemoteCollection {
-		t.Fatalf("exhausted collection failure = %+v, %v", failure, err)
+	if claimed, err := store.ClaimRunArchiveCollectionAttempt(test.ID, intent.IntentToken, 0, executionLeaseName, owner); err != nil || claimed {
+		t.Fatalf("nonterminal STOPPING run allowed archive collection = %v, %v", claimed, err)
 	}
 }
 

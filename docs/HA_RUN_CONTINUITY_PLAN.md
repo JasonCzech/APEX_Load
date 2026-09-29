@@ -487,14 +487,27 @@ A `continue` run that was **STOPPING** when the leader died now ends the way the
 - A generator that never received the stop (it reports `ADOPTED`) is taken over and then stopped under the rotated token.
 - Generators that already stopped or finished are marked terminal. They aren't re-stopped (previously this logged generation-mismatch errors) and they serve the archive.
 - The run ends **ABORTED**, the outcome of an ordinary stop, with its archive.
-- Fail-policy STOPPING runs still end FAILED.
+- A fail-policy distributed STOPPING run without a complete durable participant
+  journal remains STOPPING after takeover until process-fence proof is obtained.
 
 **Structural fix found end to end:** outcomes Phase A decides (FAILED for an unadoptable run, ABORTED for an in-flight stop) are now bound in Phase A but **applied in Phase B** (`adoptedRunResume.finishStatus`). Archive publication needs an admitted leader: during reconcile it was deferred to the retry outbox, so the run showed no archive at first.
 
 Evidence:
 - Harness `STOP_AT=45 KILL_AT=45` (stop in flight, leader killed in the same second): ABORTED with a 3,260-transaction archive and no warnings.
-- Tests: `TestStoppingRunIsFinishedAsAbortedAfterFailover` (generator still running → adopted and token-fenced stop; generator already stopped), with a negative control, and `TestFailPolicyStoppingRunStillFails`.
+- Tests: `TestStoppingRunIsFinishedAsAbortedAfterFailover` (generator still running → adopted and token-fenced stop; generator already stopped), with a negative control. The fail-policy behavior is covered by `TestFailPolicyStoppingRunStillRequiresProcessFence`.
 - The basic failover scenario re-run afterwards: COMPLETE, 11,720 transactions.
+
+**Current recovery requirement (2026-09-29):** The historical fail-policy
+`FAILED` result in the acceptance table above predates the stop-proof safety
+gate. Distributed RUNNING/PAUSED/STOPPING rows that cannot be adopted now stay
+durably STOPPING, retain their timeslot, and report that external generator
+process-fence reconciliation is required. This includes continue-policy runs
+with missing or malformed checkpoints. The controller cannot infer a complete
+old participant set from the current fleet DNS list or elapsed leases; an
+unreachable generator might still be executing. An operator must establish
+positive process-fence evidence for all possible old generator instances before
+terminal/capacity cleanup. There is not yet an automatic reconciliation path
+for runs without a complete durable participant journal.
 
 The harness now keeps every archive under its run directory (`APEXLOAD_ARCHIVE_DIR`). Earlier runs had written generator archives into the user cache.
 

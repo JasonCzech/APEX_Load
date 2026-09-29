@@ -9,11 +9,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+const faultTestID = "test-1"
 
 func testConfig() targetConfig {
 	return targetConfig{strings.Repeat("a", 16), strings.Repeat("l", 43), strings.Repeat("o", 43)}
@@ -84,6 +87,9 @@ func TestTargetRequestIsolation(t *testing.T) {
 			if tc.run != "" {
 				req.Header.Set("X-Apexload-Fault-Run", tc.run)
 			}
+			if tc.token != "" {
+				req.Header.Set("X-Apexload-Fault-Test", faultTestID)
+			}
 			response := httptest.NewRecorder()
 			target.ServeHTTP(response, req)
 			if response.Code != tc.status || response.Header().Get("Cache-Control") != "no-store" {
@@ -94,10 +100,11 @@ func TestTargetRequestIsolation(t *testing.T) {
 			}
 		})
 	}
-	for _, header := range []string{"Authorization", "X-Apexload-Fault-Run"} {
+	for _, header := range []string{"Authorization", "X-Apexload-Fault-Run", "X-Apexload-Fault-Test"} {
 		req := httptest.NewRequest("GET", "/load", nil)
 		req.Header.Set("Authorization", "Bearer "+c.LoadToken)
 		req.Header.Set("X-Apexload-Fault-Run", c.RunID)
+		req.Header.Set("X-Apexload-Fault-Test", faultTestID)
 		req.Header.Add(header, req.Header.Get(header))
 		response := httptest.NewRecorder()
 		target.ServeHTTP(response, req)
@@ -105,16 +112,17 @@ func TestTargetRequestIsolation(t *testing.T) {
 			t.Fatalf("accepted duplicate %s", header)
 		}
 	}
-	if target.count != 0 {
-		t.Fatalf("invalid/read requests counted: %d", target.count)
+	if len(target.counts) != 0 {
+		t.Fatalf("invalid/read requests counted: %v", target.counts)
 	}
-	target.count = ^uint64(0)
+	target.counts[faultTestID] = ^uint64(0)
 	req := httptest.NewRequest("GET", "/load", nil)
 	req.Header.Set("Authorization", "Bearer "+c.LoadToken)
 	req.Header.Set("X-Apexload-Fault-Run", c.RunID)
+	req.Header.Set("X-Apexload-Fault-Test", faultTestID)
 	response := httptest.NewRecorder()
 	target.ServeHTTP(response, req)
-	if response.Code != 503 || target.count != ^uint64(0) {
+	if response.Code != 503 || target.counts[faultTestID] != ^uint64(0) {
 		t.Fatal("counter overflow not rejected")
 	}
 }
@@ -132,6 +140,7 @@ func TestTargetConcurrentTrafficAndSnapshots(t *testing.T) {
 		t.Helper()
 		req, _ := http.NewRequest("GET", server.URL+"/snapshot", nil)
 		req.Header.Set("Authorization", "Bearer "+c.ObserverToken)
+		req.Header.Set("X-Apexload-Fault-Test", faultTestID)
 		response, err := client.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -154,6 +163,7 @@ func TestTargetConcurrentTrafficAndSnapshots(t *testing.T) {
 				req, _ := http.NewRequest("GET", server.URL+"/load", nil)
 				req.Header.Set("Authorization", "Bearer "+c.LoadToken)
 				req.Header.Set("X-Apexload-Fault-Run", c.RunID)
+				req.Header.Set("X-Apexload-Fault-Test", faultTestID)
 				response, err := client.Do(req)
 				if err != nil {
 					failures <- err
@@ -182,15 +192,85 @@ func TestTargetConcurrentTrafficAndSnapshots(t *testing.T) {
 		t.Error(err)
 	}
 	after := snapshot()
-	if after["target_requests"] != float64(500) || after["run_id"] != c.RunID || after["target_instance_id"] != before["target_instance_id"] || after["observed_at_unix"].(float64) <= before["observed_at_unix"].(float64) || after["started_at_unix"] != before["started_at_unix"] || len(after) != 6 {
+	if after["target_requests"] != float64(500) || after["run_id"] != c.RunID || after["test_id"] != faultTestID || after["schema_version"] != float64(2) || after["target_instance_id"] != before["target_instance_id"] || after["observed_at_unix"].(float64) <= before["observed_at_unix"].(float64) || after["started_at_unix"] != before["started_at_unix"] || len(after) != 7 {
 		t.Fatalf("snapshot=%v before=%v", after, before)
 	}
 	replacement, err := newTarget(c)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if replacement.instance == target.instance || len(replacement.instance) != 32 || replacement.count != 0 {
+	if replacement.instance == target.instance || len(replacement.instance) != 32 || len(replacement.counts) != 0 {
 		t.Fatal("replacement did not get a fresh identity/counter")
+	}
+}
+
+func TestTargetCountersAreIsolatedByTestID(t *testing.T) {
+	c := testConfig()
+	target, err := newTarget(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(path, token, testID string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("X-Apexload-Fault-Test", testID)
+		if path == "/load" {
+			req.Header.Set("X-Apexload-Fault-Run", c.RunID)
+		}
+		response := httptest.NewRecorder()
+		target.ServeHTTP(response, req)
+		return response
+	}
+	for _, testID := range []string{"first", "first", "other"} {
+		if got := request("/load", c.LoadToken, testID).Code; got != http.StatusNoContent {
+			t.Fatalf("load %s status = %d", testID, got)
+		}
+	}
+	for testID, want := range map[string]uint64{"first": 2, "other": 1, "new": 0} {
+		response := request("/snapshot", c.ObserverToken, testID)
+		if response.Code != http.StatusOK {
+			t.Fatalf("snapshot %s status = %d", testID, response.Code)
+		}
+		var snapshot targetSnapshot
+		if err := json.Unmarshal(response.Body.Bytes(), &snapshot); err != nil || snapshot.TestID != testID || snapshot.TargetRequests != want {
+			t.Fatalf("snapshot %s = %+v, err=%v", testID, snapshot, err)
+		}
+	}
+	for _, testID := range []string{"", "bad value", "../other"} {
+		for _, path := range []string{"/load", "/snapshot"} {
+			if got := request(path, map[string]string{"/load": c.LoadToken, "/snapshot": c.ObserverToken}[path], testID).Code; got != http.StatusBadRequest {
+				t.Fatalf("accepted test ID %q at %s: %d", testID, path, got)
+			}
+		}
+	}
+	for _, path := range []string{"/load", "/snapshot"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if path == "/load" {
+			req.Header.Set("Authorization", "Bearer "+c.LoadToken)
+			req.Header.Set("X-Apexload-Fault-Run", c.RunID)
+		} else {
+			req.Header.Set("Authorization", "Bearer "+c.ObserverToken)
+		}
+		req.Header.Add("X-Apexload-Fault-Test", "first")
+		req.Header.Add("X-Apexload-Fault-Test", "other")
+		response := httptest.NewRecorder()
+		target.ServeHTTP(response, req)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("duplicate test identity at %s accepted: %d", path, response.Code)
+		}
+	}
+	if target.counts["first"] != 2 || target.counts["other"] != 1 || len(target.counts) != 2 {
+		t.Fatalf("invalid requests affected counts: %v", target.counts)
+	}
+	for i := len(target.counts); i < maxTestCounters; i++ {
+		target.counts["reserved-"+strconv.Itoa(i)] = 1
+	}
+	if got := request("/load", c.LoadToken, "overflow").Code; got != http.StatusServiceUnavailable {
+		t.Fatalf("counter capacity status = %d", got)
+	}
+	if got := request("/load", c.LoadToken, "first").Code; got != http.StatusNoContent {
+		t.Fatalf("existing counter at capacity status = %d", got)
 	}
 }
 

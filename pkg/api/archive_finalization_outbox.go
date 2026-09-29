@@ -912,10 +912,39 @@ func (s *Server) startArchiveFinalizationRetry() {
 		go func() { defer close(cleanupDone); s.runner.runCollectionCacheCleanup(ctx) }()
 		collectionDone := make(chan struct{})
 		go func() { defer close(collectionDone); s.runner.runArchiveCollectionRetry(ctx) }()
-		defer func() { cancel(); <-cleanupDone; <-collectionDone }()
+		orphanDone := make(chan struct{})
+		go func() {
+			defer close(orphanDone)
+			ticker := time.NewTicker(archiveFinalizationRetryInterval)
+			defer ticker.Stop()
+			recoverOrphans := func() {
+				if !s.isExecutionLeader() {
+					s.runner.closeOrphanArchiveScanner()
+					return
+				}
+				attemptCtx, attemptCancel := context.WithTimeout(ctx, archiveFinalizationAttemptTimeout)
+				err := s.runner.recoverOrphanedLocalRunArchives(attemptCtx)
+				attemptCancel()
+				if err != nil && ctx.Err() == nil {
+					slog.Warn("archive orphan recovery incomplete", "error", err)
+				}
+			}
+			recoverOrphans()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-s.archiveOrphanWake:
+					recoverOrphans()
+				case <-ticker.C:
+					recoverOrphans()
+				}
+			}
+		}()
+		defer func() { cancel(); <-cleanupDone; <-collectionDone; <-orphanDone }()
 		ticker := time.NewTicker(archiveFinalizationRetryInterval)
 		defer ticker.Stop()
-		runSweep := func(recoverOrphans bool) {
+		runSweep := func() {
 			// Confirmed local sources can be retired on followers too. The file fence
 			// protects shared staging writers independently of execution leadership.
 			sourceCtx, sourceCancel := context.WithTimeout(ctx, 20*time.Second)
@@ -929,36 +958,39 @@ func (s *Server) startArchiveFinalizationRetry() {
 			}
 			sweepCtx, sweepCancel := context.WithTimeout(ctx, archiveFinalizationAttemptTimeout)
 			defer sweepCancel()
-			// Durable intents are latency-sensitive. Process them before the bounded
-			// filesystem recovery scan so a large archive root cannot delay known jobs.
 			err := errors.Join(s.retryArchiveFinalizationJobs(sweepCtx), s.retryArchiveRefreshJobs(sweepCtx), s.retryConfluencePublications(sweepCtx))
-			if recoverOrphans && sweepCtx.Err() == nil {
-				err = errors.Join(err, s.runner.recoverOrphanedLocalRunArchives(sweepCtx))
-			}
 			if err != nil && ctx.Err() == nil {
 				slog.Warn("archive finalization outbox retry incomplete", "error", err)
 			}
 		}
-		runSweep(true)
+		runSweep()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-s.archiveFinalizationWake:
-				runSweep(true)
+				runSweep()
 			case <-ticker.C:
-				runSweep(false)
+				runSweep()
 			}
 		}
 	}()
 }
 
 func (s *Server) wakeArchiveFinalizationRetry() {
-	if s == nil || s.archiveFinalizationWake == nil {
+	if s == nil {
 		return
 	}
-	select {
-	case s.archiveFinalizationWake <- struct{}{}:
-	default:
+	if s.archiveFinalizationWake != nil {
+		select {
+		case s.archiveFinalizationWake <- struct{}{}:
+		default:
+		}
+	}
+	if s.archiveOrphanWake != nil {
+		select {
+		case s.archiveOrphanWake <- struct{}{}:
+		default:
+		}
 	}
 }

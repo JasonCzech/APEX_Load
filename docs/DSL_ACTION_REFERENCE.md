@@ -3,7 +3,7 @@
 Generated from the action catalog in `pkg/dsl` — do not edit by hand.
 Regenerate with `go generate ./pkg/dsl` (or `go run ./cmd/dslschema`).
 
-Template variables (`{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`, `{{fn.uuid()}}`)
+Template variables (`{{run.id}}`, `{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`, `{{fn.uuid()}}`)
 are expanded in string fields at runtime. Legacy `loadrunner_*` action types resolve
 to their `source_*` equivalents.
 

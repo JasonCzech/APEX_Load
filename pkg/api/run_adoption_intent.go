@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,6 +14,10 @@ import (
 	"github.com/jasonczech/apexload/pkg/keywrap"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+// Key-service failures are retried by acquisition reconciliation. They do not
+// prove a checkpoint is malformed or that a generator has stopped.
+var errRunAdoptionKeyAccess = errors.New("run adoption key access failed")
 
 // An intent preserves a proposed token before any generator can accept it. A
 // successor can prove either the last fully checkpointed generation or one of
@@ -31,7 +37,7 @@ func (tr *TestRunner) planRunAdoptionIntent(ctx context.Context, testID string, 
 	if generation == 0 || generation <= checkpoint.ExecutionGeneration || strings.TrimSpace(owner) == "" || len(checkpoint.PendingAdoptions) > generatorrpc.MaxRunAdoptionPriorProofs {
 		return fail(fmt.Errorf("invalid or oversized adoption intent history"))
 	}
-	prior, err := openRunSupervisionToken(ctx, tr.continuityKeyWrapper, testID, checkpoint)
+	prior, err := tr.openRunAdoptionToken(ctx, testID, checkpoint.ExecutionGeneration, checkpoint.RunSupervisionToken)
 	if err != nil {
 		return fail(err)
 	}
@@ -41,7 +47,7 @@ func (tr *TestRunner) planRunAdoptionIntent(ctx context.Context, testID string, 
 		if intent.Generation <= last || intent.Generation > generation || strings.TrimSpace(intent.OwnerID) == "" || intent.PreparedAt.IsZero() {
 			return fail(fmt.Errorf("invalid adoption intent ordering or ownership"))
 		}
-		token, err := openRunSupervisionToken(ctx, tr.continuityKeyWrapper, testID, runContinuityCheckpoint{ExecutionGeneration: intent.Generation, RunSupervisionToken: intent.Token})
+		token, err := tr.openRunAdoptionToken(ctx, testID, intent.Generation, intent.Token)
 		if err != nil {
 			return fail(err)
 		}
@@ -67,10 +73,27 @@ func (tr *TestRunner) planRunAdoptionIntent(ctx context.Context, testID string, 
 	}
 	sealed, err := sealRunSupervisionToken(ctx, tr.continuityKeyWrapper, testID, generation, adoption.NewToken)
 	if err != nil {
-		return fail(err)
+		return fail(fmt.Errorf("%w: seal successor token: %w", errRunAdoptionKeyAccess, err))
 	}
 	checkpoint.PendingAdoptions = append(append([]runAdoptionIntent(nil), checkpoint.PendingAdoptions...), runAdoptionIntent{Generation: generation, OwnerID: owner, Token: sealed, PreparedAt: time.Now().UTC()})
 	return checkpoint, adoption, nil
+}
+
+func (tr *TestRunner) openRunAdoptionToken(ctx context.Context, testID string, generation uint64, wrapped keywrap.WrappedKey) ([]byte, error) {
+	if tr == nil || tr.continuityKeyWrapper == nil {
+		return nil, errors.New("run continuity key wrapper is not configured")
+	}
+	if strings.TrimSpace(wrapped.Ciphertext) == "" {
+		return nil, errors.New("run adoption token ciphertext is missing")
+	}
+	token, err := tr.continuityKeyWrapper.UnwrapKey(ctx, wrapped, runSupervisionTokenAAD(testID, generation))
+	if err != nil {
+		return nil, fmt.Errorf("%w: unwrap prior token: %w", errRunAdoptionKeyAccess, err)
+	}
+	if len(token) != generatorrpc.RunSupervisionTokenSize {
+		return nil, fmt.Errorf("unsealed run supervision token has %d bytes, want %d", len(token), generatorrpc.RunSupervisionTokenSize)
+	}
+	return token, nil
 }
 
 func (tr *TestRunner) persistRunAdoptionIntent(test *ManagedTest, expected string, checkpoint runContinuityCheckpoint, owner string) error {
@@ -100,6 +123,76 @@ func (tr *TestRunner) persistRunAdoptionIntent(test *ManagedTest, expected strin
 	defer tr.mu.Unlock()
 	if test.continuityCheckpoint != expected {
 		return fmt.Errorf("adoption checkpoint changed during intent persistence")
+	}
+	setContinuityCheckpointLocked(test, string(encoded))
+	return nil
+}
+
+// persistRunAdoptionStoppedTarget records one force-stop ACK before the next
+// target is attempted. A later retry or controller can then rely on this
+// terminal proof even if the stopped generator pod has already disappeared.
+func (tr *TestRunner) persistRunAdoptionStoppedTarget(test *ManagedTest, target string, generation uint64, owner string) error {
+	currentGeneration, currentOwner, _, err := tr.generatorExecutionClaim()
+	if err != nil || currentGeneration != generation || currentOwner != owner {
+		return errNotExecutionLeader
+	}
+	tr.mu.RLock()
+	current := tr.tests[test.ID] == test && test.Status == "STOPPING"
+	raw := test.continuityCheckpoint
+	tr.mu.RUnlock()
+	if !current {
+		return errNotExecutionLeader
+	}
+	checkpoint, present, err := decodeRunContinuityCheckpoint(raw)
+	if err != nil || !present || !slices.Contains(checkpointTargets(checkpoint), target) || checkpoint.ExecutionGeneration > generation {
+		return fmt.Errorf("cannot record force-stop proof against the current adoption topology: %v", err)
+	}
+	if checkpoint.ExecutionGeneration == generation {
+		if checkpoint.ExecutionLeaseOwnerID != owner {
+			return errNotExecutionLeader
+		}
+	} else {
+		found := false
+		for _, intent := range checkpoint.PendingAdoptions {
+			if intent.Generation == generation && intent.OwnerID == owner {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return errors.New("force-stop proof has no durable successor adoption intent")
+		}
+	}
+	if slices.Contains(checkpoint.StoppedTargets, target) {
+		return nil
+	}
+	checkpoint.StoppedTargets = append(checkpoint.StoppedTargets, target)
+	slices.Sort(checkpoint.StoppedTargets)
+	encoded, err := json.Marshal(checkpoint)
+	if err != nil {
+		return err
+	}
+	store, ok := tr.testStore.(interface {
+		CompareAndSwapTestContinuityCheckpointIfLeaseHeld(string, string, string, string, string) (storage.TestStatusTransitionResult, error)
+	})
+	if !ok {
+		return errors.New("test store cannot persist force-stop proof")
+	}
+	var result storage.TestStatusTransitionResult
+	if err := tr.trackDurableWrite(func() error {
+		var writeErr error
+		result, writeErr = store.CompareAndSwapTestContinuityCheckpointIfLeaseHeld(test.ID, raw, string(encoded), executionLeaseName, owner)
+		return writeErr
+	}); err != nil {
+		return err
+	}
+	if result != storage.TestStatusTransitionUpdated {
+		return fmt.Errorf("force-stop proof write not applied: %s", result)
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.tests[test.ID] != test || test.continuityCheckpoint != raw || test.Status != "STOPPING" {
+		return errors.New("adoption checkpoint changed while recording force-stop proof")
 	}
 	setContinuityCheckpointLocked(test, string(encoded))
 	return nil

@@ -19,6 +19,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -571,7 +573,8 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 		existing, ok := tr.tests[record.ID]
 		liveLocally := ok && liveTestRuntimeForExecutionEpoch(existing, tr.durableExecutionFence, executionFenceAtStart)
 		sameIdentity := ok && sameStoredTestIdentity(existing, record)
-		staleRuntimeHandle := sameIdentity && !liveLocally && (existing.cancel != nil || existing.executionCtx != nil)
+		pendingStopProof := sameIdentity && tr.pendingStopProofHandleForExecutionEpoch(existing, executionFenceAtStart)
+		staleRuntimeHandle := sameIdentity && !liveLocally && !pendingStopProof && (existing.cancel != nil || existing.executionCtx != nil)
 		passiveOperationInFlight := sameIdentity && existing.passiveOperationToken != ""
 		priorEpochPassiveFence := sameIdentity && passiveExecutionFenceReleasable(existing) && existing.executionFence != "" && existing.executionFence != executionFenceAtStart
 		reuseReplicaState := sameIdentity && !staleRuntimeHandle && !passiveOperationInFlight && !priorEpochPassiveFence
@@ -592,7 +595,7 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 		if isTerminalTestStatus(managedTest.Status) {
 			trimTerminalManagedTestRuntime(managedTest)
 		}
-		if leaderAtStart && sameExecutionEpoch() {
+		if leaderAtStart && sameExecutionEpoch() && !pendingStopProof {
 			if err := tr.reconcileStoredActiveTest(managedTest); err != nil {
 				return fmt.Errorf("reconcile stored active test %s: %w", managedTest.ID, err)
 			}
@@ -627,9 +630,21 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 			continue
 		}
 		priorEpochPassiveFence = currentOK && sameStoredTestIdentity(current, record) && passiveExecutionFenceReleasable(current) && current.executionFence != "" && current.executionFence != executionFenceAtStart
-		if currentOK && sameStoredTestIdentity(current, record) && current.cancel == nil && current.executionCtx == nil && !priorEpochPassiveFence {
+		pendingStopProof = currentOK && sameStoredTestIdentity(current, record) && tr.pendingStopProofHandleForExecutionEpoch(current, executionFenceAtStart)
+		if currentOK && sameStoredTestIdentity(current, record) &&
+			((current.cancel == nil && current.executionCtx == nil) || pendingStopProof) && !priorEpochPassiveFence {
 			oldRefKey := current.RefKey
+			// A stop-proof worker owns this same-term runtime even after it
+			// cancels local renewal. ListTests may have read the row before
+			// the worker persisted STOPPING or a per-target force-stop proof;
+			// preserve that newer local safety state while refreshing the
+			// durable row's other fields on the same object.
+			status, stopReason, checkpoint := current.Status, current.Error, current.continuityCheckpoint
 			applyStoredManagedTestSnapshot(current, managedTest)
+			if pendingStopProof && !isTerminalTestStatus(managedTest.Status) {
+				current.Status, current.Error = status, stopReason
+				setContinuityCheckpointLocked(current, checkpoint)
+			}
 			if current.runtimeHydrationError != "" && managedTest.runtimeHydrationError == "" && len(managedTest.groupSpecs) > 0 {
 				current.Groups = managedTest.Groups
 				current.groupSpecs = managedTest.groupSpecs
@@ -707,6 +722,25 @@ func liveTestRuntimeForExecutionEpoch(test *ManagedTest, requireFence bool, exec
 	return !requireFence || (executionFence != "" && test.executionFence == executionFence)
 }
 
+// A canceled STOPPING runtime is still owned by same-term teardown or adoption
+// stop-proof work. Replacing its ManagedTest loses the generator handles and
+// makes pointer-bound retries retire while the durable run is still active.
+func (tr *TestRunner) pendingStopProofHandleForExecutionEpoch(test *ManagedTest, executionFence string) bool {
+	if tr == nil || test == nil || test.Status != "STOPPING" || test.executionCtx == nil || test.cancel == nil ||
+		(tr.durableExecutionFence && (executionFence == "" || test.executionFence != executionFence)) {
+		return false
+	}
+	if strings.HasPrefix(test.Error, "controller failover: pending FAILED cleanup proof:") ||
+		strings.HasPrefix(test.Error, "controller failover: pending ABORTED cleanup proof:") ||
+		len(test.remoteClientsByTarget) > 0 || len(test.remoteGroupTargets) > 0 || len(test.remoteGroupShards) > 0 {
+		return true
+	}
+	tr.terminalRetryMu.Lock()
+	_, pending := tr.stopTeardownRetries[test.ID]
+	tr.terminalRetryMu.Unlock()
+	return pending
+}
+
 func sameStoredTestIdentity(test *ManagedTest, record *storage.TestRecord) bool {
 	if test == nil || record == nil || test.ID != record.ID {
 		return false
@@ -781,6 +815,56 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 		// generators or finalizes it FAILED with the specific reason.
 		return nil
 	}
+	if interruptedRunEvacuation(test.continuityCheckpoint) {
+		// Prepared, staged, and source-fenced checkpoints do not prove which
+		// replacement work crossed its commit barrier. A successor has neither
+		// the old controller's live transports nor an authoritative process fence.
+		// Keep the capacity and status fail-closed until all possible participants
+		// have positive cleanup proof; a terminal FAILED row would falsely tell
+		// operators that no load can still be running.
+		if err := tr.claimTestExecutionFence(test); err != nil {
+			return err
+		}
+		newError := test.Error
+		if newError == "" {
+			newError = "generator evacuation state is uncertain: controller ownership changed before source and replacement cleanup was proven"
+		}
+		if test.Status == "STOPPING" && test.Error == newError {
+			return nil
+		}
+		if err := tr.persistStoredTestStatus(test.ID, test.executionFence, "STOPPING", nil, newError); err != nil {
+			return fmt.Errorf("persist interrupted evacuation stop uncertainty: %w", err)
+		}
+		test.Status, test.Error = "STOPPING", newError
+		return nil
+	}
+	if _, distributed := tr.execution.(*distributedExecutionBackend); distributed && runAdoptionStatus(test.Status) {
+		// A fail-policy run has no durable participant journal. A continue-policy
+		// run reaching here has a missing or unusable adoption checkpoint. The
+		// current fleet list cannot identify a vanished old target, which may
+		// still run through its process lease or supervision grace. Preserve the
+		// timeslot until external process-fence reconciliation supplies proof.
+		if err := tr.claimTestExecutionFence(test); err != nil {
+			return err
+		}
+		const reason = "controller execution ownership was interrupted; distributed generator stop is unproven without a complete durable participant journal; external generator process-fence reconciliation is required"
+		newError := test.Error
+		if !strings.Contains(newError, reason) {
+			if newError == "" {
+				newError = reason
+			} else {
+				newError = boundedtext.TruncateUTF8(scrub.Value(newError, scrub.Policy{}), 1024) + "; " + reason
+			}
+		}
+		if test.Status == "STOPPING" && test.Error == newError {
+			return nil
+		}
+		if err := tr.persistStoredTestStatus(test.ID, test.executionFence, "STOPPING", nil, newError); err != nil {
+			return fmt.Errorf("persist unprovable distributed stop uncertainty: %w", err)
+		}
+		test.Status, test.Error = "STOPPING", newError
+		return nil
+	}
 	if err := tr.claimTestExecutionFence(test); err != nil {
 		return err
 	}
@@ -797,9 +881,7 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 	test.QueuePosition = 0
 	test.EndedAt = &now
 	if test.Error == "" {
-		if interruptedRunEvacuation(test.continuityCheckpoint) {
-			test.Error = "controller execution ownership was interrupted during generator evacuation; replacement progress is unconfirmed, so the run was not resumed"
-		} else if previousStatus == "SHAKEOUT" {
+		if previousStatus == "SHAKEOUT" {
 			test.Error = "controller execution ownership was interrupted after script shakeout began; its outcome is ambiguous, so external shakeout actions were not replayed"
 		} else {
 			test.Error = "controller execution ownership was interrupted before the run completed; this run could not be resumed"
@@ -814,13 +896,6 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 		test.Error = previousError
 		slog.Error("failed to persist recovered test state", "test_id", test.ID, "status", test.Status, "error", err)
 		return err
-	}
-	if interruptedRunEvacuation(test.continuityCheckpoint) {
-		// This successor has no live generator clients or trustworthy completed
-		// replacement topology from which to collect an archive. The terminal
-		// write records an unconfirmed placeholder atomically; replace it with
-		// the observed collection failure while this leader still holds the fence.
-		tr.recordInterruptedEvacuationArchiveFailure(test)
 	}
 	// The hydrated row is deliberately not in tr.tests yet. Release from the
 	// explicit durable binding and retain that slot ID for retry so startup

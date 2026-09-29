@@ -222,6 +222,7 @@ type Server struct {
 	archiveCleanupDone                chan struct{}
 	archiveFinalizationCancel         context.CancelFunc
 	archiveFinalizationWake           chan struct{}
+	archiveOrphanWake                 chan struct{}
 	archiveFinalizationDone           chan struct{}
 	accessReviewNotifyCancel          context.CancelFunc
 	authAudit                         auditThrottle
@@ -583,6 +584,7 @@ func NewServer(cfg ServerConfig) *Server {
 		metricsAddr:             strings.TrimSpace(cfg.MetricsAddr),
 		metricsToken:            strings.TrimSpace(cfg.MetricsToken),
 		archiveFinalizationWake: make(chan struct{}, 1),
+		archiveOrphanWake:       make(chan struct{}, 1),
 		startupContext:          startupCtx,
 		startupDone:             make(chan struct{}),
 		startupCancel:           startupCancel,
@@ -595,6 +597,9 @@ func NewServer(cfg ServerConfig) *Server {
 	if leadership != nil {
 		leadership.setOnLoss(func() {
 			s.clearActiveExecutionEndpoint()
+			// The epoch cancellation stops the scan; closing a slow directory
+			// stream must not delay generator teardown on lease loss.
+			go runner.closeOrphanArchiveScanner()
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			if err := runner.teardownActiveTestsAfterLeadershipLoss(ctx); err != nil {

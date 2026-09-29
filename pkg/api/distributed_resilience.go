@@ -38,12 +38,10 @@ type distributedEvacuationUncertainError struct {
 	testID             string
 	participantClients map[string]generatorClient
 	touchedTargets     []string
-	// unreachableTargets names participants that are already known to be gone
-	// (the stream-loss source). They can never acknowledge an exact-generation
-	// stop, so fail-closed cleanup must not hold the run in STOPPING waiting for
-	// one; their generator-side execution lease expires on its own and force-
-	// stops the assignment. Only populated for loss-tolerant runs, which are the
-	// only ones that hold such a lease.
+	// unreachableTargets names participants whose process fence was positively
+	// established after renewal joined or the execution lease elapsed. Merely
+	// losing a stream is never enough to put a target here: before that fence,
+	// its exact-generation stop failure must hold the run in STOPPING.
 	unreachableTargets []string
 	err                error
 }
@@ -417,7 +415,8 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		if errors.As(err, &uncertain) {
 			uncertainTouched := targetSetFromList(uncertain.touchedTargets)
 			uncertain.participantClients = evacuationParticipantClients(runClientsByTarget, dialedClients, uncertainTouched)
-			uncertain.unreachableTargets = unreachableTargets
+			// The source has not yet crossed the stop/process-fence boundary.
+			uncertain.unreachableTargets = nil
 			closeUntouchedDialedClients(uncertainTouched)
 			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, uncertain, streamsByTarget, openedStreams, releaseTopology)
 		}
@@ -440,7 +439,6 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 				testID:             testID,
 				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
 				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
-				unreachableTargets: unreachableTargets,
 				err:                fmt.Errorf("persist staged evacuation targets: %w", stageErr),
 			}, streamsByTarget, openedStreams, releaseTopology)
 		}
@@ -516,7 +514,6 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 				testID:             testID,
 				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
 				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
-				unreachableTargets: unreachableTargets,
 				err:                fmt.Errorf("evacuation became stale before source fence and rollback was uncertain: %w", rollbackErr),
 			}
 			closeUntouchedDialedClients(touchedTargets)
@@ -540,7 +537,6 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 				testID:             testID,
 				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
 				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
-				unreachableTargets: unreachableTargets,
 				err:                fmt.Errorf("fence source run-supervision renewals on %s: %w", target, joinErr),
 			}
 			closeUntouchedDialedClients(touchedTargets)
@@ -574,7 +570,6 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 				testID:             testID,
 				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
 				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
-				unreachableTargets: unreachableTargets,
 				err:                fmt.Errorf("stop evacuated source %s: %w", target, err),
 			}
 			closeUntouchedDialedClients(touchedTargets)
@@ -595,7 +590,6 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 			testID:             testID,
 			participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
 			touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
-			unreachableTargets: unreachableTargets,
 			err:                fmt.Errorf("evacuated source %s is not connected and cannot be fenced", target),
 		}
 		closeUntouchedDialedClients(touchedTargets)
@@ -748,27 +742,13 @@ sourceFenced:
 		}
 	}
 	podCommitted = true
-	if evacuationGuard != "" {
-		committedGuard, commitErr := tr.markRunEvacuationReplacementCommitted(executionCtx, test, evacuationGuard, executionGeneration, executionLeaseOwnerID)
-		if commitErr != nil {
-			closeUntouchedDialedClients(touchedTargets)
-			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
-				testID:             testID,
-				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
-				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
-				unreachableTargets: unreachableTargets,
-				err:                fmt.Errorf("persist acknowledged replacement commit: %w", commitErr),
-			}, streamsByTarget, openedStreams, releaseTopology)
-		}
-		evacuationGuard = committedGuard
-		waitAfterEvacuationReplacementCommit(executionCtx)
-	}
 	if refreshedRemaining < remainingDuration {
 		// Duration control is intentionally after CommitWork: generators reject
 		// ordinary runtime controls while an assignment is still staged. The
 		// coordinated start barrier keeps replacement traffic fenced while this
-		// shortening is applied, and any failure remains a post-source-fence
-		// uncertainty that stops the exact-generation fleet before publication.
+		// shortening is applied. The replacement checkpoint must not become
+		// adoptable until every shortening acknowledgement is durable in the
+		// generator; a successor cannot safely recompute it after a crash.
 		refreshedLogicalDuration := steadyElapsed + refreshedRemaining
 		for _, client := range replacementClients {
 			adjustCtx, cancel := context.WithTimeout(executionCtx, b.timeout)
@@ -794,6 +774,21 @@ sourceFenced:
 				}, streamsByTarget, openedStreams, releaseTopology)
 			}
 		}
+	}
+	if evacuationGuard != "" {
+		committedGuard, commitErr := tr.markRunEvacuationReplacementCommitted(executionCtx, test, evacuationGuard, executionGeneration, executionLeaseOwnerID)
+		if commitErr != nil {
+			closeUntouchedDialedClients(touchedTargets)
+			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
+				testID:             testID,
+				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
+				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+				unreachableTargets: unreachableTargets,
+				err:                fmt.Errorf("persist acknowledged replacement commit and duration: %w", commitErr),
+			}, streamsByTarget, openedStreams, releaseTopology)
+		}
+		evacuationGuard = committedGuard
+		waitAfterEvacuationReplacementCommit(executionCtx)
 	}
 	tr.mu.Lock()
 	if !distributedControlCommitCurrentLocked(tr, test, status, controlGeneration) {
@@ -1497,11 +1492,10 @@ func evacuationParticipantClients(runClients, dialedClients map[string]generator
 	return participants
 }
 
-// stopEvacuationParticipants stops every participant and reports the failures of
-// already-unreachable participants separately. Those generators are still asked
-// to stop, because a source whose metrics stream broke may still answer RPCs,
-// but a failure from one is a reconciliation note rather than a reason to hold
-// the run non-terminal: it is fenced by its own execution-lease expiry.
+// stopEvacuationParticipants requires a positive stop acknowledgement from
+// every possibly-live participant. Only a source whose post-renewal process
+// fence was established before entering this path may lack an acknowledgement;
+// its stop failure is retained as a diagnostic rather than blocking terminality.
 func (b *distributedExecutionBackend) stopEvacuationParticipants(testID string, executionGeneration uint64, participants map[string]generatorClient, unreachable map[string]struct{}, runSupervisionToken []byte) (blocking error, unreachableFailures error) {
 	var stopErrs []error
 	var unreachableErrs []error

@@ -46,8 +46,13 @@ type runContinuityCheckpoint struct {
 	RunSupervisionToken keywrap.WrappedKey                 `json:"run_supervision_token"`
 	Shards              map[string][]GeneratorShardSummary `json:"shards"`
 	CompletedTargets    []string                           `json:"completed_targets,omitempty"`
-	ArchiveTargets      []string                           `json:"archive_targets,omitempty"`
-	ArmedAt             time.Time                          `json:"armed_at"`
+	// StoppedTargets are successor-confirmed force-stop ACKs or retained
+	// terminal outcomes, durably recorded per target during failed adoption
+	// cleanup. They are proof only for a STOPPING run; an ordinary RUNNING
+	// adoption must still inspect the target.
+	StoppedTargets []string  `json:"stopped_targets,omitempty"`
+	ArchiveTargets []string  `json:"archive_targets,omitempty"`
+	ArmedAt        time.Time `json:"armed_at"`
 	// Failovers is the run's adoption history, carried forward on every re-arm
 	// so it survives further failovers and is available after the run ends.
 	Failovers        []RunFailover       `json:"failovers,omitempty"`
@@ -108,7 +113,7 @@ func setContinuityCheckpointLocked(test *ManagedTest, raw string) {
 	checkpoint, present, err := decodeRunContinuityCheckpoint(raw)
 	if err != nil || !present {
 		var guard runEvacuationCheckpoint
-		if json.Unmarshal([]byte(raw), &guard) == nil && guard.Version == runEvacuationCheckpointVersion && len(guard.Prior.Failovers) >= len(test.continuityFailovers) {
+		if json.Unmarshal([]byte(raw), &guard) == nil && (guard.Version == 2 || guard.Version == runEvacuationCheckpointVersion) && len(guard.Prior.Failovers) >= len(test.continuityFailovers) {
 			test.continuityFailovers = append([]RunFailover(nil), guard.Prior.Failovers...)
 		}
 		return

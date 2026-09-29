@@ -66,6 +66,7 @@ type setupRecordingEvacuationClient struct {
 	assignment          generatorrpc.Assignment
 	beforeAssign        func()
 	beforeCommit        func() error
+	beforeAdjust        func() error
 	commitCalls         atomic.Int32
 	setupTimeout        atomic.Int64
 	durationMu          sync.Mutex
@@ -155,6 +156,11 @@ func (c *setupRecordingEvacuationClient) OpenMetricsStreamWithSetupTimeoutForTes
 }
 
 func (c *setupRecordingEvacuationClient) AdjustDuration(ctx context.Context, adjustment generatorrpc.DurationAdjustment) (generatorrpc.DurationResult, error) {
+	if c.beforeAdjust != nil {
+		if err := c.beforeAdjust(); err != nil {
+			return generatorrpc.DurationResult{}, err
+		}
+	}
 	c.durationMu.Lock()
 	c.durationAdjustments = append(c.durationAdjustments, adjustment)
 	c.durationMu.Unlock()
@@ -883,7 +889,7 @@ func TestTerminalEvacuationUncertaintyStillRetriesUncommittedParticipantStop(t *
 	}
 }
 
-func TestFailClosedGeneratorLossEvacuationTerminalizesWithoutDeadSourceAcknowledgement(t *testing.T) {
+func TestFailClosedGeneratorLossEvacuationWaitsForUnfencedSource(t *testing.T) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
 	remote, _ := newTestGeneratorRPCClient(t, "gen-b", 10)
@@ -918,6 +924,7 @@ func TestFailClosedGeneratorLossEvacuationTerminalizesWithoutDeadSourceAcknowled
 	}
 	runner := NewTestRunner(1, NewHub(), nil)
 	runner.tests[test.ID] = test
+	t.Cleanup(runner.beginShutdown)
 
 	_, err := backend.evacuateGenerator(runner, test, "gen-a", false, true)
 	var uncertain *distributedEvacuationUncertainError
@@ -925,16 +932,16 @@ func TestFailClosedGeneratorLossEvacuationTerminalizesWithoutDeadSourceAcknowled
 		t.Fatalf("evacuateGenerator error = %v, want distributedEvacuationUncertainError", err)
 	}
 	runner.mu.RLock()
-	status, failure := test.Status, test.Error
+	status, failure, endedAt := test.Status, test.Error, test.EndedAt
 	runner.mu.RUnlock()
-	if status != "FAILED" {
-		t.Fatalf("status = %q after fail-closed cleanup with a dead source, want FAILED", status)
+	if status != "STOPPING" || endedAt != nil {
+		t.Fatalf("status = %q end = %v after unproven source cleanup, want unterminated STOPPING", status, endedAt)
 	}
-	if !strings.Contains(failure, "unreachable generators left to execution-lease expiry") || !strings.Contains(failure, "gen-a") {
-		t.Fatalf("run error = %q, want the unreachable gen-a reconciliation note", failure)
+	if !strings.Contains(failure, "generator evacuation state is uncertain") {
+		t.Fatalf("run error = %q, want the fail-closed evacuation reason", failure)
 	}
 	if source.faultStops() < durableTransitionAttempts {
-		t.Fatalf("dead source stop attempts = %d, want at least %d before it was tolerated", source.faultStops(), durableTransitionAttempts)
+		t.Fatalf("dead source stop attempts = %d, want at least %d before retry", source.faultStops(), durableTransitionAttempts)
 	}
 	if replacement.stops() <= durableTransitionAttempts {
 		t.Fatalf("replacement stop attempts = %d, want a fail-closed stop after %d rollback attempts", replacement.stops(), durableTransitionAttempts)
@@ -1317,7 +1324,11 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 	sourceStopped := make(chan int64, 1)
 	sourceStopCheckpointPhase := make(chan string, 1)
 	var store *storage.SQLiteStore
+	var shortenBeforeSourceFence func()
 	failedClient.stopHook = func() {
+		if shortenBeforeSourceFence != nil {
+			shortenBeforeSourceFence()
+		}
 		// Record the first fence; cleanup may idempotently stop the source again.
 		select {
 		case sourceStopped <- replacementRequests.Load():
@@ -1340,6 +1351,8 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 	var replacementClient *setupRecordingEvacuationClient
 	var beforeAssign func()
 	var beforeCommit func() error
+	var beforeAdjust func() error
+	var durationAdjusted atomic.Bool
 	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 400*time.Millisecond, func(ctx context.Context, target string) (generatorClient, error) {
 		if target != "gen-b" {
 			return nil, errors.New("failed generator is unavailable")
@@ -1361,6 +1374,11 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 		}, beforeCommit: func() error {
 			if beforeCommit != nil {
 				return beforeCommit()
+			}
+			return nil
+		}, beforeAdjust: func() error {
+			if beforeAdjust != nil {
+				return beforeAdjust()
 			}
 			return nil
 		}}
@@ -1418,6 +1436,16 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 			t.Fatal(err)
 		}
 		test.Assignment.FailoverPolicy = "continue"
+		if checkpointFailure == "" {
+			var shortened atomic.Bool
+			shortenBeforeSourceFence = func() {
+				if shortened.CompareAndSwap(false, true) {
+					runner.mu.Lock()
+					test.Duration -= 10 * time.Second
+					runner.mu.Unlock()
+				}
+			}
+		}
 		for i := range test.remoteRunSupervisionToken {
 			test.remoteRunSupervisionToken[i] = 7
 		}
@@ -1454,6 +1482,21 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 			}
 			if guard.Phase != runEvacuationPhaseSourceFenced || guard.StagedAt.IsZero() || len(guard.StagedTargets) != 1 || guard.StagedTargets[0] != "gen-b" || guard.SourceFencedAt.IsZero() {
 				return errors.New("replacement commit preceded durable positive source fence")
+			}
+			return nil
+		}
+		beforeAdjust = func() error {
+			durationAdjusted.Store(true)
+			record, err := store.GetTest(test.ID)
+			if err != nil {
+				return err
+			}
+			var guard runEvacuationCheckpoint
+			if err := json.Unmarshal([]byte(record.ContinuityCheckpoint), &guard); err != nil {
+				return err
+			}
+			if guard.Phase != runEvacuationPhaseSourceFenced || !guard.ReplacementCommittedAt.IsZero() {
+				return fmt.Errorf("replacement became adoptable before duration adjustment: %s", guard.Phase)
 			}
 			return nil
 		}
@@ -1525,6 +1568,9 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 		t.Fatal("source was not fenced before evacuation completed")
 	}
 	if continuity {
+		if !durationAdjusted.Load() {
+			t.Fatal("continuity evacuation did not exercise pre-checkpoint duration shortening")
+		}
 		select {
 		case phase := <-sourceStopCheckpointPhase:
 			if phase != runEvacuationPhaseStaged {

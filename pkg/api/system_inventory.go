@@ -136,10 +136,10 @@ func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
 	}
 
 	executionMode, entries := s.baseGeneratorInventory(ctx)
-	s.enrichGeneratorRestartability(ctx, entries)
+	pods, scaleLimit, podsAvailable := s.enrichGeneratorRestartability(ctx, entries)
 	s.enrichGeneratorInventoryWithPools(entries)
 	s.runner.enrichPodCapacityInventory(entries)
-	s.runner.setCachedGeneratorInventory(entries, time.Now())
+	s.runner.setCachedGeneratorInventoryWithPodSnapshot(entries, recoveryPodSnapshot{pods: pods, limit: scaleLimit, available: podsAvailable}, time.Now())
 	s.cacheGeneratorInventory(ctx, entries)
 
 	return SystemInventoryResponse{
@@ -226,20 +226,20 @@ func (s *Server) enrichGeneratorInventoryWithPools(entries []GeneratorInventoryE
 	}
 }
 
-func (s *Server) enrichGeneratorRestartability(ctx context.Context, entries []GeneratorInventoryEntry) {
+func (s *Server) enrichGeneratorRestartability(ctx context.Context, entries []GeneratorInventoryEntry) ([]KubePodRef, kubeops.StatefulSetAutoscalingLimit, bool) {
 	// Never carry topology from a generator's self-report or a previous probe.
 	for i := range entries {
 		entries[i].PodPlacement = nil
 	}
 	if s == nil || !s.k8sRestart.Enabled || s.kubeRestarter == nil || len(entries) == 0 {
-		return
+		return nil, kubeops.StatefulSetAutoscalingLimit{}, false
 	}
 	pods, err := s.cachedGeneratorPods(ctx)
 	if err != nil {
 		for i := range entries {
 			entries[i].RestartBlockedReason = "Kubernetes pod inventory is unavailable."
 		}
-		return
+		return nil, kubeops.StatefulSetAutoscalingLimit{}, false
 	}
 	limit := s.cachedGeneratorScaleLimit(ctx)
 	for i := range entries {
@@ -251,6 +251,7 @@ func (s *Server) enrichGeneratorRestartability(ctx context.Context, entries []Ge
 		}
 		entries[i].Restartable, entries[i].RestartBlockedReason = generatorRestartability(entries[i], pod)
 	}
+	return pods, limit, true
 }
 
 func controllerInstanceID() string {

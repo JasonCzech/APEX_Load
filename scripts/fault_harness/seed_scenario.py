@@ -169,7 +169,9 @@ def seed(api, output):
                        'pacing': {'type': 'fixed_interval', 'interval_ms': 100},
                        'http': {'connect_timeout_ms': 2000, 'request_timeout_ms': 5000}},
             'actions': [{'type': 'http', 'name': 'counter', 'method': 'GET', 'target': '/load',
-                         'headers': {'Authorization': 'Bearer {{secret.fault_load}}', 'X-Apexload-Fault-Run': api.run_id}}]}})
+                         'headers': {'Authorization': 'Bearer {{secret.fault_load}}',
+                                     'X-Apexload-Fault-Run': api.run_id,
+                                     'X-Apexload-Fault-Test': '{{run.id}}'}}]}})
         script_id = identifier(script.get('id'))
         if script.get('project_id') != project_id:
             raise SeedError('created script belongs to an unexpected project')

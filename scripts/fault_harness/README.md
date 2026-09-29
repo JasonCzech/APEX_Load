@@ -227,12 +227,15 @@ worker, trust the generated CA, and use its certificate name `apexload-fault-tar
 (or localhost for a local test). Without TLS flags it serves HTTP for isolated local
 use. Both TLS flags must be supplied together. This command does not deploy a pod.
 
-Authenticated `GET /load` requests with `Authorization: Bearer <load_token>` and
-`X-Apexload-Fault-Run: <run_id>` increment the process's counter and return 204.
-Configure these headers through private workload inputs. `GET /snapshot` requires
-the distinct observer token and returns only schema version, run ID, random
-`target_instance_id`, process start time, fresh `observed_at_unix`, and
-`target_requests`. Keep tokens out of URLs and published scripts/artifacts.
+Authenticated `GET /load` requests with `Authorization: Bearer <load_token>`,
+`X-Apexload-Fault-Run: <run_id>`, and `X-Apexload-Fault-Test: <test_id>` increment
+that test's counter and return 204. The seeded reusable scenario supplies the
+managed test ID through `{{run.id}}`, so each execution has its own counter.
+`GET /snapshot` requires the distinct observer token and a
+`X-Apexload-Fault-Test: <test_id>` header; schema version 2 echoes the selected
+test ID, run ID, random `target_instance_id`, process start time, fresh
+`observed_at_unix`, and only that test's `target_requests`. Keep tokens out of
+URLs and published scripts/artifacts.
 `GET /healthz` returns 204. Health, snapshot and rejected requests never increase
 the counter; snapshot responses disable caching. There is no counter-reset endpoint.
 
@@ -245,12 +248,22 @@ observation time and identity, then combine it with independently verified contr
 KEDA and assignment evidence. This service alone cannot detect old-owner traffic or
 qualify failover. Graceful termination waits up to five seconds for active requests.
 
+Counters are scoped by managed test ID and bounded to 2,000 distinct IDs per
+target process. The shipped `observe_run.py` adapter also reads the complete
+test inventory after each target snapshot and rejects a trial if another test
+could have overlapped the selected test. Older tests are permitted only when
+their recorded end time precedes the selected test's creation. Missing,
+ambiguous, or more than 2,000 test records fail closed. Use a fresh disposable
+cluster for a new qualification if the inventory cannot establish exclusive
+traffic.
+
 
 ### Read a validated target snapshot
 
 ```sh
 /absolute/private/apexfault-target observe \
   --config /absolute/private/target.json \
+  --test-id actual-test-id \
   --url https://127.0.0.1:8090 \
   --ca /absolute/private/ca.crt --timeout 3s
 ```
@@ -264,8 +277,8 @@ used. Omit `--ca` to use system trust roots; there is no insecure TLS mode.
 
 The request deadline covers connection, TLS and body reading (default three seconds,
 maximum ten). Headers are bounded to 8 KiB and the JSON body to 4 KiB. The reader
-requires the exact v1 fields, rejects duplicate/missing/null fields and unknown
-schemas, pins the configured run ID, checks process identity syntax and counter
+requires the exact v2 fields, rejects duplicate/missing/null fields and unknown
+schemas, pins the configured run and test IDs, checks process identity syntax and counter
 types, and requires the original observation time to be at most five seconds old and never
 in the future. Target and observer clocks must agree. CA input is bounded to
 1 MiB. Errors omit remote bodies, URLs, file contents and credentials.
@@ -892,6 +905,9 @@ uses PostgreSQL's microsecond precision in this local profile. The independent c
 current fleet demand, controller restart deltas and declared assignments are the only
 output fields. Assignments are controller declarations, not independent proof of generator
 fencing or exclusive traffic ownership. This adapter does not reserve recovery capacity.
+The full test-inventory check rejects a current or recently completed second
+test, including one from another project, before its requests can satisfy the
+traffic recovery gate.
 
 Namespace/run/target incarnation changes and invalid safety evidence emit the fixed
 `{"safety_violation":true}` marker. The drivers latch that marker as failure rather than

@@ -208,6 +208,150 @@ func TestOrphanDiscoveryBoundsNonCandidateEntries(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "entry limit") || len(candidates) != 0 {
 		t.Fatalf("unbounded scan: %d %v", len(candidates), err)
 	}
+	// A real orphan behind more than one bounded page must eventually enter
+	// the durable outbox, even when all earlier entries are non-candidates.
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "store.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	saveTerminalOrphanTest(t, store, "late-orphan", storage.DefaultProjectID)
+	writeOrphanArchiveFixture(t, root, "late-orphan", "late-orphan", storage.DefaultProjectID)
+	runner := NewTestRunner(1, nil, store)
+	for page := 0; page < 3; page++ {
+		if err := runner.recoverOrphanedLocalRunArchives(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.GetArchiveFinalizationJob("late-orphan"); err == nil {
+			return
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			t.Fatal(err)
+		}
+	}
+	t.Fatal("orphan behind bounded discovery pages was not recovered")
+}
+
+func TestOrphanDiscoveryPageTraversesRootAndRemoteAndRestarts(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 5; i++ {
+		if err := os.WriteFile(filepath.Join(root, fmt.Sprintf("irrelevant-%d", i)), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	remote := filepath.Join(root, "remote")
+	writeOrphanArchiveFixture(t, remote, "remote-orphan", "remote-orphan", storage.DefaultProjectID)
+	seen := map[string]int{}
+	scan, err := newOrphanArchiveScanner(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scan.close()
+	for page := 0; page < 5; page++ {
+		candidates, done, err := scan.nextPage(context.Background(), 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, candidate := range candidates {
+			seen[filepath.Base(candidate.path)]++
+		}
+		if done {
+			break
+		}
+	}
+	if seen["remote-orphan"] != 1 {
+		t.Fatalf("remote orphan discovered %d times, want once", seen["remote-orphan"])
+	}
+	writeOrphanArchiveFixture(t, root, "new-orphan", "new-orphan", storage.DefaultProjectID)
+	newScan, err := newOrphanArchiveScanner(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer newScan.close()
+	candidates, _, err := newScan.nextPage(context.Background(), 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, candidate := range candidates {
+		found = found || filepath.Base(candidate.path) == "new-orphan"
+	}
+	if !found {
+		t.Fatal("new orphan was not discovered after cursor reset")
+	}
+}
+
+type archiveScanDeadlineAfterChecks struct {
+	context.Context
+	checks int
+	allow  int
+}
+
+func (c *archiveScanDeadlineAfterChecks) Err() error {
+	c.checks++
+	if c.checks > c.allow {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
+func TestOrphanScannerResumesAfterDeadlineInsideReadBatch(t *testing.T) {
+	root := t.TempDir()
+	for _, id := range []string{"first", "second", "third", "fourth"} {
+		writeOrphanArchiveFixture(t, root, id, id, storage.DefaultProjectID)
+	}
+	scan, err := newOrphanArchiveScanner(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scan.close()
+	// The first batch has already moved the directory stream when the
+	// deadline arrives after inspecting its first entry.
+	candidates, done, err := scan.nextPage(&archiveScanDeadlineAfterChecks{Context: context.Background(), allow: 3}, 10)
+	if !errors.Is(err, context.DeadlineExceeded) || done || len(candidates) != 0 || len(scan.pending) != 1 || len(scan.queuedEntries) == 0 {
+		t.Fatalf("deadline lost scan state: candidates=%d pending=%d queued=%d done=%v err=%v", len(candidates), len(scan.pending), len(scan.queuedEntries), done, err)
+	}
+	seen := map[string]int{}
+	for attempt := 0; attempt < 4; attempt++ {
+		candidates, done, err = scan.nextPage(context.Background(), 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, candidate := range candidates {
+			seen[filepath.Base(candidate.path)]++
+		}
+		if done {
+			break
+		}
+	}
+	for _, id := range []string{"first", "second", "third", "fourth"} {
+		if seen[id] != 1 {
+			t.Fatalf("orphan %s scanned %d times after deadline: %v", id, seen[id], seen)
+		}
+	}
+}
+
+func TestOrphanScannerClosesWhenControllerBecomesFollower(t *testing.T) {
+	root := t.TempDir()
+	scan, err := newOrphanArchiveScanner(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "store.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	runner := NewTestRunner(1, nil, store)
+	runner.orphanArchiveScan = scan
+	runner.leadership = newExecutionLeadership(store, "follower")
+	if err := runner.recoverOrphanedLocalRunArchives(context.Background()); !errors.Is(err, errNotExecutionLeader) {
+		t.Fatalf("follower recovery error = %v", err)
+	}
+	if runner.orphanArchiveScan != nil || scan.root != nil || scan.directory != nil {
+		t.Fatal("follower retained an orphan scan directory stream")
+	}
 }
 
 func TestOrphanRecoveryUsesControllerRequestIdentityForDistributedArchive(t *testing.T) {

@@ -325,7 +325,7 @@ func (b *distributedExecutionBackend) clientFromSnapshot(clientsByTarget map[str
 		return single, nil
 	}
 	if target == "" {
-		return nil, fmt.Errorf("distributed generator target is not recorded")
+		return nil, errDistributedGeneratorTargetUnknown
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()

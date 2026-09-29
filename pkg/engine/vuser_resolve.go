@@ -230,6 +230,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	vu.unresolvedSecretRefs = nil
 	vu.unresolvedFileRefs = nil
 	vu.unresolvedParameterRefs = nil
+	vu.unresolvedRunRefs = nil
 	target, redactedTarget := vu.interpolateWithSecrets(action.Target)
 	selector, redactedSelector := vu.interpolateWithSecrets(action.Selector)
 	value, redactedValue := vu.interpolateWithSecrets(action.Value)
@@ -716,6 +717,8 @@ func (vu *VUser) interpolateWithSecretsTransform(s string, transform func(string
 			vu.unresolvedFileRefs = append(vu.unresolvedFileRefs, expr)
 		} else if strings.HasPrefix(expr, "param.") {
 			vu.unresolvedParameterRefs = append(vu.unresolvedParameterRefs, expr)
+		} else if strings.HasPrefix(expr, "run.") {
+			vu.unresolvedRunRefs = append(vu.unresolvedRunRefs, expr)
 		}
 		if strings.HasPrefix(expr, "secret.") {
 			hasRedaction = true
@@ -849,6 +852,8 @@ func (vu *VUser) interpolateAnyWithSecrets(v any) (any, any) {
 
 func (vu *VUser) resolveTemplateValue(expr string) (string, bool) {
 	switch {
+	case expr == "run.id":
+		return vu.RunID, vu.RunID != "" && strings.TrimSpace(vu.RunID) == vu.RunID
 	case strings.HasPrefix(expr, "var."):
 		key := strings.TrimSpace(strings.TrimPrefix(expr, "var."))
 		value, ok := vu.Variables[key]

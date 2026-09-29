@@ -28,6 +28,10 @@ func (tr *TestRunner) beginShutdown() {
 	tr.mu.Lock()
 	tr.shuttingDown = true
 	tr.mu.Unlock()
+	// The archive worker's context is canceled immediately afterward by the
+	// server. Close its retained directory stream without delaying listener
+	// shutdown while a slow filesystem page is in progress.
+	go tr.closeOrphanArchiveScanner()
 }
 
 func (tr *TestRunner) shutdownErrorLocked() error {

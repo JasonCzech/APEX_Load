@@ -301,6 +301,14 @@ type TestRunner struct {
 	// Entries are reference-counted and removed after their last waiter exits.
 	archiveCommitMu    sync.Mutex
 	archiveCommitGates map[string]*archiveCommitGate
+	// Archive orphan recovery retains a directory stream across bounded sweeps.
+	// A new leader starts at the beginning, and a completed pass starts again
+	// so archives created during an earlier pass are still found.
+	orphanArchiveScanMu sync.Mutex
+	orphanArchiveScan   *orphanArchiveScanner
+	// Serialize sweeps while allowing leadership loss and shutdown to close
+	// the directory stream without waiting for archive/DB processing.
+	orphanRecoveryMu sync.Mutex
 	// execPlanScheduleStore persists recurring execution-plan schedules and their
 	// occurrences; the leader-gated sweep materializes due plan schedules.
 	execPlanScheduleStore executionPlanSchedulePersistence
@@ -421,6 +429,9 @@ type TestRunner struct {
 	liveInventoryMu sync.RWMutex
 	liveInventory   []GeneratorInventoryEntry
 	liveInventoryAt time.Time
+	// The pod list contains StatefulSet ordinals absent from headless DNS while
+	// Pending, NotReady, or terminating. It is published with liveInventory.
+	livePodSnapshot recoveryPodSnapshot
 }
 
 type archiveCommitGate struct {

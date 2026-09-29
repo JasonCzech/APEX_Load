@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -767,6 +768,35 @@ func generatorExecutionEpochSessionExpired(err error) bool {
 		}
 		state := grpcErr.GRPCStatus()
 		return state.Code() == codes.FailedPrecondition && state.Message() == generatorrpc.ExecutionGenerationSessionExpiredMessage
+	})
+}
+
+// A Stop RPC rejected for a lapsed epoch or the wrong run identity cannot
+// succeed when retried with the same generation and token. These refusals are
+// not stop proof.
+func generatorStopIdentityUnusable(err error) bool {
+	return anyErrorInTree(err, func(candidate error) bool {
+		grpcErr, ok := candidate.(interface{ GRPCStatus() *grpcStatus.Status })
+		if !ok {
+			return false
+		}
+		state := grpcErr.GRPCStatus()
+		if state.Code() != codes.FailedPrecondition {
+			return false
+		}
+		message := state.Message()
+		switch message {
+		case generatorrpc.ExecutionGenerationSessionExpiredMessage,
+			"run supervision token does not match the stopping assignment",
+			"run supervision token does not match the terminal assignment",
+			"run supervision token is required for the stopping assignment",
+			"run supervision token is required for the terminal assignment",
+			"run supervision is required",
+			"run supervision token does not match the assignment":
+			return true
+		}
+		return strings.HasPrefix(message, "execution generation ") &&
+			strings.Contains(message, " is not active; current generation is ")
 	})
 }
 

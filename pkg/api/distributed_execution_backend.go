@@ -31,6 +31,8 @@ const (
 	maxDistributedStartupAssignmentWorkers = 16
 )
 
+var errDistributedGeneratorTargetUnknown = errors.New("distributed generator target is not recorded")
+
 func authoredMessageDetailMaxItems(script *dsl.Script) int {
 	if script == nil || script.Config.Results.MessageDetail == nil {
 		return 0
@@ -144,6 +146,7 @@ func (e *distributedVUserUncertainError) Unwrap() error { return e.err }
 type distributedStopFanoutError struct {
 	attemptedTargets    []string
 	acknowledgedTargets []string
+	failedErrors        []error
 	err                 error
 }
 
@@ -1978,7 +1981,7 @@ func (b *distributedExecutionBackend) stopTestContext(parent context.Context, tr
 			clients = map[string]generatorClient{remoteTarget: single}
 		} else {
 			if remoteTarget == "" {
-				return fmt.Errorf("distributed generator target is not recorded")
+				return errDistributedGeneratorTargetUnknown
 			}
 			ctx, cancel := context.WithTimeout(stopBase, b.timeout)
 			client, err := b.dial(ctx, remoteTarget)
@@ -2021,6 +2024,7 @@ func (b *distributedExecutionBackend) stopTestContext(parent context.Context, tr
 		}()
 	}
 	var stopErrs []error
+	var failedErrors []error
 	attemptedTargets := make([]string, 0, len(targets))
 	acknowledgedTargets := make([]string, 0, len(targets))
 	for range targets {
@@ -2037,6 +2041,7 @@ func (b *distributedExecutionBackend) stopTestContext(parent context.Context, tr
 				}
 			}
 			stopErrs = append(stopErrs, fmt.Errorf("stop remote test on %s: %w", result.target, err))
+			failedErrors = append(failedErrors, err)
 			continue
 		}
 		acknowledgedTargets = append(acknowledgedTargets, result.target)
@@ -2055,6 +2060,7 @@ func (b *distributedExecutionBackend) stopTestContext(parent context.Context, tr
 	return &distributedStopFanoutError{
 		attemptedTargets:    attemptedTargets,
 		acknowledgedTargets: acknowledgedTargets,
+		failedErrors:        failedErrors,
 		err:                 stopErr,
 	}
 }

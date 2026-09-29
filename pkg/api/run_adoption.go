@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -13,6 +14,8 @@ import (
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+	"github.com/jasonczech/apexload/pkg/scrub"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -42,8 +45,11 @@ const (
 	runAdoptionClaimBudget = 15 * time.Second
 	// runAdoptionKeeperWait bounds how long the epoch keeper defers to
 	// reconcile before claiming anyway (orphans are then fenced, runs fail).
-	runAdoptionKeeperWait = 20 * time.Second
+	runAdoptionKeeperWait       = 20 * time.Second
+	maxAdoptedRunStopErrorBytes = 2048
 )
+
+var errUnprovableRunAdoptionStop = errors.New("adoption checkpoint cannot identify stop-proof targets")
 
 type adoptedRunResume struct {
 	generation uint64
@@ -58,6 +64,10 @@ type adoptedRunResume struct {
 	// Phase B because archive publication needs an admitted leader.
 	finishStatus  string
 	finishMessage string
+	// finishTargets are the prior checkpoint's possibly-live participants.
+	// A successor cannot publish finishStatus until each has positive stop or
+	// terminal proof; a missing generator can outlive the controller lease.
+	finishTargets []string
 }
 
 func (tr *TestRunner) runAdoptionEnabled() bool {
@@ -189,8 +199,15 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			copy(candidate.newToken[:], adoption.NewToken)
 		}
 		if decodeErr != nil {
+			if errors.Is(decodeErr, errRunAdoptionKeyAccess) {
+				// The checkpoint topology still identifies possible live work. A
+				// transient KMS/Key Vault failure cannot turn that work into a
+				// terminal outcome. Keep acquisition closed and retry this phase
+				// with the same durable token lineage when key access returns.
+				return fmt.Errorf("access run adoption key material for %s: %w", test.ID, decodeErr)
+			}
 			if stopping {
-				tr.finishStoppingRunAdoption(b, test, nil, nil, nil, generation, ownerID, candidate.newToken, []string{fmt.Sprintf("adoption checkpoint unusable (%v)", decodeErr)})
+				tr.finishStoppingRunAdoption(b, test, nil, nil, nil, nil, generation, ownerID, candidate.newToken, nil, []string{fmt.Sprintf("adoption checkpoint unusable (%v)", decodeErr)})
 				continue
 			}
 			tr.failRunAdoption(b, test, nil, generation, ownerID, candidate.newToken, fmt.Sprintf("controller failover: the run's adoption checkpoint is unusable (%v)", decodeErr))
@@ -204,7 +221,7 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 		}
 		candidate.targets = checkpointTargets(checkpoint)
 		for _, target := range candidate.targets {
-			if slices.Contains(checkpoint.CompletedTargets, target) {
+			if slices.Contains(checkpoint.CompletedTargets, target) || (stopping && slices.Contains(checkpoint.StoppedTargets, target)) {
 				continue
 			}
 			byTarget[target] = append(byTarget[target], adoption)
@@ -231,10 +248,13 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 		problems := make([]string, 0)
 		unreachableGenerator := false
 		for _, target := range candidate.targets {
-			if slices.Contains(candidate.checkpoint.CompletedTargets, target) {
+			priorStopped := candidate.stopping && slices.Contains(candidate.checkpoint.StoppedTargets, target)
+			if slices.Contains(candidate.checkpoint.CompletedTargets, target) || priorStopped {
 				client, dialErr := b.retainRunAdoptionTarget(ctx, results, target)
 				if dialErr != nil {
-					problems = append(problems, fmt.Sprintf("%s: reconnect completed generator: %v", target, dialErr))
+					if !priorStopped {
+						problems = append(problems, fmt.Sprintf("%s: reconnect completed generator: %v", target, dialErr))
+					}
 					continue
 				}
 				completed[target], reachable[target] = client, client
@@ -286,7 +306,7 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			// Every reachable generator serves the final archive; any that
 			// never saw the stop was adopted above and is stopped now.
 			tr.isolateRunAdoption(b, candidate.test, generation, ownerID, func() {
-				tr.finishStoppingRunAdoption(b, candidate.test, reachable, adopted, archives, generation, ownerID, candidate.newToken, problems)
+				tr.finishStoppingRunAdoption(b, candidate.test, reachable, adopted, completed, archives, generation, ownerID, candidate.newToken, candidate.targets, problems)
 			})
 			continue
 		}
@@ -320,7 +340,7 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 				}
 				// Stop adopted assignments, but also retain completed participants
 				// for best-effort archive collection when another target was lost.
-				tr.bindRunAdoptionOutcome(b, candidate.test, reachable, adopted, archives, generation, ownerID, candidate.newToken, "FAILED", message)
+				tr.bindRunAdoptionOutcome(b, candidate.test, reachable, adopted, completed, archives, generation, ownerID, candidate.newToken, candidate.targets, "FAILED", message)
 				return
 			}
 			tr.installAdoptedRun(b, candidate, adopted, completed, archives, generation, ownerID)
@@ -571,24 +591,22 @@ func (tr *TestRunner) installAdoptedRun(b *distributedExecutionBackend, candidat
 // ordinary distributed failure path.
 func (tr *TestRunner) failRunAdoption(b *distributedExecutionBackend, test *ManagedTest, adopted map[string]generatorClient, generation uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, message string) {
 	slog.Warn("run adoption failed; the run will be marked FAILED", "test_id", test.ID, "execution_generation", generation, "reason", message)
-	tr.bindRunAdoptionOutcome(b, test, adopted, adopted, nil, generation, ownerID, token, "FAILED", message)
+	tr.bindRunAdoptionOutcome(b, test, adopted, adopted, nil, nil, generation, ownerID, token, nil, "FAILED", message)
 }
 
 // bindRunAdoptionOutcome binds a run that will not resume to the new term, so
 // stop and archive collection work under the rotated token, and records the
 // outcome Phase B applies. Only adopted generators are stopped; the others in
 // clients (already stopped or finished) serve the archive.
-func (tr *TestRunner) bindRunAdoptionOutcome(b *distributedExecutionBackend, test *ManagedTest, clients, adopted, archives map[string]generatorClient, generation uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, status, message string) {
+func (tr *TestRunner) bindRunAdoptionOutcome(b *distributedExecutionBackend, test *ManagedTest, clients, adopted, completed, archives map[string]generatorClient, generation uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, targets []string, status, message string) {
 	tr.mu.Lock()
 	err := tr.installRunAdoptionHandlesLocked(b, test, clients, nil, token)
 	if err == nil {
 		test.remoteArchiveClientsByTarget = archives
-		for target := range clients {
-			if _, running := adopted[target]; !running {
-				test.remoteTargetStates[target] = "aborted"
-			}
+		for target := range completed {
+			test.remoteTargetStates[target] = "complete"
 		}
-		test.adoptedResume = &adoptedRunResume{generation: generation, ownerID: ownerID, adoptedAt: time.Now().UTC(), finishStatus: status, finishMessage: message}
+		test.adoptedResume = &adoptedRunResume{generation: generation, ownerID: ownerID, completed: cloneClientMap(completed), adoptedAt: time.Now().UTC(), finishStatus: status, finishMessage: message, finishTargets: append([]string(nil), targets...)}
 	}
 	tr.mu.Unlock()
 	if err != nil {
@@ -606,19 +624,30 @@ func (tr *TestRunner) bindRunAdoptionOutcome(b *distributedExecutionBackend, tes
 // leader was lost. An operator stop remains ABORTED; a persisted fail-closed
 // control error remains FAILED. Generators still running the run under the
 // rotated token are stopped, and archives are collected where reachable.
-func (tr *TestRunner) finishStoppingRunAdoption(b *distributedExecutionBackend, test *ManagedTest, clients, adopted, archives map[string]generatorClient, generation uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, problems []string) {
+func (tr *TestRunner) finishStoppingRunAdoption(b *distributedExecutionBackend, test *ManagedTest, clients, adopted, completed, archives map[string]generatorClient, generation uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, targets []string, problems []string) {
 	if len(problems) > 0 {
 		slog.Warn("finishing a stopping run after controller failover with incomplete generator reach", "test_id", test.ID, "problems", strings.Join(problems, "; "))
 	}
 	slog.Info("finishing an in-flight stop after controller failover", "test_id", test.ID, "execution_generation", generation, "generators", len(clients), "still_running", len(adopted))
 	status, message := stoppingRunAdoptionOutcome(test.Error)
-	tr.bindRunAdoptionOutcome(b, test, clients, adopted, archives, generation, ownerID, token, status, message)
+	tr.bindRunAdoptionOutcome(b, test, clients, adopted, completed, archives, generation, ownerID, token, targets, status, message)
 }
 
 func stoppingRunAdoptionOutcome(reason string) (status, message string) {
 	reason = strings.TrimSpace(reason)
+	if strings.HasPrefix(reason, "controller failover: pending ABORTED cleanup proof:") {
+		return "ABORTED", reason
+	}
+	// The previous successor may have retained a FAILED outcome while waiting
+	// for a generator's stop proof. Keep that outcome across another takeover,
+	// even when the original failure reason precedes the cleanup marker.
+	if strings.Contains(reason, "controller failover: pending FAILED cleanup proof:") {
+		return "FAILED", reason
+	}
 	for _, prefix := range []string{
 		"generator evacuation state is uncertain:",
+		"controller failover: the run could not be adopted",
+		"controller failover: pending FAILED cleanup proof:",
 		"remote VUser state is uncertain:",
 		"remote duration state is uncertain:",
 		"remote pause/resume state is uncertain:",
@@ -633,6 +662,279 @@ func stoppingRunAdoptionOutcome(reason string) (status, message string) {
 		return "ABORTED", reason
 	}
 	return "ABORTED", ""
+}
+
+// confirmAdoptedRunStopped replays the already-persisted adoption intent and
+// requires a positive stop or retained terminal outcome for every participant
+// that was not already completed in the prior checkpoint. In particular,
+// ALREADY_STOPPED without a terminal state can mean "drain in progress" or
+// "supervision expired" and is not sufficient to release the run reservation.
+func (tr *TestRunner) confirmAdoptedRunStopped(b *distributedExecutionBackend, test *ManagedTest, resume *adoptedRunResume) error {
+	if len(resume.finishTargets) == 0 {
+		return errUnprovableRunAdoptionStop
+	}
+	generation, ownerID, leaseDeadline, err := tr.generatorExecutionClaim()
+	if err != nil {
+		return err
+	}
+	if generation != resume.generation || ownerID != resume.ownerID {
+		return errNotExecutionLeader
+	}
+	tr.mu.RLock()
+	raw := test.continuityCheckpoint
+	current := tr.tests[test.ID] == test && runAdoptionStatus(test.Status)
+	token := test.remoteRunSupervisionToken
+	tr.mu.RUnlock()
+	if !current {
+		return errNotExecutionLeader
+	}
+	checkpoint, present, err := decodeRunContinuityCheckpoint(raw)
+	if err != nil || !present {
+		return fmt.Errorf("%w: checkpoint decode: %v", errUnprovableRunAdoptionStop, err)
+	}
+	byTarget := make(map[string][]generatorrpc.RunAdoption)
+	for _, target := range resume.finishTargets {
+		if !slices.Contains(checkpointTargets(checkpoint), target) {
+			return fmt.Errorf("%w: finish target %s is absent from the durable topology", errUnprovableRunAdoptionStop, target)
+		}
+		if !slices.Contains(checkpoint.CompletedTargets, target) && !slices.Contains(checkpoint.StoppedTargets, target) {
+			byTarget[target] = nil
+		}
+	}
+	// Every target may already have durable stop proof from an earlier retry.
+	// Do not require a disappeared generator or key service after that point.
+	if len(byTarget) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), minTime(leaseDeadline, time.Now().Add(runAdoptionClaimBudget)))
+	defer cancel()
+	_, adoption, err := tr.planRunAdoptionIntent(ctx, test.ID, checkpoint, generation, ownerID)
+	if err != nil {
+		return fmt.Errorf("replay stop-proof adoption intent: %w", err)
+	}
+	if !slices.Equal(adoption.NewToken, token[:]) {
+		return fmt.Errorf("%w: installed token differs from the durable intent", errUnprovableRunAdoptionStop)
+	}
+	for target := range byTarget {
+		byTarget[target] = []generatorrpc.RunAdoption{adoption}
+	}
+	results := b.claimRunAdoptions(ctx, byTarget, generation, ownerID, leaseDeadline)
+	defer func() {
+		for _, result := range results {
+			if result.client != nil {
+				_ = result.client.Close()
+			}
+		}
+	}()
+	var failures []error
+	for _, target := range resume.finishTargets {
+		if slices.Contains(checkpoint.CompletedTargets, target) || slices.Contains(checkpoint.StoppedTargets, target) {
+			continue
+		}
+		result, present := results[target]
+		if !present || result.err != nil || result.client == nil {
+			failures = append(failures, fmt.Errorf("%s: adoption claim unavailable: %v", target, result.err))
+			continue
+		}
+		outcome, reported := result.outcomes[test.ID]
+		if !reported {
+			failures = append(failures, fmt.Errorf("%s: generator did not report the run", target))
+			continue
+		}
+		if (outcome.Outcome == pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_COMPLETED && isTerminalRemoteLifecycle(outcome.TerminalState)) ||
+			(outcome.Outcome == pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED && isTerminalRemoteLifecycle(outcome.TerminalState)) {
+			if err := tr.persistRunAdoptionStoppedTarget(test, target, generation, ownerID); err != nil {
+				failures = append(failures, fmt.Errorf("%s: persist retained terminal proof: %w", target, err))
+				continue
+			}
+			checkpoint.StoppedTargets = append(checkpoint.StoppedTargets, target)
+			continue
+		}
+		if outcome.Outcome != pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED && outcome.Outcome != pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED {
+			failures = append(failures, fmt.Errorf("%s: adoption outcome %s does not prove stop", target, outcome.Outcome))
+			continue
+		}
+		stopCtx, stopCancel := context.WithTimeout(ctx, b.timeout)
+		stopped, stopErr := stopGeneratorTestWithToken(stopCtx, result.client, test.ID, false, generation, token[:])
+		stopCancel()
+		if stopErr != nil || !stopped.Acknowledged {
+			failures = append(failures, fmt.Errorf("%s: exact-generation stop was not acknowledged: %v", target, stopErr))
+			continue
+		}
+		if err := tr.persistRunAdoptionStoppedTarget(test, target, generation, ownerID); err != nil {
+			failures = append(failures, fmt.Errorf("%s: persist confirmed force-stop proof: %w", target, err))
+			continue
+		}
+		checkpoint.StoppedTargets = append(checkpoint.StoppedTargets, target)
+	}
+	if len(failures) != 0 {
+		return errors.Join(failures...)
+	}
+	tr.mu.Lock()
+	if tr.tests[test.ID] == test && runAdoptionStatus(test.Status) {
+		if test.remoteTargetStates == nil {
+			test.remoteTargetStates = make(map[string]string)
+		}
+		for _, target := range resume.finishTargets {
+			test.remoteTargetStates[target] = "ABORTED"
+		}
+	}
+	tr.mu.Unlock()
+	return nil
+}
+
+func (tr *TestRunner) markAdoptedRunStopUncertain(test *ManagedTest, resume *adoptedRunResume, stopErr error) error {
+	if err := tr.persistAdoptedRunStopUncertainty(test, resume, stopErr); err != nil {
+		return err
+	}
+	return stopErr
+}
+
+func (tr *TestRunner) persistAdoptedRunStopUncertainty(test *ManagedTest, resume *adoptedRunResume, stopErr error) error {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.tests[test.ID] != test || isTerminalTestStatus(test.Status) {
+		return nil
+	}
+	previousStatus, previousError := test.Status, test.Error
+	test.Status = "STOPPING"
+	test.Error = adoptedRunStopUncertaintyMessage(resume, stopErr)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.Status, test.Error = previousStatus, previousError
+		return fmt.Errorf("persist unconfirmed adopted-run stop: %w", err)
+	}
+	return nil
+}
+
+// A forced StopTest ACK waits for the generator's detached drain to finish,
+// or reports an already-retained terminal generation. Graceful ACKs may have
+// pending VUsers and are never used as terminal proof here.
+func (tr *TestRunner) confirmResumedAdoptedRunStopped(b *distributedExecutionBackend, test *ManagedTest, resume *adoptedRunResume) error {
+	generation, owner, leaseDeadline, err := tr.generatorExecutionClaim()
+	if err != nil || generation != resume.generation || owner != resume.ownerID {
+		return errNotExecutionLeader
+	}
+	tr.mu.RLock()
+	current := tr.tests[test.ID] == test && test.Status == "STOPPING"
+	raw := test.continuityCheckpoint
+	token := test.remoteRunSupervisionToken
+	tr.mu.RUnlock()
+	if !current {
+		return errNotExecutionLeader
+	}
+	checkpoint, present, err := decodeRunContinuityCheckpoint(raw)
+	if err != nil || !present {
+		return fmt.Errorf("%w: resumed run checkpoint decode: %v", errUnprovableRunAdoptionStop, err)
+	}
+	if len(resume.adopted) == 0 {
+		return errUnprovableRunAdoptionStop
+	}
+	targets := make([]string, 0, len(resume.adopted))
+	for target := range resume.adopted {
+		if !slices.Contains(checkpointTargets(checkpoint), target) {
+			return fmt.Errorf("%w: adopted target %s is absent from the durable topology", errUnprovableRunAdoptionStop, target)
+		}
+		targets = append(targets, target)
+	}
+	sort.Strings(targets)
+	ctx, cancel := context.WithDeadline(context.Background(), minTime(leaseDeadline, time.Now().Add(runAdoptionClaimBudget)))
+	defer cancel()
+	var failures []error
+	for _, target := range targets {
+		if slices.Contains(checkpoint.StoppedTargets, target) {
+			continue
+		}
+		callCtx, callCancel := context.WithTimeout(ctx, b.timeout)
+		client, dialErr := b.dial(callCtx, target)
+		if dialErr != nil {
+			callCancel()
+			failures = append(failures, fmt.Errorf("%s: reconnect for exact-generation force stop: %w", target, dialErr))
+			continue
+		}
+		stop, stopErr := stopGeneratorTestWithToken(callCtx, client, test.ID, false, generation, token[:])
+		callCancel()
+		_ = client.Close()
+		if stopErr != nil || !stop.Acknowledged {
+			failures = append(failures, fmt.Errorf("%s: exact-generation force stop was not confirmed: %v", target, stopErr))
+			continue
+		}
+		if err := tr.persistRunAdoptionStoppedTarget(test, target, generation, owner); err != nil {
+			failures = append(failures, fmt.Errorf("%s: persist confirmed force-stop proof: %w", target, err))
+			continue
+		}
+		checkpoint.StoppedTargets = append(checkpoint.StoppedTargets, target)
+	}
+	return errors.Join(failures...)
+}
+
+// completeDistributedTestRun reports terminal-write failure to the stop-proof
+// worker. The distributed completion helper logs and enqueues its own retry,
+// but returns no error; this worker must not retire while its row is still
+// STOPPING after all generator proofs have been obtained.
+func (tr *TestRunner) completeAdoptedRunAfterStopProof(b *distributedExecutionBackend, test *ManagedTest, status, message string) error {
+	tr.mu.RLock()
+	current := tr.tests[test.ID] == test
+	terminal := current && isTerminalTestStatus(test.Status) && test.EndedAt != nil
+	tr.mu.RUnlock()
+	if !current || terminal {
+		return nil
+	}
+	b.completeDistributedTestRun(tr, test, status, message)
+	tr.mu.RLock()
+	current = tr.tests[test.ID] == test
+	terminal = current && isTerminalTestStatus(test.Status) && test.EndedAt != nil
+	tr.mu.RUnlock()
+	if !current || terminal {
+		return nil
+	}
+	return errors.New("adopted run stop proof is confirmed but its terminal state is not durable")
+}
+
+func (tr *TestRunner) failResumedAdoptedRunWithStopProof(b *distributedExecutionBackend, test *ManagedTest, resume *adoptedRunResume, message string) {
+	failure := &adoptedRunResume{
+		generation: resume.generation, ownerID: resume.ownerID,
+		finishStatus:  "FAILED",
+		finishMessage: boundedtext.TruncateUTF8(scrub.Value("controller failover: "+message, scrub.Policy{}), maxAdoptedRunStopErrorBytes),
+	}
+	why := errors.New("force-stop proof is pending after " + failure.finishMessage)
+	finish := func() error {
+		tr.mu.RLock()
+		current := tr.tests[test.ID] == test && runAdoptionStatus(test.Status)
+		otherStop := test.Status == "STOPPING" && !strings.HasPrefix(test.Error, "controller failover: pending FAILED cleanup proof:")
+		tr.mu.RUnlock()
+		if !current || otherStop {
+			return nil
+		}
+		if err := tr.persistAdoptedRunStopUncertainty(test, failure, why); err != nil {
+			return err
+		}
+		tr.mu.RLock()
+		cancel := test.cancel
+		tr.mu.RUnlock()
+		if cancel != nil {
+			cancel() // stop local lease/supervision renewal while remote proof is pending
+		}
+		if err := tr.confirmResumedAdoptedRunStopped(b, test, resume); err != nil {
+			return err
+		}
+		return tr.completeAdoptedRunAfterStopProof(b, test, "FAILED", failure.finishMessage)
+	}
+	if err := finish(); err != nil {
+		slog.Warn("adopted run remains STOPPING until resumed work is force-stopped", "test_id", test.ID,
+			"error", boundedtext.TruncateUTF8(scrub.Value(err.Error(), scrub.Policy{}), maxAdoptedRunStopErrorBytes))
+		if !errors.Is(err, errUnprovableRunAdoptionStop) {
+			tr.enqueueTerminalRetry("adoption-resume-stop:"+test.ID, "adopted run resume force-stop proof", finish)
+		}
+	}
+}
+
+func adoptedRunStopUncertaintyMessage(resume *adoptedRunResume, stopErr error) string {
+	message := "controller failover: pending " + resume.finishStatus + " cleanup proof: "
+	if resume.finishMessage != "" {
+		message += scrub.Value(resume.finishMessage, scrub.Policy{}) + "; "
+	}
+	message += scrub.Value(stopErr.Error(), scrub.Policy{})
+	return boundedtext.TruncateUTF8(message, maxAdoptedRunStopErrorBytes)
 }
 
 // resumeAdoptedRuns is Phase B, run when admission opens after acquisition.
@@ -660,6 +962,10 @@ func (tr *TestRunner) resumeAdoptedRuns() {
 		}()
 	}
 	resumes.Wait()
+	// Interrupted evacuation guards are intentionally not adoption candidates.
+	// Once Phase A has installed all valid adoptions, independently fence every
+	// possibly-live guard participant before terminalizing those runs.
+	tr.resumeInterruptedRunEvacuations()
 }
 
 func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
@@ -675,8 +981,25 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 		return
 	}
 	if resume.finishStatus != "" {
-		// Decided in Phase A; finalized now that archive publication can run.
-		b.completeDistributedTestRun(tr, test, resume.finishStatus, resume.finishMessage)
+		// Phase A decided the outcome, but only Phase B can establish whether
+		// every old participant has stopped. A missing generator may keep its
+		// orphaned run alive; do not publish a terminal row on reachability alone.
+		finish := func() error {
+			if err := tr.persistAdoptedRunStopUncertainty(test, resume, errors.New("awaiting exact-generation generator stop proof")); err != nil {
+				return err
+			}
+			if err := tr.confirmAdoptedRunStopped(b, test, resume); err != nil {
+				return tr.markAdoptedRunStopUncertain(test, resume, err)
+			}
+			return tr.completeAdoptedRunAfterStopProof(b, test, resume.finishStatus, resume.finishMessage)
+		}
+		if err := finish(); err != nil {
+			slog.Warn("adopted run remains STOPPING until generator cleanup is proven", "test_id", test.ID,
+				"error", boundedtext.TruncateUTF8(scrub.Value(err.Error(), scrub.Policy{}), maxAdoptedRunStopErrorBytes))
+			if !errors.Is(err, errUnprovableRunAdoptionStop) {
+				tr.enqueueTerminalRetry("adoption-stop:"+test.ID, "adopted run stop proof", finish)
+			}
+		}
 		return
 	}
 	if len(resume.adopted) == 0 {
@@ -685,9 +1008,7 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 		b.completeDistributedTestRun(tr, test, "COMPLETE", "")
 		return
 	}
-	fail := func(message string) {
-		b.completeDistributedTestRun(tr, test, "FAILED", "controller failover: "+message)
-	}
+	fail := func(message string) { tr.failResumedAdoptedRunWithStopProof(b, test, resume, message) }
 	tr.excludeFinishedGenerators(b, test, resume.completed)
 	tr.mu.RLock()
 	lossTolerant := assignmentToleratesGeneratorLoss(test.Assignment)

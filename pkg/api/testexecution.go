@@ -26,6 +26,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"github.com/jasonczech/apexload/pkg/telemetry"
@@ -2995,8 +2997,23 @@ func (tr *TestRunner) runStopTeardownRetryWorker(testID, retryKey string) {
 		tr.terminalRetryMu.Unlock()
 
 		slog.Warn("terminal transition retry failed", "test_id", testID, "transition", stopTeardownTransition(intent.force), "error", err)
+		if stopTeardownRequiresExternalFence(err) {
+			if noteErr := tr.recordStopTeardownExternalFenceRequired(testID); noteErr == nil {
+				if tr.retireStopTeardownRetryIfUnchanged(testID, retryKey, intent.version) {
+					return
+				}
+				delay = executionPlanRetryInitialDelay
+				continue
+			} else {
+				slog.Warn("could not persist unconfirmed stop state", "test_id", testID, "error", noteErr)
+			}
+		}
 		if !durableBackgroundRetryable(err) {
-			break
+			if tr.retireStopTeardownRetryIfUnchanged(testID, retryKey, intent.version) {
+				return
+			}
+			delay = executionPlanRetryInitialDelay
+			continue
 		}
 		delay = min(delay*2, executionPlanRetryMaxDelay)
 	}
@@ -3005,6 +3022,72 @@ func (tr *TestRunner) runStopTeardownRetryWorker(testID, retryKey string) {
 	delete(tr.stopTeardownRetries, testID)
 	delete(tr.terminalRetrying, retryKey)
 	tr.terminalRetryMu.Unlock()
+}
+
+// A new Stop/Abort may arrive after a failed RPC's first version check while
+// its durable error is being recorded. Retire only the version just handled.
+func (tr *TestRunner) retireStopTeardownRetryIfUnchanged(testID, retryKey string, attemptedVersion uint64) bool {
+	tr.terminalRetryMu.Lock()
+	defer tr.terminalRetryMu.Unlock()
+	if latest, exists := tr.stopTeardownRetries[testID]; exists && latest.version != attemptedVersion {
+		return false
+	}
+	delete(tr.stopTeardownRetries, testID)
+	delete(tr.terminalRetrying, retryKey)
+	return true
+}
+
+const stopTeardownExternalFenceMessage = "remote stop is unconfirmed: the generator identity was rejected or its target is unknown; verify all former generator processes are stopped or fenced before resolving this run"
+
+// A retired process epoch or wrong run identity cannot accept another Stop RPC
+// with the same generation and token. Keep STOPPING and its capacity reservation
+// until an operator or successor has independent stop/fence proof.
+func stopTeardownRequiresExternalFence(err error) bool {
+	if errors.Is(err, errDistributedGeneratorTargetUnknown) {
+		return true
+	}
+	var fanout *distributedStopFanoutError
+	if !errors.As(err, &fanout) || len(fanout.failedErrors) == 0 {
+		return false
+	}
+	for _, failure := range fanout.failedErrors {
+		if !generatorStopIdentityUnusable(failure) {
+			// Another target may still accept an idempotent Stop after a
+			// transient failure. Keep retrying until every outstanding target
+			// either acknowledges or needs independent process-fence proof.
+			return false
+		}
+	}
+	return true
+}
+
+func (tr *TestRunner) recordStopTeardownExternalFenceRequired(testID string) error {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	test := tr.tests[testID]
+	if test == nil || test.Status != "STOPPING" {
+		return nil
+	}
+	previous := test.Error
+	priorDetail := previous
+	if strings.HasPrefix(priorDetail, stopTeardownExternalFenceMessage) {
+		priorDetail = strings.TrimPrefix(priorDetail, stopTeardownExternalFenceMessage)
+		priorDetail = strings.TrimPrefix(priorDetail, "; ")
+	}
+	message := stopTeardownExternalFenceMessage
+	if priorDetail != "" {
+		message += "; " + scrub.Value(priorDetail, scrub.Policy{})
+	}
+	message = boundedtext.TruncateUTF8(message, 2048)
+	if previous == message {
+		return nil
+	}
+	test.Error = message
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.Error = previous
+		return err
+	}
+	return nil
 }
 
 func stopTeardownTransition(force bool) string {
@@ -5304,6 +5387,7 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 	projectResolvers := make(map[string]engine.SecretResolver)
 	for index := range groups {
 		groups[index].ScenarioID = strings.TrimSpace(test.ScenarioID)
+		groups[index].RunID = test.ID
 		projectID := test.ProjectID
 		if groups[index].Script != nil && strings.TrimSpace(groups[index].Script.ProjectID) != "" {
 			projectID = groups[index].Script.ProjectID
@@ -6532,7 +6616,7 @@ func (tr *TestRunner) runScriptShakeoutReport(test *ManagedTest) (ScriptShakeout
 		if index < len(test.Groups) {
 			resolver = overlayRuntimeSecretResolver(test.Groups[index].runtimeSecretValues, resolver)
 		}
-		err := engine.RunScriptShakeoutWithSecretResolver(ctx, group.Name, &shakeoutScript, resolver)
+		err := engine.RunScriptShakeoutWithRunIDAndSecretResolver(ctx, group.Name, &shakeoutScript, test.ID, resolver)
 		cancel()
 		if operationErr := operationCtx.Err(); operationErr != nil {
 			report.EndedAt = time.Now().UTC()

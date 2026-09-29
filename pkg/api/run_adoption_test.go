@@ -7,17 +7,40 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/keywrap"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+type flakyAdoptionKeyWrapper struct {
+	keywrap.KeyWrapper
+	failWrap   atomic.Bool
+	failUnwrap atomic.Bool
+}
+
+func (w *flakyAdoptionKeyWrapper) WrapKey(ctx context.Context, plaintext, aad []byte) (keywrap.WrappedKey, error) {
+	if w.failWrap.Load() {
+		return keywrap.WrappedKey{}, errors.New("temporary key service outage")
+	}
+	return w.KeyWrapper.WrapKey(ctx, plaintext, aad)
+}
+
+func (w *flakyAdoptionKeyWrapper) UnwrapKey(ctx context.Context, wrapped keywrap.WrappedKey, aad []byte) ([]byte, error) {
+	if w.failUnwrap.Load() {
+		return nil, errors.New("temporary key service outage")
+	}
+	return w.KeyWrapper.UnwrapKey(ctx, wrapped, aad)
+}
 
 // newAdoptionTestRunner returns a leader runner with a distributed backend
 // whose generators are unreachable, a key wrapper, and a durable store.
@@ -33,6 +56,7 @@ func newAdoptionTestRunner(t *testing.T) (*TestRunner, *storage.SQLiteStore, *ex
 	leadership.tick()
 	runner.leadership = leadership
 	runner.durableExecutionFence = true
+	t.Cleanup(runner.beginShutdown)
 	runner.execution = newDistributedExecutionBackend([]string{"gen-a:9091"}, 200*time.Millisecond, func(context.Context, string) (generatorClient, error) {
 		return nil, errors.New("generator unreachable")
 	})
@@ -78,8 +102,8 @@ func TestReconcileLeavesAdoptionCandidatesRunning(t *testing.T) {
 	if runner.isRunAdoptionCandidate(failRun) {
 		t.Fatal("fail-policy run treated as an adoption candidate")
 	}
-	if err := runner.reconcileStoredActiveTest(failRun); err != nil || failRun.Status != "FAILED" {
-		t.Fatalf("fail-policy run after reconcile = %s (%v), want FAILED", failRun.Status, err)
+	if err := runner.reconcileStoredActiveTest(failRun); err != nil || failRun.Status != "STOPPING" {
+		t.Fatalf("fail-policy run after reconcile = %s (%v), want unproven STOPPING", failRun.Status, err)
 	}
 
 	noCheckpoint := storedContinueRun(t, runner, store, "unarmed-run", "continue")
@@ -89,7 +113,7 @@ func TestReconcileLeavesAdoptionCandidatesRunning(t *testing.T) {
 	}
 }
 
-func TestUnadoptableRunFailsWithAdoptionReason(t *testing.T) {
+func TestUnadoptableRunWaitsForStopProof(t *testing.T) {
 	runner, store, _ := newAdoptionTestRunner(t)
 	test := storedContinueRun(t, runner, store, "orphan", "continue")
 	test.Assignment.TolerateGeneratorLoss = true
@@ -111,8 +135,8 @@ func TestUnadoptableRunFailsWithAdoptionReason(t *testing.T) {
 	runner.mu.RLock()
 	status, message, resume := test.Status, test.Error, test.adoptedResume
 	runner.mu.RUnlock()
-	if status != "FAILED" || resume != nil {
-		t.Fatalf("unreachable-generator run = %s (resume %v), want FAILED", status, resume != nil)
+	if status != "STOPPING" || resume != nil {
+		t.Fatalf("unreachable-generator run = %s (resume %v), want STOPPING until stop proof", status, resume != nil)
 	}
 	if !strings.Contains(message, "could not be adopted") || !strings.Contains(message, "gen-a:9091") {
 		t.Fatalf("failure reason %q does not explain the adoption failure", message)
@@ -121,8 +145,8 @@ func TestUnadoptableRunFailsWithAdoptionReason(t *testing.T) {
 		t.Fatalf("unreachable generator omitted loss-tolerance limitation: %q", message)
 	}
 	record, err := store.GetTest(test.ID)
-	if err != nil || record.Status != "FAILED" {
-		t.Fatalf("durable status = %v (%v), want FAILED", record, err)
+	if err != nil || record.Status != "STOPPING" || record.EndTime != nil {
+		t.Fatalf("durable status = %v (%v), want unterminated STOPPING", record, err)
 	}
 }
 
@@ -332,7 +356,8 @@ func TestPartialAdoptionFailureRetainsCompletedGeneratorEvidence(t *testing.T) {
 	if err := runner.adoptOrphanedRuns(); err != nil {
 		t.Fatal(err)
 	}
-	if test.adoptedResume == nil || test.adoptedResume.finishStatus != "FAILED" || test.remoteClientsByTarget["gen-a:9091"] == nil || !remoteTargetStateDone(test.remoteTargetStates["gen-a:9091"]) {
+	if test.adoptedResume == nil || test.adoptedResume.finishStatus != "FAILED" || test.adoptedResume.completed["gen-a:9091"] == nil ||
+		test.remoteClientsByTarget["gen-a:9091"] == nil || !remoteTargetStateDone(test.remoteTargetStates["gen-a:9091"]) {
 		t.Fatalf("failed adoption discarded completed participant evidence: %+v", test.adoptedResume)
 	}
 	if test.remoteArchiveClientsByTarget["retired:9091"] == nil {
@@ -440,11 +465,47 @@ type stoppingFakeClient struct {
 	stops []string
 }
 
+type delayedStoppingFakeClient struct {
+	stoppingFakeClient
+	allowStop atomic.Bool
+}
+
+type phaseBForceStopFakeClient struct {
+	adoptionFakeClient
+	allowForce    atomic.Bool
+	forceStops    atomic.Int32
+	gracefulStops atomic.Int32
+}
+
+func (c *phaseBForceStopFakeClient) StopTestAtGenerationWithToken(_ context.Context, _ string, graceful bool, _ uint64, _ []byte) (generatorrpc.StopResult, error) {
+	if graceful {
+		c.gracefulStops.Add(1)
+		return generatorrpc.StopResult{Acknowledged: true, PendingVUsers: 5}, nil
+	}
+	c.forceStops.Add(1)
+	if !c.allowForce.Load() {
+		return generatorrpc.StopResult{}, errors.New("generator force stop unavailable")
+	}
+	return generatorrpc.StopResult{Acknowledged: true}, nil
+}
+
+func (c *phaseBForceStopFakeClient) GetArchiveArtifact(context.Context, generatorrpc.ArchiveArtifactRequest) ([]byte, error) {
+	return nil, errors.New("no retained archive in this fake")
+}
+
+func (c *delayedStoppingFakeClient) StopTestAtGenerationWithToken(ctx context.Context, testID string, graceful bool, generation uint64, token []byte) (generatorrpc.StopResult, error) {
+	ack, err := c.stoppingFakeClient.StopTestAtGenerationWithToken(ctx, testID, graceful, generation, token)
+	if !c.allowStop.Load() {
+		ack.Acknowledged = false
+	}
+	return ack, err
+}
+
 func (c *stoppingFakeClient) StopTestAtGenerationWithToken(_ context.Context, testID string, _ bool, generation uint64, token []byte) (generatorrpc.StopResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.stops = append(c.stops, fmt.Sprintf("%s@%d/%d", testID, generation, len(token)))
-	return generatorrpc.StopResult{}, nil
+	return generatorrpc.StopResult{Acknowledged: true}, nil
 }
 
 func (c *stoppingFakeClient) GetArchiveArtifact(context.Context, generatorrpc.ArchiveArtifactRequest) ([]byte, error) {
@@ -469,6 +530,8 @@ func TestStoppingRunKeepsItsOutcomeAfterFailover(t *testing.T) {
 		{name: "pause failure", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED, wantStop: true, reason: "remote pause/resume state is uncertain: compensation failed", wantStatus: "FAILED", wantError: "remote pause/resume state is uncertain: compensation failed"},
 		{name: "start persistence failure", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED, wantStop: true, reason: "persist coordinated distributed start: database unavailable", wantStatus: "FAILED", wantError: "persist coordinated distributed start: database unavailable"},
 		{name: "distributed commit failure", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, reason: "commit distributed work: generator rejected commit", wantStatus: "FAILED", wantError: "commit distributed work: generator rejected commit"},
+		{name: "prior failover still awaiting failed cleanup", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, reason: "unclassified cleanup failure; controller failover: pending FAILED cleanup proof: generator unavailable", wantStatus: "FAILED", wantError: "unclassified cleanup failure; controller failover: pending FAILED cleanup proof: generator unavailable"},
+		{name: "prior failover still awaiting aborted cleanup", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, reason: "controller failover: pending ABORTED cleanup proof: generator unavailable", wantStatus: "ABORTED", wantError: "controller failover: pending ABORTED cleanup proof: generator unavailable"},
 		{name: "CI abort", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, reason: "ci abort reason: timed_out", wantStatus: "ABORTED", wantError: "ci abort reason: timed_out"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -523,15 +586,399 @@ func TestStoppingRunKeepsItsOutcomeAfterFailover(t *testing.T) {
 	}
 }
 
-func TestFailPolicyStoppingRunStillFails(t *testing.T) {
+func TestStoppingRunWaitsForPositiveStopAfterFailover(t *testing.T) {
+	runner, store, _ := newAdoptionTestRunner(t)
+	client := &delayedStoppingFakeClient{stoppingFakeClient: stoppingFakeClient{adoptionFakeClient: adoptionFakeClient{outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED}}}
+	runner.execution = newDistributedExecutionBackend([]string{"gen-a:9091"}, time.Second, func(context.Context, string) (generatorClient, error) {
+		return client, nil
+	})
+	test := storedContinueRun(t, runner, store, "delayed-stop", "continue")
+	test.Status = "STOPPING"
+	if _, err := store.UpdateTestStatusIfActive(test.ID, "STOPPING", nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+	if err := runner.adoptOrphanedRuns(); err != nil {
+		t.Fatal(err)
+	}
+	runner.resumeAdoptedRuns()
+	record, err := store.GetTest(test.ID)
+	if err != nil || record.Status != "STOPPING" || record.EndTime != nil {
+		t.Fatalf("unacknowledged stop = %+v (%v), want unterminated STOPPING", record, err)
+	}
+	client.allowStop.Store(true)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		record, err = store.GetTest(test.ID)
+		if err == nil && record.Status == "ABORTED" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil || record.Status != "ABORTED" || record.EndTime == nil {
+		t.Fatalf("acknowledged retry = %+v (%v), want terminal ABORTED", record, err)
+	}
+	client.mu.Lock()
+	stops := len(client.stops)
+	client.mu.Unlock()
+	if stops < 2 {
+		t.Fatalf("stop attempts = %d, want initial failure and retry", stops)
+	}
+}
+
+func TestStoppingRunPersistsPartialStopProofAcrossRetry(t *testing.T) {
+	runner, store, _ := newAdoptionTestRunner(t)
+	test := storedContinueRun(t, runner, store, "partial-stopping-run", "continue")
+	checkpoint, _, err := decodeRunContinuityCheckpoint(test.continuityCheckpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint.Shards["ga"] = append(checkpoint.Shards["ga"], GeneratorShardSummary{Group: "ga", Target: "gen-b:9091", VUsers: 5})
+	raw, err := json.Marshal(checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	test.Status = "STOPPING"
+	setStoredAdoptionTestCheckpoint(t, runner, store, test, string(raw))
+	if _, err := store.UpdateTestStatusIfActive(test.ID, "STOPPING", nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	runner.tests[test.ID] = test
+	a, b := &phaseBForceStopFakeClient{adoptionFakeClient: adoptionFakeClient{outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED}},
+		&phaseBForceStopFakeClient{adoptionFakeClient: adoptionFakeClient{outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED}}
+	a.allowForce.Store(true)
+	var aGone atomic.Bool
+	runner.execution = newDistributedExecutionBackend([]string{"gen-a:9091", "gen-b:9091"}, 200*time.Millisecond, func(_ context.Context, target string) (generatorClient, error) {
+		if target == "gen-a:9091" {
+			if aGone.Load() {
+				return nil, errors.New("proven stopped generator was removed")
+			}
+			return a, nil
+		}
+		return b, nil
+	})
+	if err := runner.adoptOrphanedRuns(); err != nil {
+		t.Fatal(err)
+	}
+	runner.resumeAdoptedRuns()
+	record, err := store.GetTest(test.ID)
+	if err != nil || record.Status != "STOPPING" || record.EndTime != nil {
+		t.Fatalf("partial stop proof prematurely ended run: %+v, %v", record, err)
+	}
+	checkpoint, _, err = decodeRunContinuityCheckpoint(record.ContinuityCheckpoint)
+	if err != nil || !slices.Contains(checkpoint.StoppedTargets, "gen-a:9091") || slices.Contains(checkpoint.StoppedTargets, "gen-b:9091") {
+		t.Fatalf("successful first stop was not durably retained: %+v, %v", checkpoint.StoppedTargets, err)
+	}
+	aGone.Store(true)
+	b.allowForce.Store(true)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		record, err = store.GetTest(test.ID)
+		if err == nil && record.Status == "ABORTED" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil || record.Status != "ABORTED" || record.EndTime == nil {
+		t.Fatalf("remaining stop proof did not resolve run: %+v, %v", record, err)
+	}
+	if a.forceStops.Load() != 1 || b.forceStops.Load() < 2 || a.gracefulStops.Load() != 0 {
+		t.Fatalf("retries used unsafe or repeated stop: a=%d b=%d graceful=%d", a.forceStops.Load(), b.forceStops.Load(), a.gracefulStops.Load())
+	}
+}
+
+func TestAdoptedStopProofRetriesIncompleteTerminalWrite(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "store.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	runner := NewTestRunner(1, NewHub(), base)
+	t.Cleanup(runner.beginShutdown)
+	test := &ManagedTest{ID: "adopted-terminal-retry", Name: "adopted terminal retry", Status: "STOPPING", CreatedAt: time.Now().UTC()}
+	if err := base.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, Status: test.Status, StartTime: test.CreatedAt}); err != nil {
+		t.Fatal(err)
+	}
+	runner.tests[test.ID] = test
+	store := &scriptedTestPersistence{testPersistence: base, err: errors.New("temporary database outage"), failUpdateCall: failCalls(1, durableTransitionAttempts)}
+	runner.testStore = store
+	backend := newDistributedExecutionBackend(nil, 100*time.Millisecond, nil)
+	if err := runner.completeAdoptedRunAfterStopProof(backend, test, "FAILED", "confirmed stop"); err == nil {
+		t.Fatal("confirmed stop retired the retry before a durable terminal write")
+	}
+	record, err := base.GetTest(test.ID)
+	if err != nil || record.Status != "STOPPING" || record.EndTime != nil {
+		t.Fatalf("failed terminal write changed durable row: %+v, %v", record, err)
+	}
+	if err := runner.completeAdoptedRunAfterStopProof(backend, test, "FAILED", "confirmed stop"); err != nil {
+		t.Fatalf("terminal write remained incomplete after storage recovered: %v", err)
+	}
+	record, err = base.GetTest(test.ID)
+	if err != nil || record.Status != "FAILED" || record.EndTime == nil || test.Status != "FAILED" || test.EndedAt == nil {
+		t.Fatalf("recovered terminal write left run active: row=%+v, %v, in-memory=%s %v", record, err, test.Status, test.EndedAt)
+	}
+}
+
+func TestDistributedUnprovableRunStaysStoppingUntilExternalFence(t *testing.T) {
+	for _, tc := range []struct {
+		policy, status, checkpoint string
+	}{
+		{policy: "continue", status: "RUNNING", checkpoint: ""},
+		{policy: "continue", status: "PAUSED", checkpoint: "{malformed"},
+		{policy: "continue", status: "STOPPING", checkpoint: ""},
+		{policy: "continue", status: "STOPPING", checkpoint: "{malformed"},
+		{policy: "", status: "RUNNING", checkpoint: ""},
+		{policy: "", status: "PAUSED", checkpoint: ""},
+		{policy: "", status: "STOPPING", checkpoint: ""},
+	} {
+		t.Run(fmt.Sprintf("policy=%q/status=%s/checkpoint=%q", tc.policy, tc.status, tc.checkpoint), func(t *testing.T) {
+			runner, store, _ := newAdoptionTestRunner(t)
+			test := storedContinueRun(t, runner, store, "unprovable-stopping", tc.policy)
+			test.Status = tc.status
+			setStoredAdoptionTestCheckpoint(t, runner, store, test, tc.checkpoint)
+			priorReason := ""
+			if tc.status == "STOPPING" {
+				priorReason = "ci abort reason: operator stop"
+			}
+			if _, err := store.UpdateTestStatusIfActive(test.ID, tc.status, nil, priorReason); err != nil {
+				t.Fatal(err)
+			}
+			test.Error = priorReason
+			record, err := store.GetTest(test.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			slotID := "retained-capacity-slot"
+			record.TimeslotID = &slotID
+			if err := store.SaveTest(record); err != nil {
+				t.Fatal(err)
+			}
+			test.TimeslotID = &slotID
+			if runner.isRunAdoptionCandidate(test) {
+				t.Fatal("missing or malformed checkpoint was accepted for adoption")
+			}
+			if err := runner.reconcileStoredActiveTest(test); err != nil {
+				t.Fatal(err)
+			}
+			record, err = store.GetTest(test.ID)
+			if err != nil || record.Status != "STOPPING" || record.EndTime != nil ||
+				!strings.Contains(record.Error, "external generator process-fence reconciliation is required") || record.TimeslotID == nil || *record.TimeslotID != slotID {
+				t.Fatalf("unprovable stopping run released its reservation: %+v, %v", record, err)
+			}
+			if test.Status != "STOPPING" || test.EndedAt != nil {
+				t.Fatalf("in-memory unprovable run became terminal: %s %v", test.Status, test.EndedAt)
+			}
+		})
+	}
+}
+
+func TestStoppingRunWithUnprovableCheckpointDoesNotRetryForever(t *testing.T) {
+	runner, store, leadership := newAdoptionTestRunner(t)
+	test := storedContinueRun(t, runner, store, "unprovable-stop", "continue")
+	test.Status = "STOPPING"
+	if _, err := store.UpdateTestStatusIfActive(test.ID, "STOPPING", nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, _, err := decodeRunContinuityCheckpoint(test.continuityCheckpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, generation := leadership.executionLeaseTerm()
+	checkpoint.ExecutionGeneration = generation // A newer-or-equal term has no safe token rotation.
+	raw, err := json.Marshal(checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setStoredAdoptionTestCheckpoint(t, runner, store, test, string(raw))
+	runner.tests[test.ID] = test
+	if err := runner.adoptOrphanedRuns(); err != nil {
+		t.Fatal(err)
+	}
+	runner.resumeAdoptedRuns()
+	record, err := store.GetTest(test.ID)
+	if err != nil || record.Status != "STOPPING" || record.EndTime != nil || !strings.Contains(record.Error, "pending ABORTED cleanup proof") {
+		t.Fatalf("unprovable stop outcome = %+v, %v", record, err)
+	}
+	runner.terminalRetryMu.Lock()
+	queued := len(runner.terminalRetrying)
+	runner.terminalRetryMu.Unlock()
+	if queued != 0 {
+		t.Fatalf("permanently unprovable stop queued %d futile retries", queued)
+	}
+}
+
+func TestStoppingRunRetriesTransientAdoptionKeyFailure(t *testing.T) {
+	for _, operation := range []string{"unwrap", "wrap"} {
+		t.Run(operation, func(t *testing.T) {
+			runner, store, _ := newAdoptionTestRunner(t)
+			client := &stoppingFakeClient{adoptionFakeClient: adoptionFakeClient{outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED}}
+			runner.execution = newDistributedExecutionBackend([]string{"gen-a:9091"}, time.Second, func(context.Context, string) (generatorClient, error) {
+				return client, nil
+			})
+			test := storedContinueRun(t, runner, store, "key-outage-stop", "continue")
+			test.Status = "STOPPING"
+			if _, err := store.UpdateTestStatusIfActive(test.ID, "STOPPING", nil, ""); err != nil {
+				t.Fatal(err)
+			}
+			runner.tests[test.ID] = test
+			wrapper := &flakyAdoptionKeyWrapper{KeyWrapper: runner.continuityKeyWrapper}
+			if operation == "unwrap" {
+				wrapper.failUnwrap.Store(true)
+			} else {
+				wrapper.failWrap.Store(true)
+			}
+			runner.continuityKeyWrapper = wrapper
+			if err := runner.adoptOrphanedRuns(); !errors.Is(err, errRunAdoptionKeyAccess) {
+				t.Fatalf("key-service outage did not request acquisition retry: %v", err)
+			}
+			record, err := store.GetTest(test.ID)
+			if err != nil || record.Status != "STOPPING" || record.EndTime != nil || test.adoptedResume != nil {
+				t.Fatalf("transient key failure changed run state: %+v, %v", record, err)
+			}
+			wrapper.failUnwrap.Store(false)
+			wrapper.failWrap.Store(false)
+			if err := runner.adoptOrphanedRuns(); err != nil {
+				t.Fatalf("same-leader adoption did not recover: %v", err)
+			}
+			runner.resumeAdoptedRuns()
+			record, err = store.GetTest(test.ID)
+			if err != nil || record.Status != "ABORTED" || record.EndTime == nil {
+				t.Fatalf("recovered stop did not finish: %+v, %v", record, err)
+			}
+		})
+	}
+}
+
+func TestStoppingRunMalformedAdoptionTokenDoesNotBlockAcquisition(t *testing.T) {
+	runner, store, _ := newAdoptionTestRunner(t)
+	test := storedContinueRun(t, runner, store, "missing-adoption-token", "continue")
+	test.Status = "STOPPING"
+	if _, err := store.UpdateTestStatusIfActive(test.ID, "STOPPING", nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, _, err := decodeRunContinuityCheckpoint(test.continuityCheckpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint.RunSupervisionToken.Ciphertext = ""
+	raw, err := json.Marshal(checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setStoredAdoptionTestCheckpoint(t, runner, store, test, string(raw))
+	runner.tests[test.ID] = test
+	if err := runner.adoptOrphanedRuns(); err != nil {
+		t.Fatalf("structurally corrupt token blocked all acquisition work: %v", err)
+	}
+	runner.resumeAdoptedRuns()
+	record, err := store.GetTest(test.ID)
+	if err != nil || record.Status != "STOPPING" || record.EndTime != nil {
+		t.Fatalf("malformed token falsely proved generator stop: %+v, %v", record, err)
+	}
+}
+
+func TestAdoptedPhaseBFailureWaitsForEveryForceStop(t *testing.T) {
+	runner, store, _ := newAdoptionTestRunner(t)
+	test := storedContinueRun(t, runner, store, "phase-b-failure", "continue")
+	checkpoint, _, err := decodeRunContinuityCheckpoint(test.continuityCheckpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint.Shards["ga"] = append(checkpoint.Shards["ga"], GeneratorShardSummary{Group: "ga", Target: "gen-b:9091", VUsers: 5})
+	raw, err := json.Marshal(checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setStoredAdoptionTestCheckpoint(t, runner, store, test, string(raw))
+	runner.tests[test.ID] = test
+	a, b := &phaseBForceStopFakeClient{adoptionFakeClient: adoptionFakeClient{outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED}},
+		&phaseBForceStopFakeClient{adoptionFakeClient: adoptionFakeClient{outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED}}
+	a.allowForce.Store(true)
+	var aGone atomic.Bool
+	backend := newDistributedExecutionBackend([]string{"gen-a:9091", "gen-b:9091"}, 200*time.Millisecond, func(_ context.Context, target string) (generatorClient, error) {
+		if target == "gen-a:9091" {
+			if aGone.Load() {
+				return nil, errors.New("stopped generator was removed")
+			}
+			return a, nil
+		}
+		return b, nil
+	})
+	backend.enableRunSupervision(time.Minute, 10*time.Second)
+	runner.execution = backend
+	if err := runner.adoptOrphanedRuns(); err != nil {
+		t.Fatal(err)
+	}
+	runner.resumeAdoptedRuns() // supervision re-claim fails; Phase B must force-stop both adopters.
+	record, err := store.GetTest(test.ID)
+	if err != nil || record.Status != "STOPPING" || record.EndTime != nil {
+		t.Fatalf("one unreachable adopter was prematurely terminal: %+v, %v", record, err)
+	}
+	checkpoint, _, err = decodeRunContinuityCheckpoint(record.ContinuityCheckpoint)
+	if err != nil || !slices.Contains(checkpoint.StoppedTargets, "gen-a:9091") || slices.Contains(checkpoint.StoppedTargets, "gen-b:9091") {
+		t.Fatalf("partial force-stop proof was not durable: %+v, %v", checkpoint.StoppedTargets, err)
+	}
+	if a.forceStops.Load() == 0 || b.forceStops.Load() == 0 || a.gracefulStops.Load() != 0 {
+		t.Fatalf("Phase B stop attempts were not forced: a=%d b=%d graceful=%d", a.forceStops.Load(), b.forceStops.Load(), a.gracefulStops.Load())
+	}
+	// The failed resume canceled local renewal, but its retry still owns this
+	// same-term runtime. A routine HA refresh must retain the pointer and the
+	// first target's durable stop proof so the retry can finish after B returns.
+	test.CreatedAt, test.ProjectID = record.StartTime, record.ProjectID
+	if test.executionCtx == nil || test.executionCtx.Err() == nil {
+		t.Fatal("Phase B failure did not cancel local renewal before retry")
+	}
+	if err := runner.reloadStoredTests(); err != nil {
+		t.Fatal(err)
+	}
+	if runner.tests[test.ID] != test || test.Status != "STOPPING" || !strings.Contains(test.Error, "pending FAILED cleanup proof:") {
+		t.Fatalf("same-leader refresh detached the adopted stop-proof worker: pointer=%p want=%p status=%s reason=%q", runner.tests[test.ID], test, test.Status, test.Error)
+	}
+	checkpoint, _, err = decodeRunContinuityCheckpoint(test.continuityCheckpoint)
+	if err != nil || !slices.Contains(checkpoint.StoppedTargets, "gen-a:9091") {
+		t.Fatalf("same-leader refresh discarded per-target stop proof: %+v, %v", checkpoint.StoppedTargets, err)
+	}
+	aGone.Store(true)
+	b.allowForce.Store(true)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		record, err = store.GetTest(test.ID)
+		if err == nil && record.Status == "FAILED" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil || record.Status != "FAILED" || record.EndTime == nil {
+		t.Fatalf("fully force-stopped adopters did not resolve failure: %+v, %v", record, err)
+	}
+	if a.forceStops.Load() != 1 {
+		t.Fatalf("successor needlessly retried vanished proven target: %d", a.forceStops.Load())
+	}
+}
+
+func TestAdoptedRunStopUncertaintyMessageIsScrubbedAndBounded(t *testing.T) {
+	resume := &adoptedRunResume{finishStatus: "FAILED", finishMessage: "previous failure token=topsecret"}
+	message := adoptedRunStopUncertaintyMessage(resume, errors.New(strings.Repeat("generator unavailable ", 1000)+" password=hunter2"))
+	if !strings.HasPrefix(message, "controller failover: pending FAILED cleanup proof:") || len(message) > maxAdoptedRunStopErrorBytes {
+		t.Fatalf("unbounded or misclassified cleanup message: %q", message)
+	}
+	if strings.Contains(message, "topsecret") || strings.Contains(message, "hunter2") {
+		t.Fatalf("cleanup message leaked credentials: %q", message)
+	}
+}
+
+func TestFailPolicyStoppingRunStillRequiresProcessFence(t *testing.T) {
 	runner, store, _ := newAdoptionTestRunner(t)
 	test := storedContinueRun(t, runner, store, "fail-stopping", "")
 	test.Status = "STOPPING"
 	if runner.isRunAdoptionCandidate(test) {
 		t.Fatal("fail-policy stopping run treated as an adoption candidate")
 	}
-	if err := runner.reconcileStoredActiveTest(test); err != nil || test.Status != "FAILED" {
-		t.Fatalf("fail-policy stopping run after reconcile = %s (%v), want FAILED", test.Status, err)
+	if err := runner.reconcileStoredActiveTest(test); err != nil || test.Status != "STOPPING" {
+		t.Fatalf("fail-policy stopping run after reconcile = %s (%v), want STOPPING", test.Status, err)
 	}
 }
 

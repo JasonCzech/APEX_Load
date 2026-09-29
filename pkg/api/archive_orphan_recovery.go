@@ -43,31 +43,94 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchives(ctx context.Context) error
 	if tr == nil || tr.archiveStore == nil || tr.testStore == nil {
 		return nil
 	}
+	tr.orphanRecoveryMu.Lock()
+	defer tr.orphanRecoveryMu.Unlock()
 	orphanStore, ok := tr.archiveStore.(incarnationOrphanArchiveFinalizationStore)
 	if !ok {
 		return nil
 	}
 	if !tr.isExecutionLeader() {
+		tr.closeOrphanArchiveScanner()
 		return errNotExecutionLeader
 	}
 	ctx, cancel := tr.archiveOperationContext(ctx)
 	defer cancel()
-
-	candidates, discoveryErr := discoverOrphanArchiveDirectories(ctx, resolveArchiveRoot())
+	tr.orphanArchiveScanMu.Lock()
+	root := resolveArchiveRoot()
+	if tr.orphanArchiveScan != nil && tr.orphanArchiveScan.rootPath != root {
+		tr.orphanArchiveScan.close()
+		tr.orphanArchiveScan = nil
+	}
+	if tr.orphanArchiveScan == nil {
+		scan, err := newOrphanArchiveScanner(root)
+		if err != nil {
+			tr.orphanArchiveScanMu.Unlock()
+			return err
+		}
+		tr.orphanArchiveScan = scan
+	}
+	if tr.orphanArchiveScan == nil {
+		tr.orphanArchiveScanMu.Unlock()
+		return nil
+	}
+	scan := tr.orphanArchiveScan
+	candidates, done, discoveryErr := scan.nextPage(ctx, maxOrphanArchiveRecoveryCandidates)
+	tr.orphanArchiveScanMu.Unlock()
 	failures := make([]error, 0)
 	if discoveryErr != nil {
 		failures = append(failures, discoveryErr)
 	}
-	for _, candidate := range candidates {
+	for index, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
+			tr.requeueOrphanArchiveCandidates(scan, candidates[index:])
 			return errors.Join(append(failures, err)...)
 		}
 		if err := tr.recoverOrphanedLocalRunArchive(ctx, orphanStore, candidate); err != nil {
 			failures = append(failures, err)
+			if ctx.Err() != nil {
+				// Rotate the slow candidate behind the untouched tail so a
+				// repeatedly blocked archive cannot starve later orphans.
+				tr.requeueOrphanArchiveCandidates(scan, append(append([]orphanArchiveCandidate(nil), candidates[index+1:]...), candidate))
+				return errors.Join(failures...)
+			}
 		}
 	}
-
+	// A deadline may interrupt discovery after ReadDir has advanced its stream.
+	// Keep its queued entries and candidates for the next sweep. Once all
+	// returned candidates have been handled, EOF or a read error can reset it.
+	if done || (discoveryErr != nil && !errors.Is(discoveryErr, context.Canceled) && !errors.Is(discoveryErr, context.DeadlineExceeded)) {
+		tr.closeOrphanArchiveScannerIfCurrent(scan)
+	}
 	return errors.Join(failures...)
+}
+
+func (tr *TestRunner) requeueOrphanArchiveCandidates(scan *orphanArchiveScanner, candidates []orphanArchiveCandidate) {
+	tr.orphanArchiveScanMu.Lock()
+	if tr.orphanArchiveScan == scan {
+		scan.retryCandidates = append(append([]orphanArchiveCandidate(nil), candidates...), scan.retryCandidates...)
+	}
+	tr.orphanArchiveScanMu.Unlock()
+}
+
+func (tr *TestRunner) closeOrphanArchiveScannerIfCurrent(scan *orphanArchiveScanner) {
+	tr.orphanArchiveScanMu.Lock()
+	if tr.orphanArchiveScan == scan {
+		scan.close()
+		tr.orphanArchiveScan = nil
+	}
+	tr.orphanArchiveScanMu.Unlock()
+}
+
+func (tr *TestRunner) closeOrphanArchiveScanner() {
+	if tr == nil {
+		return
+	}
+	tr.orphanArchiveScanMu.Lock()
+	if tr.orphanArchiveScan != nil {
+		tr.orphanArchiveScan.close()
+		tr.orphanArchiveScan = nil
+	}
+	tr.orphanArchiveScanMu.Unlock()
 }
 
 func (tr *TestRunner) recoverOrphanedLocalRunArchive(ctx context.Context, store incarnationOrphanArchiveFinalizationStore, candidate orphanArchiveCandidate) error {
@@ -145,6 +208,45 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchiveUnderSourceFence(ctx context
 }
 
 func discoverOrphanArchiveDirectories(ctx context.Context, root string) ([]orphanArchiveCandidate, error) {
+	return discoverOrphanArchiveDirectoriesWithLimit(ctx, root, maxOrphanArchiveRecoveryCandidates)
+}
+
+func discoverOrphanArchiveDirectoriesWithLimit(ctx context.Context, root string, limit int) ([]orphanArchiveCandidate, error) {
+	scan, err := newOrphanArchiveScanner(root)
+	if err != nil || scan == nil {
+		return nil, err
+	}
+	defer scan.close()
+	candidates, done, err := scan.nextPage(ctx, limit)
+	if !done && err == nil {
+		// ReadDir may deliver exactly limit entries without returning EOF until
+		// the next read. Probe once so an exact-sized directory is accepted.
+		_, done, err = scan.nextPage(ctx, 1)
+		if !done && err == nil {
+			err = fmt.Errorf("archive orphan recovery entry limit %d exceeded", limit)
+		}
+	}
+	return candidates, err
+}
+
+// orphanArchiveScanner holds directory streams between sweeps so every page
+// reads at most its entry budget, regardless of how many earlier pages exist.
+// It is owned by TestRunner.orphanArchiveScanMu and closed on EOF or shutdown.
+type orphanArchiveScanner struct {
+	rootPath        string
+	absRoot         string
+	root            *os.Root
+	directory       *os.File
+	remote          *os.Root
+	remoteDirectory *os.File
+	queuedEntries   []os.DirEntry
+	queuedReadErr   error
+	pending         []orphanArchiveCandidate
+	retryCandidates []orphanArchiveCandidate
+	phase           int // 0: root, 1: remote, 2: complete
+}
+
+func newOrphanArchiveScanner(root string) (*orphanArchiveScanner, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return nil, nil
@@ -160,82 +262,147 @@ func discoverOrphanArchiveDirectories(ctx context.Context, root string) ([]orpha
 	if err != nil {
 		return nil, fmt.Errorf("inspect archive recovery root: %w", err)
 	}
-	defer rootHandle.Close()
+	directory, err := rootHandle.Open(".")
+	if err != nil {
+		_ = rootHandle.Close()
+		return nil, fmt.Errorf("read archive recovery root: %w", err)
+	}
+	return &orphanArchiveScanner{rootPath: root, absRoot: absRoot, root: rootHandle, directory: directory}, nil
+}
 
-	seen := make(map[string]orphanArchiveCandidate)
-	remaining := maxOrphanArchiveRecoveryCandidates
-	failures := make([]error, 0)
-	inspectChildren := func(parent *os.Root, parentPath string) {
-		if err := ctx.Err(); err != nil {
-			failures = append(failures, err)
-			return
+func (scan *orphanArchiveScanner) close() {
+	if scan == nil {
+		return
+	}
+	if scan.directory != nil {
+		_ = scan.directory.Close()
+		scan.directory = nil
+	}
+	if scan.remoteDirectory != nil {
+		_ = scan.remoteDirectory.Close()
+		scan.remoteDirectory = nil
+	}
+	if scan.remote != nil {
+		_ = scan.remote.Close()
+		scan.remote = nil
+	}
+	if scan.root != nil {
+		_ = scan.root.Close()
+		scan.root = nil
+	}
+	scan.phase = 2
+	scan.queuedEntries = nil
+	scan.queuedReadErr = nil
+	scan.pending = nil
+	scan.retryCandidates = nil
+}
+
+func (scan *orphanArchiveScanner) advancePhase() error {
+	if scan.phase == 0 {
+		_ = scan.directory.Close()
+		scan.directory = nil
+		remote, err := openArchiveChildDirectoryAt(scan.root, "remote", false, 0)
+		if os.IsNotExist(err) {
+			scan.phase = 2
+			return nil
 		}
-		directory, err := parent.Open(".")
 		if err != nil {
-			failures = append(failures, err)
-			return
+			return err
 		}
-		defer directory.Close()
-		for {
-			entries, readErr := directory.ReadDir(256)
+		directory, err := remote.Open(".")
+		if err != nil {
+			_ = remote.Close()
+			return err
+		}
+		scan.remote = remote
+		scan.remoteDirectory = directory
+		scan.phase = 1
+		return nil
+	}
+	scan.phase = 2
+	return nil
+}
 
-			for _, entry := range entries {
-				remaining--
-				if remaining < 0 {
-					failures = append(failures, fmt.Errorf("archive orphan recovery entry limit %d exceeded", maxOrphanArchiveRecoveryCandidates))
-					return
+func (scan *orphanArchiveScanner) nextPage(ctx context.Context, limit int) ([]orphanArchiveCandidate, bool, error) {
+	if scan == nil || limit <= 0 {
+		return nil, true, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	if len(scan.retryCandidates) > 0 {
+		candidates := scan.retryCandidates
+		scan.retryCandidates = nil
+		return candidates, scan.phase == 2 && len(scan.queuedEntries) == 0 && len(scan.pending) == 0, nil
+	}
+	if len(scan.pending) > 0 {
+		return scan.takePending(), scan.phase == 2 && len(scan.queuedEntries) == 0, nil
+	}
+	remaining := limit
+	for remaining > 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
+		if len(scan.queuedEntries) == 0 {
+			if scan.queuedReadErr != nil {
+				readErr := scan.queuedReadErr
+				scan.queuedReadErr = nil
+				if readErr != io.EOF {
+					return scan.takePending(), false, readErr
 				}
-				if err := ctx.Err(); err != nil {
-					failures = append(failures, err)
-					return
+				if err := scan.advancePhase(); err != nil {
+					return scan.takePending(), false, err
 				}
-				if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() {
-					continue
-				}
-				if err := validateArchiveRunID(entry.Name()); err != nil {
-					continue
-				}
-				runRoot, err := openArchiveChildDirectoryAt(parent, entry.Name(), false, 0)
-				if err != nil {
-					continue
-				}
-				identity, identityErr := runRoot.Stat(".")
-				manifest, _, manifestErr := openArchiveArtifactForReadAt(runRoot, runArchiveManifestFileName)
-				if manifest != nil {
-					_ = manifest.Close()
-				}
-				_ = runRoot.Close()
-				if identityErr != nil || manifestErr != nil {
-					continue
-				}
-				candidatePath := filepath.Join(parentPath, entry.Name())
-				seen[candidatePath] = orphanArchiveCandidate{path: candidatePath, identity: identity}
 			}
-			if readErr == io.EOF {
-				return
-			}
-			if readErr != nil {
-				failures = append(failures, readErr)
-				return
+			if scan.phase == 2 {
+				break
 			}
 		}
+		parent, directory, parentPath := scan.root, scan.directory, scan.absRoot
+		if scan.phase == 1 {
+			parent, directory, parentPath = scan.remote, scan.remoteDirectory, filepath.Join(scan.absRoot, "remote")
+		}
+		if len(scan.queuedEntries) == 0 {
+			entries, readErr := directory.ReadDir(min(256, remaining))
+			if len(entries) == 0 && readErr == nil {
+				return scan.takePending(), false, fmt.Errorf("archive recovery directory read made no progress")
+			}
+			scan.queuedEntries, scan.queuedReadErr = entries, readErr
+			continue
+		}
+		entry := scan.queuedEntries[0]
+		scan.queuedEntries = scan.queuedEntries[1:]
+		remaining--
+		if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() {
+			continue
+		}
+		if err := validateArchiveRunID(entry.Name()); err != nil {
+			continue
+		}
+		runRoot, err := openArchiveChildDirectoryAt(parent, entry.Name(), false, 0)
+		if err != nil {
+			continue
+		}
+		identity, identityErr := runRoot.Stat(".")
+		manifest, _, manifestErr := openArchiveArtifactForReadAt(runRoot, runArchiveManifestFileName)
+		if manifest != nil {
+			_ = manifest.Close()
+		}
+		_ = runRoot.Close()
+		if identityErr != nil || manifestErr != nil {
+			continue
+		}
+		candidatePath := filepath.Join(parentPath, entry.Name())
+		scan.pending = append(scan.pending, orphanArchiveCandidate{path: candidatePath, identity: identity})
 	}
+	return scan.takePending(), scan.phase == 2 && len(scan.queuedEntries) == 0, nil
+}
 
-	inspectChildren(rootHandle, absRoot)
-	remoteRoot, remoteErr := openArchiveChildDirectoryAt(rootHandle, "remote", false, 0)
-	if remoteErr == nil {
-		inspectChildren(remoteRoot, filepath.Join(absRoot, "remote"))
-		_ = remoteRoot.Close()
-	} else if !os.IsNotExist(remoteErr) {
-		failures = append(failures, remoteErr)
-	}
-
-	candidates := make([]orphanArchiveCandidate, 0, len(seen))
-	for candidate := range seen {
-		candidates = append(candidates, seen[candidate])
-	}
+func (scan *orphanArchiveScanner) takePending() []orphanArchiveCandidate {
+	candidates := scan.pending
+	scan.pending = nil
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].path < candidates[j].path })
-	return candidates, errors.Join(failures...)
+	return candidates
 }
 
 func orphanArchiveRecordFromDirectory(ctx context.Context, archivePath string) (*storage.RunArchiveRecord, *RunArchiveManifest, error) {

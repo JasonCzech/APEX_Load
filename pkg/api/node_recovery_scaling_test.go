@@ -180,6 +180,75 @@ func TestRecoveryAdmissionReplicaFloorIgnoresIneligibleWorker(t *testing.T) {
 	}
 }
 
+func TestRecoveryAdmissionReplicaFloorRequestsBeyondOccupiedIneligibleOrdinals(t *testing.T) {
+	for _, mode := range []string{"incompatible", "not ready", "terminating"} {
+		t.Run(mode, func(t *testing.T) {
+			tr, run, _, _ := recoveryAdmissionFixture()
+			run.Status = "QUEUED"
+			run.TotalVUsers = 200
+			run.Groups[0].VUsers = 200
+			for i := range tr.liveInventory {
+				tr.liveInventory[i].PodPlacement.scaleLimit.MaximumReplicas = 5
+			}
+			// The two usable pods are on separate workers and each is needed as a
+			// source. The other two StatefulSet ordinals occupy replicas but cannot
+			// serve as the required recovery spare.
+			for _, i := range []int{1, 3} {
+				if mode == "incompatible" {
+					tr.liveInventory[i].CompatibilityState = "incompatible"
+				} else if mode == "not ready" {
+					tr.liveInventory[i].PodPlacement.Ready = false
+				} else {
+					tr.liveInventory[i].PodPlacement.Terminating = true
+				}
+			}
+			floor, complete := tr.recoveryAdmissionReplicaFloor([]*ManagedTest{run}, tr.settings, 0, time.Now())
+			if !complete || floor != 5 {
+				t.Fatalf("floor=%d complete=%v, want a fifth ordinal", floor, complete)
+			}
+		})
+	}
+}
+
+func TestRecoveryAdmissionReplicaFloorCountsPodsAbsentFromDNSInventory(t *testing.T) {
+	tr, run, _, _ := recoveryAdmissionFixture()
+	run.Status = "QUEUED"
+	run.TotalVUsers = 200
+	run.Groups[0].VUsers = 200
+	entries := []GeneratorInventoryEntry{tr.liveInventory[0], tr.liveInventory[2]}
+	limit := entries[0].PodPlacement.scaleLimit
+	limit.MaximumReplicas = 5
+	for i := range entries {
+		entries[i].PodPlacement.scaleLimit = limit
+	}
+	entries[0].PodPlacement.Name = "gen-0"
+	entries[1].PodPlacement.Name = "gen-2"
+	pods := []KubePodRef{
+		{Name: "gen-0", Namespace: "apex", UID: "pod-a", StatefulSetName: "gen", StatefulSetUID: "workload", Ready: true, Phase: "Running"},
+		{Name: "gen-1", Namespace: "apex", UID: "pod-hidden-notready", StatefulSetName: "gen", StatefulSetUID: "workload", Ready: false, Phase: "Pending"},
+		{Name: "gen-2", Namespace: "apex", UID: "pod-c", StatefulSetName: "gen", StatefulSetUID: "workload", Ready: true, Phase: "Running"},
+		{Name: "gen-3", Namespace: "apex", UID: "pod-hidden-terminating", StatefulSetName: "gen", StatefulSetUID: "workload", Terminating: true, Phase: "Running"},
+	}
+	tr.setCachedGeneratorInventoryWithPodSnapshot(entries, recoveryPodSnapshot{pods: pods, limit: limit, available: true}, time.Now())
+	floor, complete := tr.recoveryAdmissionReplicaFloor([]*ManagedTest{run}, tr.settings, 0, time.Now())
+	if !complete || floor != 5 {
+		t.Fatalf("DNS-absent occupied ordinals produced floor=%d complete=%v, want fifth replica", floor, complete)
+	}
+	// A snapshot from a different StatefulSet cannot stand in for occupied pods.
+	wrong := append([]KubePodRef(nil), pods...)
+	wrong[1].StatefulSetUID = "other-workload"
+	tr.setCachedGeneratorInventoryWithPodSnapshot(entries, recoveryPodSnapshot{pods: wrong, limit: limit, available: true}, time.Now())
+	floor, complete = tr.recoveryAdmissionReplicaFloor([]*ManagedTest{run}, tr.settings, 0, time.Now())
+	if !complete || floor != 5 {
+		t.Fatalf("unrelated pod changed source floor=%d complete=%v", floor, complete)
+	}
+	duplicate := append(append([]KubePodRef(nil), pods...), pods[0])
+	tr.setCachedGeneratorInventoryWithPodSnapshot(entries, recoveryPodSnapshot{pods: duplicate, limit: limit, available: true}, time.Now())
+	if floor, complete := tr.recoveryAdmissionReplicaFloor([]*ManagedTest{run}, tr.settings, 0, time.Now()); complete || floor != 0 {
+		t.Fatalf("ambiguous duplicate ordinal was trusted: floor=%d complete=%v", floor, complete)
+	}
+}
+
 // An IP-discovered ordinal must remain requested after its Ready transition.
 // Otherwise discovery of the first cross-worker spare removes the single-worker
 // floor and KEDA deletes that spare before admission can finish.

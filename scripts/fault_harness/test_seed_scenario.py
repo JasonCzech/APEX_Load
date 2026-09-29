@@ -59,6 +59,7 @@ class SeedScenarioTests(unittest.TestCase):
         script = self.api.calls[3][2]['script']
         self.assertEqual(script['config']['base_url'], 'https://apexload-fault-target.apexload-fault.svc')
         self.assertEqual(script['actions'][0]['headers']['Authorization'], 'Bearer {{secret.fault_load}}')
+        self.assertEqual(script['actions'][0]['headers']['X-Apexload-Fault-Test'], '{{run.id}}')
         self.assertNotIn('private-load-token', json.dumps(script))
         self.assertEqual(script['config']['pacing']['interval_ms'], 100)
         result = json.loads((self.output / 'result.json').read_text())

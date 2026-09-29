@@ -146,6 +146,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		TotalVUsers:                  vu.TotalVUsers,
 		Group:                        vu.Group,
 		Region:                       vu.Region,
+		RunID:                        vu.RunID,
 		Proto:                        instance,
 		Script:                       vu.Script,
 		Metrics:                      vu.Metrics,

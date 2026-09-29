@@ -1066,6 +1066,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			Name:                         request.GetGroupName(),
 			StartOffset:                  plan.validated.startOffset,
 			Region:                       strings.TrimSpace(request.GetRegion()),
+			RunID:                        request.GetTestId(),
 			ScenarioID:                   request.GetScenarioId(),
 			Script:                       &script,
 			VUsers:                       int(request.GetVuserCount()),

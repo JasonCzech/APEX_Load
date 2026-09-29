@@ -21,8 +21,8 @@ func archiveFailureFixture(t *testing.T) (*storage.SQLiteStore, *ManagedTest) {
 	t.Cleanup(func() { s.Close() })
 	start := time.Now().UTC().Add(-time.Minute)
 	end := start.Add(time.Minute)
-	run := &ManagedTest{ID: "collection-failure", Name: "Failure", ProjectID: storage.DefaultProjectID, Status: "FAILED", CreatedAt: start, EndedAt: &end}
-	if err := s.SaveTest(&storage.TestRecord{ID: run.ID, Name: run.Name, ProjectID: run.ProjectID, StartTime: start, EndTime: &end, Status: run.Status}); err != nil {
+	run := &ManagedTest{ID: "collection-failure", Name: "Failure", ProjectID: storage.DefaultProjectID, Status: "FAILED", CreatedAt: start, StartedAt: &start, EndedAt: &end}
+	if err := s.SaveTest(&storage.TestRecord{ID: run.ID, Name: run.Name, ProjectID: run.ProjectID, StartTime: start, StartedAt: &start, EndTime: &end, Status: run.Status}); err != nil {
 		t.Fatal(err)
 	}
 	return s, run

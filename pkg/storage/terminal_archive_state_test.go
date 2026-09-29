@@ -17,7 +17,7 @@ func testTerminalArchiveState(t *testing.T, s *SQLiteStore) {
 				id := "terminal-" + method + status
 				start := time.Now().UTC().Add(-time.Minute)
 				end := start.Add(time.Minute)
-				if err := s.SaveTest(&TestRecord{ID: id, Name: id, StartTime: start, Status: "RUNNING", MaterializationKey: id}); err != nil {
+				if err := s.SaveTest(&TestRecord{ID: id, Name: id, StartTime: start, StartedAt: &start, Status: "RUNNING", MaterializationKey: id}); err != nil {
 					t.Fatal(err)
 				}
 				if held, err := s.TryAcquireSchedulerLease(id, "owner", time.Now(), time.Minute); err != nil || !held {
@@ -106,7 +106,8 @@ func TestTerminalArchiveMarkerFailureRollsBackStatus(t *testing.T) {
 	s := newHAFencingStore(t)
 	for _, status := range []string{"RUNNING", "FAILED"} {
 		id := "rollback-" + status
-		if err := s.SaveTest(&TestRecord{ID: id, Name: id, StartTime: time.Now(), Status: "RUNNING"}); err != nil {
+		start := time.Now()
+		if err := s.SaveTest(&TestRecord{ID: id, Name: id, StartTime: start, StartedAt: &start, Status: "RUNNING"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -133,7 +134,7 @@ func TestTerminalArchiveMarkerSurvivesReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	start, end := time.Now().Add(-time.Minute), time.Now()
-	if err := s.SaveTest(&TestRecord{ID: "crash", Name: "crash", StartTime: start, Status: "RUNNING"}); err != nil {
+	if err := s.SaveTest(&TestRecord{ID: "crash", Name: "crash", StartTime: start, StartedAt: &start, Status: "RUNNING"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.UpdateTestStatusIfActive("crash", "ABORTED", &end, ""); err != nil {

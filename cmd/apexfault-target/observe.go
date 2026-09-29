@@ -24,6 +24,7 @@ import (
 type targetSnapshot struct {
 	SchemaVersion    int     `json:"schema_version"`
 	RunID            string  `json:"run_id"`
+	TestID           string  `json:"test_id"`
 	TargetInstanceID string  `json:"target_instance_id"`
 	StartedAt        float64 `json:"started_at_unix"`
 	ObservedAt       float64 `json:"observed_at_unix"`
@@ -47,7 +48,7 @@ func snapshotURL(raw string) (*url.URL, error) {
 	return u, nil
 }
 
-func decodeSnapshot(body []byte, runID string, now float64) (targetSnapshot, error) {
+func decodeSnapshot(body []byte, runID, testID string, now float64) (targetSnapshot, error) {
 	var result targetSnapshot
 	invalid := errors.New("invalid target snapshot")
 	// Reject missing, extra and duplicate keys, including duplicate identity or
@@ -83,7 +84,7 @@ func decodeSnapshot(body []byte, runID string, now float64) (targetSnapshot, err
 	if decoder.Decode(&extra) != io.EOF {
 		return result, invalid
 	}
-	expected := []string{"schema_version", "run_id", "target_instance_id", "started_at_unix", "observed_at_unix", "target_requests"}
+	expected := []string{"schema_version", "run_id", "test_id", "target_instance_id", "started_at_unix", "observed_at_unix", "target_requests"}
 	if len(fields) != len(expected) {
 		return result, invalid
 	}
@@ -92,7 +93,7 @@ func decodeSnapshot(body []byte, runID string, now float64) (targetSnapshot, err
 			return result, invalid
 		}
 	}
-	if json.Unmarshal(body, &result) != nil || result.SchemaVersion != 1 || result.RunID != runID || !instancePattern.MatchString(result.TargetInstanceID) ||
+	if json.Unmarshal(body, &result) != nil || result.SchemaVersion != 2 || result.RunID != runID || result.TestID != testID || !testIDPattern.MatchString(result.TestID) || !instancePattern.MatchString(result.TargetInstanceID) ||
 		math.IsNaN(result.StartedAt) || math.IsInf(result.StartedAt, 0) || result.StartedAt <= 0 || result.StartedAt > result.ObservedAt ||
 		math.IsNaN(result.ObservedAt) || math.IsInf(result.ObservedAt, 0) || result.ObservedAt < now-5 || result.ObservedAt > now {
 		return targetSnapshot{}, invalid
@@ -100,8 +101,11 @@ func decodeSnapshot(body []byte, runID string, now float64) (targetSnapshot, err
 	return result, nil
 }
 
-func observeTarget(ctx context.Context, c targetConfig, rawURL, caFile string, timeout time.Duration) (targetSnapshot, error) {
+func observeTarget(ctx context.Context, c targetConfig, testID, rawURL, caFile string, timeout time.Duration) (targetSnapshot, error) {
 	var empty targetSnapshot
+	if !testIDPattern.MatchString(testID) {
+		return empty, errors.New("invalid test identity")
+	}
 	if timeout <= 0 || timeout > 10*time.Second {
 		return empty, errors.New("timeout must be positive and at most 10s")
 	}
@@ -137,6 +141,7 @@ func observeTarget(ctx context.Context, c targetConfig, rawURL, caFile string, t
 		return empty, errors.New("invalid target URL")
 	}
 	req.Header.Set("Authorization", "Bearer "+c.ObserverToken)
+	req.Header.Set("X-Apexload-Fault-Test", testID)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Cache-Control", "no-cache")
 	response, err := client.Do(req)
@@ -155,12 +160,13 @@ func observeTarget(ctx context.Context, c targetConfig, rawURL, caFile string, t
 	if ctx.Err() != nil {
 		return empty, errors.New("target snapshot deadline exceeded")
 	}
-	return decodeSnapshot(body, c.RunID, unixNow())
+	return decodeSnapshot(body, c.RunID, testID, unixNow())
 }
 
 func observeCommand(ctx context.Context, args []string, output io.Writer) error {
 	flags := flag.NewFlagSet("apexfault-target observe", flag.ContinueOnError)
 	config := flags.String("config", "", "absolute private target.json path")
+	testID := flags.String("test-id", "", "managed test ID whose requests are observed")
 	targetURL := flags.String("url", "", "target HTTPS URL; numeric loopback HTTP is also allowed")
 	ca := flags.String("ca", "", "optional PEM CA file; otherwise use system trust roots")
 	timeout := flags.Duration("timeout", 3*time.Second, "snapshot request deadline (maximum 10s)")
@@ -174,7 +180,7 @@ func observeCommand(ctx context.Context, args []string, output io.Writer) error 
 	if err != nil {
 		return err
 	}
-	snapshot, err := observeTarget(ctx, c, *targetURL, *ca, *timeout)
+	snapshot, err := observeTarget(ctx, c, *testID, *targetURL, *ca, *timeout)
 	if err != nil {
 		return err
 	}

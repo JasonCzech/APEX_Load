@@ -1,12 +1,15 @@
 package dsl
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -41,6 +44,9 @@ func validateScriptIssues(script *Script, allowPreservedJavaVMCredentials bool) 
 	// recursive validators. Otherwise an API-sized but adversarial control tree
 	// can amplify CPU/stack use in each validation pass.
 	if issues := validateScriptStructureIssues(script); len(issues) != 0 {
+		return issues
+	}
+	if issues := validateRunIdentityTemplateIssues(script); len(issues) != 0 {
 		return issues
 	}
 	fileDataSourceIssues := validateFileDataSourceReferenceIssues(script)
@@ -121,6 +127,360 @@ func validateScriptIssues(script *Script, allowPreservedJavaVMCredentials bool) 
 	}
 
 	return issues
+}
+
+var runIdentityTemplatePattern = regexp.MustCompile(`\{\{([^{}]*)\}\}`)
+
+// Run metadata is supplied by the scheduler, not by authored script variables.
+// Keep the namespace narrow so a typo cannot silently reach an HTTP target as
+// a literal placeholder. Only fields the VUser actually interpolates may use
+// run.id; identities, map keys, and pre-run configuration remain literal.
+// Re-encoding the whole script as JSON here would hide normal resource
+// validation for non-finite numeric inputs.
+func validateRunIdentityTemplateIssues(script *Script) []string {
+	seen := make(map[runTemplateVisit]struct{})
+	switch inspectRunIdentityTemplates(reflect.ValueOf(script), seen, 0) {
+	case runTemplateUnsupported:
+		return []string{"unsupported run template; only {{run.id}} is available"}
+	case runTemplateDepthExceeded:
+		return []string{"run template inspection depth exceeded"}
+	}
+	// Other script/config fields are consumed before a run identity is bound,
+	// sometimes directly by network protocol initialization.
+	outsideRuntimeTemplates := *script
+	outsideRuntimeTemplates.Init = nil
+	outsideRuntimeTemplates.Actions = nil
+	outsideRuntimeTemplates.Teardown = nil
+	outsideRuntimeTemplates.Config.HTTP.DefaultHeaders = nil
+	outsideRuntimeTemplates.Config.HTTP.DefaultHeaderList = nil
+	if inspectRunIdentityTemplatesMatching(reflect.ValueOf(&outsideRuntimeTemplates), make(map[runTemplateVisit]struct{}), 0,
+		isRunIDTemplate) == runTemplateUnsupported {
+		return []string{runIDTemplateScopeIssue}
+	}
+	usesHTTPHeaders := false
+	switch strings.ToLower(strings.TrimSpace(script.Protocol)) {
+	case "", "http", "soap", "java_http":
+		usesHTTPHeaders = true
+	}
+	for name := range script.Config.HTTP.DefaultHeaders {
+		if runIDTemplateInString(name) {
+			return []string{runIDTemplateScopeIssue}
+		}
+	}
+	for _, header := range script.Config.HTTP.DefaultHeaderList {
+		if runIDTemplateInString(header.Name) {
+			return []string{runIDTemplateScopeIssue}
+		}
+	}
+	if !usesHTTPHeaders && (runIDTemplateInValue(script.Config.HTTP.DefaultHeaders) || runIDTemplateInValue(script.Config.HTTP.DefaultHeaderList)) {
+		return []string{runIDTemplateScopeIssue}
+	}
+	for _, actions := range [][]Action{script.Init, script.Actions, script.Teardown} {
+		for _, action := range actions {
+			switch inspectRunIDActionScope(action, 0) {
+			case runTemplateUnsupported:
+				return []string{runIDTemplateScopeIssue}
+			case runTemplateDepthExceeded:
+				return []string{"run template inspection depth exceeded"}
+			}
+		}
+	}
+	return nil
+}
+
+const runIDTemplateScopeIssue = "{{run.id}} is supported only in runtime-interpolated action values and HTTP default header values"
+
+func isRunIDTemplate(expr string) bool { return expr == "run.id" }
+
+func runIDTemplateInString(value string) bool {
+	for _, match := range runIdentityTemplatePattern.FindAllStringSubmatch(value, -1) {
+		if strings.TrimSpace(match[1]) == "run.id" {
+			return true
+		}
+	}
+	return false
+}
+
+func runIDTemplateInValue(value any) bool {
+	return inspectRunIdentityTemplatesMatching(reflect.ValueOf(value), make(map[runTemplateVisit]struct{}), 0, isRunIDTemplate) == runTemplateUnsupported
+}
+
+func runIDTemplateInLiteralConditionField(condition *Condition) bool {
+	return condition != nil && (runIDTemplateInString(condition.Expr) || runIDTemplateInString(condition.Op) ||
+		strings.TrimSpace(condition.Expr) != "" && (runIDTemplateInString(condition.Left) || runIDTemplateInString(condition.Right)))
+}
+
+// inspectRunIDRuntimeAny mirrors VUser.interpolateAny: only strings, []string,
+// []any, and map[string]any values are interpolated. Map keys and arbitrary
+// typed containers are passed through unchanged.
+func inspectRunIDRuntimeAny(value any, seen map[runTemplateVisit]struct{}, depth int) runTemplateScanResult {
+	if depth > 128 {
+		return runTemplateDepthExceeded
+	}
+	switch typed := value.(type) {
+	case string, []string:
+		return runTemplateValid
+	case []any:
+		for _, item := range typed {
+			if result := inspectRunIDRuntimeAny(item, seen, depth+1); result != runTemplateValid {
+				return result
+			}
+		}
+	case map[string]any:
+		reflected := reflect.ValueOf(typed)
+		visit := runTemplateVisit{kind: reflect.Map, typeName: reflected.Type(), address: reflected.Pointer()}
+		if _, visited := seen[visit]; visited {
+			return runTemplateValid
+		}
+		seen[visit] = struct{}{}
+		for key, item := range typed {
+			if runIDTemplateInString(key) {
+				return runTemplateUnsupported
+			}
+			if result := inspectRunIDRuntimeAny(item, seen, depth+1); result != runTemplateValid {
+				return result
+			}
+		}
+	default:
+		return inspectRunIdentityTemplatesMatching(reflect.ValueOf(value), make(map[runTemplateVisit]struct{}), depth, isRunIDTemplate)
+	}
+	return runTemplateValid
+}
+
+func inspectRunIDActionScope(action Action, depth int) runTemplateScanResult {
+	if depth > 128 {
+		return runTemplateDepthExceeded
+	}
+	// Keep a copy containing only fields that resolveAction and the control
+	// executor leave literal. Explicitly clear each interpolated field so a new
+	// Action field defaults to disallowed until its runtime use is reviewed.
+	inert := action
+	inert.Target, inert.Selector, inert.Value, inert.Body = "", "", "", ""
+	inert.Headers, inert.HeaderList, inert.Params, inert.Metadata = nil, nil, nil, nil
+	inert.WaitFor, inert.Sync, inert.Attribution = nil, nil, nil
+	inert.Extractors, inert.Assertions, inert.Auth, inert.SOAP, inert.Control = nil, nil, nil, nil, nil
+	if runIDTemplateInValue(inert) {
+		return runTemplateUnsupported
+	}
+	for name := range action.Headers {
+		if runIDTemplateInString(name) {
+			return runTemplateUnsupported
+		}
+	}
+	for _, header := range action.HeaderList {
+		if runIDTemplateInString(header.Name) {
+			return runTemplateUnsupported
+		}
+	}
+	for key, value := range action.Params {
+		if runIDTemplateInString(key) {
+			return runTemplateUnsupported
+		}
+		if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") && key == "requests" {
+			if result := inspectRunIDHTTPSequenceRequests(value, depth+1); result != runTemplateValid {
+				return result
+			}
+			continue
+		}
+		if result := inspectRunIDRuntimeAny(value, make(map[runTemplateVisit]struct{}), depth+1); result != runTemplateValid {
+			return result
+		}
+	}
+	for key, value := range action.Metadata {
+		if runIDTemplateInString(key) {
+			return runTemplateUnsupported
+		}
+		if result := inspectRunIDRuntimeAny(value, make(map[runTemplateVisit]struct{}), depth+1); result != runTemplateValid {
+			return result
+		}
+	}
+	if action.WaitFor != nil && runIDTemplateInString(action.WaitFor.Type) ||
+		action.Sync != nil && runIDTemplateInString(action.Sync.Type) ||
+		action.Auth != nil && runIDTemplateInString(action.Auth.Type) {
+		return runTemplateUnsupported
+	}
+	for _, extractor := range action.Extractors {
+		extractor.Expression, extractor.DefaultValue = "", nil
+		if runIDTemplateInValue(extractor) {
+			return runTemplateUnsupported
+		}
+	}
+	for _, assertion := range action.Assertions {
+		if result := inspectRunIDRuntimeAny(assertion.Expected, make(map[runTemplateVisit]struct{}), depth+1); result != runTemplateValid {
+			return result
+		}
+		assertion.Expected, assertion.Value = nil, ""
+		if runIDTemplateInValue(assertion) {
+			return runTemplateUnsupported
+		}
+	}
+	if action.Control != nil {
+		control := action.Control
+		if runIDTemplateInLiteralConditionField(control.Condition) {
+			return runTemplateUnsupported
+		}
+		if control.ForEach != nil {
+			if runIDTemplateInString(control.ForEach.Source) || runIDTemplateInString(control.ForEach.Var) {
+				return runTemplateUnsupported
+			}
+			if runIDTemplateInLiteralConditionField(control.ForEach.Condition) {
+				return runTemplateUnsupported
+			}
+		}
+		for _, branch := range control.Branches {
+			if runIDTemplateInString(branch.Name) {
+				return runTemplateUnsupported
+			}
+		}
+		for _, switchCase := range control.Cases {
+			if runIDTemplateInLiteralConditionField(switchCase.Condition) {
+				return runTemplateUnsupported
+			}
+		}
+		for _, branch := range control.ActionBranches() {
+			for _, child := range branch.Actions {
+				if result := inspectRunIDActionScope(child, depth+1); result != runTemplateValid {
+					return result
+				}
+			}
+		}
+	}
+	return runTemplateValid
+}
+
+func inspectRunIDHTTPSequenceRequests(raw any, depth int) runTemplateScanResult {
+	var children []any
+	switch typed := raw.(type) {
+	case []any:
+		children = typed
+	case []Action:
+		for _, child := range typed {
+			children = append(children, child)
+		}
+	case []map[string]any:
+		for _, child := range typed {
+			children = append(children, child)
+		}
+	default:
+		return inspectRunIDRuntimeAny(raw, make(map[runTemplateVisit]struct{}), depth)
+	}
+	for _, rawChild := range children {
+		if !runIDTemplateInValue(rawChild) {
+			continue
+		}
+		child, ok := rawChild.(Action)
+		if !ok {
+			encoded, err := json.Marshal(rawChild)
+			if err != nil {
+				return runTemplateUnsupported
+			}
+			decoder := json.NewDecoder(bytes.NewReader(encoded))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&child); err != nil {
+				return runTemplateUnsupported
+			}
+		}
+		if result := inspectRunIDActionScope(child, depth+1); result != runTemplateValid {
+			return result
+		}
+	}
+	return runTemplateValid
+}
+
+type runTemplateScanResult uint8
+
+const (
+	runTemplateValid runTemplateScanResult = iota
+	runTemplateUnsupported
+	runTemplateDepthExceeded
+)
+
+type runTemplateVisit struct {
+	kind     reflect.Kind
+	typeName reflect.Type
+	address  uintptr
+	length   int
+}
+
+func inspectRunIdentityTemplates(value reflect.Value, seen map[runTemplateVisit]struct{}, depth int) runTemplateScanResult {
+	return inspectRunIdentityTemplatesMatching(value, seen, depth, func(expr string) bool {
+		return strings.HasPrefix(expr, "run.") && expr != "run.id"
+	})
+}
+
+func inspectRunIdentityTemplatesMatching(value reflect.Value, seen map[runTemplateVisit]struct{}, depth int, matches func(string) bool) runTemplateScanResult {
+	// The structural preflight above bounds the action tree. Dynamic parameter
+	// containers can still be cyclic, so stop there rather than recurse forever.
+	if depth > 128 {
+		return runTemplateDepthExceeded
+	}
+	if !value.IsValid() {
+		return runTemplateValid
+	}
+	switch value.Kind() {
+	case reflect.String:
+		for _, match := range runIdentityTemplatePattern.FindAllStringSubmatch(value.String(), -1) {
+			expr := strings.TrimSpace(match[1])
+			if matches(expr) {
+				return runTemplateUnsupported
+			}
+		}
+	case reflect.Interface, reflect.Pointer:
+		if value.IsNil() {
+			return runTemplateValid
+		}
+		if value.Kind() == reflect.Pointer {
+			visit := runTemplateVisit{kind: value.Kind(), typeName: value.Type(), address: value.Pointer()}
+			if _, visited := seen[visit]; visited {
+				return runTemplateValid
+			}
+			seen[visit] = struct{}{}
+		}
+		return inspectRunIdentityTemplatesMatching(value.Elem(), seen, depth+1, matches)
+	case reflect.Map:
+		if value.IsNil() {
+			return runTemplateValid
+		}
+		visit := runTemplateVisit{kind: value.Kind(), typeName: value.Type(), address: value.Pointer()}
+		if _, visited := seen[visit]; visited {
+			return runTemplateValid
+		}
+		seen[visit] = struct{}{}
+		iter := value.MapRange()
+		for iter.Next() {
+			if result := inspectRunIdentityTemplatesMatching(iter.Key(), seen, depth+1, matches); result != runTemplateValid {
+				return result
+			}
+			if result := inspectRunIdentityTemplatesMatching(iter.Value(), seen, depth+1, matches); result != runTemplateValid {
+				return result
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		if value.Kind() == reflect.Slice {
+			if value.IsNil() {
+				return runTemplateValid
+			}
+			visit := runTemplateVisit{kind: value.Kind(), typeName: value.Type(), address: value.Pointer(), length: value.Len()}
+			if _, visited := seen[visit]; visited {
+				return runTemplateValid
+			}
+			seen[visit] = struct{}{}
+		}
+		for index := range value.Len() {
+			if result := inspectRunIdentityTemplatesMatching(value.Index(index), seen, depth+1, matches); result != runTemplateValid {
+				return result
+			}
+		}
+	case reflect.Struct:
+		for index := range value.NumField() {
+			if value.Type().Field(index).PkgPath == "" {
+				if result := inspectRunIdentityTemplatesMatching(value.Field(index), seen, depth+1, matches); result != runTemplateValid {
+					return result
+				}
+			}
+		}
+	}
+	return runTemplateValid
 }
 
 // validateScriptStructureIssues walks all lifecycle action trees without

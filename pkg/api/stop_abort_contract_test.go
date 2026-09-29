@@ -7,12 +7,18 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/storage"
+	"google.golang.org/grpc/codes"
+	grpcStatus "google.golang.org/grpc/status"
 )
 
 type cancelAwareGracefulOnlyBackend struct {
@@ -30,6 +36,297 @@ type coordinatedRetryModeBackend struct {
 	forceCalled     chan struct{}
 	gracefulOnce    sync.Once
 	forceOnce       sync.Once
+}
+
+type expiredGenerationStopBackend struct {
+	calls       atomic.Int64
+	abortCalls  atomic.Int64
+	abortCalled chan struct{}
+	abortOnce   sync.Once
+}
+
+type mixedGenerationStopBackend struct {
+	calls atomic.Int64
+}
+
+type missingTargetStopBackend struct {
+	calls atomic.Int64
+}
+
+type blockingExternalFenceStore struct {
+	*storage.SQLiteStore
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (s *blockingExternalFenceStore) SaveTest(record *storage.TestRecord) error {
+	if strings.Contains(record.Error, stopTeardownExternalFenceMessage) {
+		s.once.Do(func() {
+			close(s.entered)
+			<-s.release
+		})
+	}
+	return s.SQLiteStore.SaveTest(record)
+}
+
+func (*expiredGenerationStopBackend) Run(*TestRunner, *ManagedTest) {}
+
+func (b *expiredGenerationStopBackend) StopTestContext(context.Context, *TestRunner, *ManagedTest) error {
+	b.calls.Add(1)
+	failure := grpcStatus.Error(codes.FailedPrecondition, generatorrpc.ExecutionGenerationSessionExpiredMessage)
+	return &distributedStopFanoutError{
+		attemptedTargets: []string{"gen-a"}, failedErrors: []error{failure}, err: failure,
+	}
+}
+
+func (b *expiredGenerationStopBackend) AbortTestContext(context.Context, *TestRunner, *ManagedTest) error {
+	b.abortCalls.Add(1)
+	if b.abortCalled != nil {
+		b.abortOnce.Do(func() { close(b.abortCalled) })
+	}
+	return nil
+}
+
+func (*mixedGenerationStopBackend) Run(*TestRunner, *ManagedTest) {}
+
+func (*missingTargetStopBackend) Run(*TestRunner, *ManagedTest) {}
+
+func (b *missingTargetStopBackend) StopTestContext(context.Context, *TestRunner, *ManagedTest) error {
+	b.calls.Add(1)
+	return errDistributedGeneratorTargetUnknown
+}
+
+func (b *mixedGenerationStopBackend) StopTestContext(context.Context, *TestRunner, *ManagedTest) error {
+	call := b.calls.Add(1)
+	expired := grpcStatus.Error(codes.FailedPrecondition, generatorrpc.ExecutionGenerationSessionExpiredMessage)
+	if call == 1 {
+		unavailable := grpcStatus.Error(codes.Unavailable, "temporarily unavailable")
+		return &distributedStopFanoutError{
+			attemptedTargets: []string{"gen-a", "gen-b"},
+			failedErrors:     []error{expired, unavailable},
+			err:              errors.Join(expired, unavailable),
+		}
+	}
+	return &distributedStopFanoutError{
+		attemptedTargets:    []string{"gen-a", "gen-b"},
+		acknowledgedTargets: []string{"gen-b"},
+		failedErrors:        []error{expired},
+		err:                 expired,
+	}
+}
+
+func TestMixedStopFailuresRetryTransientTargetBeforeRetiring(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "store.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	backend := &mixedGenerationStopBackend{}
+	runner := NewTestRunner(1, NewHub(), store)
+	test := &ManagedTest{ID: "mixed-stop", Name: "mixed stop", Status: "STOPPING", executionBackend: backend}
+	if err := store.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, Status: test.Status, StartTime: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	runner.tests[test.ID] = test
+	runner.enqueueStopTeardownRetry(test.ID, false)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		runner.terminalRetryMu.Lock()
+		_, pending := runner.terminalRetrying["stop-teardown:"+test.ID]
+		runner.terminalRetryMu.Unlock()
+		if !pending {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("mixed stop retry did not retire after the transient target acknowledged")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if calls := backend.calls.Load(); calls != 2 {
+		t.Fatalf("stop attempts = %d, want two attempts including retry of transient target", calls)
+	}
+	row, err := store.GetTest(test.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Status != "STOPPING" || !strings.HasPrefix(row.Error, stopTeardownExternalFenceMessage) {
+		t.Fatalf("durable unconfirmed stop = %+v", row)
+	}
+}
+
+func TestMissingGeneratorTargetStopRetryRetainsExternalFenceState(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "store.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	backend := &missingTargetStopBackend{}
+	runner := NewTestRunner(1, NewHub(), store)
+	test := &ManagedTest{ID: "target-unknown", Name: "target unknown", Status: "STOPPING", executionBackend: backend}
+	if err := store.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, Status: test.Status, StartTime: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	runner.tests[test.ID] = test
+	runner.enqueueStopTeardownRetry(test.ID, false)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		runner.terminalRetryMu.Lock()
+		_, pending := runner.terminalRetrying["stop-teardown:"+test.ID]
+		runner.terminalRetryMu.Unlock()
+		if !pending {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("missing-target stop retry was not retired")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	row, err := store.GetTest(test.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backend.calls.Load() != 1 || row.Status != "STOPPING" || !strings.HasPrefix(row.Error, stopTeardownExternalFenceMessage) {
+		t.Fatalf("missing-target stop = calls %d, row %+v", backend.calls.Load(), row)
+	}
+}
+
+func TestExpiredGenerationStopRetryLeavesDurableActionableStoppingState(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "store.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	backend := &expiredGenerationStopBackend{}
+	runner := NewTestRunner(1, NewHub(), store)
+	test := &ManagedTest{ID: "unconfirmed-stop", Name: "unconfirmed stop", Status: "STOPPING", Error: "prior stop request failed; password=supersecret" + strings.Repeat("x", 4096), executionBackend: backend}
+	if err := store.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, Status: test.Status, Error: test.Error, StartTime: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	runner.tests[test.ID] = test
+	runner.enqueueStopTeardownRetry(test.ID, false)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		runner.terminalRetryMu.Lock()
+		_, pending := runner.terminalRetrying["stop-teardown:"+test.ID]
+		runner.terminalRetryMu.Unlock()
+		if !pending {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("expired-generation stop retry did not retire")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if calls := backend.calls.Load(); calls != 1 {
+		t.Fatalf("stop calls = %d, want one failed permanent retry", calls)
+	}
+	row, err := store.GetTest(test.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Status != "STOPPING" || !strings.HasPrefix(row.Error, stopTeardownExternalFenceMessage) || !strings.Contains(row.Error, "prior stop request failed") || strings.Contains(row.Error, "supersecret") || len(row.Error) > 2048 {
+		t.Fatalf("durable unconfirmed stop = %+v", row)
+	}
+}
+
+func TestStopTeardownRetryHonorsForceUpgradeDuringFenceNotePersistence(t *testing.T) {
+	sqlite, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "store.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlite.Close()
+	store := &blockingExternalFenceStore{
+		SQLiteStore: sqlite,
+		entered:     make(chan struct{}),
+		release:     make(chan struct{}),
+	}
+	t.Cleanup(func() {
+		select {
+		case <-store.release:
+		default:
+			close(store.release)
+		}
+	})
+	backend := &expiredGenerationStopBackend{abortCalled: make(chan struct{})}
+	runner := NewTestRunner(1, NewHub(), store)
+	test := &ManagedTest{ID: "late-force-upgrade", Name: "late force upgrade", Status: "STOPPING", executionBackend: backend}
+	if err := sqlite.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, Status: test.Status, StartTime: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	runner.tests[test.ID] = test
+	runner.enqueueStopTeardownRetry(test.ID, false)
+	select {
+	case <-store.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("failed stop did not reach durable fence-note write")
+	}
+	// The first version check has already completed; the worker is paused
+	// before its final retirement decision.
+	runner.enqueueStopTeardownRetry(test.ID, true)
+	close(store.release)
+	select {
+	case <-backend.abortCalled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("force abort was lost during fence-note persistence")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		runner.terminalRetryMu.Lock()
+		_, pending := runner.terminalRetrying["stop-teardown:"+test.ID]
+		runner.terminalRetryMu.Unlock()
+		if !pending {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("successful force retry did not retire")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if calls, aborts := backend.calls.Load(), backend.abortCalls.Load(); calls != 1 || aborts != 1 {
+		t.Fatalf("stop/abort calls = %d/%d, want 1/1", calls, aborts)
+	}
+}
+
+func TestDistributedStopWithoutRecordedTargetNeedsExternalFence(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := newDistributedExecutionBackend([]string{"gen-a:9091"}, time.Second, nil)
+	test := &ManagedTest{ID: "target-unknown", Status: "STOPPING"}
+	if err := backend.stopTestContext(context.Background(), runner, test, true); !errors.Is(err, errDistributedGeneratorTargetUnknown) {
+		t.Fatalf("missing-target stop = %v, want unprovable target identity", err)
+	}
+}
+
+func TestStopTeardownExternalFenceClassification(t *testing.T) {
+	expired := grpcStatus.Error(codes.FailedPrecondition, generatorrpc.ExecutionGenerationSessionExpiredMessage)
+	superseded := grpcStatus.Error(codes.FailedPrecondition, "execution generation 7 is not active; current generation is 8")
+	unavailable := grpcStatus.Error(codes.Unavailable, "offline")
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "all expired", err: &distributedStopFanoutError{failedErrors: []error{expired, expired}, err: expired}, want: true},
+		{name: "superseded", err: &distributedStopFanoutError{failedErrors: []error{superseded}, err: superseded}, want: true},
+		{name: "mixed transient", err: &distributedStopFanoutError{failedErrors: []error{expired, unavailable}, err: errors.Join(expired, unavailable)}},
+		{name: "token mismatch stopping", err: &distributedStopFanoutError{failedErrors: []error{grpcStatus.Error(codes.FailedPrecondition, "run supervision token does not match the stopping assignment")}}, want: true},
+		{name: "token mismatch terminal", err: &distributedStopFanoutError{failedErrors: []error{grpcStatus.Error(codes.FailedPrecondition, "run supervision token does not match the terminal assignment")}}, want: true},
+		{name: "token required stopping", err: &distributedStopFanoutError{failedErrors: []error{grpcStatus.Error(codes.FailedPrecondition, "run supervision token is required for the stopping assignment")}}, want: true},
+		{name: "token required terminal", err: &distributedStopFanoutError{failedErrors: []error{grpcStatus.Error(codes.FailedPrecondition, "run supervision token is required for the terminal assignment")}}, want: true},
+		{name: "supervision required", err: &distributedStopFanoutError{failedErrors: []error{grpcStatus.Error(codes.FailedPrecondition, "run supervision is required")}}, want: true},
+		{name: "token mismatch assignment", err: &distributedStopFanoutError{failedErrors: []error{grpcStatus.Error(codes.FailedPrecondition, "run supervision token does not match the assignment")}}, want: true},
+		{name: "unrelated precondition", err: &distributedStopFanoutError{failedErrors: []error{grpcStatus.Error(codes.FailedPrecondition, "a live unexpired run supervision lease is required")}}},
+		{name: "wrong code", err: &distributedStopFanoutError{failedErrors: []error{grpcStatus.Error(codes.Unavailable, "run supervision token does not match the assignment")}}},
+		{name: "transient", err: &distributedStopFanoutError{failedErrors: []error{unavailable}, err: unavailable}},
+		{name: "unrelated", err: expired},
+		{name: "missing target", err: errDistributedGeneratorTargetUnknown, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := stopTeardownRequiresExternalFence(tc.err); got != tc.want {
+				t.Fatalf("external fence required = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }
 
 func (*coordinatedRetryModeBackend) Run(*TestRunner, *ManagedTest) {}

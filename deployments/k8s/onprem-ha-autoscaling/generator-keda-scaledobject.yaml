@@ -1,0 +1,87 @@
+# KEDA autoscaling for the generator fleet. Requires the KEDA operator and a
+# Prometheus that scrapes the controller's dedicated metrics port.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: apexload-generator
+  labels:
+    app.kubernetes.io/name: apexload-generator
+    app.kubernetes.io/component: generator
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: apexload-generator
+  minReplicaCount: 2
+  maxReplicaCount: 50 # CHANGE-ME: size to your cluster's spare capacity
+  pollingInterval: 15
+  cooldownPeriod: 300
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 30
+          policies:
+            - type: Pods
+              value: 4
+              periodSeconds: 60
+            - type: Percent
+              value: 100
+              periodSeconds: 60
+          selectPolicy: Max
+        scaleDown:
+          stabilizationWindowSeconds: 600
+          policies:
+            - type: Percent
+              value: 25
+              periodSeconds: 300
+          selectPolicy: Min
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc:9090
+        metricName: apexload_queued_vusers
+        ignoreNullValues: "false"
+        query: max(apexload_fleet_autoscaling{fleet="${APEXLOAD_FLEET_ID}",signal="total_vusers"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))
+        threshold: "5000"
+        activationThreshold: "1"
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc:9090
+        metricName: apexload_active_vusers
+        ignoreNullValues: "false"
+        query: max(apexload_fleet_autoscaling{fleet="${APEXLOAD_FLEET_ID}",signal="active_vusers"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))
+        threshold: "5000"
+        activationThreshold: "1"
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc:9090
+        metricName: apexload_queued_browser_vusers
+        ignoreNullValues: "false"
+        query: max(apexload_fleet_autoscaling{fleet="${APEXLOAD_FLEET_ID}",signal="total_browser_vusers"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))
+        threshold: "20"
+        activationThreshold: "1"
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc:9090
+        metricName: apexload_active_browser_vusers
+        ignoreNullValues: "false"
+        query: max(apexload_fleet_autoscaling{fleet="${APEXLOAD_FLEET_ID}",signal="active_browser_vusers"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))
+        threshold: "20"
+        activationThreshold: "1"
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc:9090
+        metricName: apexload_saturated_generators
+        ignoreNullValues: "false"
+        query: max(apexload_fleet_autoscaling{fleet="${APEXLOAD_FLEET_ID}",signal="saturated_generators"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))
+        threshold: "1"
+        activationThreshold: "1"
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc:9090
+        metricName: apexload_reserved_replica_floor
+        ignoreNullValues: "false"
+        query: max(apexload_fleet_autoscaling{fleet="${APEXLOAD_FLEET_ID}",signal="reserved_replica_floor"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))
+        threshold: "1"
+        activationThreshold: "0"

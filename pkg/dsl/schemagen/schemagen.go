@@ -299,7 +299,7 @@ func GenerateReference() []byte {
 	b.WriteString("# DSL Action Reference\n\n")
 	b.WriteString("Generated from the action catalog in `pkg/dsl` — do not edit by hand.\n")
 	b.WriteString("Regenerate with `go generate ./pkg/dsl` (or `go run ./cmd/dslschema`).\n\n")
-	b.WriteString("Template variables (`{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`, `{{fn.uuid()}}`)\n")
+	b.WriteString("Template variables (`{{run.id}}`, `{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`, `{{fn.uuid()}}`)\n")
 	b.WriteString("are expanded in string fields at runtime. Legacy `loadrunner_*` action types resolve\n")
 	b.WriteString("to their `source_*` equivalents.\n\n")
 

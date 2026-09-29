@@ -137,7 +137,7 @@ Bruno execution is also bundled through the version-pinned Node compatibility ru
 protocol and cannot be executed.
 
 ## Script DSL
-JSON-based. Template namespaces: `{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`,
+JSON-based. Template namespaces: `{{run.id}}` (managed test ID), `{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`,
 `{{param.name}}`, `{{secret.name}}`, plus built-in functions under `{{fn.*}}`/`{{fake.*}}`
 (e.g. `fn.uuid()`, `fn.timestamp.unix()`, `fn.timestamp.iso8601()`, `fn.random(min,max)`, `fn.random_string(n)`, `fake.email()`).
 Sections: config, data_sources, init, actions, teardown.

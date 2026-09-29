@@ -20,7 +20,8 @@ func checkRunArchiveCollectionDurability(t *testing.T, s *SQLiteStore) {
 	if held, err := s.TryAcquireSchedulerLease(lease, owner, time.Now(), time.Minute); err != nil || !held {
 		t.Fatal(err)
 	}
-	row := &TestRecord{ID: "collection-run", ProjectID: DefaultProjectID, Name: "collection", Status: "RUNNING", StartTime: time.Now().UTC(), Groups: []any{}}
+	started := time.Now().UTC()
+	row := &TestRecord{ID: "collection-run", ProjectID: DefaultProjectID, Name: "collection", Status: "RUNNING", StartTime: started, StartedAt: &started, Groups: []any{}}
 	if err := s.SaveTest(row); err != nil {
 		t.Fatal(err)
 	}

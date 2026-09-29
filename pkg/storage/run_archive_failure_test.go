@@ -80,6 +80,33 @@ func TestRunArchiveFailurePersistenceAndDeletion(t *testing.T) {
 	}
 }
 
+func TestPreRunFailureDoesNotClaimArchiveCollectionWasAttempted(t *testing.T) {
+	s := newHAFencingStore(t)
+	start := time.Now().UTC().Add(-time.Minute)
+	end := time.Now().UTC()
+	if err := s.SaveTest(&TestRecord{ID: "pre-run-failure", Name: "Pre-run failure", StartTime: start, Status: "INITIALIZING"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateTestStatus("pre-run-failure", "FAILED", &end, "generator unavailable"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetRunArchiveFailure("pre-run-failure"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("pre-run failure has an archive collection marker: %v", err)
+	}
+	// A marker written by an older controller must also stay out of Results.
+	if _, err := s.db.Exec(`INSERT INTO run_archive_failures (test_id, project_id, test_start_time, test_end_time, test_status, reason, recorded_at)
+		SELECT id, project_id, start_time, end_time, status, ?, ? FROM tests WHERE id = ?`, RunArchiveFailureUnconfirmed, end, "pre-run-failure"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetRunArchiveFailure("pre-run-failure"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("legacy pre-run archive marker is visible: %v", err)
+	}
+	row, err := s.GetTest("pre-run-failure")
+	if err != nil || row.Status != "FAILED" {
+		t.Fatalf("pre-run terminal status lost: %+v %v", row, err)
+	}
+}
+
 func TestRunArchiveFailureRejectsInvalidIdentity(t *testing.T) {
 	s := newHAFencingStore(t)
 	f := seedArchiveFailureRun(t, s)

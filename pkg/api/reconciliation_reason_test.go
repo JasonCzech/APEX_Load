@@ -35,8 +35,14 @@ func TestReconciliationReportsInterruptedOwnershipWithoutClaimingProcessRestart(
 					t.Fatalf("shakeout ambiguity missing: %q", detail)
 				}
 			}
+			if status == "RUNNING" || status == "PAUSED" || status == "STOPPING" {
+				if test.Status != "STOPPING" || durable.Status != "STOPPING" || durable.EndTime != nil {
+					t.Fatal("distributed execution was terminal before generator process-fence proof")
+				}
+				return
+			}
 			if test.Status != "FAILED" || durable.Status != "FAILED" || durable.EndTime == nil {
-				t.Fatal("interrupted execution was not failed durably")
+				t.Fatal("pre-run interruption was not failed durably")
 			}
 		})
 	}

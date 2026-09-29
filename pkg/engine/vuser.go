@@ -25,6 +25,7 @@ type VUser struct {
 	ParameterAllocation    *ParameterAllocation
 	Group                  string
 	Region                 string
+	RunID                  string
 	Proto                  protocol.Protocol
 	Script                 *dsl.Script
 	Metrics                *MetricsCollector
@@ -92,6 +93,9 @@ type VUser struct {
 	// unresolvedParameterRefs prevents malformed or legacy parameter bindings
 	// from reaching a target as literal {{param.*}} placeholders.
 	unresolvedParameterRefs []string
+	// A managed run ID must be supplied by the scheduler. Never send a literal
+	// {{run.id}} placeholder to an external target from a direct/library run.
+	unresolvedRunRefs []string
 	// actionCredentialComposites carries the platform-managed credential
 	// spellings for the protocol action produced by the most recent
 	// resolveAction, for the execution path to register before that action runs.

@@ -245,6 +245,70 @@ func TestReloadStoredTestsPreservesConcurrentlyStartedRun(t *testing.T) {
 	}
 }
 
+func TestReloadStoredTestsPreservesSameTermStoppingProofRuntime(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		remoteHandles  bool
+		registeredStop bool
+		priorTerm      bool
+		wantPreserved  bool
+	}{
+		{name: "remote stop in flight", remoteHandles: true, wantPreserved: true},
+		{name: "registered stop retry", registeredStop: true, wantPreserved: true},
+		{name: "prior term must reload", remoteHandles: true, registeredStop: true, priorTerm: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner, store, leadership := newAdoptionTestRunner(t)
+			created := time.Now().UTC().Truncate(time.Microsecond)
+			record := &storage.TestRecord{ID: "stopping-reload", Name: "stopping-reload", Status: "STOPPING", Error: "older snapshot", StartTime: created}
+			if err := store.SaveTest(record); err != nil {
+				t.Fatal(err)
+			}
+			record, err := store.GetTest(record.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			owner, _ := leadership.executionLeaseTerm()
+			if tc.priorTerm {
+				owner = "retired-controller-term"
+			}
+			test := &ManagedTest{ID: record.ID, Name: record.Name, Status: "STOPPING", Error: "local stop proof pending",
+				CreatedAt: record.StartTime, ProjectID: record.ProjectID, executionCtx: ctx, cancel: cancel,
+				executionFence: owner, executionBackend: runner.execution}
+			test.remoteRunSupervisionToken[0] = 7
+			if tc.remoteHandles {
+				test.remoteClientsByTarget = map[string]generatorClient{"gen-a:9091": &adoptionFakeClient{}}
+				test.remoteGroupTargets = map[string]string{"ga": "gen-a:9091"}
+			}
+			runner.tests[test.ID] = test
+			if tc.registeredStop {
+				runner.terminalRetryMu.Lock()
+				runner.stopTeardownRetries[test.ID] = stopTeardownRetryIntent{force: true, version: 1}
+				runner.terminalRetryMu.Unlock()
+			}
+			if err := runner.reloadStoredTests(); err != nil {
+				t.Fatal(err)
+			}
+			got := runner.tests[test.ID]
+			if (got == test) != tc.wantPreserved {
+				t.Fatalf("stopping runtime pointer preserved=%v, want %v", got == test, tc.wantPreserved)
+			}
+			if tc.wantPreserved && (got.Status != "STOPPING" || got.Error != "local stop proof pending" || got.remoteRunSupervisionToken[0] != 7 ||
+				(tc.remoteHandles && (got.remoteGroupTargets["ga"] != "gen-a:9091" || len(got.remoteClientsByTarget) != 1))) {
+				t.Fatalf("stopping runtime lost generator stop identity: status=%s error=%q token=%d targets=%v clients=%d", got.Status, got.Error, got.remoteRunSupervisionToken[0], got.remoteGroupTargets, len(got.remoteClientsByTarget))
+			}
+			if tc.wantPreserved {
+				durable, err := store.GetTest(test.ID)
+				if err != nil || durable.Error != "older snapshot" {
+					t.Fatalf("same-term refresh overwrote active stop-proof reason: %+v, %v", durable, err)
+				}
+			}
+		})
+	}
+}
+
 func TestReloadStoredTestsDoesNotDowngradeTerminalState(t *testing.T) {
 	const id = "terminal"
 	current := &ManagedTest{ID: id, Status: "COMPLETE"}

@@ -71,7 +71,57 @@ def bind_leader(endpoint, pods, run_id):
     return matches[0]
 
 
-def project_observation(config, run_id, cluster, namespace, pods, endpoint, run, target, demand, now=None):
+def validate_exclusive_run_inventory(inventory, config, run):
+    """Reject traffic samples that another test could have contributed to.
+
+    The per-test counter is the primary attribution check. Inventory remains a
+    defense in depth against another test deliberately reusing the selected ID
+    or a drifted workload script. A complete page is required; older tests
+    qualify only when they ended before the selected test was created.
+    """
+    if (not isinstance(inventory, dict) or type(inventory.get('total')) is not int
+            or not 1 <= inventory['total'] <= 2000 or type(inventory.get('count')) is not int
+            or inventory['count'] != inventory['total'] or type(inventory.get('offset')) is not int
+            or inventory['offset'] != 0 or type(inventory.get('limit')) is not int
+            or inventory['limit'] != 2000 or not isinstance(inventory.get('tests'), list)
+            or len(inventory['tests']) != inventory['total']):
+        raise ObservationSafetyError('complete test inventory is required for traffic attribution')
+    selected_created = timestamp(config['created_at'])
+    seen, selected = set(), False
+    for candidate in inventory['tests']:
+        if not isinstance(candidate, dict):
+            raise ObservationSafetyError('invalid test inventory entry')
+        try:
+            test_id = identifier(candidate.get('id'))
+        except (GateError, TypeError):
+            raise ObservationSafetyError('invalid test inventory identity') from None
+        if test_id in seen:
+            raise ObservationSafetyError('duplicate test inventory identity')
+        seen.add(test_id)
+        if test_id == config['test_id']:
+            try:
+                created = timestamp(candidate.get('created_at'))
+            except (GateError, TypeError, ValueError):
+                raise ObservationSafetyError('selected test inventory identity changed') from None
+            if (candidate.get('project_id') != config['project_id'] or created != selected_created
+                    or candidate.get('status') != run.get('status')):
+                raise ObservationSafetyError('selected test inventory identity changed')
+            selected = True
+            continue
+        ended = candidate.get('ended_at')
+        if ended is None or candidate.get('status') not in ('COMPLETE', 'FAILED', 'ABORTED', 'STOPPED'):
+            raise ObservationSafetyError('another test could contribute target traffic')
+        try:
+            ended_at = timestamp(ended)
+        except (GateError, TypeError, ValueError):
+            raise ObservationSafetyError('invalid competing test completion time') from None
+        if ended_at >= selected_created:
+            raise ObservationSafetyError('another test could contribute target traffic')
+    if not selected:
+        raise ObservationSafetyError('selected test is absent from inventory')
+
+
+def project_observation(config, run_id, cluster, namespace, pods, endpoint, run, target, demand, inventory, now=None):
     """Bind controller declarations to the current pod/leader/run incarnations.
 
     This does not independently prove generator epoch ownership or reserve spares.
@@ -110,7 +160,10 @@ def project_observation(config, run_id, cluster, namespace, pods, endpoint, run,
     if (run.get('id') != config['test_id'] or run.get('project_id') != config['project_id']
             or timestamp(run.get('created_at')) != timestamp(config['created_at'])):
         raise ObservationSafetyError('run incarnation changed')
-    if target.get('run_id') != run_id or target.get('target_instance_id') != config['target_instance_id']:
+    validate_exclusive_run_inventory(inventory, config, run)
+    if (target.get('schema_version') != 2 or target.get('run_id') != run_id
+            or target.get('test_id') != config['test_id']
+            or target.get('target_instance_id') != config['target_instance_id']):
         raise ObservationSafetyError('target process identity changed')
     if type(target.get('target_requests')) is not int or target['target_requests'] < 0:
         raise ObservationSafetyError('invalid target counter')
@@ -244,8 +297,9 @@ class Reader:
         api = self.forward(leader['name'], 8080)
         prom = self.forward(component('apexload-fault-prometheus'), 9090)
         target_address = self.forward(component('apexload-fault-target'), 8090)
-        run = self.request('http://' + api + '/api/v1/tests/' + self.config['test_id'], {
-            'X-Auth-Request-User': 'fault-' + self.run_id, 'X-APEXLoad-Proxy-Secret': self.credentials['http']})
+        api_headers = {'X-Auth-Request-User': 'fault-' + self.run_id,
+                       'X-APEXLoad-Proxy-Secret': self.credentials['http']}
+        run = self.request('http://' + api + '/api/v1/tests/' + self.config['test_id'], api_headers)
         query = ('max(apexload_fleet_autoscaling{fleet="' + self.run_id + '",signal="total_vusers"}'
                  ' and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))')
         metrics = self.request('http://' + prom + '/api/v1/query?query=' + urllib.parse.quote(query))
@@ -253,7 +307,9 @@ class Reader:
             raise GateError('current fleet demand unavailable')
         demand = float(metrics['data']['result'][0]['value'][1])
         target = self.request('https://' + target_address + '/snapshot',
-                              {'Authorization': 'Bearer ' + self.credentials['target_observer']})
+                              {'Authorization': 'Bearer ' + self.credentials['target_observer'],
+                               'X-Apexload-Fault-Test': self.config['test_id']})
+        inventory = self.request('http://' + api + '/api/v1/tests?summary=true&limit=2000&offset=0', api_headers)
         current = self.get('get', 'endpointslice', 'apexload-controller-active')
         current_pod = self.get('get', 'pod', leader['name'])
         if current_pod['metadata']['uid'] != leader['uid']:
@@ -263,7 +319,7 @@ class Reader:
                 or current['metadata'].get('annotations', {}).get('apexload.io/execution-lease-generation')
                 != endpoint['metadata'].get('annotations', {}).get('apexload.io/execution-lease-generation')):
             raise GateError('leadership changed during observation')
-        return project_observation(self.config, self.run_id, self.cluster, namespace, pods, endpoint, run, target, demand)
+        return project_observation(self.config, self.run_id, self.cluster, namespace, pods, endpoint, run, target, demand, inventory)
 
     def close(self):
         for process in self.processes:

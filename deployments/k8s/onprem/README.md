@@ -43,15 +43,29 @@ when upgrading from a tokenless release.
 5. **Edit the CHANGE-ME values** — registry in `kustomization.yaml`, ingress
    hostname/TLS secret, object-store endpoint, and ingress/monitoring namespace
    names in `network-policy.yaml`.
-6. **Apply the base** — `kubectl apply -k deployments/k8s/onprem`
+6. **Apply the base** — choose a unique, stable installation ID and render the
+   edited base before applying it. Raw `kubectl apply -k` leaves the fleet ID
+   placeholder literal and disables installation-scoped demand metrics.
+
+   ```sh
+   export APEXLOAD_FLEET_ID=onprem-production-1
+   scripts/render-onprem-manifests.sh --output /tmp/apexload-onprem.yaml
+   kubectl apply -f /tmp/apexload-onprem.yaml
+   ```
 7. **Optional controller HA** — with shared PostgreSQL and Redis configured,
-   apply `kubectl apply -k deployments/k8s/onprem-ha`. The HA overlay creates
+   render `--overlay-dir deployments/k8s/onprem-ha` to a new output path and
+   apply that file. The HA overlay creates
    a selectorless leader-only Service and a generation-fenced EndpointSlice for
    CI mutations; authentication and read traffic remain available across all
    ready replicas.
 8. **Optional autoscaling + Prometheus** — install the KEDA operator and
    kube-prometheus-stack, size KEDA `maxReplicaCount` for your nodes, then
-   apply `kubectl apply -k deployments/k8s/onprem-autoscaling`.
+   render `--overlay-dir deployments/k8s/onprem-autoscaling` to a new output
+   path and apply that file. For HA plus autoscaling, use
+   `deployments/k8s/onprem-ha-autoscaling` instead: it retains the HA Deployment
+   while adding KEDA. Use the same `APEXLOAD_FLEET_ID` for every render;
+   re-render when changing the installation ID. Check the rendered ConfigMap
+   and ScaledObject queries before applying.
 9. **Smoke test** — `kubectl -n apexload port-forward svc/apexload-controller 18080:8080`
    then `./deployments/k8s/smoke-test.sh`.
 

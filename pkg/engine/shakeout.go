@@ -18,6 +18,13 @@ func RunScriptShakeout(ctx context.Context, groupName string, script *dsl.Script
 // governed secret source. A nil resolver preserves the standalone CLI/runtime
 // behavior and resolves from the script's default project-scoped providers.
 func RunScriptShakeoutWithSecretResolver(ctx context.Context, groupName string, script *dsl.Script, resolver SecretResolver) error {
+	return RunScriptShakeoutWithRunIDAndSecretResolver(ctx, groupName, script, "", resolver)
+}
+
+// RunScriptShakeoutWithRunIDAndSecretResolver binds a managed test identity to
+// one dry execution pass. Direct callers use RunScriptShakeoutWithSecretResolver
+// and leave run.id unavailable, matching their lack of a managed test.
+func RunScriptShakeoutWithRunIDAndSecretResolver(ctx context.Context, groupName string, script *dsl.Script, runID string, resolver SecretResolver) error {
 	if script == nil {
 		return fmt.Errorf("script is required")
 	}
@@ -63,6 +70,7 @@ func RunScriptShakeoutWithSecretResolver(ctx context.Context, groupName string, 
 	vu := &VUser{
 		ID:                           0,
 		Group:                        groupName,
+		RunID:                        runID,
 		Proto:                        proto,
 		Script:                       script,
 		Metrics:                      NewMetricsCollector(16),
