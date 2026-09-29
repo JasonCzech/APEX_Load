@@ -3832,9 +3832,12 @@ completed, and the capability diagnostic was not independently confirmed.
 The observed terminal row and flat target counter establish
 the fail-closed outcome for this disposable trial, not resumable evacuation.
 
-The interrupted run had an `ended_at` timestamp but no archive manifest or
-integrity endpoint (both returned 404). Durable partial-result publication for
-takeover failures remains a release gate. This trial did not test simultaneous
+The interrupted run had an `ended_at` timestamp; the archive manifest and
+integrity endpoints both returned 404 during the observation window. The
+durable collection intent was not inspected before the fresh cluster was
+stopped, so this is not proof that later partial-archive retry could not
+publish. Durable partial-result publication for takeover failures remains a
+release gate. This trial did not test simultaneous
 generator loss, a physical node or zone loss, CSI/RWX storage, or PostgreSQL and
 Redis primary failover. Private input, SQL, image, target-counter and restoration
 receipts are under `artifacts/scalability/2026-09-29/guard-interruption-1b1ffdc5`.
@@ -3848,13 +3851,24 @@ controller-side DNS, no active tests, and three stable workload/SQL snapshots.
 The deployed takeover produced an atomic `archive_collection_unconfirmed`
 marker alongside its terminal row but no archive. Review found that recovery
 reconciliation had no verified replacement topology or live generator handles
-from which to attempt collection, and left the generic marker indefinitely.
-The successor now replaces it under the execution lease with the durable
-`remote_collection_failed` reason for this specific interrupted-evacuation
-path. The store checks the exact terminal run incarnation and refuses to
-override a catalog or publication job. If the reason write fails, the
-atomic unconfirmed marker remains; terminality is unchanged. Tests cover the
-specific stored and single-run API reason and the write-failure fallback.
-This makes unavailability explicit but does not fabricate partial results or
-close the separate durable partial-archive release gate. Focused API tests,
-the full `go test ./...` suite, documentation checks and diff review passed.
+from which to attempt collection, and could leave the generic marker without
+a definitive reason.
+If no durable collection intent exists, the successor now replaces the marker
+under the execution lease with `remote_collection_failed` for this specific
+interrupted-evacuation path. The store checks the exact terminal run
+incarnation and refuses to override a catalog or publication job. If the
+reason write fails, the atomic unconfirmed marker remains; terminality is
+unchanged. Tests cover the stored and single-run API reason and the
+write-failure fallback.
+
+Further review found that a newer run can already have a durable expected-source
+collection intent. That intent may still produce a partial archive after
+takeover, so reporting failure immediately would be premature. Reconciliation
+now leaves its marker unconfirmed while collection remains pending. Only the
+transaction that exhausts bounded source collection changes the marker to
+`remote_collection_failed`; successful publication keeps its archive precedence.
+Tests cover a pending takeover intent, exhaustion, and the existing cache-only
+partial-publication path. This makes unavailable evidence explicit without
+fabricating partial results or closing the separate durable partial-archive
+release gate. Focused API/storage tests, the post-fix full `go test ./...`
+suite, documentation checks and diff review passed.

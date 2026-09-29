@@ -52,6 +52,9 @@ func checkRunArchiveCollectionDurability(t *testing.T, s *SQLiteStore) {
 	if _, err := s.UpdateTestStatusIfActive(row.ID, "FAILED", &end, ""); err != nil {
 		t.Fatal(err)
 	}
+	if failure, err := s.GetRunArchiveFailure(row.ID); err != nil || failure.Reason != RunArchiveFailureUnconfirmed {
+		t.Fatalf("pending collection marker = %+v, %v", failure, err)
+	}
 	if _, ok, err := prepare(map[string]string{"c:9091": identity}, owner); err != nil || ok {
 		t.Fatal("terminal source mutated")
 	}
@@ -105,6 +108,9 @@ func checkRunArchiveCollectionDurability(t *testing.T, s *SQLiteStore) {
 	}
 	if ok, err := s.ExhaustRunArchiveCollection(row.ID, first.IntentToken, 1, lease, owner); err != nil || !ok {
 		t.Fatalf("exhaust=%v %v", ok, err)
+	}
+	if failure, err := s.GetRunArchiveFailure(row.ID); err != nil || failure.Reason != RunArchiveFailureRemoteCollection {
+		t.Fatalf("exhausted collection marker = %+v, %v", failure, err)
 	}
 	if jobs, err := s.ListRunArchiveCollections(10, time.Now().Add(time.Hour)); err != nil || len(jobs) != 0 {
 		t.Fatal("exhausted job retried")

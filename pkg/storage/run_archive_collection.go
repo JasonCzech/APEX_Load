@@ -276,6 +276,16 @@ func (s *SQLiteStore) ExhaustRunArchiveCollection(testID, token string, attempts
 	if err != nil {
 		return false, err
 	}
+	if count == 1 {
+		// Terminality already installed an unconfirmed archive marker in the
+		// lifecycle transaction. Only after all bounded collection attempts are
+		// exhausted can that marker become a definitive collection failure.
+		if _, err := tx.Exec(`UPDATE run_archive_failures SET reason = ?, recorded_at = ?
+			WHERE test_id = ? AND reason = ?`, RunArchiveFailureRemoteCollection,
+			time.Now().UTC(), testID, RunArchiveFailureUnconfirmed); err != nil {
+			return false, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}

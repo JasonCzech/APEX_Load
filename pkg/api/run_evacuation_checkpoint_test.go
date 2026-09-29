@@ -219,6 +219,43 @@ func TestRunEvacuationCheckpointRecoveryKeepsUnconfirmedMarkerWhenFailureWriteUn
 	}
 }
 
+func TestRunEvacuationCheckpointRecoveryPreservesPendingArchiveCollection(t *testing.T) {
+	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+	record, err := store.GetTest(test.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent, prepared, err := store.PrepareRunArchiveCollection(test.ID, record.ProjectID, record.StartTime,
+		map[string]string{"gen-a": strings.Repeat("a", 64)}, executionLeaseName, owner)
+	if err != nil || !prepared {
+		t.Fatalf("archive collection intent = %+v, %v, %v", intent, prepared, err)
+	}
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := &ManagedTest{ID: test.ID, Status: "RUNNING", Assignment: test.Assignment,
+		CreatedAt: record.StartTime, ProjectID: record.ProjectID}
+	setContinuityCheckpointLocked(restored, guard)
+	if err := tr.reconcileStoredActiveTest(restored); err != nil {
+		t.Fatal(err)
+	}
+	failure, err := store.GetRunArchiveFailure(test.ID)
+	if err != nil || failure.Reason != storage.RunArchiveFailureUnconfirmed {
+		t.Fatalf("pending collection failure = %+v, %v", failure, err)
+	}
+	if claimed, err := store.ClaimRunArchiveCollectionAttempt(test.ID, intent.IntentToken, 0, executionLeaseName, owner); err != nil || !claimed {
+		t.Fatalf("claim archive collection = %v, %v", claimed, err)
+	}
+	if exhausted, err := store.ExhaustRunArchiveCollection(test.ID, intent.IntentToken, 1, executionLeaseName, owner); err != nil || !exhausted {
+		t.Fatalf("exhaust archive collection = %v, %v", exhausted, err)
+	}
+	failure, err = store.GetRunArchiveFailure(test.ID)
+	if err != nil || failure.Reason != storage.RunArchiveFailureRemoteCollection {
+		t.Fatalf("exhausted collection failure = %+v, %v", failure, err)
+	}
+}
+
 func TestRunContinuityCASDoesNotOverwriteConcurrentEvacuationIntent(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, _ := evacuationCheckpointFixture(t)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)

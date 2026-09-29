@@ -31,6 +31,20 @@ func (tr *TestRunner) recordInterruptedEvacuationArchiveFailure(test *ManagedTes
 	if store == nil || test == nil || test.EndedAt == nil {
 		return
 	}
+	// The start path may already have bound an expected-source collection intent.
+	// Leave its atomic unconfirmed marker in place while the recovery worker can
+	// still publish a partial archive. Exhaustion records the definitive reason
+	// in the same transaction as the intent's exhausted state.
+	if collection := tr.archiveCollectionStore(); collection != nil {
+		intent, err := collection.GetRunArchiveCollection(test.ID)
+		if err == nil && intent != nil {
+			return
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			slog.Error("failed to inspect interrupted evacuation archive collection", "test_id", test.ID, "error", err)
+			return
+		}
+	}
 	leaseName, leaseOwner := "", ""
 	if tr.durableExecutionFence {
 		leaseName, leaseOwner = executionLeaseName, test.executionFence
