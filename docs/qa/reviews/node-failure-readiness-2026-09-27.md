@@ -3627,3 +3627,51 @@ retained with SHA-256 receipts under `backlog-74178e07/postgres-startup-validati
 The fresh PostgreSQL backup was restored and its application row counts/schema ledger
 verified before deployment. Live qualification of the repaired controller remains
 separate from these source and database tests.
+
+
+## Deployed logical-backlog qualification (2026-09-28 local time)
+
+A fresh three-node kind cluster on Docker Desktop ran controller `af0616e1` and
+generator `74178e07` with PostgreSQL 16, TLS Redis, TLS S3, Prometheus, KEDA and the
+independent authenticated traffic counter. The reviewed control-plane image loader
+successfully verified/imported the pinned target image. The original environment and
+volumes were preserved while its containers were stopped to fit the Docker memory budget.
+
+The first repaired-controller rollout hit a transient PostgreSQL DNS lookup failure
+after the node restart; its cold-start gate failed and its evidence remains separate.
+After DNS stabilized, a new rollout of the same image produced two ready controllers
+with zero restarts. The first healthy trial then exposed an omitted S3 bucket-seeding
+step in the private orchestration helper. Its completed source was retained and its
+archive recovered after the documented S3 seed/access checks passed. Neither failed
+gate is counted as a healthy baseline. Subsequent healthy controls passed before
+pressure, on the specifically selected generator, and after all pressure trials.
+
+Three controller trials each injected a sparse 1-GiB file into the exact workload
+namespace. Execution remained COMPLETE, with one hash-verified cached source and an
+explicit collection failure while admission was blocked. Removing the owned file
+allowed automatic retry and complete artifact-hash verification. The minimum observed
+steady rates were 317.306, 318.027 and 317.468 requests/second across windows of
+60.463, 60.478 and 60.561 seconds. Each trial preserved the prior archive, emitted no
+additional target requests during terminal recovery, and had zero controller restarts.
+
+Three generator trials each injected sparse 768-MiB pressure into the explicitly
+selected generator's namespace. Recording admission failed the execution with an
+explicit backlog-capacity error and unavailable remote source, rather than presenting
+an incomplete recording as complete. Earlier raw/Parquet/manifest and published
+archive hashes stayed unchanged. Every marker was removed using pod and file identity
+checks; no pod restarted during the trials and no traffic continued after terminal
+quiescence. The generators' preexisting restart counts were one each from the earlier
+node stop/start; the measured restart delta was zero.
+
+The final healthy control completed with a hash-verified archive and a minimum
+318.156 requests/second across 60.448 seconds. Final inspection found no injected
+markers or leaked quota reservations, zero active tests, zero pending publications,
+10 tests and seven archives. Scoped evidence review found no further issues.
+Private receipts, preserved failed gates, sampled observations and compressed tools/logs
+with SHA-256 receipts are retained in `backlog-74178e07` under
+`artifacts/scalability/2026-09-28/`.
+
+This qualifies logical namespace admission and retry on a single Docker host. Each
+pressure run used one generator; both generator pods happened to be on the same worker.
+It does not establish physical disk exhaustion, CSI behavior, independent-host loss,
+managed database/cache failover, or combined controller/generator recovery.
