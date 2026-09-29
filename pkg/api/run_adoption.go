@@ -115,7 +115,8 @@ func (tr *TestRunner) awaitRunAdoptionReconcile(ctx context.Context) {
 }
 
 // runAdoptionStatus is the set of stored statuses a successor adopts. A
-// STOPPING run is taken over only to finish the operator's stop cleanly.
+// STOPPING run is taken over to finish either an operator stop or fail-closed
+// teardown after an uncertain generator control.
 func runAdoptionStatus(status string) bool {
 	return status == "RUNNING" || status == "PAUSED" || status == "STOPPING"
 }
@@ -601,16 +602,35 @@ func (tr *TestRunner) bindRunAdoptionOutcome(b *distributedExecutionBackend, tes
 	}
 }
 
-// finishStoppingRunAdoption completes a run whose operator stop was in flight
-// when the leader was lost. The stop is honoured as ABORTED, the outcome of an
-// ordinary stop: generators still running the run under the rotated token are
-// stopped, and the archive is collected from every reachable generator.
+// finishStoppingRunAdoption completes a run whose stop was in flight when the
+// leader was lost. An operator stop remains ABORTED; a persisted fail-closed
+// control error remains FAILED. Generators still running the run under the
+// rotated token are stopped, and archives are collected where reachable.
 func (tr *TestRunner) finishStoppingRunAdoption(b *distributedExecutionBackend, test *ManagedTest, clients, adopted, archives map[string]generatorClient, generation uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, problems []string) {
 	if len(problems) > 0 {
 		slog.Warn("finishing a stopping run after controller failover with incomplete generator reach", "test_id", test.ID, "problems", strings.Join(problems, "; "))
 	}
 	slog.Info("finishing an in-flight stop after controller failover", "test_id", test.ID, "execution_generation", generation, "generators", len(clients), "still_running", len(adopted))
-	tr.bindRunAdoptionOutcome(b, test, clients, adopted, archives, generation, ownerID, token, "ABORTED", "")
+	status, message := stoppingRunAdoptionOutcome(test.Error)
+	tr.bindRunAdoptionOutcome(b, test, clients, adopted, archives, generation, ownerID, token, status, message)
+}
+
+func stoppingRunAdoptionOutcome(reason string) (status, message string) {
+	reason = strings.TrimSpace(reason)
+	for _, prefix := range []string{
+		"generator evacuation state is uncertain:",
+		"remote VUser state is uncertain:",
+		"remote duration state is uncertain:",
+		"remote pause/resume state is uncertain:",
+	} {
+		if strings.HasPrefix(reason, prefix) {
+			return "FAILED", reason
+		}
+	}
+	if strings.HasPrefix(reason, "ci abort reason:") {
+		return "ABORTED", reason
+	}
+	return "ABORTED", ""
 }
 
 // resumeAdoptedRuns is Phase B, run when admission opens after acquisition.

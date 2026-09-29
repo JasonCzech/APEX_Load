@@ -4195,3 +4195,46 @@ artifacts does not mean all generator measurements were collected. These
 same-host kind outages do not qualify physical node independence, CSI/RWX
 reattachment, permanent worker loss, earlier-phase recovery, or a missing
 replacement.
+
+## Committed replacement worker loss and successor outcome review (2026-09-29)
+
+One preparatory run after a controller process restart did not reach the
+replacement-loss boundary. The evacuation API returned 409 with a
+`prepared` checkpoint, so its watcher never stopped a worker. The operator
+stopped the run; this attempt is inconclusive for replacement loss and is
+preserved under `artifacts/scalability/2026-09-29/missing-replacement-fe71b4d7/`.
+
+A clean 50-VUser run then recorded `prepared` → `staged` →
+`source_fenced` → `replacement_committed` in PostgreSQL. At commit,
+source capacity was `releasing` and replacement capacity `committed`.
+An identity-checked watcher stopped the kind worker holding the committed
+replacement about 300 ms later, while the active controller and fenced source
+remained on the other worker. Kubernetes marked the replacement worker
+NotReady. The independent target instance held at 282,966 requests across
+observations during the outage and after terminalization: the fenced source
+did not restart traffic. After the fault-probe hold, the controller failed
+closed into STOPPING with the specific error that the replacement duration
+could not be shortened because the replacement was unreachable.
+
+The run remained STOPPING while that worker was down. Restarting it did not
+finish cleanup: the restarted generator rejected the old execution generation
+as expired, and the controller retried the exact-generation stop. A separate
+leader-worker interruption forced a successor to reconcile the run; it
+finalized ABORTED with an empty error, despite no operator stop request. This
+was an application finding. The successor's STOPPING adoption path had
+assumed every such run represented an operator stop. The reviewed code change
+preserves known fail-closed evacuation, VUser-scale, duration, and pause
+errors as FAILED, while retaining ABORTED for ordinary operator and CI
+aborts. Focused adoption regressions and the full `go test -p 1
+-ldflags='-s -w' ./pkg/api` package suite pass. Archive collection later
+exhausted its bounded retries with zero of two sources verified; the API
+reported `archive_recovery.state=exhausted` rather than a complete archive.
+Private receipts are under
+`artifacts/scalability/2026-09-29/missing-replacement-clean-fe71b4d7/`.
+
+The fix addresses the incorrect outcome after leader handoff. It does not
+solve the separate same-leader STOPPING retry when a replacement process
+restarts without an old-generation assignment. A safe terminal transition
+there needs an authoritative fence or no-work proof for the old process,
+including external runners, before treating a rejected stop as complete.
+That proof and permanent physical-node/CSI qualification remain open.

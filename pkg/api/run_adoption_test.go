@@ -451,15 +451,23 @@ func (c *stoppingFakeClient) GetArchiveArtifact(context.Context, generatorrpc.Ar
 	return nil, errors.New("no retained archive in this fake")
 }
 
-func TestStoppingRunIsFinishedAsAbortedAfterFailover(t *testing.T) {
+func TestStoppingRunKeepsItsOutcomeAfterFailover(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		outcome  pb.RunAdoptionOutcome
-		wantStop bool
+		name       string
+		outcome    pb.RunAdoptionOutcome
+		wantStop   bool
+		reason     string
+		wantStatus string
+		wantError  string
 	}{
 		// The stop never reached this generator: it is adopted, then stopped.
-		{"generator still running the run", pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED, true},
-		{"generator already stopped", pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, false},
+		{name: "operator stop with generator running", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED, wantStop: true, wantStatus: "ABORTED"},
+		{name: "operator stop already acknowledged", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, wantStatus: "ABORTED"},
+		{name: "evacuation failure", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED, wantStop: true, reason: "generator evacuation state is uncertain: replacement unreachable", wantStatus: "FAILED", wantError: "generator evacuation state is uncertain: replacement unreachable"},
+		{name: "scale failure", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED, wantStop: true, reason: "remote VUser state is uncertain: compensation failed", wantStatus: "FAILED", wantError: "remote VUser state is uncertain: compensation failed"},
+		{name: "duration failure", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED, wantStop: true, reason: "remote duration state is uncertain: compensation failed", wantStatus: "FAILED", wantError: "remote duration state is uncertain: compensation failed"},
+		{name: "pause failure", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED, wantStop: true, reason: "remote pause/resume state is uncertain: compensation failed", wantStatus: "FAILED", wantError: "remote pause/resume state is uncertain: compensation failed"},
+		{name: "CI abort", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, reason: "ci abort reason: timed_out", wantStatus: "ABORTED", wantError: "ci abort reason: timed_out"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			runner, store, leadership := newAdoptionTestRunner(t)
@@ -469,11 +477,12 @@ func TestStoppingRunIsFinishedAsAbortedAfterFailover(t *testing.T) {
 			})
 			test := storedContinueRun(t, runner, store, "stopping-run", "continue")
 			test.Status = "STOPPING"
+			test.Error = tc.reason
 			checkpoint, _, _ := decodeRunContinuityCheckpoint(test.continuityCheckpoint)
 			checkpoint.ArchiveTargets = []string{"retired:9091"}
 			encoded, _ := json.Marshal(checkpoint)
 			setStoredAdoptionTestCheckpoint(t, runner, store, test, string(encoded))
-			if _, err := store.UpdateTestStatusIfActive(test.ID, "STOPPING", nil, ""); err != nil {
+			if _, err := store.UpdateTestStatusIfActive(test.ID, "STOPPING", nil, tc.reason); err != nil {
 				t.Fatalf("mark STOPPING: %v", err)
 			}
 			if !runner.isRunAdoptionCandidate(test) {
@@ -491,8 +500,8 @@ func TestStoppingRunIsFinishedAsAbortedAfterFailover(t *testing.T) {
 			}
 			runner.resumeAdoptedRuns()
 			record, err := store.GetTest(test.ID)
-			if err != nil || record.Status != "ABORTED" {
-				t.Fatalf("durable status = %v (%v), want ABORTED", record, err)
+			if err != nil || record.Status != tc.wantStatus || record.Error != tc.wantError {
+				t.Fatalf("durable outcome = %v (%v), want %s error %q", record, err, tc.wantStatus, tc.wantError)
 			}
 			runner.mu.RLock()
 			resumed := test.adoptedResume != nil

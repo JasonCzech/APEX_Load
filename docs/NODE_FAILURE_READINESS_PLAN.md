@@ -574,3 +574,19 @@ worker interruption failed closed and later published a verified partial
 archive with that source missing. These outcomes qualify truthful local
 partial-result reporting, not recovery of source measurements that never
 reached durable storage. See the [review ledger](qa/reviews/node-failure-readiness-2026-09-27.md).
+
+A committed-replacement worker-loss trial exposed a terminal recovery blocker.
+When the replacement disappeared immediately after commit, the fenced source
+did not resume and independent target traffic stayed flat. The controller
+entered fail-closed STOPPING because it could not contact the replacement.
+After that worker restarted, its new generator process rejected the old
+execution generation, so exact-generation cleanup kept retrying and the run
+did not become terminal until a separate leader handoff. That successor
+misclassified the fail-closed run as an operator ABORTED outcome and discarded
+its error. Successor classification now preserves known fail-closed reasons as
+FAILED; the same-leader cleanup path still needs a stronger, durable proof
+that old generator work has ended before it can finalize without an
+acknowledgement. The old-image trial's archive collection exhausted with
+zero of two source receipts, reported explicitly by the recovery API.
+Neither the temporary kind outage nor the classification
+fix qualifies permanent physical node loss.
