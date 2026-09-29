@@ -508,3 +508,8 @@ boundary in the durable evacuation checkpoint before replacement commit.
 Completion requires that mark; a rejected mark fails closed. Both prepared
 and source-fenced checkpoints still reject successor adoption until the
 remaining replacement-progress replay protocol is implemented and qualified.
+The reviewed `06086dc4` controller passed a deployed Docker Desktop kind
+evacuation: PostgreSQL recorded `prepared` → `source_fenced` → completed
+topology, traffic continued on a different worker, and the two-source archive
+verified after operator stop. This does not qualify interrupted replay or
+physical multi-host recovery; see the [review ledger](qa/reviews/node-failure-readiness-2026-09-27.md).

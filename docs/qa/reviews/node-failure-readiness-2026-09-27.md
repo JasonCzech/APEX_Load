@@ -3952,4 +3952,25 @@ not resumable combined-loss recovery. Focused tests cover successful progress,
 interrupted, stale and rejected writes, and a commit-RPC assertion that the
 durable fence precedes replacement release. The full `go test -p 2 ./...`
 suite, focused race check, documentation check and final diff review passed.
-The deployed behavior still needs qualification on this revision.
+
+The reviewed `06086dc4` controller image (single-platform manifest digest
+`sha256:36255f5b0bd0607017cfe7d49d0e86304ce007aecf750256efc3d4001d85f6f8`)
+then passed a normal evacuation trial on the preserved fresh three-node Docker
+Desktop kind cluster with PostgreSQL, Redis, S3, and KEDA. A 50-VUser run was
+RUNNING and continuity-armed before the request; the dry run selected a spare
+on the other worker. PostgreSQL's temporary, run-scoped trigger observed the
+durable sequence version 2 `prepared` → version 2 `source_fenced` → version 1
+completed topology, with no intervening replacement commit permitted by the
+new path. The API moved the run from `10.244.1.5:9090` to
+`10.244.2.2:9090`, kept it RUNNING and armed, and the independent target gained
+171 requests across the call and 24,100 more by the later observation. Operator
+stop produced ABORTED with an S3 archive verifying 9/9 artifacts and both
+expected generator sources collected. The audit trigger/table were removed;
+KEDA returned to two generators, the trial controller image was rolled back,
+and the original cluster was restored with three Ready nodes, nine desired
+workload pods, working controller-side DNS and no active runs. Private
+sanitized receipts are under
+`artifacts/scalability/2026-09-29/source-fence-06086dc4`.
+This qualifies the normal source-fence checkpoint sequence on one Docker
+Desktop host. It does not qualify a crash during the source-fence write,
+successor replay, independent physical nodes, or CSI/RWX storage.
