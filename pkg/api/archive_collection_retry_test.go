@@ -24,6 +24,37 @@ type collectionRetryArchiveClient struct {
 	reads, closes *atomic.Int32
 }
 
+type archiveFailureRepairProbeStore struct {
+	*storage.SQLiteStore
+	calls int
+	fail  bool
+}
+
+func (s *archiveFailureRepairProbeStore) ReconcileExhaustedRunArchiveFailures(_, _ string, limit int) (int64, error) {
+	s.calls++
+	if limit != 100 {
+		return 0, errors.New("unbounded archive failure repair")
+	}
+	if s.fail {
+		return 0, errors.New("injected repair outage")
+	}
+	return 0, nil
+}
+
+func TestArchiveCollectionRetryRepairsHistoricalExhaustionBeforeListing(t *testing.T) {
+	tr, store, _, backend := collectionCacheFixture(t, "a")
+	tr.setExecutionBackend(backend)
+	probe := &archiveFailureRepairProbeStore{SQLiteStore: store}
+	tr.testStore = probe
+	if err := tr.retryRunArchiveCollections(context.Background(), time.Now()); err != nil || probe.calls != 1 {
+		t.Fatalf("repair pass = %d, %v", probe.calls, err)
+	}
+	probe.fail = true
+	if err := tr.retryRunArchiveCollections(context.Background(), time.Now()); err == nil || probe.calls != 2 {
+		t.Fatalf("repair outage = %d, %v", probe.calls, err)
+	}
+}
+
 func (c *collectionRetryArchiveClient) GetArchiveArtifact(ctx context.Context, req generatorrpc.ArchiveArtifactRequest) ([]byte, error) {
 	c.reads.Add(1)
 	return c.source.GetArchiveArtifact(ctx, req)

@@ -3872,3 +3872,28 @@ partial-publication path. This makes unavailable evidence explicit without
 fabricating partial results or closing the separate durable partial-archive
 release gate. Focused API/storage tests, the post-fix full `go test ./...`
 suite, documentation checks and diff review passed.
+
+## Restarted collection outcome and legacy marker repair (2026-09-29)
+
+Resumed the preserved fresh kind cluster to inspect the interrupted run's
+durable collection intent. It had one expected generator source, two failed
+network attempts, no cached source and no archive. The original generator
+ordinal was absent after KEDA scaled the StatefulSet back to two replicas.
+The restarted controller made its third bounded network attempt, then a
+cache-only pass; the intent became exhausted with no catalog or publication
+job. The older deployed binary left `archive_collection_unconfirmed` on that
+exhausted row. Private before/after SQL receipts are alongside the trial
+evidence. The original three-node cluster was restored again with stable
+desired pods, controller-side DNS and no active tests.
+
+The current storage code now atomically records `remote_collection_failed`
+when a collection intent exhausts. A bounded, lease-fenced repair pass also
+upgrades exact-incarnation exhausted rows left by older binaries, without
+touching a pending intent, catalog or publication job. SQLite and isolated
+PostgreSQL integration tests cover stale-owner rejection, one-time repair and
+archive precedence; the retry worker test confirms it runs the repair before
+listing new work. The full `go test ./...` suite, documentation check and diff
+review passed after the durable-write accounting guard caught and drove a fix
+to the repair call site. The source pod's KEDA downscale remains a separate gap:
+future archive source identities need a retained replica floor until their
+collection intent resolves or exhausts.

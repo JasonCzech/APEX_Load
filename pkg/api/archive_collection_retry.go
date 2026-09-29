@@ -18,6 +18,10 @@ import (
 const archiveCollectionNetworkAttempts = 3
 const archiveCollectionTerminalDeadline = 6 * time.Hour
 
+type exhaustedArchiveFailureReconciler interface {
+	ReconcileExhaustedRunArchiveFailures(string, string, int) (int64, error)
+}
+
 // This worker owns its transports and a detached terminal snapshot. It never
 // dispatches VUsers or changes lifecycle status, and cannot block publication.
 func (tr *TestRunner) runArchiveCollectionRetry(ctx context.Context) {
@@ -54,6 +58,22 @@ func (tr *TestRunner) retryRunArchiveCollections(ctx context.Context, now time.T
 	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if repair, ok := tr.testStore.(exhaustedArchiveFailureReconciler); ok {
+		lease, owner := "", ""
+		if tr.durableExecutionFence {
+			_, holder, _, err := tr.generatorExecutionClaim()
+			if err != nil || holder == "" {
+				return errNotExecutionLeader
+			}
+			lease, owner = executionLeaseName, holder
+		}
+		if err := tr.trackDurableWrite(func() error {
+			_, err := repair.ReconcileExhaustedRunArchiveFailures(lease, owner, 100)
+			return err
+		}); err != nil {
+			return fmt.Errorf("repair exhausted archive collection failure: %w", err)
+		}
 	}
 	jobs, err := store.ListRunArchiveCollections(100, now.Add(-archiveFinalizationRetryInterval))
 	if err != nil {

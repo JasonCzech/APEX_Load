@@ -291,3 +291,49 @@ func (s *SQLiteStore) ExhaustRunArchiveCollection(testID, token string, attempts
 	}
 	return count == 1, nil
 }
+
+// ReconcileExhaustedRunArchiveFailures upgrades terminal rows exhausted by an
+// older controller that left only the atomic unconfirmed marker. The bounded
+// repair is lease-fenced and never changes a published or pending archive.
+func (s *SQLiteStore) ReconcileExhaustedRunArchiveFailures(leaseName, owner string, limit int) (int64, error) {
+	if limit <= 0 || limit > 1000 || (leaseName == "") != (owner == "") {
+		return 0, errors.New("invalid archive failure repair request")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if leaseName != "" {
+		held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, owner)
+		if err != nil || !held {
+			return 0, err
+		}
+	}
+	result, err := tx.Exec(`UPDATE run_archive_failures SET reason = ?, recorded_at = ?
+		WHERE reason = ? AND test_id IN (
+			SELECT f.test_id FROM run_archive_failures f
+			JOIN run_archive_collection_intents c ON c.test_id = f.test_id
+			JOIN tests t ON t.id = f.test_id
+			WHERE f.reason = ? AND c.exhausted = 1 AND c.resolved = 0
+			AND c.project_id = f.project_id AND c.test_start_time = f.test_start_time
+			AND COALESCE(NULLIF(t.project_id, ''), 'unassigned') = f.project_id
+			AND t.start_time = f.test_start_time
+			AND t.end_time = f.test_end_time AND t.status = f.test_status
+			AND NOT EXISTS (SELECT 1 FROM run_archives a WHERE a.test_id = f.test_id)
+			AND NOT EXISTS (SELECT 1 FROM archive_finalization_jobs j WHERE j.test_id = f.test_id)
+			ORDER BY c.updated_at, f.test_id LIMIT ?
+		)`, RunArchiveFailureRemoteCollection, time.Now().UTC(), RunArchiveFailureUnconfirmed,
+		RunArchiveFailureUnconfirmed, limit)
+	if err != nil {
+		return 0, err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return count, nil
+}

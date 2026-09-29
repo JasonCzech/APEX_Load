@@ -112,6 +112,24 @@ func checkRunArchiveCollectionDurability(t *testing.T, s *SQLiteStore) {
 	if failure, err := s.GetRunArchiveFailure(row.ID); err != nil || failure.Reason != RunArchiveFailureRemoteCollection {
 		t.Fatalf("exhausted collection marker = %+v, %v", failure, err)
 	}
+	// Simulate an intent exhausted by an older binary before the definitive
+	// marker transition existed. A new leader repairs it without altering the
+	// terminal outcome or requiring another network attempt.
+	if _, err := s.db.Exec(`UPDATE run_archive_failures SET reason = ? WHERE test_id = ?`, RunArchiveFailureUnconfirmed, row.ID); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := s.ReconcileExhaustedRunArchiveFailures(lease, "stale", 100); err != nil || count != 0 {
+		t.Fatalf("stale repair = %d, %v", count, err)
+	}
+	if count, err := s.ReconcileExhaustedRunArchiveFailures(lease, owner, 100); err != nil || count != 1 {
+		t.Fatalf("current repair = %d, %v", count, err)
+	}
+	if count, err := s.ReconcileExhaustedRunArchiveFailures(lease, owner, 100); err != nil || count != 0 {
+		t.Fatalf("repeated repair = %d, %v", count, err)
+	}
+	if failure, err := s.GetRunArchiveFailure(row.ID); err != nil || failure.Reason != RunArchiveFailureRemoteCollection {
+		t.Fatalf("repaired collection marker = %+v, %v", failure, err)
+	}
 	if jobs, err := s.ListRunArchiveCollections(10, time.Now().Add(time.Hour)); err != nil || len(jobs) != 0 {
 		t.Fatal("exhausted job retried")
 	}
