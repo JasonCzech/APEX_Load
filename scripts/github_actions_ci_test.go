@@ -969,3 +969,33 @@ func TestContainerBuildIsSelfContainedAndProfiled(t *testing.T) {
 		t.Fatalf("CI Playwright installer must match go.mod module version: missing %q", wantInstaller)
 	}
 }
+
+// Live PostgreSQL regressions are build-tagged; the ordinary Go suite cannot
+// protect startup if either supported runner silently omits their test names.
+func TestPostgresStartupRegressionSelection(t *testing.T) {
+	selectorPattern := regexp.MustCompile(`-run '([^']*TestPostgres[^']*)'`)
+	for _, path := range []string{"../.github/workflows/ci.yml", "run-optin-suites.sh"} {
+		t.Run(path, func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			matches := selectorPattern.FindAllStringSubmatch(string(data), -1)
+			if len(matches) != 1 {
+				t.Fatalf("want one explicit PostgreSQL selection, got %d", len(matches))
+			}
+			selector, err := regexp.Compile(matches[0][1])
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"TestPostgresSchedulerLeaseGenerationMigration", "TestPostgresConcurrentInitialization", "TestPostgresInitializationLockLifecycle"} {
+				if !selector.MatchString(name) {
+					t.Errorf("live runner omits %s", name)
+				}
+			}
+			if selector.MatchString("TestPostgresUnrelatedDestructiveProbe") {
+				t.Error("runner selection is unexpectedly broad")
+			}
+		})
+	}
+}

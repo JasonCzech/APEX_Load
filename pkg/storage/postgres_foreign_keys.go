@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -226,12 +227,12 @@ func (s *SQLiteStore) ensurePostgresForeignKeys() error {
 		// storeDB.Exec would intentionally remove FOREIGN KEY clauses because that
 		// rewriter is what makes the earlier forward-referencing CREATE TABLE pass
 		// possible.
-		if _, err := s.db.db.Exec(postgresAddForeignKeyStatement(spec)); err != nil {
+		if _, err := s.db.executor().ExecContext(context.Background(), postgresAddForeignKeyStatement(spec)); err != nil {
 			return fmt.Errorf("create PostgreSQL foreign key %s.%s -> %s.%s: %w", spec.table, spec.column, spec.references, spec.refColumn, err)
 		}
 	}
 	for _, spec := range specs {
-		if _, err := s.db.db.Exec(postgresValidateForeignKeyStatement(spec)); err != nil {
+		if _, err := s.db.executor().ExecContext(context.Background(), postgresValidateForeignKeyStatement(spec)); err != nil {
 			return fmt.Errorf(
 				"validate PostgreSQL foreign key %s.%s -> %s.%s: repair existing orphaned rows before restarting the controller: %w",
 				spec.table, spec.column, spec.references, spec.refColumn, err,

@@ -996,7 +996,7 @@ jobs:
             --volume "${PWD}/deployments/docker/prometheus:/etc/prometheus:ro" \
             "${PROMETHEUS_IMAGE}" check rules /etc/prometheus/apexload-rules.yml
 
-      - name: Run PostgreSQL storage migration integration test
+      - name: Run PostgreSQL storage migration and startup integration tests
         env:
           POSTGRES_TEST_PASSWORD: ci-postgres-scheduler-test
         run: |
@@ -1031,7 +1031,7 @@ jobs:
           test -n "${postgres_test_port}"
           APEXLOAD_TEST_POSTGRES_URL="postgres://apexload:${POSTGRES_TEST_PASSWORD}@127.0.0.1:${postgres_test_port}/apexload?sslmode=disable" \
             go test -tags postgres_integration ./pkg/storage \
-              -run '^TestPostgresSchedulerLeaseGenerationMigration$' -count=1
+              -run '^TestPostgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle)$' -count=1
 
   containers:
     name: Container (${{ matrix.binary }}, ${{ matrix.profile }})

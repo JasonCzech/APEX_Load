@@ -111,11 +111,11 @@ run_suite "performance smoke (perf evidence probes)" \
   "--all" "[[ ${run_all} == 1 ]]" \
   env APEXLOAD_RUN_PERFORMANCE_SMOKE=1 go test -count=1 ./pkg/perfevidence
 
-run_suite "live PostgreSQL scheduler-generation migration" \
+run_suite "live PostgreSQL migration and concurrent startup" \
   "--all and APEXLOAD_TEST_POSTGRES_URL (dedicated test database)" \
   "[[ ${run_all} == 1 && -n \"\${APEXLOAD_TEST_POSTGRES_URL:-}\" ]]" \
   go test -tags postgres_integration -count=1 \
-    -run '^TestPostgresSchedulerLeaseGenerationMigration$' ./pkg/storage
+    -run '^TestPostgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle)$' ./pkg/storage
 
 run_suite "live Kafka integration" \
   "--all and KAFKA_BROKERS" "[[ ${run_all} == 1 && -n \"\${KAFKA_BROKERS:-}\" ]]" \

@@ -3594,3 +3594,36 @@ tests passed (7.344 seconds for the full harness); documentation checks passed f
 69 active Markdown files. Scoped re-review found no further issues. This corrects
 image placement tooling; the fresh cluster's earlier manually verified target import
 is preserved as separate evidence and is not presented as a run of this new command.
+
+## Concurrent PostgreSQL startup repair (2026-09-28 local time)
+
+Fresh two-controller startup exposed a migration-ledger unique-key race: one replica
+restarted twice before becoming ready. The healthy traffic gate stopped before
+creating a test, preserving that failed startup evidence. An eight-constructor real
+PostgreSQL regression also reproduced concurrent catalog creation failures.
+Initialization now takes a database-scoped advisory lock before ledger creation,
+pins every initialization query/transaction to its owning session, and discards that
+session afterward. Lock acquisition has a two-minute bound; existing migration
+transaction boundaries remain unchanged. A lost session cannot silently reconnect
+and continue schema changes without its lock.
+
+Review caught a foreign-key DDL path that bypassed the pinned session and deadlocked
+with a one-connection pool; it now uses the same session without SQL rewriting.
+The Kubernetes port-forward also disconnected every test session after a peer reset;
+those failed transport runs are preserved separately. Direct-loopback PostgreSQL 16
+checks passed with eight simultaneous fresh/repeated initializations, extremely short
+connection lifetimes, preserved settings, one-connection pools, failed initialization,
+canceled lock waiters and forced loss of the owning backend. Three final race-enabled
+repetitions passed in 42.836 seconds. The normal storage suite passed in 27.702 seconds.
+CI and the local opt-in runner now select these startup tests as well as the existing
+scheduler-generation migration test; selector and workflow-policy checks passed.
+
+All 109 default Go test-bearing packages passed, including API 406.584 seconds;
+documentation checks passed for 69 active Markdown files. The new CI selector test
+also passed separately because the full-suite build had already captured the scripts
+package before that test was added. Scoped re-review found no further issues.
+Private startup failures, direct PostgreSQL checks, race runs and full-suite logs are
+retained with SHA-256 receipts under `backlog-74178e07/postgres-startup-validation`.
+The fresh PostgreSQL backup was restored and its application row counts/schema ledger
+verified before deployment. Live qualification of the repaired controller remains
+separate from these source and database tests.

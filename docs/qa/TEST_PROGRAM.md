@@ -471,7 +471,7 @@ in the dashboard Artifact regenerated at each milestone close.
 **excluded from that default** — either by a Go build tag or by an environment
 variable — and must be invoked deliberately. Selected suites also have dedicated
 automation: the deployment-artifact CI job provisions PostgreSQL 16 for the
-scheduler-migration test, and the protected protocol-integration workflow runs
+scheduler-migration and concurrent-startup tests, and the protected protocol-integration workflow runs
 the live broker/cloud suites weekly or by trusted repository dispatch.
 
 This page is the inventory of every such gate, what it covers, and how to run it.
@@ -512,7 +512,7 @@ Three different reasons, and they are worth keeping straight:
 
 Only category 3 is cheap enough to be a candidate for the default `go test ./...`
 CI step. Categories 1 and 2 need provisioning, which is why they are gated. CI
-separately provisions PostgreSQL 16 for the scheduler-migration test. The
+separately provisions PostgreSQL 16 for scheduler migration and concurrent-startup tests. The
 protected protocol-integration workflow runs the Kafka, Solace, Service Bus, and
 Event Hubs suites against configured infrastructure; other infrastructure- or
 corpus-backed suites remain manual.
@@ -529,7 +529,7 @@ corpus-backed suites remain manual.
 | `APEXLOAD_RUN_PERFORMANCE_SMOKE` | Controlled performance probes that produce the perf-evidence artifacts | `pkg/perfevidence` | `make performance-smoke`, or `APEXLOAD_RUN_PERFORMANCE_SMOKE=1 go test ./pkg/perfevidence -count=1` |
 | `APEXLOAD_TEST_ARCHIVE_S3` | PostgreSQL/S3 archive identity and checksum rejection through fresh HA HTTP readers; uploads into a unique test prefix and cleans it afterward | `pkg/api` | Set to `1` with `APEXLOAD_TEST_POSTGRES_URL`, standard AWS test credentials, and `APEXLOAD_ARCHIVE_BUCKET`, `APEXLOAD_ARCHIVE_REGION`, `APEXLOAD_ARCHIVE_ENDPOINT` pointing at a disposable S3-compatible bucket; run `go test -tags postgres_integration ./pkg/api -run 'TestPostgres(S3)?ArchiveIdentityAfterReload' -count=1` |
 | `APEXLOAD_JAVA_EVIDENCE_FIXTURE_DIR` | Explicit Java fixture IPC v2 behavior check; does not establish containment or memory performance | `runners/java_vuser` | Point to prebuilt `fixtures.jar` and `lib/*.jar` outputs; requires `java` and `javac`; run `go test ./runners/java_vuser -run TestJavaEvidenceFixturesThroughDedicatedHarness -count=1` |
-| `APEXLOAD_TEST_POSTGRES_URL` | Real PostgreSQL scheduler-lease schema migration: creates and drops a uniquely named schema, upgrades a legacy `INTEGER` generation to `BIGINT`, verifies the existing value and `int64` range survive, then reopens the store to prove restart idempotence | `pkg/storage` | Against a dedicated test database whose user may create/drop schemas: `APEXLOAD_TEST_POSTGRES_URL='postgres://...' go test -tags postgres_integration ./pkg/storage -run '^TestPostgresSchedulerLeaseGenerationMigration$' -count=1` |
+| `APEXLOAD_TEST_POSTGRES_URL` | Real PostgreSQL scheduler migration and concurrent initialization: isolated schemas verify `INTEGER` to `BIGINT` preservation, eight simultaneous starts/reopens, retained settings, one-connection pools, lock cancellation/release and failure after loss of the locked session | `pkg/storage` | Against a dedicated test database whose user may create/drop schemas: `APEXLOAD_TEST_POSTGRES_URL='postgres://...' go test -tags postgres_integration ./pkg/storage -run '^TestPostgres(SchedulerLeaseGenerationMigration\|ConcurrentInitialization\|InitializationLockLifecycle)$' -count=1` |
 | `KAFKA_BROKERS`, `KAFKA_TOPIC` | Live Kafka produce/consume integration and imported AsyncAPI payload fidelity | `pkg/protocol/kafka`, `pkg/convert/asyncapi` | `KAFKA_BROKERS=localhost:9092 go test -tags "kafka_real kafka_integration" ./pkg/protocol/kafka ./pkg/convert/asyncapi -count=1` (`KAFKA_TOPIC` optional for protocol smoke; AsyncAPI fixture creates/deletes its own topic) |
 | `SOLACE_AMQP_URL`, `SOLACE_QUEUE` | Live Solace AMQP integration and imported topology payload fidelity | `pkg/protocol/jms`, `pkg/convert/brokerconfig` | `SOLACE_AMQP_URL=amqp://... SOLACE_QUEUE=q go test -tags 'jms_solace_real jms_solace_integration' ./pkg/protocol/jms -count=1` |
 | `SERVICEBUS_CONNECTION_STRING` *or* `SERVICEBUS_NAMESPACE`; plus `SERVICEBUS_TOPIC`, `SERVICEBUS_SUBSCRIPTION`, `SERVICEBUS_REPLY_QUEUE` for the topic/reply cases | Live Azure Service Bus integration | `pkg/protocol/jms` | `SERVICEBUS_CONNECTION_STRING=... go test -tags 'jms_servicebus_real jms_servicebus_integration' ./pkg/protocol/jms -count=1` |

@@ -44,6 +44,9 @@ const (
 type storeDB struct {
 	db      *sql.DB
 	dialect storeDialect
+	// Used only before a PostgreSQL store is published to callers. Every
+	// initialization query/transaction stays on the advisory-lock session.
+	initializationConn *sql.Conn
 }
 
 type storeTx struct {
@@ -267,7 +270,7 @@ func NewPostgresStore(databaseURL string, options StoreConnectionOptions, timesc
 		TimescaleDBEnabled: timescaleDB,
 		DSN:                databaseURL,
 	})
-	if err := s.init(); err != nil {
+	if err := s.initializePostgres(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -320,16 +323,20 @@ func (s *PostgresStore) BackendInfo() StoreBackendInfo {
 	return s.SQLiteStore.BackendInfo()
 }
 
+func (db *storeDB) initializationConnection(ctx context.Context) (*sql.Conn, error) {
+	return db.db.Conn(ctx)
+}
+
 func (db *storeDB) Exec(query string, args ...any) (sql.Result, error) {
-	return db.db.Exec(rewriteSQL(query, db.dialect), args...)
+	return db.ExecContext(context.Background(), query, args...)
 }
 
 func (db *storeDB) Query(query string, args ...any) (*sql.Rows, error) {
-	return db.db.Query(rewriteSQL(query, db.dialect), args...)
+	return db.QueryContext(context.Background(), query, args...)
 }
 
 func (db *storeDB) QueryRow(query string, args ...any) *sql.Row {
-	return db.db.QueryRow(rewriteSQL(query, db.dialect), args...)
+	return db.QueryRowContext(context.Background(), query, args...)
 }
 
 // ExecContext/QueryContext/QueryRowContext are the context-carrying half of the
@@ -339,27 +346,23 @@ func (db *storeDB) QueryRow(query string, args ...any) *sql.Row {
 // integer booleans) to PostgreSQL. TestStorageQueriesGoThroughTheDialectWrapper
 // keeps that bypass from reappearing.
 func (db *storeDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	return db.db.ExecContext(ctx, rewriteSQL(query, db.dialect), args...)
+	return db.executor().ExecContext(ctx, rewriteSQL(query, db.dialect), args...)
 }
 
 func (db *storeDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return db.db.QueryContext(ctx, rewriteSQL(query, db.dialect), args...)
+	return db.executor().QueryContext(ctx, rewriteSQL(query, db.dialect), args...)
 }
 
 func (db *storeDB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	return db.db.QueryRowContext(ctx, rewriteSQL(query, db.dialect), args...)
+	return db.executor().QueryRowContext(ctx, rewriteSQL(query, db.dialect), args...)
 }
 
 func (db *storeDB) Begin() (*storeTx, error) {
-	tx, err := db.db.Begin()
-	if err != nil {
-		return nil, err
-	}
-	return &storeTx{tx: tx, dialect: db.dialect}, nil
+	return db.BeginTx(context.Background(), nil)
 }
 
 func (db *storeDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*storeTx, error) {
-	tx, err := db.db.BeginTx(ctx, opts)
+	tx, err := db.executor().BeginTx(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
