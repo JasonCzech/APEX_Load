@@ -180,7 +180,7 @@ export type ScenarioStartChoice = ScenarioSourceMode | 'goal' | ''
 const PRODUCTION_REPLAY_SHAPE_ID = 'production-replay'
 const CSV_DRIVEN_SHAPE_ID = 'csv-driven'
 type RunSettingsTab = 'scenario' | 'runtime' | 'infrastructure'
-type ScenarioSettingsSection = 'composition' | 'stages' | 'protection' | 'sla'
+type ScenarioSettingsSection = 'composition' | 'stages' | 'phases' | 'advanced'
 
 const scenarioWizardSteps: Array<{ id: ScenarioWizardStep, label: string }> = [
   { id: 'scripts', label: 'Start' },
@@ -197,10 +197,10 @@ const runSettingsTabs: Array<{ id: RunSettingsTab, label: string }> = [
 ]
 
 const scenarioSettingsSections: Array<{ id: ScenarioSettingsSection, label: string }> = [
-  { id: 'composition', label: 'Group Load & Timeline' },
-  { id: 'stages', label: 'Advanced Stair-Step Ramp' },
-  { id: 'protection', label: 'Run Protection & Assurance' },
-  { id: 'sla', label: 'SLAs' },
+  { id: 'composition', label: 'Target Load' },
+  { id: 'stages', label: 'Ramp Pattern' },
+  { id: 'phases', label: 'Run Phases' },
+  { id: 'advanced', label: 'Advanced Settings' },
 ]
 
 
@@ -3373,6 +3373,22 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     </div>
   )
 
+  const renderScenarioSettingsTabs = () => (
+    <TabList className="scenario-settings-sections" role="tablist" aria-label="Scenario settings sections" onKeyDown={handleTabKey}>
+      {scenarioSettingsSections.map(section => <button
+        key={section.id}
+        type="button"
+        id={`scenario-settings-${section.id}-tab`}
+        className={`scenario-settings-section-tab ${scenarioSettingsSection === section.id ? 'active' : ''}`}
+        role="tab"
+        aria-selected={scenarioSettingsSection === section.id}
+        aria-controls={`scenario-settings-${section.id}-panel`}
+        onClick={() => setScenarioSettingsSection(section.id)}
+        tabIndex={scenarioSettingsSection === section.id ? 0 : -1}
+      >{section.label}</button>)}
+    </TabList>
+  )
+
   const renderScriptPicker = () => {
     if (!showScriptLibrary || !scriptLibraryDialogOpen || scriptSelectionTargetIndex === null) return null
     const targetGroup = formGroups[scriptSelectionTargetIndex]
@@ -3930,6 +3946,34 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 	        : activeGroupVUserMax
 	      const activeGroupLabel = activeStageGroup.name || `Group ${activeGroupIndex + 1}`
 
+      const renderGuidedScenarioExtras = () => <>
+        {scenarioSettingsSection === 'stages' && !isSteppedRamp && <div className="scenario-subpanel">
+          <h4>Ramp Pattern</h4>
+          <p className="scenario-assignment-copy secondary">This model manages its load curve automatically. Select Stepped Ramp in Model &amp; Shape to configure equal load steps.</p>
+        </div>}
+        {scenarioSettingsSection === 'phases' && <div className="scenario-subpanel">
+          {!isGuidedClosedVUser && <div className="scenario-assignment-header"><div><h4>Run Phases</h4><p>Set the run window and an optional delay before load begins.</p></div></div>}
+          <div className="settings-grid scenario-core-grid">
+            {!isGuidedClosedVUser && <DurationField className="scenario-field" label="Duration" value={form.duration} disabled={form.termination_mode === 'iterations'} required showPresets onChange={value => isSteppedRamp ? updateSteppedRamp(undefined, undefined, value) : setForm(previous => ({ ...previous, duration: value, scenario_mode: 'goal_oriented' }))} />}
+            <DurationField className="scenario-field" label="Start Delay" value={form.start_delay} allowEmpty compact onChange={value => setForm(previous => ({ ...previous, start_delay: value }))} />
+          </div>
+        </div>}
+        {scenarioSettingsSection === 'advanced' && <>
+          {renderProtectRun()}
+          {renderPreRunAssurance()}
+          <TransactionResponseTimeSLASettings
+            defaultMs={goalConfigFromForm(form).transaction_response_time_sla_ms}
+            groups={formGroups.map((group, index) => ({
+              name: group.name || `Group ${index + 1}`,
+              scriptName: findScriptById(scripts, group.script_id)?.name,
+              overrideMs: group.transactionResponseTimeSlaMs,
+            }))}
+            onDefaultChange={value => setForm(previous => scenarioFormWithGoalField(previous, 'transaction_response_time_sla_ms', value))}
+            onGroupOverrideChange={(index, value) => updateScenarioGroup(index, { transactionResponseTimeSlaMs: value })}
+          />
+        </>}
+      </>
+
       return (
         <section className="scenario-wizard-panel">
           <div className="scenario-wizard-panel-header">
@@ -3960,28 +4004,28 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             aria-labelledby={`scenario-run-settings-${runSettingsTab}-tab`}
           >
             {runSettingsTab === 'scenario' && (<>
+					{(isGoalDriven || isGuidedClosedVUser || isSteppedRamp) && renderScenarioSettingsTabs()}
 					{isGoalDriven ? (
 					<>
-						<div className="stepped-ramp-worksheet goal-driven-worksheet">
+						<div className="stepped-ramp-worksheet goal-driven-worksheet" data-settings-tab={scenarioSettingsSection} id={`scenario-settings-${scenarioSettingsSection}-panel`} role="tabpanel" aria-labelledby={`scenario-settings-${scenarioSettingsSection}-tab`}>
 							<div className="stepped-ramp-heading">
 								<span>Guided worksheet</span>
 								<h3>Goal-Driven Scenario Setup</h3>
 								<p>Define requested throughput, estimate the adaptive seed from response time, and set safe operating guardrails.</p>
 							</div>
-							<section className="stepped-ramp-section" aria-labelledby="goal-throughput-title">
+							<section className="stepped-ramp-section" data-tab="composition" aria-labelledby="goal-throughput-title">
 								<div className="stepped-ramp-number">1</div>
 								<div className="stepped-ramp-section-body">
 									<h4 id="goal-throughput-title">Throughput goal</h4>
 									<p>Set the requested transaction rate for each load group. The scenario target is their sum.</p>
 									<div className="settings-grid scenario-core-grid">
-										<DurationField className="scenario-field" label="Duration" value={form.duration} required showPresets onChange={value => setForm(previous => ({ ...previous, duration: value, scenario_mode: 'goal_oriented' }))} />
 										<label className="scenario-field"><span>Target TPS for {activeGroupLabel}</span><div className="stepped-ramp-unit-input"><input aria-label={`Target TPS for ${activeGroupLabel}`} className="settings-input" type="number" min={0.01} step="any" value={activeGoalDrivenDefinition.target_tps} onChange={event => updateGoalDriven({ target_tps: Number(event.target.value) })} /><span>TPS</span></div></label>
 									</div>
 									{formGroups.length > 1 && <TabList className="scenario-group-tabs" role="tablist" aria-label="Goal-driven groups" onKeyDown={handleTabKey}>{formGroups.map((group, index) => <button key={`goal-group-${index}`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)} tabIndex={(activeGroupIndex === index) ? 0 : -1}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.target_tps || 0} TPS</span></button>)}</TabList>}
 									<div className="stepped-ramp-equation" aria-live="polite"><strong>{form.goal_target_average_tps || 0} aggregate TPS</strong><span>Constant requested throughput for {formatModelTimeLabel(parseDurationToSeconds(form.duration))}</span></div>
 								</div>
 							</section>
-							<section className="stepped-ramp-section" aria-labelledby="goal-demand-title">
+							<section className="stepped-ramp-section" data-tab="composition" aria-labelledby="goal-demand-title">
 								<div className="stepped-ramp-number">2</div>
 								<div className="stepped-ramp-section-body">
 									<h4 id="goal-demand-title">Estimate adaptive demand</h4>
@@ -4003,7 +4047,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 									<div className="stepped-ramp-equation" aria-live="polite"><strong>{activeGoalDrivenDefinition.art ? `${activeGoalDrivenDefinition.target_tps} TPS × ${(activeGoalDrivenDefinition.art.art_ms / 1000).toLocaleString()}s = ${goalDrivenEstimatedVUsers[activeGroupIndex]} seed VUsers` : 'Seed sizing unavailable — set ART'}</strong><span>{goalSizingIncomplete ? 'Complete response-time inputs for every group to estimate total seed VUsers.' : `${totalGoalDrivenEstimatedVUsers} total estimated seed VUsers · planning metadata, not a promised runtime curve`}</span></div>
 								</div>
 							</section>
-							<section className="stepped-ramp-section" aria-labelledby="goal-guardrails-title">
+							<section className="stepped-ramp-section" data-tab="advanced" aria-labelledby="goal-guardrails-title">
 								<div className="stepped-ramp-number">3</div>
 								<div className="stepped-ramp-section-body">
 									<h4 id="goal-guardrails-title">Guardrails &amp; protection</h4>
@@ -4016,21 +4060,22 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 										<DurationField className="scenario-field" label="Breach window" value={form.goal_config?.sla_breach_window || '1m'} compact onChange={value => updateGoalDrivenGuardrail('sla_breach_window', value)} />
 									</div>
 									<label className="stepped-ramp-toggle"><input type="checkbox" checked={Boolean(form.goal_config?.stop_on_sla_breach)} onChange={event => updateGoalDrivenGuardrail('stop_on_sla_breach', event.target.checked)} /><span><strong>Stop on sustained guardrail breach</strong><small>Stop only after the configured breach window.</small></span></label>
-									<details className="goal-driven-advanced"><summary>Advanced Guardrails</summary><CreateTestGoalSettings advancedOnly goalConfig={goalConfigFromForm(form)} onGoalConfigChange={updateGoalDrivenGuardrail} /></details>
+									<div className="goal-driven-advanced"><h5>Advanced Guardrails</h5><CreateTestGoalSettings advancedOnly goalConfig={goalConfigFromForm(form)} onGoalConfigChange={updateGoalDrivenGuardrail} /></div>
 								</div>
 							</section>
+							{renderGuidedScenarioExtras()}
 							<p className="scenario-assignment-copy secondary">Changes apply immediately. Review the total demand and duration in the preview, then continue.</p>
 						</div>
 						</>
 				) : isGuidedClosedVUser ? (
 					<>
-						<div className="stepped-ramp-worksheet closed-vuser-worksheet">
+						<div className="stepped-ramp-worksheet closed-vuser-worksheet" data-settings-tab={scenarioSettingsSection} id={`scenario-settings-${scenarioSettingsSection}-panel`} role="tabpanel" aria-labelledby={`scenario-settings-${scenarioSettingsSection}-tab`}>
 							<div className="stepped-ramp-heading">
 								<span>Guided worksheet</span>
 								<h3>Closed VUser Setup</h3>
 								<p>Ramp continuously to a fixed load, measure steady-state performance, and optionally ramp down before the run ends.</p>
 							</div>
-							<section className="stepped-ramp-section" aria-labelledby="closed-target-title">
+							<section className="stepped-ramp-section" data-tab="composition" aria-labelledby="closed-target-title">
 								<div className="stepped-ramp-number">1</div>
 								<div className="stepped-ramp-section-body">
 									<h4 id="closed-target-title">Target load</h4>
@@ -4046,7 +4091,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 									{closedVUserConfig.scope === 'group' && formGroups.length > 1 && <TabList className="scenario-group-tabs" role="tablist" aria-label="Closed VUser groups" onKeyDown={handleTabKey}>{formGroups.map((group, index) => <button key={`${group.script_id}-${index}-closed`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)} tabIndex={(activeGroupIndex === index) ? 0 : -1}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{group.vusers} peak VUsers</span></button>)}</TabList>}
 								</div>
 							</section>
-							<section className="stepped-ramp-section" aria-labelledby="closed-phases-title">
+							<section className="stepped-ramp-section" data-tab="phases" aria-labelledby="closed-phases-title">
 								<div className="stepped-ramp-number">2</div>
 								<div className="stepped-ramp-section-body">
 									<h4 id="closed-phases-title">Run phases</h4>
@@ -4060,37 +4105,29 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 									{activeClosedVUserPlan.error ? <div className="settings-error-inline">{activeClosedVUserPlan.error}</div> : <div className="stepped-ramp-equation" aria-live="polite"><strong>{activeClosedVUserDefinition.peak_vusers} peak VUsers · {formatModelTimeLabel(activeClosedVUserPlan.totalSeconds)} total</strong><span>{formatModelTimeLabel(activeClosedVUserPlan.rampUpSeconds)} ramp-up · {formatModelTimeLabel(activeClosedVUserPlan.sustainSeconds)} sustained{activeClosedVUserPlan.rampDownSeconds > 0 ? ` · ${formatModelTimeLabel(activeClosedVUserPlan.rampDownSeconds)} ramp-down` : ' · immediate stop'}</span></div>}
 								</div>
 							</section>
+							{renderGuidedScenarioExtras()}
 							<p className="scenario-assignment-copy secondary">Changes apply immediately. Review the total demand and duration in the preview, then continue.</p>
 						</div>
 					</>
 				) : isSteppedRamp ? (
-					<div className="stepped-ramp-worksheet">
+					<div className="stepped-ramp-worksheet" data-settings-tab={scenarioSettingsSection} id={`scenario-settings-${scenarioSettingsSection}-panel`} role="tabpanel" aria-labelledby={`scenario-settings-${scenarioSettingsSection}-tab`}>
 						<div className="stepped-ramp-heading">
 							<span>Guided worksheet</span>
 							<h3>Stepped Ramp Setup</h3>
 							<p>Define equal-duration load levels to compare throughput, latency, and errors as demand increases.</p>
 						</div>
-						<section className="stepped-ramp-section" aria-labelledby="stepped-range-title">
+						<section className="stepped-ramp-section" data-tab="composition" aria-labelledby="stepped-range-title">
 							<div className="stepped-ramp-number">1</div>
 							<div className="stepped-ramp-section-body">
-								<h4 id="stepped-range-title">Range &amp; duration</h4>
-								<p>Set the total test duration and the initial and final load levels.</p>
+								<h4 id="stepped-range-title">Load range</h4>
+								<p>Set the initial and final load levels. Run Phases controls total duration.</p>
 								<div className="stepped-ramp-fields three">
-									<DurationField
-										className="scenario-field"
-										label="Duration"
-										value={form.duration}
-              disabled={form.termination_mode === 'iterations'}
-										required
-										showPresets
-										onChange={value => updateSteppedRamp(undefined, undefined, value)}
-									/>
 									<label className="scenario-field"><span>Starting load level</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} value={activeSteppedRampDefinition.start_vusers} onChange={event => updateSteppedRamp({ start_vusers: Math.max(0, Number(event.target.value) || 0) })} /><span>VUsers</span></div></label>
 									<label className="scenario-field"><span>Ending load level</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={1} value={activeSteppedRampDefinition.end_vusers} onChange={event => updateSteppedRamp({ end_vusers: Math.max(0, Number(event.target.value) || 0) })} /><span>VUsers</span></div></label>
 								</div>
 							</div>
 						</section>
-						<section className="stepped-ramp-section" aria-labelledby="stepped-increments-title">
+						<section className="stepped-ramp-section" data-tab="stages" aria-labelledby="stepped-increments-title">
 							<div className="stepped-ramp-number">2</div>
 							<div className="stepped-ramp-section-body">
 								<h4 id="stepped-increments-title">Create equal steps</h4>
@@ -4112,7 +4149,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 								)}
 							</div>
 						</section>
-						<section className="stepped-ramp-section" aria-labelledby="stepped-protect-title">
+						<section className="stepped-ramp-section" data-tab="stages" aria-labelledby="stepped-protect-title">
 							<div className="stepped-ramp-number">3</div>
 							<div className="stepped-ramp-section-body">
 								<h4 id="stepped-protect-title">Apply the model</h4>
@@ -4124,37 +4161,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 								{steppedRampConfig.scope === 'group' && formGroups.length > 1 && <TabList className="scenario-group-tabs" role="tablist" aria-label="Stepped ramp groups" onKeyDown={handleTabKey}>{formGroups.map((group, index) => <button key={`${group.script_id}-${index}-ramp`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)} tabIndex={(activeGroupIndex === index) ? 0 : -1}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{group.vusers} peak VUsers</span></button>)}</TabList>}
 							</div>
 						</section>
+						{renderGuidedScenarioExtras()}
 						<p className="scenario-assignment-copy secondary">Changes apply immediately. Review the total demand and duration in the preview, then continue.</p>
 					</div>
 				) : <>
-          <div className="settings-grid scenario-core-grid">
-            <DurationField
-              className="scenario-field"
-              label="Duration"
-              value={form.duration}
-              disabled={form.termination_mode === 'iterations'}
-              required
-              showPresets
-              onChange={value => {
-                setForm({ ...form, duration: value })
-                setLoadModelValidation(null)
-                setLoadModelValidationError('')
-              }}
-            />
-          </div>
-          <TabList className="scenario-settings-sections" role="tablist" aria-label="Scenario settings sections" onKeyDown={handleTabKey}>
-            {scenarioSettingsSections.map(section => <button
-              key={section.id}
-              type="button"
-              id={`scenario-settings-${section.id}-tab`}
-              className={`scenario-settings-section-tab ${scenarioSettingsSection === section.id ? 'active' : ''}`}
-              role="tab"
-              aria-selected={scenarioSettingsSection === section.id}
-              aria-controls={`scenario-settings-${section.id}-panel`}
-              onClick={() => setScenarioSettingsSection(section.id)}
-              tabIndex={scenarioSettingsSection === section.id ? 0 : -1}
-            >{section.label}</button>)}
-          </TabList>
+          {renderScenarioSettingsTabs()}
           <div className="scenario-settings-section-panel" id={`scenario-settings-${scenarioSettingsSection}-panel`} role="tabpanel" aria-labelledby={`scenario-settings-${scenarioSettingsSection}-tab`}>
           {scenarioSettingsSection === 'composition' && <>
 		  <ScenarioCompositionTimeline
@@ -4205,30 +4216,6 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                         />
                       </div>
 					</label>}
-					<DurationField
-						className="scenario-field"
-						label="Start Offset"
-						value={activeStageGroup.start_offset || ''}
-						allowEmpty
-						compact
-						onChange={value => updateScenarioGroup(activeGroupIndex, { start_offset: value })}
-					/>
-					<DurationField
-						className="scenario-field"
-						label="Ramp Up"
-                      value={activeStageGroup.ramp_up}
-                      allowEmpty
-                      compact
-                      onChange={value => updateScenarioGroup(activeGroupIndex, { ramp_up: value })}
-                    />
-                    <DurationField
-                      className="scenario-field"
-                      label="Ramp Down"
-                      value={activeStageGroup.ramp_down}
-                      allowEmpty
-                      compact
-                      onChange={value => updateScenarioGroup(activeGroupIndex, { ramp_down: value })}
-                    />
                   </div>
                 </div>
             </div>
@@ -4248,18 +4235,29 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             </div>
           )}
 		  </>}
-		  {scenarioSettingsSection === 'sla' && (
-			<TransactionResponseTimeSLASettings
-				defaultMs={goalConfigFromForm(form).transaction_response_time_sla_ms}
-				groups={formGroups.map((group, index) => ({
-					name: group.name || `Group ${index + 1}`,
-					scriptName: findScriptById(scripts, group.script_id)?.name,
-					overrideMs: group.transactionResponseTimeSlaMs,
-				}))}
-				onDefaultChange={value => setForm(previous => scenarioFormWithGoalField(previous, 'transaction_response_time_sla_ms', value))}
-				onGroupOverrideChange={(index, value) => updateScenarioGroup(index, { transactionResponseTimeSlaMs: value })}
-			/>
-		  )}
+          {scenarioSettingsSection === 'phases' && <div className="scenario-subpanel">
+            <div className="scenario-assignment-header"><div><h4>Run Phases</h4><p>Set the run window and simple ramp timing. Use Ramp Pattern when you need explicit load stages.</p></div></div>
+            <div className="settings-grid scenario-core-grid">
+              <DurationField className="scenario-field" label="Duration" value={form.duration} disabled={form.termination_mode === 'iterations'} required showPresets onChange={value => {
+                setForm(previous => ({ ...previous, duration: value }))
+                setLoadModelValidation(null)
+                setLoadModelValidationError('')
+              }} />
+              <DurationField className="scenario-field" label="Start Delay" value={form.start_delay} allowEmpty compact onChange={value => setForm(previous => ({ ...previous, start_delay: value }))} />
+            </div>
+            {formGroups.length > 1 && <label className="scenario-field">
+              <span>Load group</span>
+              <select className="settings-input" aria-label="Load group for run phases" value={activeGroupIndex} onChange={event => setStageGroupIndex(Number(event.target.value))}>
+                {formGroups.map((group, index) => <option key={`${group.script_id || 'group'}-${index}`} value={index}>{group.name || `Group ${index + 1}`}</option>)}
+              </select>
+            </label>}
+            <div className="settings-grid scenario-group-grid">
+              <DurationField className="scenario-field" label="Start Offset" value={activeStageGroup.start_offset || ''} allowEmpty compact onChange={value => updateScenarioGroup(activeGroupIndex, { start_offset: value })} />
+              <DurationField className="scenario-field" label="Ramp Up" value={activeStageGroup.ramp_up} allowEmpty compact disabled={activeStageGroup.stages.length > 0 || Boolean(activeProfileMapping)} onChange={value => updateScenarioGroup(activeGroupIndex, { ramp_up: value })} />
+              <DurationField className="scenario-field" label="Ramp Down" value={activeStageGroup.ramp_down} allowEmpty compact disabled={activeStageGroup.stages.length > 0 || Boolean(activeProfileMapping)} onChange={value => updateScenarioGroup(activeGroupIndex, { ramp_down: value })} />
+            </div>
+            {(activeStageGroup.stages.length > 0 || activeProfileMapping) && <p className="scenario-assignment-copy secondary" role="note">{activeProfileMapping ? 'The traffic profile controls this group’s load changes.' : 'Explicit stages control this group’s load changes.'} Simple ramp timing is available when that pattern is removed.</p>}
+          </div>}
           {scenarioSettingsSection === 'stages' && (
           <div className="scenario-subpanel">
             {formGroups.length > 1 && <label className="scenario-field">
@@ -4278,8 +4276,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             <div hidden={Boolean(activeProfileMapping)}>
             <div className="scenario-assignment-header">
               <div>
-                <h4>Advanced Stair-Step Ramp</h4>
-                <p>Keep simple ramp fields for common runs, or enable explicit stages when each interval needs its own VUser/TPS target.</p>
+                <h4>Ramp Pattern</h4>
+                <p>Use simple ramp timing in Run Phases for common runs, or enable explicit stages when each interval needs its own VUser/TPS target.</p>
               </div>
               <div className="scenario-stage-actions">
                 {activeStageGroup.stages.length > 0 && (
@@ -4349,10 +4347,22 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             </div>
           </div>
 		  )}
-            {scenarioSettingsSection === 'protection' && <>{renderProtectRun()}{renderPreRunAssurance()}</>}
+            {scenarioSettingsSection === 'advanced' && <>
+              {renderProtectRun()}
+              {renderPreRunAssurance()}
+              <TransactionResponseTimeSLASettings
+                defaultMs={goalConfigFromForm(form).transaction_response_time_sla_ms}
+                groups={formGroups.map((group, index) => ({
+                  name: group.name || `Group ${index + 1}`,
+                  scriptName: findScriptById(scripts, group.script_id)?.name,
+                  overrideMs: group.transactionResponseTimeSlaMs,
+                }))}
+                onDefaultChange={value => setForm(previous => scenarioFormWithGoalField(previous, 'transaction_response_time_sla_ms', value))}
+                onGroupOverrideChange={(index, value) => updateScenarioGroup(index, { transactionResponseTimeSlaMs: value })}
+              />
+            </>}
           </div>
 						</>}
-            {(isGoalDriven || isGuidedClosedVUser || isSteppedRamp) && <details><summary>Advanced run protection and assurance</summary>{renderProtectRun()}{renderPreRunAssurance()}</details>}
             </>)}
             {runSettingsTab === 'runtime' && (
               <>

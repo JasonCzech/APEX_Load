@@ -953,6 +953,7 @@ describe('TestHub', () => {
       setInputValue(vusersInput, '25')
     })
 
+    await clickScenarioSettingsSection('Run Phases')
     const durationField = getDurationFieldByLabel(container, 'Duration')
     const durationInput = durationField?.input
     const durationUnit = durationField?.select
@@ -1239,15 +1240,19 @@ describe('TestHub', () => {
     await chooseLibraryScriptForGroup()
 
     await clickWizardStep('Run Settings')
-    const duration = getDurationFieldByLabel(container, 'Duration')
     const vusers = findControlByLabel<HTMLInputElement>(container, 'VUsers', 'input[type="number"]')
-    expect(duration).not.toBeNull()
     expect(vusers).toBeDefined()
-    if (!duration || !vusers) return
+    if (!vusers) return
+    await act(async () => {
+      setInputValue(vusers, '17')
+    })
+    await clickScenarioSettingsSection('Run Phases')
+    const duration = getDurationFieldByLabel(container, 'Duration')
+    expect(duration).not.toBeNull()
+    if (!duration) return
     await act(async () => {
       setInputValue(duration.input, '3')
       setSelectValue(duration.select, 'm')
-      setInputValue(vusers, '17')
     })
 
     await clickWizardStep('Review')
@@ -1275,6 +1280,7 @@ describe('TestHub', () => {
     expect(guidance?.textContent).toContain('throughput')
 
     await clickWizardStep('Run Settings')
+    await clickScenarioSettingsSection('Run Phases')
     const durationField = getDurationFieldByLabel(container, 'Duration')
 	expect(durationField?.input.value).toBe('1')
 	expect(durationField?.select.value).toBe('h')
@@ -1413,9 +1419,11 @@ describe('TestHub', () => {
     expect(getDurationFieldByLabel(container, 'Sustained load')?.input.value).toBe('3')
     expect(container.querySelectorAll('.closed-vuser-phase-preview tbody tr')).toHaveLength(2)
     expect(findControlByLabel<HTMLSelectElement>(container, 'Scenario Mode', 'select')).toBeUndefined()
+    await clickScenarioSettingsSection('Advanced Settings')
     for (const assurance of ['Script shakeout gate', 'Resource baseline windows', 'Continue on action errors', 'Snapshot on error']) {
       expect(container.textContent).toContain(assurance)
     }
+    await clickScenarioSettingsSection('Run Phases')
 
     const rampDownToggle = container.querySelector<HTMLInputElement>('.closed-vuser-ramp-toggle input[type="checkbox"]') ?? undefined
     expect(rampDownToggle).toBeDefined()
@@ -1474,10 +1482,8 @@ describe('TestHub', () => {
     await clickWizardStep('Run Settings')
 
     const endingLoadInput = findControlByLabel<HTMLInputElement>(container, 'Ending load level', 'input')
-    const durationField = getDurationFieldByLabel(container, 'Duration')
     expect(endingLoadInput).toBeDefined()
-    expect(durationField).not.toBeNull()
-    if (!endingLoadInput || !durationField) return
+    if (!endingLoadInput) return
 
     await act(async () => {
       setInputValue(endingLoadInput, '30')
@@ -1487,6 +1493,10 @@ describe('TestHub', () => {
     expect(stageRows.length).toBe(6)
     expect(stageRows[5].textContent).toContain('30')
 
+    await clickScenarioSettingsSection('Run Phases')
+    const durationField = getDurationFieldByLabel(container, 'Duration')
+    expect(durationField).not.toBeNull()
+    if (!durationField) return
     await act(async () => {
       setInputValue(durationField.input, '2')
       setSelectValue(durationField.select, 'h')
@@ -1560,6 +1570,7 @@ describe('TestHub', () => {
 
     // Load model now reflects the stepped-ramp 60-minute default.
     await clickWizardStep('Run Settings')
+    await clickScenarioSettingsSection('Run Phases')
 		const duration = getDurationFieldByLabel(container, 'Duration')
     expect(duration?.input.value).toBe('1')
 		expect(duration?.select.value).toBe('h')
@@ -1584,8 +1595,9 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Group load & timeline')
     expect(container.textContent).toContain('Live scenario preview')
     expect(findControlByLabel<HTMLSelectElement>(container, 'Scenario Mode', 'select')).toBeUndefined()
-    expect(container.textContent).toContain('Advanced Stair-Step Ramp')
-    expect(container.querySelectorAll('.scenario-settings-section-tab')).toHaveLength(4)
+    expect(Array.from(container.querySelectorAll('.scenario-settings-section-tab')).map(tab => tab.textContent)).toEqual([
+      'Target Load', 'Ramp Pattern', 'Run Phases', 'Advanced Settings',
+    ])
     expect(container.textContent).not.toContain('Pre-Run Assurance')
     expect(container.textContent).not.toContain('Automatic placement')
 
@@ -1596,15 +1608,22 @@ describe('TestHub', () => {
     expect(workspace?.querySelector('.composition-timeline .composition-group-editor')).toBeTruthy()
     expect(workspace?.querySelector('.scenario-composition-summary-row')).toBeTruthy()
 
-    await clickScenarioSettingsSection('Advanced Stair-Step Ramp')
+    await clickScenarioSettingsSection('Ramp Pattern')
     expect(container.textContent).toContain('Enable Stages')
     expect(container.querySelector('.composition-timeline')).toBeNull()
-    await clickScenarioSettingsSection('Run Protection')
+    await clickButton('Enable Stages')
+    await clickScenarioSettingsSection('Run Phases')
+    expect(getDurationFieldByLabel(container, 'Duration')).toBeTruthy()
+    expect(getDurationFieldByLabel(container, 'Start Delay')).toBeTruthy()
+    expect(getDurationFieldByLabel(container, 'Ramp Up')?.input.disabled).toBe(true)
+    expect(getDurationFieldByLabel(container, 'Ramp Down')?.input.disabled).toBe(true)
+    expect(container.textContent).toContain('Explicit stages control this group’s load changes.')
+    await clickScenarioSettingsSection('Advanced Settings')
     expect(container.textContent).toContain('Pre-Run Assurance')
     expect(container.textContent).toContain('Protect the Run')
-    await clickScenarioSettingsSection('SLAs')
     expect(container.textContent).toContain('Transaction response-time SLA')
-    await clickScenarioSettingsSection('Group Load & Timeline')
+    expect(container.querySelector('details > summary')?.textContent).not.toContain('Advanced run protection and assurance')
+    await clickScenarioSettingsSection('Target Load')
     expect(container.querySelector('.composition-timeline')).toBeTruthy()
 
     await clickRunSettingsTab('Controller/Generator')
@@ -1638,7 +1657,7 @@ describe('TestHub', () => {
 
     if (shapeName) await selectManualShapeByName(shapeName)
     await clickWizardStep('Run Settings')
-    if (container.querySelector('.scenario-settings-section-tab')) await clickScenarioSettingsSection('Run Protection')
+    await clickScenarioSettingsSection('Advanced Settings')
 
     expect(container.querySelectorAll('[data-testid="protect-the-run"]')).toHaveLength(1)
     expect(container.querySelectorAll('[data-testid="pre-run-assurance"]')).toHaveLength(1)
@@ -1702,7 +1721,7 @@ describe('TestHub', () => {
     expect(container.querySelector('.scenario-load-group-panel')?.textContent).not.toContain('Group 2')
     expect(Array.from(container.querySelectorAll('.composition-track-label'))[0].getAttribute('aria-pressed')).toBe('true')
 
-    await clickScenarioSettingsSection('Advanced Stair-Step Ramp')
+    await clickScenarioSettingsSection('Ramp Pattern')
     const stageGroup = container.querySelector<HTMLSelectElement>('[aria-label="Load group for advanced stages"]')
     expect(stageGroup).not.toBeNull()
     if (!stageGroup) return
@@ -3158,6 +3177,7 @@ describe('TestHub', () => {
 
     await chooseLibraryScriptForGroup()
     await clickWizardStep('Run Settings')
+	await clickScenarioSettingsSection('Run Phases')
 	const durationField = getDurationFieldByLabel(container, 'Duration')
 
 	expect(durationField?.input.value).toBe('1')
@@ -3225,11 +3245,13 @@ describe('TestHub', () => {
 
     await chooseLibraryScriptForGroup()
     await clickWizardStep('Run Settings')
+    await clickScenarioSettingsSection('Run Phases')
 
     expect(getDurationFieldByLabel(container, 'Duration')?.input.value).toBe('18')
     expect(getDurationFieldByLabel(container, 'Duration')?.select.value).toBe('m')
+    await clickScenarioSettingsSection('Target Load')
     expect(container.textContent).toContain('Goal Controller')
-    await clickScenarioSettingsSection('Run Protection')
+    await clickScenarioSettingsSection('Advanced Settings')
     expect(container.textContent).toContain('Pre-Run Assurance')
     expect(container.textContent).toContain('Script shakeout gate')
     expect(container.textContent).toContain('Snapshot on error')
@@ -3678,7 +3700,7 @@ describe('TestHub', () => {
 
     await chooseLibraryScriptForGroup()
     await clickWizardStep('Run Settings')
-    await clickScenarioSettingsSection('Advanced Stair-Step Ramp')
+    await clickScenarioSettingsSection('Ramp Pattern')
 
     const enableStagesButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Enable Stages'))
     expect(enableStagesButton).toBeDefined()
@@ -3733,8 +3755,9 @@ describe('TestHub', () => {
     })
 
     await clickWizardStep('Run Settings')
-    await clickScenarioSettingsSection('Advanced Stair-Step Ramp')
+    await clickScenarioSettingsSection('Ramp Pattern')
     await clickButton('Enable Stages')
+    await clickScenarioSettingsSection('Run Phases')
 
     let durationField = getDurationFieldByLabel(container, 'Duration')
     expect(durationField).not.toBeNull()

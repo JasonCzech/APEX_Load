@@ -68,9 +68,12 @@ test('[U09] the five-step scenario builder preserves the draft and reviews the s
   await page.getByRole('button', { name: 'Use Closed VUser', exact: true }).click()
   await steps.getByRole('button', { name: /^Run Settings/ }).click()
   await expect(page.getByRole('heading', { level: 4, name: 'Run Settings' })).toBeVisible()
+  const scenarioTabs = page.getByRole('tablist', { name: 'Scenario settings sections' })
+  await scenarioTabs.getByRole('tab', { name: 'Run Phases' }).click()
   await page.getByLabel('Sustained load', { exact: true }).fill('2')
   await page.getByLabel('Sustained load Unit').selectOption('m')
   await page.getByLabel('Ramp-up', { exact: true }).fill('1')
+  await scenarioTabs.getByRole('tab', { name: 'Target Load' }).click()
   const vusers = page.getByLabel('Peak VUsers', { exact: true })
   await vusers.fill('17')
 
@@ -81,8 +84,10 @@ test('[U09] the five-step scenario builder preserves the draft and reviews the s
   // Walk backward and forward through the footer controls instead of jumping
   // directly to Review. These checks catch a wizard that remounts stale state.
   await page.getByRole('button', { name: 'Back', exact: true }).click()
+  await scenarioTabs.getByRole('tab', { name: 'Run Phases' }).click()
   await expect(page.getByLabel('Sustained load', { exact: true })).toHaveValue('2')
   await expect(page.getByLabel('Sustained load Unit')).toHaveValue('m')
+  await scenarioTabs.getByRole('tab', { name: 'Target Load' }).click()
   await expect(vusers).toHaveValue('17')
   await page.getByRole('button', { name: 'Back', exact: true }).click()
   await page.getByRole('button', { name: 'Back', exact: true }).click()
@@ -191,6 +196,7 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
   await expect(page.getByLabel('Runtime scope', { exact: true })).toHaveValue('0')
   await page.getByRole('tab', { name: 'Scenario Settings', exact: true }).click()
   await expect(page.getByLabel('Peak VUsers', { exact: true })).toHaveValue('5')
+  await page.getByRole('tablist', { name: 'Scenario settings sections' }).getByRole('tab', { name: 'Run Phases' }).click()
   await expect(page.getByLabel('Sustained load', { exact: true })).toHaveValue('3')
   await page.setViewportSize({ width: 600, height: 900 })
   const save = page.getByRole('button', { name: 'Save draft', exact: true })

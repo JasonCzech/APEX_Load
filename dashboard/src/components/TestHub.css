@@ -852,8 +852,9 @@
 
 .scenario-settings-sections {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+  min-width: 0;
 }
 
 .scenario-settings-section-tab {
@@ -876,6 +877,22 @@
 .scenario-settings-section-tab.active { border-color: var(--accent-border); background: var(--accent-soft); color: var(--text-primary); }
 
 .scenario-settings-section-panel { display: grid; gap: 14px; min-width: 0; }
+
+.stepped-ramp-worksheet[data-settings-tab] > .stepped-ramp-section { display: none; }
+.stepped-ramp-worksheet[data-settings-tab="composition"] > .stepped-ramp-section[data-tab="composition"],
+.stepped-ramp-worksheet[data-settings-tab="stages"] > .stepped-ramp-section[data-tab="stages"],
+.stepped-ramp-worksheet[data-settings-tab="phases"] > .stepped-ramp-section[data-tab="phases"],
+.stepped-ramp-worksheet[data-settings-tab="advanced"] > .stepped-ramp-section[data-tab="advanced"] { display: grid; }
+
+@media (max-width: 900px) {
+  .scenario-settings-sections {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+  .scenario-settings-section-tab { flex: 0 0 160px; }
+}
 
 /* The per-group runtime editor has up to 8 tabs; wrap them in a flex row rather than
    forcing the fixed 3-column grid the main run-settings tabs use. */
