@@ -174,7 +174,7 @@ func internalRuntimeSecretRollbackOwner(subject string) bool {
 
 func (s *Server) discoverProjectSecretMetadata(ctx context.Context, projectID string) (bool, error) {
 	if s == nil || s.store == nil || s.projectSecretStore == nil ||
-		!strings.Contains(secretStoreProvider(s.projectSecretStore), "azure_key_vault") {
+		!hasConfiguredExternalSecretProvider(secretStoreProvider(s.projectSecretStore)) {
 		return true, nil
 	}
 	scripts, err := listPublishedImportScripts(s.store, projectID, nil)
@@ -216,6 +216,10 @@ func (s *Server) discoverProjectSecretMetadata(ctx context.Context, projectID st
 		return false, err
 	}
 	return complete, nil
+}
+
+func hasConfiguredExternalSecretProvider(provider string) bool {
+	return strings.Contains(provider, "azure_key_vault") || strings.Contains(provider, "aws_secrets_manager")
 }
 
 const projectSecretDiscoveryRotationInterval = 5 * time.Second
@@ -343,9 +347,9 @@ func (s *Server) handleCreateProjectSecrets(w http.ResponseWriter, r *http.Reque
 		if err != nil {
 			status := http.StatusServiceUnavailable
 			message := "project secret could not be created"
-			if errors.Is(err, secretstore.ErrAlreadyExists) {
+			if errors.Is(err, secretstore.ErrAlreadyExists) || errors.Is(err, secretstore.ErrReservedBinding) {
 				status = http.StatusConflict
-				message = fmt.Sprintf("project secret %q already exists", input.Name)
+				message = fmt.Sprintf("project secret %q already exists or is reserved by the read-only Key Vault allowlist", input.Name)
 			}
 			details := map[string]any{}
 			if outcome == "provider_error_commit_ambiguous" {
@@ -786,7 +790,7 @@ func (s *Server) handleMigrateSourceSecrets(w http.ResponseWriter, r *http.Reque
 		metadata, outcome, err := createProjectSecretWithReconciliation(r.Context(), s.projectSecretStore, projectID, input.Name, input.Value, actor)
 		if err != nil {
 			status := http.StatusServiceUnavailable
-			if errors.Is(err, secretstore.ErrAlreadyExists) {
+			if errors.Is(err, secretstore.ErrAlreadyExists) || errors.Is(err, secretstore.ErrReservedBinding) {
 				status = http.StatusConflict
 			}
 			details := map[string]any{}
@@ -1166,6 +1170,7 @@ func (s *Server) clearProjectSourceSecretSessions(projectID string) {
 func (s *Server) projectSecretStatuses(r *http.Request, projectID string, names []string) ([]projectSecretStatus, error) {
 	ctx, cancel := engine.WithSecretResolutionBudget(r.Context())
 	defer cancel()
+	var legacyResolver engine.SecretResolver
 	result := make([]projectSecretStatus, 0, len(names))
 	for _, name := range names {
 		status := projectSecretStatus{Name: name}
@@ -1186,6 +1191,16 @@ func (s *Server) projectSecretStatuses(r *http.Request, projectID string, names 
 			status.Configured = true
 			status.Provider = "environment_read_only"
 			status.SourceScope = "project"
+		}
+		if !status.Configured && engine.ProjectKeyVaultBindingAllowlisted(projectID, name) {
+			if legacyResolver == nil {
+				legacyResolver = engine.NewProjectSecretResolver(projectID)
+			}
+			if _, found := engine.ResolveSecret(ctx, legacyResolver, name); found {
+				status.Configured = true
+				status.Provider = "azure_key_vault"
+				status.SourceScope = "project"
+			}
 		}
 		result = append(result, status)
 	}
@@ -1395,6 +1410,8 @@ func projectSecretErrorReason(err error) string {
 	switch {
 	case errors.Is(err, secretstore.ErrAlreadyExists):
 		return "already_exists"
+	case errors.Is(err, secretstore.ErrReservedBinding):
+		return "reserved_binding"
 	case errors.Is(err, secretstore.ErrNotFound):
 		return "not_found"
 	case errors.Is(err, secretstore.ErrReadOnly):

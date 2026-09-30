@@ -32,6 +32,14 @@ func TestDatabaseStoreEncryptsAndResolvesProjectSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := &DatabaseStore{Records: records, Wrapper: wrapper}
+	t.Setenv("APEXLOAD_AZURE_KEY_VAULT_URL", "https://vault.example.test")
+	t.Setenv("APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS", engine.ProjectSecretBindingName("project-a", "RESERVED"))
+	if _, err := store.Create(context.Background(), "project-a", "reserved", "must-not-shadow", "tester"); !errors.Is(err, ErrReservedBinding) {
+		t.Fatalf("allowlisted direct database create error = %v, want reserved binding", err)
+	}
+	if _, err := records.GetProjectSecretCipher("project-a", "RESERVED"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("allowlisted direct database create persisted a value: %v", err)
+	}
 	for _, sentinel := range []string{"[REDACTED]", " [redacted] ", "\t[ReDaCtEd]\n"} {
 		if _, err := store.Create(context.Background(), "project-a", "SENTINEL", sentinel, "tester"); err == nil {
 			t.Fatalf("Create accepted redaction sentinel %q", sentinel)

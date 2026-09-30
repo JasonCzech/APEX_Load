@@ -108,6 +108,7 @@ func (s *Server) handleListApplicationSecrets(w http.ResponseWriter, r *http.Req
 func (s *Server) applicationSecretStatuses(ctx context.Context, app *storage.Application, names []string) ([]map[string]any, error) {
 	ctx, cancel := engine.WithSecretResolutionBudget(ctx)
 	defer cancel()
+	var legacyProjectResolver engine.SecretResolver
 	result := make([]map[string]any, 0, len(names))
 	for _, name := range names {
 		status := map[string]any{"name": name, "configured": false}
@@ -132,6 +133,14 @@ func (s *Server) applicationSecretStatuses(ctx context.Context, app *storage.App
 			}
 			if status["configured"] == false && engine.ProjectScriptSecretEnvAvailable(app.ProjectID, name) {
 				status["configured"], status["provider"], status["source_scope"] = true, "environment_read_only", "project"
+			}
+			if status["configured"] == false && engine.ProjectKeyVaultBindingAllowlisted(app.ProjectID, name) {
+				if legacyProjectResolver == nil {
+					legacyProjectResolver = engine.NewProjectSecretResolver(app.ProjectID)
+				}
+				if _, found := engine.ResolveSecret(ctx, legacyProjectResolver, name); found {
+					status["configured"], status["provider"], status["source_scope"] = true, "azure_key_vault", "project"
+				}
 			}
 		}
 		result = append(result, status)

@@ -18,6 +18,7 @@ var (
 	ErrNotFound            = sql.ErrNoRows
 	ErrReadOnly            = errors.New("secret store is read-only")
 	ErrAlreadyExists       = errors.New("secret already exists")
+	ErrReservedBinding     = errors.New("secret binding is reserved by the read-only Azure Key Vault allowlist")
 	ErrCreateUnsupported   = errors.New("secret store does not support atomic create-only writes")
 	ErrRollbackUnsupported = errors.New("secret store does not support safe created-value rollback")
 	// ErrMetadataCommit means a provider value may have been committed, but the
@@ -176,6 +177,9 @@ func (c Chain) Create(ctx context.Context, projectID, name, value, actor string)
 			return Metadata{}, err
 		}
 	}
+	if engine.ProjectKeyVaultBindingAllowlisted(projectID, name) {
+		return Metadata{}, ErrReservedBinding
+	}
 	return target.Create(ctx, projectID, name, value, actor)
 }
 
@@ -206,6 +210,9 @@ func (c Chain) Replace(ctx context.Context, projectID, name, value, actor string
 		} else if !errors.Is(err, ErrNotFound) {
 			return Metadata{}, err
 		}
+	}
+	if engine.ProjectKeyVaultBindingAllowlisted(projectID, name) {
+		return Metadata{}, ErrReadOnly
 	}
 	return Metadata{}, ErrNotFound
 }

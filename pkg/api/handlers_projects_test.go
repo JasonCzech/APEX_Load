@@ -383,6 +383,7 @@ func TestDeleteProjectRetainsAndAttributesAuditHistory(t *testing.T) {
 		ExternalSecretCleanupRequired  bool     `json:"external_secret_cleanup_required"`
 		ExternalSecretCleanupNames     []string `json:"external_secret_cleanup_names"`
 		ExternalSecretCleanupProviders []string `json:"external_secret_cleanup_providers"`
+		ExternalSecretCleanupPrefix    string   `json:"external_secret_cleanup_prefix"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &deletionResponse); err != nil {
 		t.Fatalf("unmarshal project deletion response: %v", err)
@@ -394,6 +395,9 @@ func TestDeleteProjectRetainsAndAttributesAuditHistory(t *testing.T) {
 	if len(deletionResponse.ExternalSecretCleanupProviders) != 1 ||
 		deletionResponse.ExternalSecretCleanupProviders[0] != "azure_key_vault" {
 		t.Fatalf("external secret cleanup providers = %#v", deletionResponse.ExternalSecretCleanupProviders)
+	}
+	if deletionResponse.ExternalSecretCleanupPrefix != engine.ProjectSecretBindingPrefix(projectID) {
+		t.Fatalf("external secret cleanup prefix = %q", deletionResponse.ExternalSecretCleanupPrefix)
 	}
 	if _, exists := server.sourceSecretSessions["delete-source-session"]; exists {
 		t.Fatal("project deletion retained a source-secret session")

@@ -56,3 +56,23 @@ func TestAzureKeyVaultAllowedSecretNamesFailClosed(t *testing.T) {
 		t.Fatalf("oversized allowlist = %d names, %v; want rejection", len(allowed), err)
 	}
 }
+
+func TestProjectKeyVaultBindingAllowlistIsProjectScoped(t *testing.T) {
+	const projectID = "allowlisted-project"
+	name := ProjectSecretBindingName(projectID, "LOGIN_PASSWORD")
+	t.Setenv("APEXLOAD_AZURE_KEY_VAULT_URL", "https://vault.example.test")
+	t.Setenv("APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS", name)
+	if !ProjectKeyVaultAllowlistConfigured() || !ProjectKeyVaultProjectAllowlisted(projectID) ||
+		!ProjectKeyVaultBindingAllowlisted(projectID, "LOGIN_PASSWORD") ||
+		!ProjectKeyVaultBindingAllowlisted(projectID, "login.password") {
+		t.Fatal("project binding was not recognized as reserved")
+	}
+	if ProjectKeyVaultProjectAllowlisted("other-project") || ProjectKeyVaultBindingAllowlisted("other-project", "LOGIN_PASSWORD") ||
+		ProjectKeyVaultBindingAllowlisted(projectID, "OTHER") || ProjectKeyVaultBindingAllowlisted("\x00application:app", "LOGIN_PASSWORD") {
+		t.Fatal("allowlist reservation crossed project or logical name")
+	}
+	t.Setenv("APEXLOAD_AZURE_KEY_VAULT_URL", "http://vault.example.test")
+	if ProjectKeyVaultAllowlistConfigured() || ProjectKeyVaultBindingAllowlisted(projectID, "LOGIN_PASSWORD") {
+		t.Fatal("invalid vault URL reserved a project binding")
+	}
+}

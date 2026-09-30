@@ -210,6 +210,11 @@ func (s *Server) handleDeleteApplication(w http.ResponseWriter, r *http.Request)
 			cleanupNames = append(cleanupNames, metadata.Name)
 			providers[metadata.Provider] = struct{}{}
 		}
+		for _, provider := range []string{"azure_key_vault", "aws_secrets_manager"} {
+			if strings.Contains(secretStoreProvider(s.applicationSecretStore), provider) {
+				providers[provider] = struct{}{}
+			}
+		}
 		for provider := range providers {
 			cleanupProviders = append(cleanupProviders, provider)
 		}
@@ -222,7 +227,7 @@ func (s *Server) handleDeleteApplication(w http.ResponseWriter, r *http.Request)
 	}
 	s.recordAuditEvent(r, "application.delete", "success", "application", id, projectID, map[string]any{"name": name})
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": id,
-		"external_secret_cleanup_required":  len(cleanupNames) > 0,
+		"external_secret_cleanup_required":  len(cleanupProviders) > 0,
 		"external_secret_cleanup_names":     cleanupNames,
 		"external_secret_cleanup_providers": cleanupProviders,
 		"external_secret_cleanup_prefix":    engine.ProjectSecretBindingPrefix(storage.ApplicationSecretScopeID(id))})

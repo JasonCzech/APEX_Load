@@ -32,6 +32,12 @@ func (s *DatabaseStore) Writable() bool { return s != nil && s.Records != nil &&
 func (*DatabaseStore) Provider() string { return databaseProvider }
 
 func (s *DatabaseStore) Create(ctx context.Context, projectID, name, value, actor string) (Metadata, error) {
+	if !s.Writable() {
+		return Metadata{}, ErrReadOnly
+	}
+	if engine.ProjectKeyVaultBindingAllowlisted(projectID, name) {
+		return Metadata{}, ErrReservedBinding
+	}
 	record, err := s.encryptedRecord(ctx, projectID, name, value, actor)
 	if err != nil {
 		return Metadata{}, err

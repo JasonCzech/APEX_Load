@@ -443,7 +443,8 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		externalSecretDiscoveryComplete = false
 		slog.Warn("external project secret discovery incomplete; continuing with indexed cleanup guidance", "project_id", id, "reason", "provider_unavailable")
 	}
-	if strings.Contains(secretProvider, "azure_key_vault") {
+	legacyKeyVaultConfigured := engine.ProjectKeyVaultProjectAllowlisted(id)
+	if hasConfiguredExternalSecretProvider(secretProvider) || legacyKeyVaultConfigured {
 		externalSecretCleanupPrefix = engine.ProjectSecretBindingPrefix(id)
 	}
 	// Authorization and external-provider discovery have completed before the
@@ -480,6 +481,9 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, "failed to enumerate externally retained project secrets")
 			return
 		}
+		if len(secretMetadata) > 0 && externalSecretCleanupPrefix == "" {
+			externalSecretCleanupPrefix = engine.ProjectSecretBindingPrefix(id)
+		}
 		seenExternalNames := make(map[string]struct{}, len(secretMetadata))
 		seenExternalProviders := make(map[string]struct{}, len(secretMetadata)+1)
 		for _, metadata := range secretMetadata {
@@ -499,15 +503,21 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		if strings.Contains(secretProvider, "azure_key_vault") {
-			if _, found := seenExternalProviders["azure_key_vault"]; !found {
-				externalSecretCleanupProviders = append(externalSecretCleanupProviders, "azure_key_vault")
+		for _, provider := range []string{"azure_key_vault", "aws_secrets_manager"} {
+			if strings.Contains(secretProvider, provider) || (provider == "azure_key_vault" && legacyKeyVaultConfigured) {
+				if _, found := seenExternalProviders[provider]; !found {
+					externalSecretCleanupProviders = append(externalSecretCleanupProviders, provider)
+				}
 			}
 		}
 		sort.Strings(externalSecretCleanupNames)
 		sort.Strings(externalSecretCleanupProviders)
-	} else if strings.Contains(secretProvider, "azure_key_vault") {
-		externalSecretCleanupProviders = append(externalSecretCleanupProviders, "azure_key_vault")
+	} else {
+		for _, provider := range []string{"azure_key_vault", "aws_secrets_manager"} {
+			if strings.Contains(secretProvider, provider) || (provider == "azure_key_vault" && legacyKeyVaultConfigured) {
+				externalSecretCleanupProviders = append(externalSecretCleanupProviders, provider)
+			}
+		}
 	}
 	externalSecretCleanupRequired := len(externalSecretCleanupNames) > 0 || externalSecretCleanupPrefix != ""
 	tests, err := s.store.ListTests(id, nil)

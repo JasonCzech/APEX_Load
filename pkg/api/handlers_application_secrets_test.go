@@ -273,6 +273,42 @@ func TestApplicationSecretSharedByAssignedScriptsAndRotatedOnce(t *testing.T) {
 	}
 }
 
+func TestDeleteApplicationFlagsUnindexedExternalSecretCleanup(t *testing.T) {
+	records, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "secrets.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = records.Close() })
+	now := time.Now().UTC()
+	const projectID = "external-application-project"
+	const applicationID = "unindexed-external-app"
+	if err := records.SaveProject(&storage.Project{ID: projectID, Name: "External", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := records.SaveApplication(&storage.Application{ID: applicationID, ProjectID: projectID, Name: "Unindexed", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: records, ApplicationSecretStore: &recordingDiscoverySecretStore{provider: "aws_secrets_manager"}})
+	deleted := secretAPIRequest(t, server, http.MethodDelete, "/api/v1/applications/"+applicationID, nil)
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("application deletion = %d %s", deleted.Code, deleted.Body.String())
+	}
+	var cleanup struct {
+		Required  bool     `json:"external_secret_cleanup_required"`
+		Names     []string `json:"external_secret_cleanup_names"`
+		Providers []string `json:"external_secret_cleanup_providers"`
+		Prefix    string   `json:"external_secret_cleanup_prefix"`
+	}
+	if err := json.Unmarshal(deleted.Body.Bytes(), &cleanup); err != nil {
+		t.Fatal(err)
+	}
+	if !cleanup.Required || len(cleanup.Names) != 0 || len(cleanup.Providers) != 1 ||
+		cleanup.Providers[0] != "aws_secrets_manager" ||
+		cleanup.Prefix != engine.ProjectSecretBindingPrefix(storage.ApplicationSecretScopeID(applicationID)) {
+		t.Fatalf("unindexed application cleanup guidance = %#v", cleanup)
+	}
+}
+
 func TestApplicationSecretAuthorization(t *testing.T) {
 	records, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "secrets.db"))
 	if err != nil {

@@ -408,9 +408,11 @@ func (*discoveryFailureSecretStore) DiscoverManagedMetadata(context.Context, str
 }
 
 type recordingDiscoverySecretStore struct {
-	mu      sync.Mutex
-	indexed map[string]secretstore.Metadata
-	batches [][]string
+	mu            sync.Mutex
+	indexed       map[string]secretstore.Metadata
+	batches       [][]string
+	provider      string
+	metadataStore storage.ProjectSecretMetadataStore
 }
 
 func (*recordingDiscoverySecretStore) Get(context.Context, string, string) (string, secretstore.Metadata, error) {
@@ -431,8 +433,13 @@ func (s *recordingDiscoverySecretStore) List(context.Context, string) ([]secrets
 	}
 	return metadata, nil
 }
-func (*recordingDiscoverySecretStore) Writable() bool   { return false }
-func (*recordingDiscoverySecretStore) Provider() string { return "azure_key_vault" }
+func (*recordingDiscoverySecretStore) Writable() bool { return false }
+func (s *recordingDiscoverySecretStore) Provider() string {
+	if s.provider != "" {
+		return s.provider
+	}
+	return "azure_key_vault"
+}
 func (s *recordingDiscoverySecretStore) DiscoverManagedMetadata(_ context.Context, projectID string, names []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -441,7 +448,14 @@ func (s *recordingDiscoverySecretStore) DiscoverManagedMetadata(_ context.Contex
 	}
 	s.batches = append(s.batches, append([]string(nil), names...))
 	for _, name := range names {
-		s.indexed[name] = secretstore.Metadata{ProjectID: projectID, Name: name, Provider: "azure_key_vault"}
+		s.indexed[name] = secretstore.Metadata{ProjectID: projectID, Name: name, Provider: s.Provider()}
+		if s.metadataStore != nil {
+			if _, err := s.metadataStore.CreateProjectSecretMetadata(&storage.ProjectSecretMetadata{
+				ProjectID: projectID, SecretName: name, Provider: s.Provider(),
+			}); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -926,6 +940,143 @@ func TestProjectSecretDiscoveryRotatesBoundedBatchesUntilEveryReferencedNameIsCo
 		if len(batch) == 0 || len(batch) > projectSecretMaxBatchItems {
 			t.Fatalf("batch %d size = %d, want 1-%d", index+1, len(batch), projectSecretMaxBatchItems)
 		}
+	}
+}
+
+func TestAWSProjectSecretDiscoveryAndDeletionCleanupGuidance(t *testing.T) {
+	server, records, _, projectID := newProjectSecretAPIServer(t)
+	discovery := &recordingDiscoverySecretStore{
+		provider: "aws_secrets_manager", metadataStore: records,
+	}
+	server.projectSecretStore = discovery
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x53}, 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.brunoArtifactWrapper = wrapper
+	script := &dsl.Script{
+		ID: "aws-secret-consumer", Name: "AWS secret consumer", Version: "1", Protocol: "http", ProjectID: projectID,
+		Config: dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{{Name: "Call", Type: "request", Target: "/", Headers: map[string]string{
+			"Authorization": "Bearer {{secret.AWS_TOKEN}}",
+		}}},
+	}
+	if _, err := server.runner.StoreScriptDurable(script); err != nil {
+		t.Fatal(err)
+	}
+	listed := secretAPIRequest(t, server, http.MethodGet, "/api/v1/projects/"+projectID+"/secrets", nil)
+	if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), `"name":"AWS_TOKEN"`) {
+		t.Fatalf("AWS secret list = %d %s", listed.Code, listed.Body.String())
+	}
+	if _, err := records.GetProjectSecretMetadata(projectID, "AWS_TOKEN"); err != nil {
+		t.Fatalf("AWS secret metadata was not indexed: %v", err)
+	}
+	deleted := secretAPIRequest(t, server, http.MethodDelete, "/api/v1/projects/"+projectID, nil)
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("delete project = %d %s", deleted.Code, deleted.Body.String())
+	}
+	var cleanup struct {
+		Required  bool     `json:"external_secret_cleanup_required"`
+		Names     []string `json:"external_secret_cleanup_names"`
+		Providers []string `json:"external_secret_cleanup_providers"`
+		Prefix    string   `json:"external_secret_cleanup_prefix"`
+	}
+	if err := json.Unmarshal(deleted.Body.Bytes(), &cleanup); err != nil {
+		t.Fatal(err)
+	}
+	if !cleanup.Required || len(cleanup.Names) != 1 || cleanup.Names[0] != "AWS_TOKEN" ||
+		len(cleanup.Providers) != 1 || cleanup.Providers[0] != "aws_secrets_manager" ||
+		cleanup.Prefix != engine.ProjectSecretBindingPrefix(projectID) {
+		t.Fatalf("AWS cleanup guidance = %#v", cleanup)
+	}
+
+	// Unknown AWS names cannot be enumerated from script references. The
+	// deterministic prefix still tells administrators what to remove.
+	unindexedID := projectID + "-unindexed"
+	now := time.Now().UTC()
+	if err := records.SaveProject(&storage.Project{ID: unindexedID, Name: "Unindexed AWS secrets", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	unindexed := secretAPIRequest(t, server, http.MethodDelete, "/api/v1/projects/"+unindexedID, nil)
+	if unindexed.Code != http.StatusOK {
+		t.Fatalf("delete unindexed project = %d %s", unindexed.Code, unindexed.Body.String())
+	}
+	if err := json.Unmarshal(unindexed.Body.Bytes(), &cleanup); err != nil {
+		t.Fatal(err)
+	}
+	if !cleanup.Required || len(cleanup.Names) != 0 || len(cleanup.Providers) != 1 ||
+		cleanup.Providers[0] != "aws_secrets_manager" || cleanup.Prefix != engine.ProjectSecretBindingPrefix(unindexedID) {
+		t.Fatalf("unindexed AWS cleanup guidance = %#v", cleanup)
+	}
+}
+
+func TestLegacyReadOnlyKeyVaultProjectBindingStatusCreateAndDeletion(t *testing.T) {
+	server, records, managed, projectID := newProjectSecretAPIServer(t)
+	const name = "LEGACY_PASSWORD"
+	const value = "legacy-vault-password"
+	var vaultAvailable atomic.Bool
+	vaultAvailable.Store(true)
+	vault := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !vaultAvailable.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		if r.URL.Path != "/secrets/"+engine.ProjectSecretBindingName(projectID, name) {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = io.WriteString(w, `{"value":"`+value+`"}`)
+	}))
+	t.Cleanup(vault.Close)
+	previousTransport := http.DefaultTransport
+	http.DefaultTransport = vault.Client().Transport
+	t.Cleanup(func() { http.DefaultTransport = previousTransport })
+	t.Setenv("APEXLOAD_AZURE_KEY_VAULT_URL", vault.URL)
+	t.Setenv("APEXLOAD_AZURE_KEY_VAULT_AUTH", "token")
+	t.Setenv("APEXLOAD_AZURE_KEY_VAULT_TOKEN", "test-token")
+	t.Setenv("APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS", engine.ProjectSecretBindingName(projectID, name))
+	server.projectSecretStore = secretstore.Chain{Stores: []secretstore.Store{managed, secretstore.EnvironmentStore{}}}
+
+	status := secretAPIRequest(t, server, http.MethodPost, "/api/v1/projects/"+projectID+"/secrets/status", map[string]any{"names": []string{name}})
+	var statusPayload struct {
+		Secrets []projectSecretStatus `json:"secrets"`
+	}
+	if status.Code != http.StatusOK || json.Unmarshal(status.Body.Bytes(), &statusPayload) != nil ||
+		len(statusPayload.Secrets) != 1 || !statusPayload.Secrets[0].Configured ||
+		statusPayload.Secrets[0].Provider != "azure_key_vault" || statusPayload.Secrets[0].Writable {
+		t.Fatalf("legacy Key Vault status = %d %s", status.Code, status.Body.String())
+	}
+	inherited, err := server.applicationSecretStatuses(context.Background(), &storage.Application{ID: "app", ProjectID: projectID}, []string{name})
+	if err != nil || len(inherited) != 1 || inherited[0]["configured"] != true || inherited[0]["source_scope"] != "project" {
+		t.Fatalf("inherited project Key Vault status = %#v, %v", inherited, err)
+	}
+	vaultAvailable.Store(false)
+	create := secretAPIRequest(t, server, http.MethodPost, "/api/v1/projects/"+projectID+"/secrets", map[string]any{
+		"secrets": []map[string]string{{"name": name, "value": "must-not-shadow-vault"}},
+	})
+	if create.Code != http.StatusConflict || strings.Contains(create.Body.String(), "must-not-shadow-vault") {
+		t.Fatalf("allowlisted create = %d %s", create.Code, create.Body.String())
+	}
+	if _, _, err := managed.Get(context.Background(), projectID, name); !errors.Is(err, secretstore.ErrNotFound) {
+		t.Fatalf("database shadowed Key Vault binding: %v", err)
+	}
+	rotate := secretAPIRequest(t, server, http.MethodPut, "/api/v1/projects/"+projectID+"/secrets/"+name, map[string]any{"value": "must-not-rotate-vault"})
+	if rotate.Code != http.StatusConflict || strings.Contains(rotate.Body.String(), "must-not-rotate-vault") {
+		t.Fatalf("read-only Key Vault rotation = %d %s", rotate.Code, rotate.Body.String())
+	}
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x64}, 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.brunoArtifactWrapper = wrapper
+	deleted := secretAPIRequest(t, server, http.MethodDelete, "/api/v1/projects/"+projectID, nil)
+	if deleted.Code != http.StatusOK || !strings.Contains(deleted.Body.String(), `"external_secret_cleanup_required":true`) ||
+		!strings.Contains(deleted.Body.String(), engine.ProjectSecretBindingPrefix(projectID)) ||
+		!strings.Contains(deleted.Body.String(), `"azure_key_vault"`) {
+		t.Fatalf("legacy Key Vault deletion guidance = %d %s", deleted.Code, deleted.Body.String())
+	}
+	if _, err := records.GetProject(projectID); err == nil {
+		t.Fatal("project survived deletion")
 	}
 }
 

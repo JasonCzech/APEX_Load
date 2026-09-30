@@ -370,9 +370,9 @@ func ProjectSecretBindingName(projectID, name string) string {
 }
 
 // ProjectSecretBindingPrefix is the value-free prefix shared by every
-// deterministic Azure Key Vault name for a project. It gives administrators
-// actionable cleanup guidance even when no logical names were indexed before
-// the project was deleted.
+// deterministic external-provider secret name for a project. It gives
+// administrators actionable cleanup guidance even when no logical names were
+// indexed before the project was deleted.
 func ProjectSecretBindingPrefix(projectID string) string {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
@@ -401,6 +401,53 @@ func ScriptSecretEnvAvailable(name string) bool {
 // global secret namespace.
 func ProjectScriptSecretEnvAvailable(projectID, name string) bool {
 	_, ok := (envSecretResolver{}).Resolve(ProjectSecretBindingName(projectID, name))
+	return ok
+}
+
+// ProjectKeyVaultAllowlistConfigured reports whether the legacy read-only
+// resolver has a valid operator allowlist.
+func ProjectKeyVaultAllowlistConfigured() bool {
+	if _, err := validateAzureKeyVaultBaseURL(os.Getenv("APEXLOAD_AZURE_KEY_VAULT_URL")); err != nil {
+		return false
+	}
+	allowed, err := azureKeyVaultAllowedSecretNamesFromEnv()
+	return err == nil && len(allowed) > 0
+}
+
+// ProjectKeyVaultProjectAllowlisted reports whether any legacy read-only
+// Key Vault binding belongs to the project's deterministic namespace.
+func ProjectKeyVaultProjectAllowlisted(projectID string) bool {
+	if strings.ContainsRune(projectID, '\x00') || !ProjectKeyVaultAllowlistConfigured() {
+		return false
+	}
+	prefix := ProjectSecretBindingPrefix(projectID)
+	if prefix == "" {
+		return false
+	}
+	allowed, _ := azureKeyVaultAllowedSecretNamesFromEnv()
+	for name := range allowed {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// ProjectKeyVaultBindingAllowlisted prevents a managed create from silently
+// shadowing a name assigned to the legacy read-only Key Vault resolver. The
+// remote value may be temporarily unavailable, so a failed read is not proof
+// that the binding is free.
+func ProjectKeyVaultBindingAllowlisted(projectID, name string) bool {
+	if strings.TrimSpace(projectID) == "" || strings.ContainsRune(projectID, '\x00') || !ProjectKeyVaultAllowlistConfigured() {
+		return false
+	}
+	normalizedName, err := NormalizeLogicalSecretName(name)
+	if err != nil {
+		return false
+	}
+	allowed, _ := azureKeyVaultAllowedSecretNamesFromEnv()
+	physicalName := normalizeAzureKeyVaultSecretName(ProjectSecretBindingName(projectID, normalizedName))
+	_, ok := allowed[physicalName]
 	return ok
 }
 

@@ -378,6 +378,9 @@ Application secrets use separate encrypted database records or a separate logica
 namespace in Azure Key Vault, AWS Secrets Manager, and the read-only environment
 provider. Deleting an application removes its database records. The deletion API
 reports names and providers of external values that an administrator must remove.
+When an external provider is configured, the deletion response also marks
+cleanup as required and supplies the deterministic prefix even if no logical
+names were indexed before deletion.
 Provision an external application value under the binding derived by
 `engine.ProjectSecretBindingName(storage.ApplicationSecretScopeID(applicationID), name)`;
 for the read-only environment provider, use
@@ -387,6 +390,12 @@ These helpers keep application bindings separate from project bindings.
 The `APEXLOAD_WRAPPING_*` key settings are shared with encrypted Bruno source
 artifacts. A writable encrypted database Project Secrets store requires one of
 them even when Bruno execution is disabled.
+
+The legacy read-only Key Vault resolver uses
+`APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS`. An allowlisted project binding is
+reserved for that vault even while the remote value is unavailable, so creating
+a database secret with the same name cannot silently shadow it. Secret status
+reports a readable legacy vault value as a read-only project secret.
 
 Generate a local wrapping key with:
 
@@ -441,5 +450,8 @@ values are not downgraded to plaintext transport.
 ### Project deletion
 
 Deleting a project removes its encrypted database secret records. Azure Key
-Vault values are retained by design and the deletion response identifies the
-logical names that require administrative cleanup.
+Vault and AWS Secrets Manager values are retained by design. The deletion
+response identifies indexed logical names, their providers, and the
+deterministic project binding prefix for finding values that were provisioned
+externally but never indexed. This also applies to the legacy read-only Key
+Vault allowlist.

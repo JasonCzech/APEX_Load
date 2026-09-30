@@ -192,6 +192,26 @@ func TestChainDoesNotAdvertiseRollbackWhenWritableChildCannotCompensate(t *testi
 	}
 }
 
+func TestChainCreateDoesNotShadowAllowlistedLegacyKeyVaultBinding(t *testing.T) {
+	const projectID = "legacy-vault-project"
+	t.Setenv("APEXLOAD_AZURE_KEY_VAULT_URL", "https://vault.example.test")
+	t.Setenv("APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS", engine.ProjectSecretBindingName(projectID, "LOGIN_PASSWORD"))
+	child := &createOnlyNoRollbackStore{}
+	chain := Chain{Stores: []Store{child, EnvironmentStore{}}}
+	if _, err := chain.Create(context.Background(), projectID, "LOGIN_PASSWORD", "new-value", "admin"); !errors.Is(err, ErrReservedBinding) {
+		t.Fatalf("allowlisted create error = %v, want reserved binding", err)
+	}
+	if child.creates != 0 {
+		t.Fatalf("allowlisted create wrote %d values", child.creates)
+	}
+	if _, err := chain.Replace(context.Background(), projectID, "LOGIN_PASSWORD", "new-value", "admin"); !errors.Is(err, ErrReadOnly) {
+		t.Fatalf("allowlisted rotation error = %v, want read-only", err)
+	}
+	if _, err := chain.Create(context.Background(), "other-project", "LOGIN_PASSWORD", "new-value", "admin"); err != nil {
+		t.Fatalf("unrelated project create = %v", err)
+	}
+}
+
 func TestRollbackCapabilityRequiresTheAtomicRollbackOperation(t *testing.T) {
 	store := &falseRollbackCapabilityStore{}
 	if SupportsCreatedValueRollback(store) {
