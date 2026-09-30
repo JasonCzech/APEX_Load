@@ -1,3 +1,4 @@
+import { testOutcomeStatus } from '../utils/testStatusUtils'
 import {
   Application,
   Domain,
@@ -355,7 +356,7 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
         releaseIds: compact([test.release_id]),
         releaseNames: compact([release?.name]),
         protocol: protocols,
-        status: test.status,
+        status: testOutcomeStatus(test.status, Boolean(test.stopped_by_subject)),
         summary: `${test.total_vusers || 0} VUsers · ${test.duration || 'No duration'}`,
         detail: test.scenario_id ? `Scenario ${test.scenario_id}` : 'Ad hoc run',
         createdAt: test.created_at,
@@ -364,7 +365,7 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
         searchText: buildSearchText([
           test.id,
           test.name,
-          test.status,
+          testOutcomeStatus(test.status, Boolean(test.stopped_by_subject)),
           protocols,
           test.duration,
           test.total_vusers,

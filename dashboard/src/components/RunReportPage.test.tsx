@@ -133,7 +133,7 @@ vi.mock('./runReport/RunReportVerdictBanner', () => ({
 vi.mock('./RunOutcomeSummary', () => ({ default: () => <section data-testid="outcome" /> }))
 vi.mock('./runReport/RunReportKpiScorecard', () => ({ default: () => <section data-testid="kpis" /> }))
 vi.mock('./runReport/SynchronizedTimeline', () => ({ default: () => <section data-testid="timeline" /> }))
-vi.mock('./runReport/TransactionSlaScoreboard', () => ({ default: () => <section data-testid="scoreboard" /> }))
+vi.mock('./runReport/TransactionSlaScoreboard', () => ({ default: ({ onSelectAction }: { onSelectAction: (name: string) => void }) => <section data-testid="scoreboard"><button onClick={() => onSelectAction('Checkout')}>Inspect Checkout SLA</button></section> }))
 vi.mock('./runReport/RunReportDiagnostics', () => ({ default: () => <section data-testid="diagnostics" /> }))
 vi.mock('./runReport/RunReportCompareBar', () => ({
   default: ({ onPinBaseline, options = [] }: { onPinBaseline: () => Promise<boolean>; options?: TestSummary[] }) => (
@@ -235,6 +235,18 @@ describe('RunReportPage', () => {
     await act(async () => root.unmount())
     container.remove()
     vi.clearAllMocks()
+  })
+
+  it('switches from request metrics to named transactions when opening an SLA row', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, metric_populations: { action: { transactions: 10 }, transaction: { transactions: 5 } }, sla_rows: { Checkout: { name: 'Checkout', volume: 5, result_kind: 'na' } } } as unknown as RunArchiveReport
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="performance" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    const population = () => Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.startsWith('Metric population'))!
+    expect(population().value).toBe('action')
+    await act(async () => buttonByText(container, 'Inspect Checkout SLA')!.click())
+    expect(population().value).toBe('transaction')
+    expect(mocks.archiveModel.onSelectedArchiveActionChange).toHaveBeenCalledWith('Checkout')
+    expect(mocks.archiveModel.onSelectedArchiveGroupChange).toHaveBeenCalledWith('')
   })
 
   it('offers recovery instead of pending findings after the archive request fails', async () => {

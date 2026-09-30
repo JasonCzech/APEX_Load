@@ -94,6 +94,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 
 	namedTransactions := make(map[string]*archivePopulationAccumulator)
 	requests := make(map[string]*archivePopulationAccumulator)
+	unknownRecords := make(map[string]*archivePopulationAccumulator)
 	populations := map[string]*archivePopulationAccumulator{"action": {}, "transaction": {}, "unknown": {}}
 	var totalDuration float64
 	transactionIndex := 0
@@ -102,6 +103,15 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		normalizeArchiveTransactionSnapshot(&tx)
 		population := archiveEventPopulation(tx)
 		populations[population].add(tx)
+		if population == "unknown" {
+			if unknownRecords[tx.ActionName] == nil {
+				if len(unknownRecords) >= maxArchiveAnalysisDimensions {
+					return fmt.Errorf("archive exceeds unclassified record dimension limit")
+				}
+				unknownRecords[tx.ActionName] = &archivePopulationAccumulator{}
+			}
+			unknownRecords[tx.ActionName].add(tx)
+		}
 		if population == "action" {
 			if requests[tx.ActionName] == nil {
 				if len(requests) >= maxArchiveAnalysisDimensions {
@@ -513,6 +523,12 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.ArtifactInventory = buildRunArchiveArtifactInventory(record, manifest)
 
 	window := archivePopulationWindow(manifest)
+	report.ByUnknown = make(map[string]RunArchiveActionStats)
+	for name, acc := range unknownRecords {
+		stats := acc.finish(window).RunArchiveActionStats
+		stats.PeakTPS = archiveActionPeakTPSFromBuckets(summaries, actionSummaryBuckets["unknown\x00"+name])
+		report.ByUnknown[name] = stats
+	}
 	report.ByRequest = make(map[string]RunArchiveActionStats)
 	for name, acc := range requests {
 		stats := acc.finish(window).RunArchiveActionStats

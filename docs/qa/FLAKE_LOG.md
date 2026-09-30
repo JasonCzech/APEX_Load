@@ -180,3 +180,12 @@ Detection is now systematic rather than accidental: `.github/workflows/flake-hun
 runs the suite nightly with `-count=5 -shuffle=on -race` and reports repeat
 failures. It deliberately does not gate PRs — a flake-finder on the merge path
 teaches people to re-run until green.
+
+## Dashboard cross-cutting verification observations — 2026-09-30
+
+The first dev-admin `npm run test:cycle` run observed two failures without retries:
+
+- `tier0-live-metrics.spec.ts` / `live metrics advance while a run is executing`: the count stayed at 5 for the 60-second observation window.
+- `workflow-execution.spec.ts` / `archive read failure is visible and retry restores the same run evidence`: the transactions download returned HTTP 500 after the injected report failure was removed.
+
+Concurrent Go compilation and dashboard checks exhausted local disk space (613 MiB free when inspected). Rebuildable Go cache data was cleared; source and application data were preserved. Disk pressure is a suspected environmental contributor, not a confirmed root cause of either browser failure. The original failures remain recorded rather than being hidden by automatic retries. Owner: dashboard QA. No quarantine; first observation. Both original failures passed on the fresh-controller follow-up (the live-metrics and execution workflow files). Neither assertion was weakened and automatic retries remain disabled. Root cause remains unconfirmed; retain this first-occurrence signal for subsequent runs.

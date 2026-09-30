@@ -757,6 +757,9 @@ func runCalendarEventFromOccurrence(occurrence *storage.ScenarioScheduleOccurren
 		User:             userForCalendarSchedule(schedule, test),
 		Topology:         topologyForCalendar(test, inventory, manifest, now),
 	}
+	if calendarOperatorStopped(test, manifest) {
+		event.ReasonCode = "operator_stopped"
+	}
 	if test != nil {
 		event.TestRefKey = test.RefKey
 		event.ApplicationID = test.ApplicationID
@@ -777,6 +780,10 @@ func runCalendarEventFromOccurrence(occurrence *storage.ScenarioScheduleOccurren
 	return event
 }
 
+func calendarOperatorStopped(test *ManagedTest, manifest *RunArchiveManifest) bool {
+	return test != nil && test.Status == "COMPLETE" && (test.StoppedBySubject != "" || (manifest != nil && manifest.TerminationReason == "operator_stopped"))
+}
+
 func runCalendarEventFromTest(test *ManagedTest, scenarios map[string]runCalendarScenarioSummary, inventory SystemInventoryResponse, manifest *RunArchiveManifest, now time.Time) RunCalendarEvent {
 	start := calendarTestStart(test)
 	end := calendarTestEnd(test, start, now)
@@ -790,7 +797,12 @@ func runCalendarEventFromTest(test *ManagedTest, scenarios map[string]runCalenda
 	}
 	endAt := end.UTC()
 	scenario := scenarios[test.ScenarioID]
+	reason := ""
+	if calendarOperatorStopped(test, manifest) {
+		reason = "operator_stopped"
+	}
 	return RunCalendarEvent{
+		ReasonCode:    reason,
 		ID:            "test:" + test.ID,
 		Source:        "ad_hoc",
 		RunType:       runType,

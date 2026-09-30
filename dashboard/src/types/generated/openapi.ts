@@ -1642,6 +1642,19 @@ export interface operations {
               "peak_tps"?: number;
               "transactions"?: number;
             }>;
+            "by_unknown"?: Record<string, {
+              "avg_response_ms"?: number;
+              "error_pct"?: number;
+              "errors"?: number;
+              "max_response_ms"?: number;
+              "min_response_ms"?: number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions"?: number;
+            }>;
             "change_attribution"?: {
               "data_revision"?: string;
               "environment"?: string;
@@ -43704,6 +43717,7 @@ export interface operations {
         "network_profile"?: string;
         "offset"?: number;
         "phase"?: string;
+        "population"?: string;
         "region"?: string;
         "soap_operation"?: string;
         "sort_by"?: string;
@@ -45585,6 +45599,19 @@ export interface operations {
               "peak_tps"?: number;
               "transactions": number;
             }>;
+            "by_unknown"?: Record<string, {
+              "avg_response_ms": number;
+              "error_pct": number;
+              "errors": number;
+              "max_response_ms": number;
+              "min_response_ms": number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions": number;
+            }>;
             "change_attribution": {
               "data_revision"?: string;
               "environment"?: string;
@@ -46902,6 +46929,7 @@ export interface operations {
         "network_profile"?: string;
         "offset"?: number;
         "phase"?: string;
+        "population"?: string;
         "region"?: string;
         "soap_operation"?: string;
         "sort_by"?: string;

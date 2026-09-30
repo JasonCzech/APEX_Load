@@ -1,3 +1,4 @@
+import { defaultReportPopulation, reportPopulationActions, type MetricPopulation } from './runReport/reportPresentation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useApi } from '../hooks/useApi'
@@ -61,6 +62,7 @@ export const DEFAULT_ARCHIVE_TRANSACTION_FILTERS: ArchiveTransactionFilters = {
 }
 
 interface ExecutionArchiveModel {
+  archivePopulation?: MetricPopulation
   hasArchive: boolean
   retryArchiveReport: () => void
   archiveError: string
@@ -126,7 +128,7 @@ function parseTimeFilter(value: string): string | undefined {
   return parsed.toISOString()
 }
 
-export function useExecutionArchiveModel(test: TestSummary | null, includeReleaseTrend = true, comparisonBaselineId?: string): ExecutionArchiveModel {
+export function useExecutionArchiveModel(test: TestSummary | null, includeReleaseTrend = true, comparisonBaselineId?: string, populationChoice?: MetricPopulation | null): ExecutionArchiveModel {
   const api = useApi()
   const [archiveReport, setArchiveReport] = useState<RunArchiveReport | null>(null)
   const [archiveAnalysis, setArchiveAnalysis] = useState<RunArchiveAnalysisResponse | null>(null)
@@ -150,6 +152,19 @@ export function useExecutionArchiveModel(test: TestSummary | null, includeReleas
   const [archivePageSize, setArchivePageSize] = useState(ARCHIVE_PAGE_SIZE_DEFAULT)
   const [expandedArchiveEvent, setExpandedArchiveEvent] = useState<string | null>(null)
 
+  const archivePopulation = populationChoice === undefined ? (archiveReport?.metric_populations ? 'action' : undefined) : populationChoice || defaultReportPopulation(archiveReport)
+  const archiveActionEntries = useMemo(() => {
+    if (!archiveReport) return []
+    const stats = reportPopulationActions(archiveReport, archivePopulation)
+    return Object.entries(stats || {}).sort((a, b) => b[1].transactions - a[1].transactions)
+  }, [archiveReport, archivePopulation])
+  useEffect(() => {
+    setSelectedArchiveAction(current => archiveActionEntries.some(([name]) => name === current) ? current : archiveActionEntries[0]?.[0] || '')
+    setSelectedArchiveSOAPOperation('')
+    setArchiveTransactionsOffset(0)
+    setExpandedArchiveEvent(null)
+  }, [archiveActionEntries])
+
   const hasArchive = Boolean(test?.archive)
   const testID = test?.id || ''
   const testStatus = test?.status
@@ -157,6 +172,7 @@ export function useExecutionArchiveModel(test: TestSummary | null, includeReleas
   const archiveAnalysisBaselineID = comparisonBaselineId ?? test?.comparison_baseline?.source_test_id ?? ''
   const archiveTransactionQueryParams = useMemo(() => ({
     action: selectedArchiveAction,
+    ...(archiveReport?.metric_populations && archivePopulation ? { population: archivePopulation } : {}),
     soap_operation: selectedArchiveSOAPOperation || undefined,
     group: selectedArchiveGroup || undefined,
 	region: committedArchiveTransactionFilters.region.trim() || undefined,
@@ -179,6 +195,8 @@ export function useExecutionArchiveModel(test: TestSummary | null, includeReleas
     limit: archivePageSize,
     offset: archiveTransactionsOffset,
   }), [
+    archiveReport?.metric_populations,
+    archivePopulation,
     archiveErrorsOnly,
     archivePageSize,
     committedArchiveTransactionFilters,
@@ -229,10 +247,8 @@ export function useExecutionArchiveModel(test: TestSummary | null, includeReleas
       try {
         const report = await api.getTestArchiveReport(testID, ...(includeReleaseTrend ? [] : [{ includeReleaseTrend: false }]))
         if (cancelled) return
-        const actionNames = Object.keys((report.metric_populations ? report.by_request : report.by_action) || {})
         const operationNames = Object.keys(report.by_soap_operation || {})
         setArchiveReport(report)
-        setSelectedArchiveAction((current) => (current && actionNames.includes(current) ? current : actionNames[0] || ''))
         setSelectedArchiveSOAPOperation((current) => (current && operationNames.includes(current) ? current : ''))
         setArchiveTransactionsOffset(0)
       } catch (error: unknown) {
@@ -265,6 +281,8 @@ export function useExecutionArchiveModel(test: TestSummary | null, includeReleas
 
     const loadArchiveTransactions = async () => {
       setArchiveTransactionsLoading(true)
+      setArchiveTransactions([])
+      setArchiveTransactionsTotal(0)
       try {
         const response = await api.getTestArchiveTransactions(testID, archiveTransactionQueryParams)
         if (cancelled) return
@@ -302,6 +320,7 @@ export function useExecutionArchiveModel(test: TestSummary | null, includeReleas
     const loadArchiveAnalysis = async () => {
       const baselineID = archiveAnalysisBaselineID && archiveAnalysisBaselineID !== testID ? archiveAnalysisBaselineID : undefined
       setArchiveAnalysisLoading(true)
+      setArchiveAnalysis(null)
       setArchiveAnalysisError('')
       try {
         const response = await api.getTestArchiveAnalysis(testID, {
@@ -340,11 +359,6 @@ export function useExecutionArchiveModel(test: TestSummary | null, includeReleas
       cancelled = true
     }
   }, [api, archiveAnalysisBaselineID, archiveTransactionQueryParams, hasArchive, selectedArchiveAction, testID, testStatus])
-
-  const archiveActionEntries = useMemo(() => {
-    if (!archiveReport) return []
-    return Object.entries((archiveReport.metric_populations ? archiveReport.by_request : archiveReport.by_action) || {}).sort((a, b) => b[1].transactions - a[1].transactions)
-  }, [archiveReport])
 
   const archiveSOAPOperationEntries = useMemo(() => {
     if (!archiveReport) return []
@@ -480,6 +494,7 @@ export function useExecutionArchiveModel(test: TestSummary | null, includeReleas
   }, [api, test, archiveReport])
 
   return {
+    archivePopulation,
     hasArchive,
     archiveError,
     retryArchiveReport,

@@ -2472,7 +2472,7 @@ function RunCalendarPanel({
                   </div>
                 </div>
                 <div className="run-calendar-detail-grid">
-                  <RunCalendarDetailRow label="Status" value={formatRunCalendarStatus(selectedEvent.status)} />
+                  <RunCalendarDetailRow label="Status" value={formatRunCalendarStatus(selectedEvent.status, selectedEvent.reason_code)} />
                   <RunCalendarDetailRow label="When" value={`${formatCalendarDateTime(selectedEvent.start_at, selectedEvent.timezone)} - ${selectedEvent.end_at ? formatCalendarDateTime(selectedEvent.end_at, selectedEvent.timezone) : 'open'}`} />
                   <RunCalendarDetailRow label="User" value={runCalendarUserLabel(selectedEvent)} />
                   <RunCalendarDetailRow label="Workload" value={`${(selectedEvent.workload.total_vusers ?? 0).toLocaleString()} VUsers / ${selectedEvent.workload.duration || 'duration pending'}`} />
@@ -2546,10 +2546,10 @@ function RunCalendarEventButton({ event, dayDate, selected, mode, onSelect }: { 
   const continuesIntoDay = runCalendarEventContinuesIntoDay(event, dayDate)
   const scheduledZoneTime = event.timezone ? formatCalendarTime(event.start_at, event.timezone) : ''
   return (
-    <button type="button" className={`run-calendar-event ${mode} ${runCalendarEventClass(event)} ${continuesIntoDay ? 'continuing' : ''} ${selected ? 'selected' : ''}`} onClick={() => onSelect(event)} title={`${event.title} / ${continuesIntoDay ? 'continues' : formatRunCalendarStatus(event.status)}`}>
+    <button type="button" className={`run-calendar-event ${mode} ${runCalendarEventClass(event)} ${continuesIntoDay ? 'continuing' : ''} ${selected ? 'selected' : ''}`} onClick={() => onSelect(event)} title={`${event.title} / ${continuesIntoDay ? 'continues' : formatRunCalendarStatus(event.status, event.reason_code)}`}>
       <span className="run-calendar-event-time">{event.status === 'queued' ? `Queued since ${formatCalendarDateTime(event.start_at)}` : continuesIntoDay ? '↪ Continues' : formatCalendarTime(event.start_at)}</span>
       <span className="run-calendar-event-title">{event.title}</span>
-      <span className="run-calendar-event-meta">{runCalendarSourceLabel(event)} / {formatRunCalendarStatus(event.status)}{scheduledZoneTime && !continuesIntoDay ? ` / ${scheduledZoneTime}` : ''}</span>
+      <span className="run-calendar-event-meta">{runCalendarSourceLabel(event)} / {formatRunCalendarStatus(event.status, event.reason_code)}{scheduledZoneTime && !continuesIntoDay ? ` / ${scheduledZoneTime}` : ''}</span>
     </button>
   )
 }
@@ -2718,7 +2718,8 @@ function formatCalendarDayNumber(date: Date, view: RunCalendarView) {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
-function formatRunCalendarStatus(status: string) {
+function formatRunCalendarStatus(status: string, reason?: string) {
+  if (status.toUpperCase() === 'COMPLETE' && reason === 'operator_stopped') return 'Stopped by operator'
   return status
     .replace(/_/g, ' ')
     .toLowerCase()

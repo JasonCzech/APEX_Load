@@ -4587,6 +4587,44 @@ paths:
                           transactions:
                             type: integer
                             format: int64
+                    by_unknown:
+                      type: object
+                      additionalProperties:
+                        type: object
+                        properties:
+                          avg_response_ms:
+                            type: number
+                            format: double
+                          error_pct:
+                            type: number
+                            format: double
+                          errors:
+                            type: integer
+                            format: int64
+                          max_response_ms:
+                            type: number
+                            format: double
+                          min_response_ms:
+                            type: number
+                            format: double
+                          p50_ms:
+                            type: number
+                            format: double
+                          p90_ms:
+                            type: number
+                            format: double
+                          p95_ms:
+                            type: number
+                            format: double
+                          p99_ms:
+                            type: number
+                            format: double
+                          peak_tps:
+                            type: number
+                            format: double
+                          transactions:
+                            type: integer
+                            format: int64
                     change_attribution:
                       type: object
                       properties:
@@ -244643,6 +244681,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: population
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: region
           in: query
           description: Handler-defined query parameter.
@@ -250106,6 +250150,51 @@ paths:
                         - max_response_ms
                         - min_response_ms
                         - transactions
+                  by_unknown:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        avg_response_ms:
+                          type: number
+                          format: double
+                        error_pct:
+                          type: number
+                          format: double
+                        errors:
+                          type: integer
+                          format: int64
+                        max_response_ms:
+                          type: number
+                          format: double
+                        min_response_ms:
+                          type: number
+                          format: double
+                        p50_ms:
+                          type: number
+                          format: double
+                        p90_ms:
+                          type: number
+                          format: double
+                        p95_ms:
+                          type: number
+                          format: double
+                        p99_ms:
+                          type: number
+                          format: double
+                        peak_tps:
+                          type: number
+                          format: double
+                        transactions:
+                          type: integer
+                          format: int64
+                      required:
+                        - avg_response_ms
+                        - error_pct
+                        - errors
+                        - max_response_ms
+                        - min_response_ms
+                        - transactions
                   change_attribution:
                     type: object
                     properties:
@@ -254021,6 +254110,12 @@ paths:
             type: integer
             format: int64
         - name: phase
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: population
           in: query
           description: Handler-defined query parameter.
           required: false

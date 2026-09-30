@@ -1629,6 +1629,7 @@ export interface IntegrationOutcome {
 
 export interface RunArchiveReport {
   outcome?: IntegrationOutcome
+  by_unknown?: Record<string, RunArchiveActionStats>
   by_request?: Record<string, RunArchiveActionStats>
   by_transaction?: Record<string, RunArchiveActionStats>
   metric_populations?: Record<string, RunArchiveActionStats & { average_rate_per_second?: number }>

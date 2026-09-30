@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
-import { isCompletedTestStatus, isLiveTestStatus, normalizeTestStatus, resolveTestStatus } from './testStatusUtils'
+import { testOutcomeStatus, isCompletedTestStatus, isLiveTestStatus, normalizeTestStatus, resolveTestStatus } from './testStatusUtils'
 import type { TestSummary } from '../types'
 
 describe('test status utilities', () => {
+  it('separates an operator stop from successful completion without changing terminal lifecycle semantics', () => {
+    expect(testOutcomeStatus('COMPLETE', true)).toBe('STOPPED')
+    expect(testOutcomeStatus('COMPLETE')).toBe('COMPLETE')
+    expect(testOutcomeStatus('stopped')).toBe('STOPPED')
+    expect(testOutcomeStatus('FAILED', true)).toBe('FAILED')
+    expect(testOutcomeStatus('STOPPING', true)).toBe('STOPPING')
+    expect(isCompletedTestStatus(testOutcomeStatus('COMPLETE', true))).toBe(true)
+  })
+
   it('normalizes status casing and common terminal aliases', () => {
     expect(normalizeTestStatus('failed')).toBe('FAILED')
     expect(normalizeTestStatus(' completed ')).toBe('COMPLETE')

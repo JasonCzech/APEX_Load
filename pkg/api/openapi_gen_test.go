@@ -867,7 +867,7 @@ func TestGeneratedSwaggerIncludesInferredHandlerContracts(t *testing.T) {
 			queryParameters[parameter.Name] = parameter
 		}
 	}
-	for _, name := range []string{"action", "format", "limit", "offset", "status", "trace_id"} {
+	for _, name := range []string{"action", "population", "format", "limit", "offset", "status", "trace_id"} {
 		if _, ok := queryParameters[name]; !ok {
 			t.Errorf("archive transactions is missing inferred %q query parameter", name)
 		}

@@ -1,5 +1,5 @@
 import './StatusBadge.css'
-import { normalizeTestStatus } from '../utils/testStatusUtils'
+import { normalizeTestStatus, testOutcomeStatus } from '../utils/testStatusUtils'
 
 const STATUS_STYLES: Record<string, string> = {
   QUEUED: 'status-queued',
@@ -25,7 +25,7 @@ export default function StatusBadge({ status, stoppedByOperator }: Props) {
   const normalizedStatus = normalizeTestStatus(status)
   return (
     <span className={`status-badge ${STATUS_STYLES[normalizedStatus] || ''}`}>
-      {normalizedStatus === 'COMPLETE' && stoppedByOperator ? 'Stopped by operator' : normalizedStatus || 'UNKNOWN'}
+      {testOutcomeStatus(status, stoppedByOperator) === 'STOPPED' ? 'Stopped by operator' : normalizedStatus || 'UNKNOWN'}
     </span>
   )
 }

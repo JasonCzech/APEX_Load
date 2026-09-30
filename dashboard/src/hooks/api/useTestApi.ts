@@ -52,6 +52,7 @@ import { apiFetch, request } from '../apiClient'
 import { withCallOptions, type ApiCallOptions } from './requestOptions'
 
 type ArchiveTransactionsParams = {
+  population?: 'action' | 'transaction' | 'unknown'
   limit?: number
   offset?: number
   action?: string
@@ -620,6 +621,13 @@ export function useTestApi() {
         limit: params?.limit,
         offset: params?.offset,
         action: params?.action,
+        population: params?.population,
+        region: params?.region,
+        network_profile: params?.network_profile,
+        source_transaction: params?.source_transaction,
+        hierarchy: params?.hierarchy,
+        phase: params?.phase,
+        has_detail: params?.has_detail,
         soap_operation: params?.soap_operation,
         group: params?.group,
         success: params?.success,
@@ -741,6 +749,13 @@ export function useTestApi() {
         limit: params?.limit,
         offset: params?.offset,
         action: params?.action,
+        population: params?.population,
+        region: params?.region,
+        network_profile: params?.network_profile,
+        source_transaction: params?.source_transaction,
+        hierarchy: params?.hierarchy,
+        phase: params?.phase,
+        has_detail: params?.has_detail,
         soap_operation: params?.soap_operation,
         group: params?.group,
         success: params?.success,

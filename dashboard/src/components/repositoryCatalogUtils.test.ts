@@ -23,7 +23,7 @@ const defaultFilters: RepositoryCatalogFilters = {
   customEndDate: '',
 }
 
-function buildRows() {
+function buildRows(stoppedBySubject?: string) {
   return buildRepositoryCatalogRows({
     activeDomain: domain,
     categories: [category],
@@ -67,6 +67,7 @@ function buildRows() {
         id: 'test-1',
         name: 'Checkout Run 001',
         status: 'COMPLETE',
+        stopped_by_subject: stoppedBySubject,
         project_id: project.id,
         release_id: 'release-1',
         scenario_id: 'scenario-1',
@@ -93,6 +94,14 @@ function buildRows() {
 }
 
 describe('repositoryCatalogUtils', () => {
+  it('makes operator-stopped runs searchable and filterable separately from completed runs', () => {
+    const rows = buildRows('operator')
+    expect(rows.find(row => row.id === 'test-1')?.status).toBe('STOPPED')
+    expect(rows.find(row => row.id === 'test-1')?.searchText).toContain('stopped')
+    expect(filterRepositoryRows(rows, 'test', { ...defaultFilters, status: 'COMPLETE' }).some(row => row.id === 'test-1')).toBe(false)
+    expect(filterRepositoryRows(rows, 'test', { ...defaultFilters, status: 'STOPPED' }).some(row => row.id === 'test-1')).toBe(true)
+  })
+
   it('normalizes all repository asset types and preserves archived assets', () => {
     const rows = buildRows()
     const summary = summarizeRepositoryRows(rows)

@@ -541,6 +541,9 @@ func compactArchiveAnalysisTransaction(tx TransactionEvent) TransactionEvent {
 
 func archiveAnalysisFilterSummary(filter transactionEventFilter) map[string]any {
 	out := map[string]any{}
+	if filter.Population != "" {
+		out["population"] = filter.Population
+	}
 	if filter.Action != "" {
 		out["action"] = filter.Action
 	}

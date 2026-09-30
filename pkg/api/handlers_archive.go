@@ -1183,6 +1183,7 @@ func parseArchiveSampleLimit(w http.ResponseWriter, r *http.Request) (int, bool)
 func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transactionEventFilter, bool) {
 	query := r.URL.Query()
 	filter := transactionEventFilter{
+		Population:        strings.TrimSpace(query.Get("population")),
 		Action:            strings.TrimSpace(query.Get("action")),
 		SOAPOperation:     strings.TrimSpace(query.Get("soap_operation")),
 		Group:             strings.TrimSpace(query.Get("group")),
@@ -1197,6 +1198,10 @@ func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transa
 		DependencyTarget:  strings.TrimSpace(query.Get("dependency_target")),
 		Status:            strings.TrimSpace(query.Get("status")),
 		ErrorContains:     strings.TrimSpace(query.Get("error_contains")),
+	}
+	if filter.Population != "" && filter.Population != "action" && filter.Population != "transaction" && filter.Population != "unknown" {
+		writeError(w, http.StatusBadRequest, "invalid population")
+		return transactionEventFilter{}, false
 	}
 	if raw := query.Get("has_detail"); raw != "" {
 		parsed, err := strconv.ParseBool(raw)

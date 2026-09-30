@@ -62,6 +62,15 @@ const importedScript: ScriptDefinition = {
 }
 
 describe('scriptAuthoringAssist', () => {
+  it.each(['http', 'http/1.1', 'http/2', 'soap', 'grpc', 'websocket', 'java_http'])('requires a target for %s even when actions have absolute URLs', protocol => {
+    const script = { ...importedScript, protocol, config: { ...importedScript.config, base_url: '  ' } }
+    expect(collectAuthoringIssues(script).find(issue => issue.id === 'script:base_url')?.severity).toBe('error')
+    expect(collectAuthoringIssues({ ...script, config: { ...script.config, base_url: 'https://example.test' } }).some(issue => issue.id === 'script:base_url')).toBe(false)
+  })
+  it.each(['browser', 'bruno', 'database', 'network', 'jms', 'jms-solace', 'kafka', 'eventhubs', 'sap_gui', 'java_vuser', ''])('permits protocol-owned connection settings for %s', protocol => {
+    expect(collectAuthoringIssues({ ...importedScript, protocol, config: { ...importedScript.config, base_url: '' } }).some(issue => issue.id === 'script:base_url')).toBe(false)
+  })
+
   it('collects action-level lint issues for missing references and malformed steps', () => {
     const issues = collectAuthoringIssues(importedScript)
     const grouped = groupIssuesByAction(issues, importedScript.actions.length)

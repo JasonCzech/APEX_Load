@@ -245,6 +245,13 @@ describe('caller-supplied transport options', () => {
     expect(error.name).toBe('AbortError')
   })
 
+  it.each(['getTestArchiveTransactions', 'getTestArchiveAnalysis'] as const)('%s forwards population and visible archive filters', async method => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ transactions: [], total: 0 }))
+    await api.tests[method]('run', { population: 'transaction', action: 'Shared', region: 'east', network_profile: 'mobile', source_transaction: 'Checkout', hierarchy: 'group', phase: 'action', has_detail: false })
+    const url = new URL(String(fetchMock.mock.calls[fetchMock.mock.calls.length - 1][0]), 'http://localhost')
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({ population: 'transaction', action: 'Shared', region: 'east', network_profile: 'mobile', source_transaction: 'Checkout', hierarchy: 'group', phase: 'action', has_detail: 'false' })
+  })
+
   it('applies a caller deadline as a hard timeout', async () => {
     fetchMock.mockImplementationOnce(() => new Promise(() => {}))
     await expect(api.tests.getTestArchiveReport('t-1', { timeoutMs: 5 })).rejects.toThrow(

@@ -95,6 +95,7 @@ interface Props {
   onScenarioViewChange?: (view: 'library' | 'builder' | 'plans') => void
   initialView?: 'library' | 'builder' | 'plans'
   featurePolicySignal?: number
+  onScriptWorkflowChange?: (active: boolean) => void
 }
 
 export interface ScenarioFormState {
@@ -958,7 +959,7 @@ function ScenarioModelPreviewPanel({
   )
 }
 
-function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, onScenarioViewChange, initialView = 'library', featurePolicySignal = 0 }: Props) {
+function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, onScenarioViewChange, initialView = 'library', featurePolicySignal = 0 }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const activeProjectId = activeProject?.id
@@ -1021,6 +1022,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const [savedNotice, setSavedNotice] = useState('')
   const [runtimeScope, setRuntimeScope] = useState('defaults')
   const [reviewScriptId, setReviewScriptId] = useState<string | null>(null)
+  useEffect(() => {
+    onScriptWorkflowChange?.(Boolean(prerequisiteScript || reviewScriptId))
+    return () => onScriptWorkflowChange?.(false)
+  }, [onScriptWorkflowChange, prerequisiteScript, reviewScriptId])
   const errorRef = useRef<HTMLDivElement>(null)
   useEffect(() => { if (error) errorRef.current?.focus() }, [error])
   const filterScope = `scenarios:${activeProject?.domain_id || ''}:${activeProjectId || ''}`

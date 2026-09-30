@@ -1,11 +1,20 @@
-import type { RunArchiveReport, RunArchiveOverview } from '../../types'
+import type { RunArchiveReport, RunArchiveOverview, RunArchiveActionStats } from '../../types'
 
 export type MetricPopulation = 'action' | 'transaction' | 'unknown'
 export const populationLabels: Record<MetricPopulation, string> = {
   action: 'Requests / actions', transaction: 'Named transactions', unknown: 'Unclassified legacy records',
 }
 export function defaultReportPopulation(report: RunArchiveReport | null): MetricPopulation {
+  if (report && !report.metric_populations) return 'unknown'
   return (['action', 'transaction', 'unknown'] as const).find(key => (report?.metric_populations?.[key]?.transactions ?? 0) > 0) || 'action'
+}
+/** Old reports contain only mixed records; never relabel them as measured requests. */
+export function reportPopulationActions(report: RunArchiveReport | null, population?: MetricPopulation): Record<string, RunArchiveActionStats> {
+  if (!report) return {}
+  if (population === 'transaction') return report.by_transaction || {}
+  if (population === 'action') return report.by_request || {}
+  if (population === 'unknown') return report.by_unknown || (!report.metric_populations ? report.by_action : undefined) || {}
+  return (report.metric_populations ? report.by_request : report.by_action) || {}
 }
 export function reportPopulationOverview(report: RunArchiveReport | null, population: MetricPopulation): RunArchiveOverview | undefined {
   if (!report) return undefined

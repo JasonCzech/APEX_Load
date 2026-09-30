@@ -34,8 +34,8 @@ vi.mock('../desktop/desktopFiles', () => ({
   startDesktopBrowserDownload: vi.fn(),
 }))
 
-function ArchiveHarness({ test, baselineId }: { test: TestSummary | null; baselineId?: string }) {
-  const model = useExecutionArchiveModel(test, true, baselineId)
+function ArchiveHarness({ test, baselineId, population }: { test: TestSummary | null; baselineId?: string; population?: 'action' | 'transaction' | null }) {
+  const model = useExecutionArchiveModel(test, true, baselineId, population)
 
   return (
     <div>
@@ -86,6 +86,19 @@ describe('useExecutionArchiveModel', () => {
     container.remove()
     setDesktopApiCapability('')
     vi.clearAllMocks()
+  })
+
+  it('keeps same-name requests and transactions separate when the population changes', async () => {
+    const stats = { transactions: 2, errors: 0, error_pct: 0, avg_response_ms: 10 }
+    apiMock.getTestArchiveReport.mockResolvedValue({ ...buildEmptyArchiveReport(), metric_populations: { action: stats, transaction: stats }, by_request: { Shared: stats }, by_transaction: { Shared: { ...stats, errors: 1 }, Checkout: stats } })
+    apiMock.getTestArchiveTransactions.mockResolvedValue({ transactions: [], total: 0 })
+    const test = buildArchivedTest()
+    await act(async () => root.render(<ArchiveHarness test={test} population={null} />))
+    expect(apiMock.getTestArchiveTransactions).toHaveBeenLastCalledWith('test-1', expect.objectContaining({ population: 'action', action: 'Shared' }))
+    await act(async () => root.render(<ArchiveHarness test={test} population="transaction" />))
+    expect(apiMock.getTestArchiveTransactions).toHaveBeenLastCalledWith('test-1', expect.objectContaining({ population: 'transaction', action: 'Shared', offset: 0 }))
+    expect(apiMock.getTestArchiveAnalysis).toHaveBeenLastCalledWith('test-1', expect.objectContaining({ population: 'transaction', action: 'Shared' }))
+    expect(apiMock.getTestArchiveReport).toHaveBeenCalledTimes(1)
   })
 
   it('clears a report failure and loads fresh evidence on retry', async () => {

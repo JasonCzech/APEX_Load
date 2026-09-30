@@ -1,3 +1,4 @@
+import { testOutcomeStatus } from '../utils/testStatusUtils'
 import BulkActions from './ux/BulkActions'
 import { lifecycleElapsedSeconds, formatElapsedSeconds } from './runReport/executionPresentation'
 import RowActions from './ux/RowActions'
@@ -70,7 +71,7 @@ interface Props {
 }
 
 type SortField = 'source' | 'name' | 'status' | 'total_vusers' | 'groups' | 'started' | 'duration' | 'archive'
-type StatusFilter = 'all' | 'complete' | 'failed' | 'aborted'
+type StatusFilter = 'all' | 'complete' | 'stopped' | 'failed' | 'aborted'
 type ArchiveFilter = 'all' | 'ready' | 'pending'
 type ComparisonBreakdown = BrowserBreakdown
 const MAX_COMPARISON_RUNS = 10
@@ -141,7 +142,7 @@ function catalogItemForTest(test: TestSummary): LibraryCatalogItem {
     project_id: test.project_id,
     application_id: test.application_id,
     release_id: test.release_id,
-    status: test.status,
+    status: testOutcomeStatus(test.status, Boolean(test.stopped_by_subject)),
     execution_run_date: test.start_time || test.started_at || test.created_at,
     updated_at: test.ended_at || test.created_at,
     has_archive: Boolean(test.archive),
@@ -725,7 +726,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
           source: 'Local',
           syncStatus: syncStatusForLocal(test.id),
           name: test.name,
-          status: resolveStatus(test, testStatuses),
+          status: testOutcomeStatus(resolveStatus(test, testStatuses), Boolean(test.stopped_by_subject)),
           startedAt: test.start_time || test.started_at || test.created_at,
           duration: formatElapsedSeconds(lifecycleElapsedSeconds(test)),
           durationSeconds: lifecycleElapsedSeconds(test),
@@ -1914,6 +1915,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                   <select className="settings-input library-source-select" value={statusFilter} onChange={event => setStatusFilter(event.target.value as StatusFilter)}>
                     <option value="all">All statuses</option>
                     <option value="complete">Complete</option>
+                    <option value="stopped">Stopped by operator</option>
                     <option value="failed">Failed</option>
                     <option value="aborted">Aborted</option>
                   </select>

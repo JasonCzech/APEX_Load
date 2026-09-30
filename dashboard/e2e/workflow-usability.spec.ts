@@ -57,11 +57,13 @@ test('missing-script detour preserves the scenario draft on cancellation',async(
   await page.getByRole('button',{name:'Choose script for Group 1'}).click()
   await page.getByRole('dialog',{name:'Choose Script'}).getByRole('button',{name:'Import script',exact:true}).click()
   await expect(page.getByRole('button',{name:/OpenAPI \/ Swagger/})).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Help for this page', exact: true })).toHaveAttribute('href', /article=authoring/)
   await page.getByRole('button',{name:'Dashboard',exact:true}).click()
   await expect(page.getByRole('dialog')).toContainText('Scenario Builder has unsaved changes')
   await page.getByRole('button',{name:'Keep editing',exact:true}).click()
   await page.getByRole('button',{name:'Back to scenario draft'}).click()
   await expect(page.getByPlaceholder('Scenario name')).toHaveValue('Retain my draft')
+  await expect(page.getByRole('link', { name: 'Help for this page', exact: true })).toHaveAttribute('href', /article=scenarios/)
   await expect(page.getByRole('button',{name:'Choose script for Group 1'})).toBeVisible()
 })
 

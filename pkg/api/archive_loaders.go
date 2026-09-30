@@ -172,6 +172,9 @@ func readJSONLSortedTransactionPageFrom(ctx context.Context, reader io.Reader, p
 }
 
 func transactionMatchesArchiveFilter(item *TransactionEvent, filter transactionEventFilter) bool {
+	if filter.Population != "" && archiveEventPopulation(*item) != filter.Population {
+		return false
+	}
 	if filter.Action != "" && !strings.EqualFold(item.ActionName, filter.Action) {
 		return false
 	}

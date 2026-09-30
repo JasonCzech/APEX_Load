@@ -1,3 +1,4 @@
+import { requiresScriptBaseURL } from './scriptAuthoringAssist'
 import { MessageDetailFields } from './MessageDetailFields'
 import { HTTPReplayPolicyFields } from './HTTPReplayPolicyFields'
 import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
@@ -374,7 +375,7 @@ export function ScriptRuntimeSettingsView({
           {capabilities.requiresBaseURL && (
             <label>
               <span>{isGrpcScript ? 'gRPC Target' : isWebSocketScript ? 'WebSocket Origin' : 'Base URL'}</span>
-              <input value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder={isGrpcScript ? 'dns:///api.example.com:443' : isWebSocketScript ? 'wss://api.example.com' : 'https://api.example.com'} />
+              <input data-author-field="base_url" required={requiresScriptBaseURL(script.protocol)} value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder={isGrpcScript ? 'dns:///api.example.com:443' : isWebSocketScript ? 'wss://api.example.com' : 'https://api.example.com'} />
             </label>
           )}
           {isDatabaseScript && (

@@ -16,6 +16,12 @@ export function normalizeTestStatus(status?: string): string {
   return STATUS_ALIASES[normalized] || normalized
 }
 
+/** Display outcome; lifecycle normalization remains separate for execution controls. */
+export function testOutcomeStatus(status?: string, stoppedByOperator = false): string {
+  const normalized = normalizeTestStatus(status)
+  return normalized === 'COMPLETE' && (stoppedByOperator || status?.trim().toUpperCase() === 'STOPPED') ? 'STOPPED' : normalized
+}
+
 export function isCompletedTestStatus(status?: string): boolean {
   return COMPLETED_TEST_STATUSES.has(normalizeTestStatus(status))
 }

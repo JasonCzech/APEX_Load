@@ -378,6 +378,7 @@ type archivePage struct {
 }
 
 type transactionEventFilter struct {
+	Population        string
 	Action            string
 	SOAPOperation     string
 	Group             string
@@ -419,6 +420,7 @@ type RunArchiveReport struct {
 	IdentityNames                     RunArchiveIdentityNames                `json:"identity_names"`
 	Outcome                           *IntegrationOutcome                    `json:"outcome,omitempty"`
 	ByTransaction                     map[string]RunArchiveActionStats       `json:"by_transaction,omitempty"`
+	ByUnknown                         map[string]RunArchiveActionStats       `json:"by_unknown,omitempty"`
 	ByRequest                         map[string]RunArchiveActionStats       `json:"by_request,omitempty"`
 	MetricPopulations                 map[string]ArchiveMetricPopulation     `json:"metric_populations,omitempty"`
 	SchemaVersion                     string                                 `json:"schema_version"`

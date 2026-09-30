@@ -400,6 +400,12 @@ function collectControlFlowIssues(action: ScriptActionDefinition, phase: Authori
   }
 }
 
+/** Mirrors the controller's protocolAllowsEmptyBaseURL contract. */
+export function requiresScriptBaseURL(protocol: string): boolean {
+  const family = protocol.trim().startsWith('jms-') ? 'jms' : protocol.trim()
+  return protocol !== '' && !['browser', 'bruno', 'database', 'network', 'jms', 'kafka', 'eventhubs', 'sap_gui', 'java_vuser'].includes(family)
+}
+
 export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue[] {
   const issues: AuthoringIssue[] = []
   const parameterNames = new Set((script.parameters || []).map((parameter) => normalizeTokenName(parameter.name || '')).filter(Boolean))
@@ -412,6 +418,10 @@ export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue
       severity: 'error',
       message: 'Script name is required before validation, replay, or save.',
     })
+  }
+
+  if (requiresScriptBaseURL(script.protocol) && !script.config.base_url?.trim()) {
+    pushIssue(issues, { id: 'script:base_url', severity: 'error', message: 'Base URL is required. Open Script Configuration to set the target.' })
   }
 
   const authType = script.config.http?.auth?.type

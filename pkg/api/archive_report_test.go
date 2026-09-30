@@ -73,6 +73,9 @@ func TestBuildRunArchiveReportComputesOverallPercentiles(t *testing.T) {
 			t.Fatalf("%s = %.3f, want ~%.3f", label, got, want)
 		}
 	}
+	if report.ByUnknown["Step"].Transactions != 10 || len(report.ByRequest) != 0 || len(report.ByTransaction) != 0 {
+		t.Fatalf("legacy records must have their own drill-down statistics: %+v", report.ByUnknown)
+	}
 	// Linear-interpolation percentiles over sorted [10..100].
 	approx("p50", report.Overview.P50Ms, 55.0)
 	approx("p90", report.Overview.P90Ms, 91.0)

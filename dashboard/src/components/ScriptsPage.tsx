@@ -181,6 +181,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
   const [libraryNotice, setLibraryNotice] = useState('')
+  const [scriptsLoadError, setScriptsLoadError] = useState('')
   const [secretDialogScript, setSecretDialogScript] = useState<StoredScript | null>(null)
   const [selectedScriptIds, setSelectedScriptIds] = useState<Set<string>>(new Set())
   const [assignmentScripts, setAssignmentScripts] = useState<StoredScript[] | null>(null)
@@ -392,14 +393,15 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       const res = await api.listScripts(projectId)
       if (!isProjectScopeCurrent(scope) || scriptsRequestGenerationRef.current !== requestGeneration) return
       setScripts(res.scripts || [])
+      setScriptsLoadError('')
     } catch (error) {
       if (!isProjectScopeCurrent(scope) || scriptsRequestGenerationRef.current !== requestGeneration) return
       setScriptsLoadFailed(true)
-      appendLibraryNotice(getErrorMessage(error, 'Unable to load scripts.'))
+      setScriptsLoadError(getErrorMessage(error, 'Unable to load scripts.'))
     } finally {
       if (isProjectScopeCurrent(scope) && scriptsRequestGenerationRef.current === requestGeneration) setScriptsLoading(false)
     }
-  }, [activeProjectId, api, appendLibraryNotice, isProjectScopeCurrent])
+  }, [activeProjectId, api, isProjectScopeCurrent])
 
   useEffect(() => {
     let cancelled = false
@@ -443,6 +445,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     setEffectiveAuthAccessResources([])
     setEffectiveAccessLoaded(false)
     setLibraryNotice('')
+    setScriptsLoadError('')
     setSelectedScriptIds(new Set())
     setDeletingScriptIds(new Set())
     setAssignmentScripts(null)
@@ -1056,6 +1059,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
 
   return (
     <>
+      {scriptsLoadError && <p className="settings-notice form-error" role="alert">{scriptsLoadError} <button type="button" className="btn btn-secondary btn-sm" disabled={scriptsLoading} onClick={() => void refresh()}>Retry loading scripts</button></p>}
       {libraryNotice && (
         <p className="settings-notice form-error" role="alert">
           {libraryNotice}{' '}

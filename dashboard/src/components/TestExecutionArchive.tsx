@@ -61,6 +61,7 @@ type ArchiveView =
   | 'transactions'
 
 interface Props {
+  archivePopulation?: 'action' | 'transaction' | 'unknown'
   hideReportExports?: boolean
   view?: ArchiveView
   hasArchive: boolean
@@ -798,6 +799,7 @@ function renderBrowserSummary(
 }
 
 export default function TestExecutionArchive({
+  archivePopulation,
   view = 'all',
   hideReportExports = false,
   hasArchive,
@@ -889,7 +891,7 @@ export default function TestExecutionArchive({
     () => archiveReport ? buildArchiveCompactPanels(archiveReport, test, runtimeBrowserSummary) : [],
     [archiveReport, runtimeBrowserSummary, test],
   )
-  const selectedActionStats = (archiveReport?.metric_populations ? archiveReport.by_request : archiveReport?.by_action)?.[selectedArchiveAction]
+  const selectedActionStats = archiveActionEntries.find(([name]) => name === selectedArchiveAction)?.[1]
   const { archiveAnalysisNodes, archiveAnalysisEdges, archiveAnalysisNodeByID } = useMemo(() => ({
     archiveAnalysisNodes: sortArchiveAnalysisNodes(archiveAnalysis?.graph.nodes || [], test.id),
     archiveAnalysisEdges: sortArchiveAnalysisEdges(archiveAnalysis?.graph.edges || [], test.id),
@@ -1205,7 +1207,7 @@ export default function TestExecutionArchive({
                     <div className="archive-section-header">
                       <div>
                         <h3 className="chart-title">Error Patterns</h3>
-                        <p className="archive-section-copy">Grouped failure signatures with the first retained snapshot preserved for each cluster.</p>
+                        <p className="archive-section-copy">Whole-run failures across all populations, independent of the selected metric population. The first retained snapshot is preserved for each cluster.</p>
                       </div>
                     </div>
                     <table className="tx-table">
@@ -1584,8 +1586,8 @@ export default function TestExecutionArchive({
                 <div className="tx-section archive-action-section">
               <div className="archive-section-header">
                 <div>
-                  <h3 className="chart-title">Action Summary</h3>
-                  <p className="archive-section-copy">Archived request / action totals.</p>
+                  <h3 className="chart-title">{archivePopulation === 'transaction' ? 'Named Transaction Summary' : archivePopulation === 'unknown' ? 'Unclassified Record Summary' : 'Action Summary'}</h3>
+                  <p className="archive-section-copy">Archived {archivePopulation === 'transaction' ? 'named transaction' : archivePopulation === 'unknown' ? 'unclassified record' : 'request / action'} totals.</p>
                 </div>
               </div>
               <table className="tx-table">
@@ -1613,7 +1615,7 @@ export default function TestExecutionArchive({
                 </tbody>
               </table>
 
-              {soapOperationEntries.length > 0 && (
+              {archivePopulation !== 'transaction' && soapOperationEntries.length > 0 && (
                 <>
                   <div className="archive-section-header archive-subsection-header">
                     <div>
@@ -1846,12 +1848,12 @@ export default function TestExecutionArchive({
               <div className="archive-section-header archive-section-header-stack">
                 <div>
                   <h3 className="chart-title">Transaction Drill-Down</h3>
-                  <p className="archive-section-copy">Sample archived events for a selected action.</p>
+                  <p className="archive-section-copy">Sample archived events for the selected {archivePopulation === 'transaction' ? 'named transaction' : archivePopulation === 'unknown' ? 'unclassified legacy record' : 'request / action'}.</p>
                 </div>
                 <div className="archive-filter-bar">
                   <select
                     className="archive-action-select"
-                    aria-label="Archived action"
+                    aria-label={archivePopulation === 'transaction' ? 'Archived named transaction' : 'Archived action'}
                     value={selectedArchiveAction}
                     onChange={(event) => onSelectedArchiveActionChange(event.target.value)}
                   >
@@ -1859,7 +1861,7 @@ export default function TestExecutionArchive({
                       <option key={name} value={name}>{name}</option>
                     ))}
                   </select>
-                  {soapOperationEntries.length > 0 && (
+                  {archivePopulation !== 'transaction' && soapOperationEntries.length > 0 && (
                     <select
                       className="archive-action-select archive-filter-select"
                       aria-label="Archived SOAP operation"

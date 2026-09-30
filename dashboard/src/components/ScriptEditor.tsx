@@ -4863,6 +4863,11 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         severity: issue.severity,
         title: issue.message,
         source: 'Script',
+        onSelect: issue.id === 'script:base_url' ? () => {
+          openCenterTab('runtime-settings')
+          selectRuntimeSettingsSection('script_config')
+          requestAnimationFrame(() => editorElementRef.current?.querySelector<HTMLElement>('[data-author-field="base_url"]')?.focus())
+        } : undefined,
       })),
       ...actionProblemRows.map(({ issue, row }) => ({
         id: issue.id,
@@ -4917,7 +4922,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       return authoringIssues.some(local => local.phase === phase && local.actionIndex === index && local.id.endsWith(`:${field}`))
     }
     return dedupeAuthorIssues([...structured, ...serverIssues.filter(issue => !overlapsLocal(issue)), ...operational.filter(issue => !overlapsLocal(issue))])
-  }, [actionProblemRows, authoringIssues, error, jsonParseMessage, openCenterTab, script, setActiveAction, setAuthorCodeFocus, scriptLevelIssues, scriptPhaseActionRows, setShowFullScriptJson, validationResultIsCurrent, validationSidebarResult, warnings])
+  }, [selectRuntimeSettingsSection, actionProblemRows, authoringIssues, error, jsonParseMessage, openCenterTab, script, setActiveAction, setAuthorCodeFocus, scriptLevelIssues, scriptPhaseActionRows, setShowFullScriptJson, validationResultIsCurrent, validationSidebarResult, warnings])
   const problemCount = editorIssueDetails.length
   const editorIssueDetailsRef = useRef(editorIssueDetails)
   editorIssueDetailsRef.current = editorIssueDetails

@@ -281,6 +281,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
     expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
     expect(container.textContent).not.toContain('Scripts unavailable. Use Refresh to retry.')
+    expect(container.textContent).not.toContain('Catalog temporarily unavailable')
   })
 
   it('orders automatic and retry secret checks through one per-script token', async () => {
@@ -1382,7 +1383,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Existing Script')
   })
 
-  it('keeps simultaneous library load failures in one notice', async () => {
+  it('recovers the script load notice without clearing an unrelated session failure', async () => {
     apiMock.listScripts.mockRejectedValueOnce(new Error('script list unavailable'))
     apiMock.listAuthoringSessions.mockRejectedValueOnce(new Error('session list unavailable'))
 
@@ -1392,9 +1393,12 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    const alertText = container.querySelector('[role="alert"]')?.textContent || ''
-    expect(alertText).toContain('script list unavailable')
-    expect(alertText).toContain('session list unavailable')
+    expect(container.textContent).toContain('script list unavailable')
+    expect(container.textContent).toContain('session list unavailable')
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry loading scripts')?.click() })
+    await flushPromises()
+    expect(container.textContent).not.toContain('script list unavailable')
+    expect(container.textContent).toContain('session list unavailable')
   })
 
   it('surfaces script deletion failures without removing the row', async () => {

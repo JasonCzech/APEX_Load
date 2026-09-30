@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RunArchiveReport } from '../../types'
-import { defaultReportPopulation, formatReportPercent, reportAcceptance, reportPopulationOverview } from './reportPresentation'
+import { defaultReportPopulation, reportPopulationActions, formatReportPercent, reportAcceptance, reportPopulationOverview } from './reportPresentation'
 import { buildBaselineOverviewDiff, effectiveReportVerdict, alignBaselineTimeline } from './runReportModel'
 import type { MetricsHistoryPoint } from '../../types'
 
@@ -11,6 +11,17 @@ const report = {
 } as unknown as RunArchiveReport
 
 describe('report presentation', () => {
+ it('does not mix same-name populations or relabel legacy records', () => {
+  const mixed = { ...report, by_request: { Shared: { transactions: 10 } }, by_transaction: { Shared: { transactions: 3 } }, by_unknown: { Shared: { transactions: 2 } } } as unknown as RunArchiveReport
+  expect(reportPopulationActions(mixed, 'action').Shared.transactions).toBe(10)
+  expect(reportPopulationActions(mixed, 'transaction').Shared.transactions).toBe(3)
+  expect(reportPopulationActions(mixed, 'unknown').Shared.transactions).toBe(2)
+  const legacy = { by_action: { Shared: { transactions: 15 } } } as unknown as RunArchiveReport
+  expect(defaultReportPopulation(legacy)).toBe('unknown')
+  expect(reportPopulationActions(legacy, 'unknown').Shared.transactions).toBe(15)
+  expect(reportPopulationActions(legacy, 'action')).toEqual({})
+  expect(reportPopulationActions(null, 'transaction')).toEqual({})
+ })
  it('keeps measured action metrics separate from mixed archive totals and missing percentiles', () => {
   expect(defaultReportPopulation(report)).toBe('action')
   expect(reportPopulationOverview(report, 'action')?.avg_response_ms).toBe(100)

@@ -422,6 +422,7 @@ function AppShell({
   const scriptEditId =
     view.page === "scripts" && "scriptId" in view ? view.scriptId : undefined;
   const [scriptsNavigationVersion, setScriptsNavigationVersion] = useState(0);
+  const [scenarioScriptWorkflow, setScenarioScriptWorkflow] = useState(false);
   const [scriptsTopbarState, setScriptsTopbarState] = useState<{
     subView: ScriptsAuthoringSubView;
     editingId: string | null;
@@ -3032,11 +3033,11 @@ function AppShell({
     visibleTopbarRuns.length > 0 && !hasContextualTopbarActions;
   // The route is the authoritative page identity. A lazily suspended previous
   // page can keep its contribution mounted briefly. Only an active script
-  // editor may refine the script route title with the document name.
-  const effectiveTopbarTitle = view.page === "scripts" && scriptsTopbarState?.editingId && activeTopbarContribution?.id === "script-editor"
+  // editor may refine its route (or an explicitly active scenario detour) title.
+  const effectiveTopbarTitle = ((view.page === "scripts" && scriptsTopbarState?.editingId) || (view.page === "tests" && scenarioScriptWorkflow)) && activeTopbarContribution?.id === "script-editor"
     ? activeTopbarContribution?.title || topbarPageTitle
-    : topbarPageTitle;
-  const taskHelpHash = contextualHelpHash(view);
+    : view.page === "tests" && scenarioScriptWorkflow ? "Script Builder" : topbarPageTitle;
+  const taskHelpHash = view.page === "tests" && scenarioScriptWorkflow ? "#/docs?guide=user-guide&article=authoring" : contextualHelpHash(view);
   const showTopbarClientDownloads = shouldShowTopbarClientDownloads(view);
   const mainContentClassName = `main-content topbar-title-mode page-${view.page}`;
   // Application/release ids are appended to the route by canonicalization
@@ -3448,6 +3449,7 @@ function AppShell({
               )}
               {view.page === "tests" && !routeAssetScopeBlocked && (
                 <TestHub
+                  onScriptWorkflowChange={setScenarioScriptWorkflow}
                   featurePolicySignal={featurePolicySignal}
                   applicationRepository={applicationRepository}
                   initialView={view.scenarioView}

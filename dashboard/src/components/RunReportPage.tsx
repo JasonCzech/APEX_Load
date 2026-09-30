@@ -12,7 +12,7 @@ import TabList from './ux/TabList'
 import TestExecutionArchive from './TestExecutionArchive'
 import RunOutcomeSummary, { RunMetricPopulations } from './RunOutcomeSummary'
 import ReportComposer from './ReportComposer'
-import { defaultReportPopulation, reportPopulationOverview, populationLabels, type MetricPopulation } from './runReport/reportPresentation'
+import { defaultReportPopulation, reportPopulationActions, reportPopulationOverview, populationLabels, type MetricPopulation } from './runReport/reportPresentation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { isReportLens, type ReportLens } from '../appRouting'
@@ -111,7 +111,7 @@ export default function RunReportPage({
   const completed = isCompletedTestStatus(resolvedStatus)
   const archivedTest = useMemo(() => archiveReadyTest(test, resolvedStatus), [resolvedStatus, test])
   const manifestModel = useExecutionTestManifest(archivedTest)
-  const archiveModel = useExecutionArchiveModel(archivedTest, false, compareId)
+  const archiveModel = useExecutionArchiveModel(archivedTest, false, compareId, populationChoice)
   const { archiveSummaryHistory, archiveSummaryError, archiveSummariesLoading } = useExecutionArchiveSummaryHistory(archivedTest)
   const { archiveResourceHistory, archiveResourceError, archiveResourcesLoading } = useExecutionArchiveResourceHistory(archivedTest)
 
@@ -194,7 +194,7 @@ export default function RunReportPage({
     const stamp = JSON.stringify([testId, initialTransaction, initialPopulation])
     if (!archiveModel.archiveReport || !initialTransaction || appliedAnalysisSelection.current === stamp) return
     if (archiveModel.archiveReport.manifest?.test_id && archiveModel.archiveReport.manifest.test_id !== testId) return
-    const stats = initialPopulation === 'transaction' ? archiveModel.archiveReport.by_transaction : initialPopulation === 'action' ? archiveModel.archiveReport.by_request : archiveModel.archiveReport.by_action
+    const stats = reportPopulationActions(archiveModel.archiveReport, initialPopulation || defaultReportPopulation(archiveModel.archiveReport))
     if (stats?.[initialTransaction]) archiveModel.onSelectedArchiveActionChange(initialTransaction)
     appliedAnalysisSelection.current = stamp
   }, [testId, initialTransaction, initialPopulation, archiveModel])
@@ -285,6 +285,7 @@ export default function RunReportPage({
     () => buildReportKpis(archiveModel.archiveReport, population === 'transaction' && reportPopulationOverview(archiveModel.archiveReport, population) ? timelineHistory : [], baselineDiff, population),
     [archiveModel.archiveReport, baselineDiff, timelineHistory, population],
   )
+  const slaPopulation: MetricPopulation = archiveModel.archiveReport?.metric_populations ? 'transaction' : 'unknown'
   const slaRows = useMemo(() => slaRowsForReport(archiveModel.archiveReport), [archiveModel.archiveReport])
   const goalConfig = archiveModel.archiveReport?.manifest?.provenance?.goal_config
 
@@ -512,7 +513,7 @@ export default function RunReportPage({
           {report && <RunOutcomeSummary report={report} showPopulations={false} />}
           <RunReportKpiScorecard kpis={kpis} />
           <section className="run-report-panel"><h2>Findings and next steps</h2>
-            {report?.error_patterns?.length ? <><p>{report.error_patterns.length} error patterns were captured.</p><button className="btn btn-secondary" onClick={() => setArea('Diagnostics')}>Investigate errors</button></> : <p>{report ? 'No recurring error patterns were captured.' : 'Findings will appear when the report loads.'}</p>}
+            {report?.error_patterns?.length ? <><p>{report.error_patterns.length} error patterns were captured across all populations.</p><button className="btn btn-secondary" onClick={() => setArea('Diagnostics')}>Investigate errors</button></> : <p>{report ? 'No recurring error patterns were captured across all populations.' : 'Findings will appear when the report loads.'}</p>}
             {report?.completeness && report.completeness.score_pct < 100 && <p>Evidence coverage is {report.completeness.score_pct}%. <button className="btn btn-ghost" onClick={() => setArea('Evidence')}>Review evidence gaps</button></p>}
           </section>
           {annotationsError && <p className="run-report-error" role="alert">{annotationsError}</p>}
@@ -526,17 +527,18 @@ export default function RunReportPage({
             <TransactionResponseTimeSLATable
               rows={report?.transaction_response_time_sla_results ?? []}
               title="Transaction SLA Scoreboard"
-              selectedGroup={archiveModel.selectedArchiveGroup}
-              selectedTransaction={archiveModel.selectedArchiveAction}
-              drilldownTransactions={archiveModel.archiveTransactions}
+              selectedGroup={population === 'transaction' ? archiveModel.selectedArchiveGroup : ''}
+              selectedTransaction={population === 'transaction' ? archiveModel.selectedArchiveAction : ''}
+              drilldownTransactions={population === 'transaction' ? archiveModel.archiveTransactions : []}
               loadingTransactions={archiveModel.archiveTransactionsLoading}
               onSelect={row => {
+                setPopulationChoice('transaction')
                 archiveModel.onSelectedArchiveGroupChange(row.group)
                 archiveModel.onSelectedArchiveActionChange(row.transaction)
               }}
             />
           ) : (
-            <TransactionSlaScoreboard rows={slaRows} selectedAction={slaRows.some(row => row.name === archiveModel.selectedArchiveAction) ? archiveModel.selectedArchiveAction : ''} drilldownTransactions={archiveModel.archiveTransactions} loadingTransactions={archiveModel.archiveTransactionsLoading} onSelectAction={archiveModel.onSelectedArchiveActionChange} />
+            <TransactionSlaScoreboard rows={slaRows} selectedAction={population === slaPopulation && slaRows.some(row => row.name === archiveModel.selectedArchiveAction) ? archiveModel.selectedArchiveAction : ''} drilldownTransactions={population === slaPopulation ? archiveModel.archiveTransactions : []} loadingTransactions={archiveModel.archiveTransactionsLoading} onSelectAction={name => { setPopulationChoice(slaPopulation); archiveModel.onSelectedArchiveGroupChange(''); archiveModel.onSelectedArchiveActionChange(name) }} />
           )}
           {renderEvidence('action-summary')}
           <details><summary>Load impact</summary>{renderEvidence('load-impact')}</details>
