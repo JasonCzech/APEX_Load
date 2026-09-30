@@ -15,6 +15,11 @@ const apiMock = vi.hoisted(() => ({
   getProjectSecretUsage: vi.fn(),
   createProjectSecrets: vi.fn(),
   rotateProjectSecret: vi.fn(),
+  listApplicationSecrets: vi.fn(),
+  getApplicationSecretStatuses: vi.fn(),
+  getApplicationSecretUsage: vi.fn(),
+  createApplicationSecrets: vi.fn(),
+  rotateApplicationSecret: vi.fn(),
 }))
 
 vi.mock('../hooks/useApi', () => ({
@@ -78,12 +83,103 @@ describe('ProjectSecretsPanel', () => {
       project_id: 'project-1',
       secret: { name: 'EXISTING_TOKEN', provider: 'encrypted_database', writable: true },
     })
+    apiMock.listApplicationSecrets.mockResolvedValue({
+      application_id: 'app-1',
+      project_id: 'project-1',
+      capabilities: { provider: 'encrypted_database', writable: true, create_supported: true, replace_supported: true },
+      secrets: [{ name: 'LOGIN_PASSWORD', provider: 'encrypted_database', writable: true }],
+      count: 1,
+    })
+    apiMock.getApplicationSecretUsage.mockResolvedValue({
+      application_id: 'app-1', project_id: 'project-1', name: 'LOGIN_PASSWORD',
+      usage_revision: 'application-usage', consumer_count: 0, reference_count: 0,
+      consumers: [], limit: 50, offset: 0, has_more: false,
+    })
+    apiMock.getApplicationSecretStatuses.mockResolvedValue({
+      application_id: 'app-1', project_id: 'project-1', capabilities: {},
+      secrets: [
+        { name: 'LOGIN_PASSWORD', configured: true, source_scope: 'application' },
+        { name: 'EXISTING_TOKEN', configured: true, source_scope: 'project' },
+      ],
+    })
+    apiMock.createApplicationSecrets.mockResolvedValue({ application_id: 'app-1', secrets: [], count: 1 })
+    apiMock.rotateApplicationSecret.mockResolvedValue({
+      application_id: 'app-1', secret: { name: 'LOGIN_PASSWORD', provider: 'encrypted_database', writable: true },
+    })
   })
 
   afterEach(async () => {
     await act(async () => root.unmount())
     container.remove()
     vi.clearAllMocks()
+  })
+
+  it('uses the selected application vault for a shared secret', async () => {
+    await act(async () => root.render(
+      <ProjectSecretsPanel projectId="project-1" projectName="Project" applicationId="app-1" applicationName="Checkout" canCreate canRotate />,
+    ))
+    await flushPromises()
+    expect(apiMock.listApplicationSecrets).toHaveBeenCalledWith('app-1')
+    expect(apiMock.listProjectSecrets).toHaveBeenCalledWith('project-1')
+    expect(container.textContent).toContain('Application Secret Vault')
+    expect(container.textContent).toContain('LOGIN_PASSWORD')
+    expect(container.textContent).toContain('project scope')
+    const inputs = container.querySelectorAll<HTMLInputElement>('.project-secret-create input')
+    act(() => {
+      setInput(inputs[0], 'Shared Login')
+      setInput(inputs[1], 'app-secret-value')
+    })
+    const create = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Create Secret')
+    await act(async () => create?.click())
+    expect(apiMock.createApplicationSecrets).toHaveBeenCalledWith('app-1', [{ name: 'SHARED_LOGIN', value: 'app-secret-value' }])
+    expect(container.textContent).not.toContain('app-secret-value')
+    const override = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Override in application')
+    expect(override).toBeDefined()
+    await act(async () => override?.click())
+    const overrideInputs = container.querySelectorAll<HTMLInputElement>('.project-secret-create input')
+    expect(overrideInputs[0].value).toBe('EXISTING_TOKEN')
+    act(() => setInput(overrideInputs[1], 'application-override'))
+    await act(async () => create?.click())
+    expect(apiMock.createApplicationSecrets).toHaveBeenCalledWith('app-1', [{ name: 'EXISTING_TOKEN', value: 'application-override' }])
+  })
+
+  it('does not mistake an inherited project value for a committed application override', async () => {
+    apiMock.listApplicationSecrets.mockResolvedValue({
+      application_id: 'app-1', project_id: 'project-1',
+      capabilities: { provider: 'encrypted_database', writable: true, create_supported: true, replace_supported: true },
+      secrets: [], count: 0,
+    })
+    apiMock.createApplicationSecrets.mockRejectedValue(new ApiError('provider unavailable', 503))
+    await act(async () => root.render(
+      <ProjectSecretsPanel projectId="project-1" projectName="Project" applicationId="app-1" applicationName="Checkout" canCreate canRotate />,
+    ))
+    await flushPromises()
+    const override = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Override in application')
+    await act(async () => override?.click())
+    const inputs = container.querySelectorAll<HTMLInputElement>('.project-secret-create input')
+    act(() => setInput(inputs[1], 'new-app-value'))
+    const create = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Create Secret')
+    await act(async () => create?.click())
+    expect(container.textContent).toContain('outcome is still uncertain')
+    expect(container.textContent).not.toContain('is present with updated metadata')
+  })
+
+  it('loads an empty application vault when the project API returns a null secret list', async () => {
+    apiMock.listProjectSecrets.mockResolvedValue({
+      project_id: 'project-1', capabilities: { provider: 'encrypted_database', writable: true }, secrets: null, count: 0,
+    })
+    apiMock.listApplicationSecrets.mockResolvedValue({
+      application_id: 'app-1', project_id: 'project-1',
+      capabilities: { provider: 'encrypted_database', writable: true, create_supported: true, replace_supported: true },
+      secrets: null, count: 0,
+    })
+    await act(async () => root.render(
+      <ProjectSecretsPanel projectId="project-1" projectName="Project" applicationId="app-1" applicationName="Checkout" canCreate canRotate />,
+    ))
+    await flushPromises()
+    expect(container.textContent).not.toContain('Cannot read properties of null')
+    expect(container.querySelector<HTMLDivElement>('.project-secret-create')?.hidden).toBe(false)
+    expect(container.textContent).toContain('No managed secrets yet')
   })
 
   it('allows editor create-only writes while reserving rotation for admins', async () => {

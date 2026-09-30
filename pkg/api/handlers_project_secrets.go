@@ -45,10 +45,11 @@ type projectSecretStatusRequest struct {
 }
 
 type projectSecretStatus struct {
-	Name       string `json:"name"`
-	Configured bool   `json:"configured"`
-	Provider   string `json:"provider,omitempty"`
-	Writable   bool   `json:"writable,omitempty"`
+	Name        string `json:"name"`
+	Configured  bool   `json:"configured"`
+	Provider    string `json:"provider,omitempty"`
+	Writable    bool   `json:"writable,omitempty"`
+	SourceScope string `json:"source_scope,omitempty"`
 }
 
 type rotateProjectSecretRequest struct {
@@ -467,7 +468,7 @@ func (s *Server) handleScriptSecretStatus(w http.ResponseWriter, r *http.Request
 		return
 	}
 	required := scriptSecretReferences(stored.Script)
-	statuses, err := s.projectSecretStatuses(r, stored.ProjectID, required)
+	statuses, applicationID, err := s.scriptSecretStatuses(r, stored.Script, required)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "script secret status is unavailable")
 		return
@@ -489,6 +490,10 @@ func (s *Server) handleScriptSecretStatus(w http.ResponseWriter, r *http.Request
 		"missing":      missing,
 		"secrets":      statuses,
 		"capabilities": s.projectSecretCapabilities(stored.ProjectID),
+	}
+	if applicationID != "" {
+		response["application_id"] = applicationID
+		response["capabilities"] = s.applicationSecretCapabilities()
 	}
 	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("details")), "bindings") {
 		response["bindings"] = scriptSecretBindingDetails(stored.Script, statuses)
@@ -1170,6 +1175,7 @@ func (s *Server) projectSecretStatuses(r *http.Request, projectID string, names 
 				status.Configured = true
 				status.Provider = metadata.Provider
 				status.Writable = metadata.Writable
+				status.SourceScope = "project"
 			} else if !errors.Is(err, secretstore.ErrNotFound) {
 				if err != nil {
 					return nil, err
@@ -1179,6 +1185,7 @@ func (s *Server) projectSecretStatuses(r *http.Request, projectID string, names 
 		if !status.Configured && engine.ProjectScriptSecretEnvAvailable(projectID, name) {
 			status.Configured = true
 			status.Provider = "environment_read_only"
+			status.SourceScope = "project"
 		}
 		result = append(result, status)
 	}

@@ -1083,7 +1083,7 @@ func TestPendingPromotionTerminalizesMalformedSecretReferences(t *testing.T) {
 	if failed.Status != "FAILED" {
 		t.Fatalf("status = %q, want FAILED for immutable malformed secret reference", failed.Status)
 	}
-	if !strings.Contains(failed.Error, "secret requirements are no longer satisfied") || !strings.Contains(failed.Error, "inspect project secret references") {
+	if !strings.Contains(failed.Error, "secret requirements are no longer satisfied") || !strings.Contains(failed.Error, "inspect secret references") {
 		t.Fatalf("error = %q, want terminal secret-reference evidence", failed.Error)
 	}
 	select {

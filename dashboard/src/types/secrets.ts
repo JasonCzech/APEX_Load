@@ -15,6 +15,7 @@ export interface ProjectSecretStatus {
   configured: boolean
   provider?: string
   writable?: boolean
+  source_scope?: 'project' | 'application'
 }
 
 export interface ProjectSecretCapabilities {
@@ -81,6 +82,7 @@ export interface ScriptSecretBinding extends ProjectSecretStatus {
 export interface ScriptSecretStatus {
   script_id: string
   project_id: string
+  application_id?: string
   required: string[]
   configured: string[]
   missing: string[]

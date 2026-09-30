@@ -160,7 +160,7 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 	if !prepared {
 		return
 	}
-	secretResolver := s.runner.secretResolverForProject(script.ProjectID)
+	secretResolver := s.runner.secretResolverForScript(script)
 	preflight := buildReplayPreflight(script, req.Variables, issues, warnings, secretResolver)
 	if !preflight.Valid {
 		writeJSON(w, http.StatusBadRequest, map[string]any{

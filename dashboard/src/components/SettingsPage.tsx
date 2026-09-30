@@ -461,6 +461,7 @@ export default function SettingsPage({
   const [newApplicationProjectId, setNewApplicationProjectId] = useState('')
   const [applicationCreateBusy, setApplicationCreateBusy] = useState(false)
   const [applicationActionError, setApplicationActionError] = useState('')
+  const [applicationCleanupNotice, setApplicationCleanupNotice] = useState('')
   const [applicationReconciliationWarning, setApplicationReconciliationWarning] = useState<{
     message: string
     scope: 'applications' | 'releases'
@@ -2469,8 +2470,9 @@ export default function SettingsPage({
   const deleteApplication = async () => {
     if (!activeApplication) return
     const deleted = activeApplication
+    let cleanup: Awaited<ReturnType<typeof applicationApi.deleteApplication>>
     try {
-      await applicationApi.deleteApplication(deleted.id)
+      cleanup = await applicationApi.deleteApplication(deleted.id)
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to delete application'))
       setConfirmDeleteApp(false)
@@ -2478,6 +2480,9 @@ export default function SettingsPage({
     }
     removeApplication(deleted.id)
     setApplicationActionError('')
+    setApplicationCleanupNotice(cleanup.external_secret_cleanup_required
+      ? `Application deleted. An administrator must remove external secrets: ${(cleanup.external_secret_cleanup_names || []).join(', ')}. Provider namespace: ${cleanup.external_secret_cleanup_prefix || 'unavailable'}.`
+      : '')
     setConfirmDeleteApp(false)
     try {
       await refreshApplications()
@@ -5252,6 +5257,7 @@ export default function SettingsPage({
               ))}
               </div>
               {applicationsLoading && <p className="new-test-inline-note" role="status">Loading applications...</p>}
+              {applicationCleanupNotice && <p className="settings-notice" role="status">{applicationCleanupNotice}</p>}
               {(applicationReconciliationWarning || applicationsError) && (
                 <div className="settings-inline-actions" role="alert">
                   <span className="settings-error-inline">{applicationReconciliationWarning?.message || applicationsError}</span>
@@ -5319,6 +5325,17 @@ export default function SettingsPage({
                 </div>
               )}
             </div>
+
+            {activeApplication && (
+              <ProjectSecretsPanel
+                projectId={activeApplication.project_id || activeProject?.id || 'default'}
+                projectName={activeProject?.name || activeApplication.project_id || 'Default Project'}
+                applicationId={activeApplication.id}
+                applicationName={activeApplication.name}
+                canCreate={canManageScripts || canManageProjects || canManageSystem}
+                canRotate={canManageProjects || canManageSystem}
+              />
+            )}
 
             <div className="setting-row">
               <div className="setting-info">

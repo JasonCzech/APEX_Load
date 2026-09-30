@@ -1245,7 +1245,7 @@ func (tr *TestRunner) replayScriptDefinitionContext(
 	}
 	opts.RedactionRules = effectiveRedactionRules
 	if opts.SecretResolver == nil {
-		opts.SecretResolver = tr.secretResolverForProject(script.ProjectID)
+		opts.SecretResolver = tr.secretResolverForScript(script)
 	}
 	return engine.ReplayScript(ctx, script, opts)
 }

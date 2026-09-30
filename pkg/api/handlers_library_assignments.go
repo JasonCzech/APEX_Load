@@ -59,6 +59,17 @@ func (s *Server) handleLibraryAssignment(w http.ResponseWriter, r *http.Request,
 		writeError(w, http.StatusBadRequest, "application_id (ID or null), release_ids, and expected_revision are required")
 		return
 	}
+	if kind == "script" {
+		// Application secret usage depends on this assignment. Serialize it with
+		// usage-reviewed rotation so a shared-use acknowledgement cannot race an
+		// assignment change.
+		release, err := s.acquireSecretReferenceMutation(projectID)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "secret usage fence is unavailable")
+			return
+		}
+		defer release()
+	}
 	before, after, err := store.ReplaceLibraryAssignment(kind, id, authorizedProjectOr(r, projectID), applicationID, *req.ReleaseIDs, *req.ExpectedRevision)
 	if err != nil {
 		status := http.StatusInternalServerError

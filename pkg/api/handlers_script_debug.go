@@ -254,7 +254,7 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 	)
 	warnings := append(validationWarnings(script), refWarnings...)
 	warnings = append(warnings, scriptDebugParityWarnings(script)...)
-	secretResolver := s.runner.secretResolverForProject(script.ProjectID)
+	secretResolver := s.runner.secretResolverForScript(script)
 	preflight := buildReplayPreflight(script, req.Variables, issues, warnings, secretResolver)
 	if !preflight.Valid {
 		writeJSON(w, http.StatusBadRequest, map[string]any{

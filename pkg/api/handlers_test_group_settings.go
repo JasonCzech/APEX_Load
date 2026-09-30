@@ -672,7 +672,7 @@ func (tr *TestRunner) UpdateTestGroupRuntimeSettings(id string, groupName string
 	// restart-restore path maintains.
 	newGroup.runtimeSecretValues = cloneRuntimeSecretValues(oldGroup.runtimeSecretValues)
 	if newSpec.Script != nil {
-		newSpec.SecretResolver = overlayRuntimeSecretResolver(newGroup.runtimeSecretValues, tr.secretResolverForProject(newSpec.Script.ProjectID))
+		newSpec.SecretResolver = overlayRuntimeSecretResolver(newGroup.runtimeSecretValues, tr.boundSecretResolverForRunGroup(test, index, newSpec.Script.ProjectID))
 	}
 	if len(newGroup.runtimeSecretValues) > 0 {
 		augmented, redactErr := engine.WithSecretValueRedactionChecked(newSpec.RedactionConfig, runtimeSecretValueList(newGroup.runtimeSecretValues))

@@ -56,8 +56,12 @@ const apiMock = {
   exportDataPoolRows: vi.fn(),
   listTests: vi.fn(),
   listProjectSecrets: vi.fn(),
+  getProjectSecretUsage: vi.fn(),
   createProjectSecrets: vi.fn(),
   rotateProjectSecret: vi.fn(),
+  listApplicationSecrets: vi.fn(),
+  getApplicationSecretStatuses: vi.fn(),
+  getApplicationSecretUsage: vi.fn(),
 }
 const apiProviderState = vi.hoisted(() => ({ current: undefined as unknown }))
 
@@ -758,6 +762,20 @@ describe('SettingsPage', () => {
       count: 0,
     }))
     apiMock.createProjectSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 1 })
+    apiMock.getProjectSecretUsage.mockImplementation(async (projectId: string, name: string) => ({
+      project_id: projectId, name, usage_revision: 'usage-1', consumer_count: 0,
+      reference_count: 0, consumers: [], limit: 50, offset: 0, has_more: false,
+    }))
+    apiMock.listApplicationSecrets.mockResolvedValue({
+      project_id: 'project-1', application_id: 'app-a',
+      capabilities: { provider: 'encrypted_database', writable: true, create_supported: true, replace_supported: true },
+      secrets: [], count: 0,
+    })
+    apiMock.getApplicationSecretStatuses.mockResolvedValue({ project_id: 'project-1', application_id: 'app-a', secrets: [] })
+    apiMock.getApplicationSecretUsage.mockResolvedValue({
+      project_id: 'project-1', application_id: 'app-a', name: '', usage_revision: 'usage-1', consumer_count: 0,
+      reference_count: 0, consumers: [], limit: 50, offset: 0, has_more: false,
+    })
     apiMock.rotateProjectSecret.mockResolvedValue({
       project_id: 'project-1',
       secret: { name: 'LOGIN_TOKEN', provider: 'encrypted_database', writable: true },
@@ -5059,7 +5077,12 @@ describe('SettingsPage', () => {
       applications: [application],
       activeApplication: application,
     })
-    applicationApiMock.deleteApplication.mockResolvedValue({ deleted: application.id })
+    applicationApiMock.deleteApplication.mockResolvedValue({
+      deleted: application.id,
+      external_secret_cleanup_required: true,
+      external_secret_cleanup_names: ['EXTERNAL_LOGIN'],
+      external_secret_cleanup_prefix: 'apexload-p-example-',
+    })
     applicationContextMock.refreshApplications.mockRejectedValueOnce(new Error('list unavailable'))
 
     await act(async () => {
@@ -5081,6 +5104,7 @@ describe('SettingsPage', () => {
     expect(applicationApiMock.deleteApplication).toHaveBeenCalledTimes(1)
     expect(applicationContextMock.removeApplication).toHaveBeenCalledWith(application.id)
     expect(applicationSection.textContent).toContain('The delete succeeded—do not delete again.')
+    expect(applicationSection.textContent).toContain('An administrator must remove external secrets: EXTERNAL_LOGIN')
     expect(applicationSection.textContent).not.toContain('Unable to delete application')
 
     const retry = Array.from(applicationSection.querySelectorAll('button')).find(button => button.textContent === 'Retry') as HTMLButtonElement | undefined

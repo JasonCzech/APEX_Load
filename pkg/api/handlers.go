@@ -1011,7 +1011,7 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, buildScriptValidationResponse(id, script.Script, s.runner.secretResolverForProject(script.ProjectID)))
+	writeJSON(w, http.StatusOK, buildScriptValidationResponse(id, script.Script, s.runner.secretResolverForScript(script.Script)))
 }
 
 func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Request) {
@@ -1040,7 +1040,7 @@ func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Reques
 			"",
 			script,
 			wrapper.Variables,
-			s.runner.secretResolverForProject(script.ProjectID),
+			s.runner.secretResolverForScript(script),
 		),
 	)
 }

@@ -196,6 +196,46 @@ func TestDurableScriptMutationsShareSecretReferenceFence(t *testing.T) {
 	}
 }
 
+func TestScriptApplicationAssignmentSharesSecretUsageFence(t *testing.T) {
+	server, records, _, projectID := newProjectSecretAPIServer(t)
+	now := time.Now().UTC()
+	if err := records.SaveApplication(&storage.Application{ID: "fenced-app", ProjectID: projectID, Name: "Fenced", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	storedSecretReferenceScript(t, server, projectID, "assignment-fenced-script", "Fenced", "LOGIN")
+	release, err := server.acquireSecretReferenceMutation(projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		request := httptest.NewRequest(http.MethodPut, "/api/v1/scripts/assignment-fenced-script/library-assignment",
+			strings.NewReader(`{"application_id":"fenced-app","release_ids":[],"expected_revision":0}`))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		close(started)
+		server.mux.ServeHTTP(response, request)
+		done <- response
+	}()
+	<-started
+	select {
+	case response := <-done:
+		release()
+		t.Fatalf("assignment bypassed secret usage fence: %d %s", response.Code, response.Body.String())
+	case <-time.After(50 * time.Millisecond):
+	}
+	release()
+	select {
+	case response := <-done:
+		if response.Code != http.StatusOK {
+			t.Fatalf("assignment after fence release = %d %s", response.Code, response.Body.String())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("assignment did not resume after fence release")
+	}
+}
+
 func TestSecretReferenceMutationFenceCoordinatesControllerReplicas(t *testing.T) {
 	_, store, _, projectID := newProjectSecretAPIServer(t)
 	first := &projectMutationCoordinator{}

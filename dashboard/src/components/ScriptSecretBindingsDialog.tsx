@@ -17,6 +17,7 @@ interface Props {
   scriptId: string
   script: ScriptDefinition
   projectId: string
+  applicationId?: string
   scriptName: string
   onClose: () => void
   onConfigured?: () => void | Promise<void>
@@ -43,6 +44,7 @@ export default function ScriptSecretBindingsDialog({
   scriptId,
   script,
   projectId,
+  applicationId,
   scriptName,
   onClose,
   onConfigured,
@@ -78,12 +80,15 @@ export default function ScriptSecretBindingsDialog({
     setError('')
     try {
       const names = draftSummaries.map(binding => binding.name)
-      const [savedStatus, projectStatuses, vault] = await Promise.all([
+      const [savedStatus, projectStatuses, vault, projectVault] = await Promise.all([
         api.getScriptSecretStatus(scriptId, { details: true }),
-        api.getProjectSecretStatuses(projectId, names),
-        api.listProjectSecrets(projectId),
+        applicationId ? api.getApplicationSecretStatuses(applicationId, names) : api.getProjectSecretStatuses(projectId, names),
+        applicationId ? api.listApplicationSecrets(applicationId) : api.listProjectSecrets(projectId),
+        applicationId ? api.listProjectSecrets(projectId) : Promise.resolve(null),
       ])
-      const usages = await Promise.all(names.map(name => api.getProjectSecretUsage(projectId, name, { limit: 50 })))
+      const usages = await Promise.all(names.map(name => applicationId
+        ? api.getApplicationSecretUsage(applicationId, name, { limit: 50 })
+        : api.getProjectSecretUsage(projectId, name, { limit: 50 })))
       if (requestGenerationRef.current !== requestGeneration) return
       const statusByName = new Map<string, ProjectSecretStatus>(projectStatuses.secrets.map(status => [status.name, status]))
       const savedBindingByName = new Map((savedStatus.bindings || []).map(binding => [binding.name, binding]))
@@ -96,19 +101,24 @@ export default function ScriptSecretBindingsDialog({
           configured: status?.configured ?? savedBinding?.configured ?? false,
           provider: status?.provider || savedBinding?.provider,
           writable: status?.writable ?? savedBinding?.writable,
+          source_scope: status?.source_scope,
           occurrence_count: summary.occurrence_count,
           locations: summary.locations,
           usage: usageByName.get(summary.name),
         }
       }))
-      setVaultSecrets((vault.secrets || []).slice().sort((left, right) => left.name.localeCompare(right.name)))
+      const available = [...(vault.secrets || [])]
+      for (const secret of projectVault?.secrets || []) {
+        if (!available.some(candidate => candidate.name === secret.name)) available.push(secret)
+      }
+      setVaultSecrets(available.sort((left, right) => left.name.localeCompare(right.name)))
     } catch (cause: unknown) {
       if (requestGenerationRef.current !== requestGeneration) return
       setError(getErrorMessage(cause, 'Unable to load script secret bindings.'))
     } finally {
       if (requestGenerationRef.current === requestGeneration) setLoading(false)
     }
-  }, [api, draftSummaries, projectId, scriptId])
+  }, [api, applicationId, draftSummaries, projectId, scriptId])
 
   useEffect(() => {
     void load()
@@ -126,7 +136,8 @@ export default function ScriptSecretBindingsDialog({
     setError('')
     setMessage('')
     try {
-      await api.createProjectSecrets(projectId, [{
+      const create = applicationId ? api.createApplicationSecrets : api.createProjectSecrets
+      await create(applicationId || projectId, [{
         name: binding.name,
         value,
         expected_usage: binding.usage ? {
@@ -141,7 +152,7 @@ export default function ScriptSecretBindingsDialog({
       await load()
       await onConfigured?.()
     } catch (cause: unknown) {
-      setError(getErrorMessage(cause, 'Unable to create the project secret.'))
+      setError(getErrorMessage(cause, `Unable to create the ${applicationId ? 'application' : 'project'} secret.`))
     } finally {
       setBusyName('')
     }
@@ -169,8 +180,8 @@ export default function ScriptSecretBindingsDialog({
     for (let ordinal = 1; ordinal <= 32; ordinal += 1) {
       const candidate = ordinal === 1 ? base : collisionSafeSecretName(base, ordinal)
       const [status, usage] = await Promise.all([
-        api.getProjectSecretStatuses(projectId, [candidate]),
-        api.getProjectSecretUsage(projectId, candidate, { limit: 1 }),
+        applicationId ? api.getApplicationSecretStatuses(applicationId, [candidate]) : api.getProjectSecretStatuses(projectId, [candidate]),
+        applicationId ? api.getApplicationSecretUsage(applicationId, candidate, { limit: 1 }) : api.getProjectSecretUsage(projectId, candidate, { limit: 1 }),
       ])
       if (!status.secrets[0]?.configured && usage.consumer_count === 0) return candidate
     }
@@ -187,8 +198,11 @@ export default function ScriptSecretBindingsDialog({
     let valueCreated = false
     try {
       createdName = await allocateDedicatedName(binding)
-      const usage = await api.getProjectSecretUsage(projectId, createdName, { limit: 1 })
-      await api.createProjectSecrets(projectId, [{
+      const usage = applicationId
+        ? await api.getApplicationSecretUsage(applicationId, createdName, { limit: 1 })
+        : await api.getProjectSecretUsage(projectId, createdName, { limit: 1 })
+      const create = applicationId ? api.createApplicationSecrets : api.createProjectSecrets
+      await create(applicationId || projectId, [{
         name: createdName,
         value,
         expected_usage: { usage_revision: usage.usage_revision },
@@ -223,7 +237,7 @@ export default function ScriptSecretBindingsDialog({
           <div>
             <h3 id={titleId}>Secret Bindings · {scriptName}</h3>
             <p id={descriptionId} className="page-subtitle">
-              Script references select write-only values from the project vault. Reuse a name only when scripts should share one credential.
+              Script references select write-only values from the {applicationId ? 'application' : 'project'} vault. Reuse a name only when scripts should share one credential.
             </p>
           </div>
           <button ref={closeRef} className="btn btn-sm btn-ghost" type="button" onClick={onClose}>Close</button>
@@ -232,7 +246,7 @@ export default function ScriptSecretBindingsDialog({
         {message && <p className="settings-notice" role="status">{message}</p>}
         {error && <p className="settings-error-inline" role="alert">{error}</p>}
         {loading && <p role="status">Loading secret bindings…</p>}
-        {!loading && bindings.length === 0 && <p>This script does not reference any project secrets.</p>}
+        {!loading && bindings.length === 0 && <p>This script does not reference any secrets.</p>}
 
         <div className="script-secret-bindings-list">
           {bindings.map((binding, index) => {
@@ -252,6 +266,7 @@ export default function ScriptSecretBindingsDialog({
                     {binding.occurrence_count} occurrence{binding.occurrence_count === 1 ? '' : 's'} in this draft ·{' '}
                     {binding.usage?.consumer_count ?? 0} consuming script{binding.usage?.consumer_count === 1 ? '' : 's'}
                     {binding.provider ? ` · ${binding.provider}` : ''}
+                    {binding.source_scope ? ` · ${binding.source_scope} scope` : ''}
                   </p>
                   {shared && (
                     <p className="script-secret-shared-warning">
@@ -320,7 +335,7 @@ export default function ScriptSecretBindingsDialog({
                 )}
 
                 <div className="script-secret-rebind-control">
-                  <label htmlFor={`${titleId.replace(/:/g, '')}-reuse-${index}`}>Use existing project secret</label>
+                  <label htmlFor={`${titleId.replace(/:/g, '')}-reuse-${index}`}>Use existing {applicationId ? 'application or project' : 'project'} secret</label>
                   <div>
                     <select
                       id={`${titleId.replace(/:/g, '')}-reuse-${index}`}

@@ -22,6 +22,7 @@ const apiMock = {
   getScript: vi.fn(),
   getScriptSecretStatus: vi.fn(),
   getProjectSecretStatuses: vi.fn(),
+  getApplicationSecretStatuses: vi.fn(),
   getProjectSecretUsage: vi.fn(),
   listProjectSecrets: vi.fn(),
   createProjectSecrets: vi.fn(),
@@ -538,6 +539,30 @@ describe('ScriptsPage', () => {
     const stillPendingRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Script 2'))
     expect(readyRow?.textContent).not.toContain('Checking secrets')
     expect(stillPendingRow?.textContent).toContain('1 secret missing')
+  })
+
+  it('checks assigned scripts against their application before the project', async () => {
+    const assigned = {
+      ...scriptRecord('script-app', 'Application Script', 'project-1'),
+      library_assignment: { revision: 1, application: { id: 'app-1', name: 'Checkout' }, releases: [] },
+      script: {
+        name: 'Application Script', version: '1.0.0', protocol: 'http', config: { base_url: '' },
+        actions: [{ name: 'Call', type: 'http', target: '/', headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' } }],
+      },
+    }
+    apiMock.listScripts.mockResolvedValueOnce({ scripts: [assigned], count: 1 })
+    apiMock.getApplicationSecretStatuses.mockResolvedValueOnce({
+      application_id: 'app-1', project_id: 'project-1',
+      secrets: [{ name: 'LOGIN_TOKEN', configured: true, source_scope: 'application' }],
+      capabilities: { provider: 'encrypted_database', writable: true },
+    })
+    await act(async () => root.render(<ScriptsPage />))
+    await flushPromises()
+    await flushPromises()
+    expect(apiMock.getApplicationSecretStatuses).toHaveBeenCalledWith('app-1', ['LOGIN_TOKEN'])
+    expect(apiMock.getProjectSecretStatuses).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Application Script')
+    expect(container.textContent).not.toContain('Missing secrets')
   })
 
   it('rechecks secret readiness when a deleted ID reappears in the refreshed catalog', async () => {

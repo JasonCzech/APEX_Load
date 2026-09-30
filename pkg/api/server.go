@@ -280,6 +280,7 @@ type Server struct {
 	brunoSessionCleanupCancel       context.CancelFunc
 	grafanaSessionCleanupCancel     context.CancelFunc
 	projectSecretStore              secretstore.Store
+	applicationSecretStore          secretstore.Store
 	protectedSourceSessions         *secretstore.ProtectedSourceSessionStore
 	sourceSecretMu                  sync.Mutex
 	sourceSecretSessions            map[string]*sourceSecretSession
@@ -372,7 +373,8 @@ type ServerConfig struct {
 	// ProjectSecretStore optionally injects a project-scoped writable provider.
 	// When omitted, Key Vault or encrypted database storage is configured from
 	// the environment and the artifact wrapping key.
-	ProjectSecretStore secretstore.Store
+	ProjectSecretStore     secretstore.Store
+	ApplicationSecretStore secretstore.Store
 	// HAExecutionLeadership enables leader election so that, when multiple
 	// controller replicas run against a shared database, only the lease holder
 	// performs test execution. Requires a store that supports scheduler leases
@@ -482,6 +484,26 @@ func NewServer(cfg ServerConfig) *Server {
 			projectSecretStore = secretstore.Chain{Stores: []secretstore.Store{secretstore.EnvironmentStore{}}}
 		}
 	}
+	applicationSecretStore := cfg.ApplicationSecretStore
+	if applicationSecretStore == nil {
+		var db *storage.SQLiteStore
+		switch records := cfg.Store.(type) {
+		case *storage.SQLiteStore:
+			db = records
+		case *storage.PostgresStore:
+			db = records.SQLiteStore
+		}
+		if db != nil {
+			if configured, secretErr := secretstore.NewConfigured(storage.ApplicationSecretStorage{SQLiteStore: db}, wrapper); secretErr == nil {
+				applicationSecretStore = configured
+			} else {
+				slog.Warn("application secret store configuration is unavailable", "error", secretErr)
+			}
+		}
+	}
+	if applicationSecretStore == nil {
+		applicationSecretStore = secretstore.Chain{Stores: []secretstore.Store{secretstore.EnvironmentStore{}}}
+	}
 	var protectedSourceSessions *secretstore.ProtectedSourceSessionStore
 	if protectedRecords, ok := cfg.Store.(storage.ProtectedSourceSecretSessionStore); ok && protectedRecords != nil && wrapper != nil {
 		protectedSourceSessions = &secretstore.ProtectedSourceSessionStore{Records: protectedRecords, Wrapper: wrapper}
@@ -490,6 +512,7 @@ func NewServer(cfg ServerConfig) *Server {
 	secretReferenceMutations.configureDurableLease(cfg.Store)
 	runnerOpts = append(runnerOpts,
 		WithProjectSecretStore(projectSecretStore),
+		WithApplicationSecretStore(applicationSecretStore),
 		withSecretReferenceMutationCoordinator(secretReferenceMutations),
 		WithRunContinuityKeyWrapper(wrapper),
 	)
@@ -570,6 +593,7 @@ func NewServer(cfg ServerConfig) *Server {
 		brunoArtifactDir:            strings.TrimSpace(cfg.BrunoArtifactDir),
 		brunoArtifactWrapper:        cfg.BrunoArtifactWrapper,
 		projectSecretStore:          projectSecretStore,
+		applicationSecretStore:      applicationSecretStore,
 		secretReferenceMutations:    secretReferenceMutations,
 		protectedSourceSessions:     protectedSourceSessions,
 		sourceSecretSessions:        make(map[string]*sourceSecretSession),
@@ -967,6 +991,11 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/applications/{id}", cors(log(auth(http.HandlerFunc(s.handleGetApplication)))))
 	s.mux.Handle("PUT /api/v1/applications/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateApplication)))))
 	s.mux.Handle("DELETE /api/v1/applications/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteApplication)))))
+	s.mux.Handle("GET /api/v1/applications/{id}/secrets", cors(log(auth(http.HandlerFunc(s.handleListApplicationSecrets)))))
+	s.mux.Handle("POST /api/v1/applications/{id}/secrets", cors(log(auth(http.HandlerFunc(s.handleCreateApplicationSecrets)))))
+	s.mux.Handle("POST /api/v1/applications/{id}/secrets/status", cors(log(auth(http.HandlerFunc(s.handleApplicationSecretStatus)))))
+	s.mux.Handle("GET /api/v1/applications/{id}/secrets/{name}/usage", cors(log(auth(http.HandlerFunc(s.handleApplicationSecretUsage)))))
+	s.mux.Handle("PUT /api/v1/applications/{id}/secrets/{name}", cors(log(auth(http.HandlerFunc(s.handleRotateApplicationSecret)))))
 	s.mux.Handle("GET /api/v1/applications/{id}/load-comparison", cors(log(auth(http.HandlerFunc(s.handleGetApplicationLoadComparison)))))
 	s.mux.Handle("POST /api/v1/applications/{id}/releases", cors(log(auth(http.HandlerFunc(s.handleCreateRelease)))))
 	s.mux.Handle("GET /api/v1/applications/{id}/releases", cors(log(auth(http.HandlerFunc(s.handleListReleases)))))

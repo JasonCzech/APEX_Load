@@ -43,9 +43,11 @@ type runContinuityCheckpoint struct {
 	// RunSupervisionToken is the generator deadman token, wrapped by the
 	// controller key wrapper and bound (AAD) to this run and generation. The
 	// generator stores only its hash; presenting it proves run lineage.
-	RunSupervisionToken keywrap.WrappedKey                 `json:"run_supervision_token"`
-	Shards              map[string][]GeneratorShardSummary `json:"shards"`
-	CompletedTargets    []string                           `json:"completed_targets,omitempty"`
+	RunSupervisionToken    keywrap.WrappedKey                 `json:"run_supervision_token"`
+	PinnedSecretCiphertext string                             `json:"pinned_secret_ciphertext,omitempty"`
+	PinnedSecretKey        *keywrap.WrappedKey                `json:"pinned_secret_key,omitempty"`
+	Shards                 map[string][]GeneratorShardSummary `json:"shards"`
+	CompletedTargets       []string                           `json:"completed_targets,omitempty"`
 	// StoppedTargets are successor-confirmed force-stop ACKs or retained
 	// terminal outcomes, durably recorded per target during failed adoption
 	// cleanup. They are proof only for a STOPPING run; an ordinary RUNNING
@@ -258,6 +260,7 @@ func (tr *TestRunner) writeRunContinuity(ctx context.Context, test *ManagedTest,
 	for target := range test.remoteArchiveClientsByTarget {
 		archiveTargets = append(archiveTargets, target)
 	}
+	pinnedSecrets := test.pinnedSecrets.snapshot()
 	tr.mu.RUnlock()
 	if policy != failoverPolicyContinue {
 		if evacuationGuard != "" {
@@ -291,16 +294,28 @@ func (tr *TestRunner) writeRunContinuity(ctx context.Context, test *ManagedTest,
 	if err != nil {
 		return fmt.Errorf("seal run supervision token: %w", err)
 	}
+	var pinnedCiphertext string
+	var pinnedKey *keywrap.WrappedKey
+	if pinnedSecrets != nil {
+		pinnedCiphertext, pinnedKey, err = sealRunPinnedSecrets(ctx, tr.continuityKeyWrapper, testID, pinnedSecrets)
+		if err != nil {
+			return fmt.Errorf("seal run secrets: %w", err)
+		}
+	} else if previous, present, decodeErr := decodeRunContinuityCheckpoint(expected); decodeErr == nil && present {
+		pinnedCiphertext, pinnedKey = previous.PinnedSecretCiphertext, previous.PinnedSecretKey
+	}
 	checkpoint := runContinuityCheckpoint{
-		Version:               runContinuityCheckpointVersion,
-		ExecutionGeneration:   generation,
-		ExecutionLeaseOwnerID: leaseOwnerID,
-		RunSupervisionToken:   sealed,
-		Shards:                make(map[string][]GeneratorShardSummary, len(shards)),
-		ArmedAt:               time.Now().UTC(),
-		Failovers:             failovers,
-		CompletedTargets:      completedTargets,
-		ArchiveTargets:        archiveTargets,
+		Version:                runContinuityCheckpointVersion,
+		ExecutionGeneration:    generation,
+		ExecutionLeaseOwnerID:  leaseOwnerID,
+		RunSupervisionToken:    sealed,
+		PinnedSecretCiphertext: pinnedCiphertext,
+		PinnedSecretKey:        pinnedKey,
+		Shards:                 make(map[string][]GeneratorShardSummary, len(shards)),
+		ArmedAt:                time.Now().UTC(),
+		Failovers:              failovers,
+		CompletedTargets:       completedTargets,
+		ArchiveTargets:         archiveTargets,
 	}
 	for group, groupShards := range shards {
 		checkpoint.Shards[group] = cloneGeneratorShardSummaries(groupShards)

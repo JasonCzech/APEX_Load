@@ -544,9 +544,9 @@ The assisted-authoring surface is policy-gated and defaults to the deterministic
 - `POST /api/v1/scripts/authoring/sessions/{id}/approve` — Approve a session into the script library
 - `GET /api/v1/ai/review-queue` — Review queue
 
-### 11. Manage Data Pools And Project Secrets
+### 11. Manage Data Pools And Secrets
 
-Data pools are project-scoped reusable row sets. They can be bound to scenarios and overridden per execution-plan entry. Test execution currently supports only `access_mode: read_only`: rows are snapshotted into the run and the durable pool is not mutated. `read_write` and `consume` requests are rejected until durable, HA-safe row coordination is available. Project secrets back the `{{secret.name}}` template namespace and expose metadata/status without returning secret values.
+Data pools are project-scoped reusable row sets. They can be bound to scenarios and overridden per execution-plan entry. Test execution currently supports only `access_mode: read_only`: rows are snapshotted into the run and the durable pool is not mutated. `read_write` and `consume` requests are rejected until durable, HA-safe row coordination is available. Application and project secrets back the `{{secret.name}}` template namespace and expose metadata/status without returning secret values. For an application, use `/api/v1/applications/{id}/secrets` to list or create, `/secrets/status` to resolve effective status, `/secrets/{name}/usage` to inspect assigned script consumers, and `PUT /secrets/{name}` to rotate. Application values override project values for managed runs targeting that application; see the generated [API reference](#/swagger) for request and response contracts.
 
 Row `status` is free text; rows whose status is `consumed`, `used`, `disabled`, `inactive`, or `exhausted` are excluded from run snapshots, exports with `?status=active`, and load-model row counts — every other status (including blank) executes. Archiving a pool (`archived_at`) blocks new bindings, imports, and run creation until it is restored; on `PUT /api/v1/data-pools/{id}` an omitted `archived_at` leaves the archive state unchanged, an explicit `null` restores, and a timestamp archives. `PUT` requests must echo the previously read `updated_at` (pools) or `version` (rows) as an optimistic-concurrency token; a mismatch returns `409`.
 

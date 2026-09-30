@@ -5932,6 +5932,98 @@ export interface operations {
       };
     };
   };
+  "handleApplicationSecretStatus": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "names"?: Array<string>;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleApplicationSecretUsage": {
+    parameters: {
+      "path": {
+        "id": string;
+        "name": string;
+      };
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleApplyArchiveRetention": {
     parameters?: never;
     requestBody?: never;
@@ -16571,6 +16663,62 @@ export interface operations {
       "201": {
         content: {
           "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleCreateApplicationSecrets": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "secrets"?: Array<{
+            "expected_usage"?: ({
+              "exclusive_script_id"?: string;
+              "usage_revision"?: string;
+            }) | null;
+            "name"?: string;
+            "value"?: string;
+          }>;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": Record<string, unknown>;
         };
       };
       "400": {
@@ -29795,7 +29943,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, string>;
+          "application/json": Record<string, unknown>;
         };
       };
       "400": {
@@ -59665,6 +59813,39 @@ export interface operations {
       };
     };
   };
+  "handleListApplicationSecrets": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleListApplications": {
     parameters: {
       "query"?: {
@@ -86044,6 +86225,63 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleRotateApplicationSecret": {
+    parameters: {
+      "path": {
+        "id": string;
+        "name": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "acknowledge_shared_usage"?: boolean;
+          "expected_usage_revision"?: string;
+          "value"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -114137,6 +114375,19 @@ export interface paths {
   "/api/v1/applications/{id}/releases": {
     "get": operations["handleListReleases"];
     "post": operations["handleCreateRelease"];
+  };
+  "/api/v1/applications/{id}/secrets": {
+    "get": operations["handleListApplicationSecrets"];
+    "post": operations["handleCreateApplicationSecrets"];
+  };
+  "/api/v1/applications/{id}/secrets/status": {
+    "post": operations["handleApplicationSecretStatus"];
+  };
+  "/api/v1/applications/{id}/secrets/{name}": {
+    "put": operations["handleRotateApplicationSecret"];
+  };
+  "/api/v1/applications/{id}/secrets/{name}/usage": {
+    "get": operations["handleApplicationSecretUsage"];
   };
   "/api/v1/archives/retention/apply": {
     "post": operations["handleApplyArchiveRetention"];

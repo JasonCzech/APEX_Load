@@ -128,7 +128,7 @@ values there. Writable providers (an encrypted database keyed by a wrapping key,
 Azure Key Vault) need controller configuration and, for Key Vault, the Secrets Officer
 role. Protect and back up wrapping keys; losing them makes encrypted values
 unreadable. The environment variables, provider table, and migration steps are
-maintained in [Project Secrets](ADMIN_USER_GUIDE.md#project-secrets).
+maintained in [Application and Project Secrets](ADMIN_USER_GUIDE.md#application-and-project-secrets).
 
 ## Activity, Audit, And Access Review
 
@@ -353,20 +353,36 @@ Point-in-time record (2026-09-19) for the folder-move and assignment feature; th
 - **Final results:** dashboard cycle 4,296 unit tests passing (plus the two baseline failures); 77 launch and eight shared-dialog unit tests pass; lint, type checking, embedded build and `git diff --check` pass; dev-admin profile 111 passed / eight baseline failures / three skipped; local-auth profile 36 passed / two baseline failures; SQLite, PostgreSQL, API/RBAC, generated-contract, deletion-coverage and QA-dashboard freshness checks pass.
 
 
-## Project Secrets
+## Application and Project Secrets
 
-APEX Load stores scripts with `{{secret.NAME}}` references. Secret values are
-managed separately and are never returned by the Project Secrets APIs, written
+APEX Load stores scripts with `{{secret.NAME}}` references. Application secrets
+are shared by scripts assigned to one application and override same-name project
+secrets. Managed runs use their selected application; direct script actions use
+the script's library assignment. Rotation affects new executions while active
+runs retain their pinned values. Secret values are
+managed separately and are never returned by the Secrets APIs, written
 into script JSON, archives, logs, fingerprints, or distributed script caches.
 
 ### Storage providers
 
-The controller supports two writable production providers:
+The controller supports an encrypted database for new values and two external
+providers for reading and rotating values that administrators provision there:
 
 | Provider | Configuration | Persistence |
 |---|---|---|
 | Encrypted database | Configure `APEXLOAD_WRAPPING_MASTER_KEY` (local AES key), a versioned Azure Key Vault key in `APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID`, or an AWS KMS key in `APEXLOAD_WRAPPING_KMS_KEY_ID`. Set at most one of the Key Vault and KMS ids; setting both is a startup error. | Encrypted value records in the configured SQLite/PostgreSQL store. |
 | Azure Key Vault | Set `APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED=true` and `APEXLOAD_AZURE_KEY_VAULT_URL`; use workload/managed identity. | Values in Key Vault; managed logical-name metadata in the APEX Load database. |
+| AWS Secrets Manager | Set `APEXLOAD_AWS_SECRETS_MANAGER_WRITE_ENABLED=true` and `APEXLOAD_AWS_SECRETS_MANAGER_REGION`; use an IAM role or another supported AWS credential source. | Values in Secrets Manager; managed logical-name metadata in the APEX Load database. |
+
+Application secrets use separate encrypted database records or a separate logical
+namespace in Azure Key Vault, AWS Secrets Manager, and the read-only environment
+provider. Deleting an application removes its database records. The deletion API
+reports names and providers of external values that an administrator must remove.
+Provision an external application value under the binding derived by
+`engine.ProjectSecretBindingName(storage.ApplicationSecretScopeID(applicationID), name)`;
+for the read-only environment provider, use
+`engine.ProjectSecretEnvironmentName(storage.ApplicationSecretScopeID(applicationID), name)`.
+These helpers keep application bindings separate from project bindings.
 
 The `APEXLOAD_WRAPPING_*` key settings are shared with encrypted Bruno source
 artifacts. A writable encrypted database Project Secrets store requires one of

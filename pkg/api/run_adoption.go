@@ -189,6 +189,15 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			raw = promoted
 		}
 		checkpoint, _, decodeErr := decodeRunContinuityCheckpoint(raw)
+		if decodeErr == nil && (checkpoint.PinnedSecretCiphertext != "" || checkpoint.PinnedSecretKey != nil) {
+			values, openErr := openRunPinnedSecrets(ctx, tr.continuityKeyWrapper, test.ID,
+				checkpoint.PinnedSecretCiphertext, checkpoint.PinnedSecretKey)
+			if openErr != nil {
+				decodeErr = fmt.Errorf("pinned run secrets are unavailable: %w", openErr)
+			} else if test.pinnedSecrets != nil {
+				test.pinnedSecrets.setIfAbsent(values)
+			}
+		}
 		if decodeErr == nil && checkpoint.ExecutionGeneration >= generation {
 			decodeErr = fmt.Errorf("checkpoint generation %d is not older than %d", checkpoint.ExecutionGeneration, generation)
 		}

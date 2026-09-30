@@ -1255,9 +1255,8 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			return
 		}
 	}
-	projectSecretResolvers := make(map[string]engine.SecretResolver)
 	var shardNamespaceBase uint64
-	for _, group := range test.Groups {
+	for index, group := range test.Groups {
 		if group.script == nil {
 			failStartup(fmt.Sprintf("group %q has no compiled script", group.Name))
 			return
@@ -1305,11 +1304,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		if strings.TrimSpace(secretProjectID) == "" {
 			secretProjectID = test.ProjectID
 		}
-		secretResolver := projectSecretResolvers[secretProjectID]
-		if secretResolver == nil {
-			secretResolver = tr.secretResolverForProject(secretProjectID)
-			projectSecretResolvers[secretProjectID] = secretResolver
-		}
+		secretResolver := tr.secretResolverForRunGroup(test, index, secretProjectID)
 		secretResolver = overlayRuntimeSecretResolver(group.runtimeSecretValues, secretResolver)
 		secretBundle, err := resolveDistributedSecretBundle(group.script, secretResolver)
 		if err != nil {

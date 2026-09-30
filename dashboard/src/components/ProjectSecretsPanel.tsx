@@ -11,6 +11,8 @@ import './ProjectSecretsPanel.css'
 interface Props {
   projectId: string
   projectName: string
+  applicationId?: string
+  applicationName?: string
   canCreate: boolean
   canRotate: boolean
   onCountChange?: (count: number) => void
@@ -42,22 +44,28 @@ function metadataCaughtUp(listed: ProjectSecretMetadata, committed: ProjectSecre
 export default function ProjectSecretsPanel({
   projectId,
   projectName,
+  applicationId,
+  applicationName,
   canCreate,
   canRotate,
   onCountChange,
 }: Props) {
   const api = useApi()
+  const scopeId = applicationId || projectId
+  const scopeLabel = applicationId ? 'application' : 'project'
+  const scopeName = applicationName || projectName
   const idPrefix = useId().replace(/:/g, '')
   const newNameId = `${idPrefix}-project-secret-name`
   const newValueId = `${idPrefix}-project-secret-value`
   const nameErrorId = `${idPrefix}-project-secret-name-error`
-  const activeProjectIdRef = useRef(projectId)
-  activeProjectIdRef.current = projectId
+  const activeProjectIdRef = useRef(scopeId)
+  activeProjectIdRef.current = scopeId
   const loadRequestRef = useRef(0)
   const mutationSequenceRef = useRef(0)
   const activeMutationRef = useRef<{ id: number; projectId: string } | null>(null)
   const committedSecretsRef = useRef(new Map<string, ProjectSecretMetadata>())
   const [secrets, setSecrets] = useState<ProjectSecretMetadata[]>([])
+  const [sourceScopeByName, setSourceScopeByName] = useState<Record<string, 'application' | 'project'>>({})
   const [usageByName, setUsageByName] = useState<Record<string, ProjectSecretUsage>>({})
   const [provider, setProvider] = useState('')
   const [writable, setWritable] = useState(false)
@@ -77,7 +85,7 @@ export default function ProjectSecretsPanel({
   const [reconciliation, setReconciliation] = useState<SecretReconciliation | null>(null)
 
   const load = useCallback(async (): Promise<ProjectSecretMetadata[] | null> => {
-    const targetProjectId = projectId
+    const targetProjectId = scopeId
     const requestId = ++loadRequestRef.current
     const requestIsCurrent = () => (
       activeProjectIdRef.current === targetProjectId
@@ -87,12 +95,33 @@ export default function ProjectSecretsPanel({
     setError('')
     setLoadError(false)
     try {
-      const response = await api.listProjectSecrets(targetProjectId)
+      const response = applicationId
+        ? await api.listApplicationSecrets(targetProjectId)
+        : await api.listProjectSecrets(targetProjectId)
       if (!requestIsCurrent()) return null
-      const listed = Array.isArray(response.secrets) ? response.secrets : []
-      const usages = typeof api.getProjectSecretUsage === 'function'
-        ? await Promise.all(listed.map(secret => api.getProjectSecretUsage(targetProjectId, secret.name, { limit: 50 })))
-        : []
+      let listed = Array.isArray(response.secrets) ? response.secrets : []
+      if (applicationId) {
+        const projectResponse = await api.listProjectSecrets(projectId)
+        const projectSecrets = Array.isArray(projectResponse.secrets) ? projectResponse.secrets : []
+        const known = new Set(listed.map(secret => secret.name))
+        const candidates = [...listed.map(secret => secret.name), ...projectSecrets.map(secret => secret.name).filter(name => !known.has(name))]
+        const statusPages = await Promise.all(Array.from({ length: Math.ceil(candidates.length / 256) }, (_, index) => (
+          api.getApplicationSecretStatuses(applicationId, candidates.slice(index * 256, (index + 1) * 256))
+        )))
+        if (!requestIsCurrent()) return null
+        const byName = new Map(statusPages.flatMap(page => page.secrets).map(status => [status.name, status]))
+        listed = [
+          ...listed,
+          ...projectSecrets.filter(secret => !known.has(secret.name) && byName.get(secret.name)?.source_scope === 'project')
+            .map(secret => ({ ...secret, writable: false })),
+        ]
+        setSourceScopeByName(Object.fromEntries(listed.map(secret => [secret.name, byName.get(secret.name)?.source_scope || 'application'])))
+      } else {
+        setSourceScopeByName(Object.fromEntries(listed.map(secret => [secret.name, 'project'])))
+      }
+      const usages = await Promise.all(listed.map(secret => applicationId
+        ? api.getApplicationSecretUsage(targetProjectId, secret.name, { limit: 50 })
+        : api.getProjectSecretUsage(targetProjectId, secret.name, { limit: 50 })))
       if (!requestIsCurrent()) return null
       setUsageByName(Object.fromEntries(usages.map(usage => [usage.name, usage])))
       const next = [...listed]
@@ -118,17 +147,18 @@ export default function ProjectSecretsPanel({
       if (!requestIsCurrent()) return null
       // A transient metadata failure does not invalidate a catalog and provider
       // capability snapshot that already loaded successfully for this project.
-      setError(getErrorMessage(err, 'Unable to load project secrets'))
+      setError(getErrorMessage(err, `Unable to load ${scopeLabel} secrets`))
       setLoadError(true)
       return null
     } finally {
       if (requestIsCurrent()) setLoading(false)
     }
-  }, [api, onCountChange, projectId])
+  }, [api, onCountChange, scopeId, applicationId, projectId, scopeLabel])
 
   useEffect(() => {
     loadRequestRef.current += 1
     setSecrets([])
+    setSourceScopeByName({})
     setUsageByName({})
     setProvider('')
     setWritable(false)
@@ -148,7 +178,7 @@ export default function ProjectSecretsPanel({
     setError('')
     setLoadError(false)
     setReconciliation(null)
-  }, [projectId])
+  }, [scopeId])
 
   useEffect(() => {
     void load()
@@ -157,11 +187,11 @@ export default function ProjectSecretsPanel({
   const loadMoreConsumers = async (name: string): Promise<void> => {
     const current = usageByName[name]
     if (!current?.has_more || usageLoadingName) return
-    const targetProjectId = projectId
+    const targetProjectId = scopeId
     setUsageLoadingName(name)
     setError('')
     try {
-      const next = await api.getProjectSecretUsage(targetProjectId, name, {
+      const next = await (applicationId ? api.getApplicationSecretUsage : api.getProjectSecretUsage)(targetProjectId, name, {
         limit: current.limit || 50,
         offset: current.consumers.length,
       })
@@ -201,20 +231,29 @@ export default function ProjectSecretsPanel({
   const nameError = useMemo(() => {
     if (!newName.trim()) return ''
     if (!isValidSecretBindingName(normalizedNewName)) return 'Use 1–249 uppercase letters, numbers, or underscores.'
-    if (secrets.some(secret => secret.name === normalizedNewName)) return 'This secret already exists. Use Rotate to replace its value.'
+    if (secrets.some(secret => secret.name === normalizedNewName && (!applicationId || sourceScopeByName[secret.name] === 'application'))) return 'This secret already exists. Use Rotate to replace its value.'
     return ''
-  }, [newName, normalizedNewName, secrets])
+  }, [newName, normalizedNewName, secrets, applicationId, sourceScopeByName])
 
   const reconcileSecretOutcome = async (pending: SecretReconciliation): Promise<boolean> => {
     const refreshed = await load()
-    if (activeProjectIdRef.current !== projectId || !refreshed) {
+    if (activeProjectIdRef.current !== scopeId || !refreshed) {
       setReconciliation(pending)
       setError(`${pending.failureMessage} The write outcome is uncertain and secret metadata could not be refreshed. Reconcile status before retrying.`)
       return false
     }
     const observed = refreshed.find(secret => secret.name === pending.name)
+    let applicationCreated = true
+    if (applicationId && pending.operation === 'create') {
+      try {
+        const status = await api.getApplicationSecretStatuses(applicationId, [pending.name])
+        applicationCreated = status.secrets.find(secret => secret.name === pending.name)?.source_scope === 'application'
+      } catch {
+        applicationCreated = false
+      }
+    }
     const confirmed = pending.operation === 'create'
-      ? Boolean(observed)
+      ? Boolean(observed) && applicationCreated
       : Boolean(observed && observed.updated_at && observed.updated_at !== pending.previousUpdatedAt)
     if (!confirmed) {
       setReconciliation(pending)
@@ -236,7 +275,7 @@ export default function ProjectSecretsPanel({
 
   const createSecret = async (): Promise<boolean> => {
     if (activeMutationRef.current || !normalizedNewName || !newValue || nameError || !canCreate || !writable || !createSupported) return false
-    const targetProjectId = projectId
+    const targetProjectId = scopeId
     const operation = { id: ++mutationSequenceRef.current, projectId: targetProjectId }
     activeMutationRef.current = operation
     setBusyName(normalizedNewName)
@@ -244,7 +283,9 @@ export default function ProjectSecretsPanel({
     setError('')
     setLoadError(false)
     try {
-      const response = await api.createProjectSecrets(targetProjectId, [{ name: normalizedNewName, value: newValue }])
+      const response = applicationId
+        ? await api.createApplicationSecrets(targetProjectId, [{ name: normalizedNewName, value: newValue }])
+        : await api.createProjectSecrets(targetProjectId, [{ name: normalizedNewName, value: newValue }])
       if (activeProjectIdRef.current !== targetProjectId || activeMutationRef.current !== operation) return false
       const committed = response.secrets || (response.secret ? [response.secret] : [])
       if (committed.length > 0) {
@@ -264,7 +305,7 @@ export default function ProjectSecretsPanel({
       return true
     } catch (err: unknown) {
       if (activeProjectIdRef.current !== targetProjectId || activeMutationRef.current !== operation) return false
-      const failureMessage = getErrorMessage(err, 'Unable to create project secret')
+      const failureMessage = getErrorMessage(err, `Unable to create ${scopeLabel} secret`)
       const payload = err instanceof ApiError ? err.payload as { created?: ProjectSecretMetadata[] } | undefined : undefined
       const committed = payload?.created?.find(secret => secret.name === normalizedNewName)
       if (committed) {
@@ -295,7 +336,7 @@ export default function ProjectSecretsPanel({
     const secret = secrets.find(candidate => candidate.name === name)
     const usage = usageByName[name]
     if (activeMutationRef.current || !secret?.writable || !rotateValue || !canRotate || !writable || !replaceSupported || ((usage?.consumer_count || 0) > 1 && !rotationAcknowledged)) return false
-    const targetProjectId = projectId
+    const targetProjectId = scopeId
     const operation = { id: ++mutationSequenceRef.current, projectId: targetProjectId }
     activeMutationRef.current = operation
     setBusyName(name)
@@ -304,11 +345,11 @@ export default function ProjectSecretsPanel({
     setLoadError(false)
     try {
       const response = usage
-        ? await api.rotateProjectSecret(targetProjectId, name, rotateValue, {
+        ? await (applicationId ? api.rotateApplicationSecret : api.rotateProjectSecret)(targetProjectId, name, rotateValue, {
             expected_usage_revision: usage.usage_revision,
             acknowledge_shared_usage: usage.consumer_count > 1 ? rotationAcknowledged : undefined,
           })
-        : await api.rotateProjectSecret(targetProjectId, name, rotateValue)
+        : await (applicationId ? api.rotateApplicationSecret : api.rotateProjectSecret)(targetProjectId, name, rotateValue)
       if (activeProjectIdRef.current !== targetProjectId || activeMutationRef.current !== operation) return false
       const committed = response.secret || response.secrets?.find(secret => secret.name === name)
       if (committed) {
@@ -323,7 +364,7 @@ export default function ProjectSecretsPanel({
       return true
     } catch (err: unknown) {
       if (activeProjectIdRef.current !== targetProjectId || activeMutationRef.current !== operation) return false
-      const failureMessage = getErrorMessage(err, 'Unable to rotate project secret')
+      const failureMessage = getErrorMessage(err, `Unable to rotate ${scopeLabel} secret`)
       if (!(err instanceof ApiError) || err.status === 408 || err.status >= 500) {
         return await reconcileSecretOutcome({ operation: 'rotate', name, previousUpdatedAt: secret.updated_at, failureMessage })
       }
@@ -357,12 +398,12 @@ export default function ProjectSecretsPanel({
     setError('')
   }
   const navigationGuard = useMemo<NavigationGuard>(() => ({
-    id: `project-secrets-${projectId}`,
-    label: 'Project secret draft',
+    id: `${scopeLabel}-secrets-${scopeId}`,
+    label: `${scopeLabel} secret draft`,
     isDirty: () => draftDirtyRef.current,
     save: () => saveDraftRef.current(),
     discard: () => discardDraftRef.current(),
-  }), [projectId])
+  }), [scopeId, scopeLabel])
   useNavigationGuard(navigationGuard, draftDirty)
 
   return (
@@ -370,9 +411,9 @@ export default function ProjectSecretsPanel({
       <div className="settings-subsection">
         <div className="settings-manager-summary">
           <div>
-            <span className="setting-label">Project Secret Vault</span>
+            <span className="setting-label">{applicationId ? 'Application Secret Vault' : 'Project Secret Vault'}</span>
             <span className="setting-desc">
-              Inventory, provider health, consumers, orphaned entries, and administrative rotation for {projectName}. Values are never returned to the browser; scripts are normally configured from their Secret Bindings dialog.
+              Inventory, provider health, consumers, orphaned entries, and administrative rotation for {scopeName}. Values are never returned to the browser. {applicationId ? 'Scripts in this application share its secret names and fall back to project values.' : 'Scripts in this project can use these values.'}
             </span>
           </div>
           <span className={`script-health-token ${writable ? 'healthy' : 'warning'}`}>
@@ -425,12 +466,12 @@ export default function ProjectSecretsPanel({
                 <div>
                   <strong>{secret.name}</strong>
                   <span>
-                    {secret.provider || provider || 'project provider'}{secret.writable ? '' : ' · read-only'} · Updated {formatTimestamp(secret.updated_at)}
+                    {applicationId ? `${sourceScopeByName[secret.name] || 'application'} scope · ` : ''}{secret.provider || provider || `${scopeLabel} provider`}{secret.writable ? '' : ' · read-only'} · Updated {formatTimestamp(secret.updated_at)}
                   </span>
                   <span>
                     {usageByName[secret.name]?.consumer_count
                       ? `${usageByName[secret.name].consumer_count} consuming script${usageByName[secret.name].consumer_count === 1 ? '' : 's'} · ${usageByName[secret.name].reference_count} reference${usageByName[secret.name].reference_count === 1 ? '' : 's'}`
-                      : 'Unused vault entry'}
+                      : applicationId ? 'No assigned script references' : 'Unused vault entry'}
                   </span>
                   {secret.created_by && <span>Created by {secret.created_by}</span>}
                   {(usageByName[secret.name]?.consumers.length || 0) > 0 && (
@@ -497,6 +538,15 @@ export default function ProjectSecretsPanel({
                       Cancel
                     </button>
                   </div>
+                ) : applicationId && sourceScopeByName[secret.name] === 'project' ? (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    type="button"
+                    onClick={() => { setNewName(secret.name); setNewValue('') }}
+                    disabled={!canCreate || !writable || !createSupported || Boolean(busyName)}
+                  >
+                    Override in application
+                  </button>
                 ) : (
                   <button
                     className="btn btn-secondary btn-sm"
@@ -528,7 +578,7 @@ export default function ProjectSecretsPanel({
             <span className="setting-desc">Creating is safe for editors because existing names cannot be overwritten. Rotation remains an administrator action.</span>
           </div>
         </div>
-        {!writable && <p className="new-test-inline-note">This provider is read-only. Ask your deployment administrator to supply the secret through the configured environment/provider, or configure a writable project secret provider. Values cannot be created or rotated here. <a href="#/docs?guide=admin-guide&article=administration&section=project-secret-providers" target="_blank" rel="noreferrer">Secret provider setup guide</a></p>}
+        {!writable && <p className="new-test-inline-note">This provider is read-only. Ask your deployment administrator to supply the secret through the configured environment/provider, or configure a writable {scopeLabel} secret provider. Values cannot be created or rotated here. <a href="#/docs?guide=admin-guide&article=administration&section=project-secret-providers" target="_blank" rel="noreferrer">Secret provider setup guide</a></p>}
         <div className="project-secret-create" hidden={!writable}>
           <label htmlFor={newNameId}>
             <span>Secret name</span>

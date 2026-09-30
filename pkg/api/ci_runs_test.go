@@ -269,22 +269,22 @@ func TestValidateCIRunRequestEnforcesPolicyAndSecretBoundary(t *testing.T) {
 		}, wantError: "cannot read filesystem"},
 		{name: "plaintext variable credential", mutate: func(req *ciRunCreateRequest, _ *storage.GitHubActionsPolicy, _ *dsl.Script) {
 			req.Execution.Variables = map[string]string{"api_token": "plaintext"}
-		}, wantError: "controller-managed project secret"},
+		}, wantError: "controller-managed secret"},
 		{name: "authorization variable credential", mutate: func(req *ciRunCreateRequest, _ *storage.GitHubActionsPolicy, _ *dsl.Script) {
 			req.Execution.Variables = map[string]string{"authorization": "opaque-value"}
-		}, wantError: "controller-managed project secret"},
+		}, wantError: "controller-managed secret"},
 		{name: "AWS access-key variable credential", mutate: func(req *ciRunCreateRequest, _ *storage.GitHubActionsPolicy, _ *dsl.Script) {
 			req.Execution.Variables = map[string]string{"AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE"}
-		}, wantError: "controller-managed project secret"},
+		}, wantError: "controller-managed secret"},
 		{name: "credential-shaped variable value", mutate: func(req *ciRunCreateRequest, _ *storage.GitHubActionsPolicy, _ *dsl.Script) {
 			req.Execution.Variables = map[string]string{"header_value": "Bearer short"}
-		}, wantError: "controller-managed project secret"},
+		}, wantError: "controller-managed secret"},
 		{name: "credential-bearing variable URL", mutate: func(req *ciRunCreateRequest, _ *storage.GitHubActionsPolicy, _ *dsl.Script) {
 			req.Execution.Variables = map[string]string{"endpoint": "https://user:password@example.test/path"}
-		}, wantError: "controller-managed project secret"},
+		}, wantError: "controller-managed secret"},
 		{name: "signed variable URL", mutate: func(req *ciRunCreateRequest, _ *storage.GitHubActionsPolicy, _ *dsl.Script) {
 			req.Execution.Variables = map[string]string{"endpoint": "https://example.test/path?sig=short"}
-		}, wantError: "controller-managed project secret"},
+		}, wantError: "controller-managed secret"},
 		{name: "required SLA missing threshold", mutate: func(req *ciRunCreateRequest, _ *storage.GitHubActionsPolicy, _ *dsl.Script) {
 			req.Goals.RequireSLA = true
 		}, wantError: "no SLA threshold"},

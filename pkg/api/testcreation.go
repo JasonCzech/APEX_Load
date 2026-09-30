@@ -1447,6 +1447,15 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		CreatedByDisplayName:         creationActor.DisplayName,
 		ScheduledStartAt:             cloneTimePtr(req.ScheduledStartAt),
 		groupSpecs:                   engineGroups,
+		pinnedSecrets:                &runPinnedSecretState{},
+	}
+	for index := range test.groupSpecs {
+		if test.groupSpecs[index].Script != nil {
+			test.groupSpecs[index].SecretResolver = overlayRuntimeSecretResolver(
+				test.Groups[index].runtimeSecretValues,
+				tr.boundSecretResolverForRunGroup(test, index, test.groupSpecs[index].Script.ProjectID),
+			)
+		}
 	}
 	if req.ExecutionPlanApproval != nil {
 		test.ExecutionPlanApproval = runArchiveExecutionPlanApprovalSnapshot(req.ExecutionPlanApproval)

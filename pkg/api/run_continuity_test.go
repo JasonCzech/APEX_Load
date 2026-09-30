@@ -120,7 +120,9 @@ func TestArmRunContinuityPersistsSealedCheckpoint(t *testing.T) {
 		test := &ManagedTest{ID: tc.id, Assignment: &GeneratorAssignmentSettings{FailoverPolicy: tc.policy},
 			remoteTargetStates:           map[string]string{"gen-2:9091": "complete"},
 			remoteArchiveClientsByTarget: map[string]generatorClient{"retired:9091": &adoptionFakeClient{}},
+			pinnedSecrets:                &runPinnedSecretState{},
 		}
+		test.pinnedSecrets.setIfAbsent(map[int]map[string]string{0: {"LOGIN_PASSWORD": "secret-before-rotation"}})
 		runner.armRunContinuity(context.Background(), test, generation, owner, token, shards)
 		record, err := store.GetTest(tc.id)
 		if err != nil {
@@ -133,8 +135,12 @@ func TestArmRunContinuityPersistsSealedCheckpoint(t *testing.T) {
 		if !tc.armed {
 			continue
 		}
-		if strings.Contains(record.ContinuityCheckpoint, string(token)) {
-			t.Fatal("checkpoint stores the supervision token in plaintext")
+		if strings.Contains(record.ContinuityCheckpoint, string(token)) || strings.Contains(record.ContinuityCheckpoint, "secret-before-rotation") {
+			t.Fatal("checkpoint stores secret material in plaintext")
+		}
+		pinned, err := openRunPinnedSecrets(context.Background(), wrapper, tc.id, checkpoint.PinnedSecretCiphertext, checkpoint.PinnedSecretKey)
+		if err != nil || pinned[0]["LOGIN_PASSWORD"] != "secret-before-rotation" {
+			t.Fatalf("recovered pinned secret = %q, %v", pinned[0]["LOGIN_PASSWORD"], err)
 		}
 		if checkpoint.ExecutionGeneration != generation || checkpoint.ExecutionLeaseOwnerID != owner {
 			t.Fatalf("checkpoint term = (%d, %q), want (%d, %q)", checkpoint.ExecutionGeneration, checkpoint.ExecutionLeaseOwnerID, generation, owner)

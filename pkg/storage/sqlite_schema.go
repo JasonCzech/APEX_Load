@@ -347,6 +347,26 @@ func schemaCreateTableStatements() []string {
 			created_by TEXT,
 			PRIMARY KEY(project_id, secret_name)
 		)`,
+		`CREATE TABLE IF NOT EXISTS application_secrets (
+			application_id TEXT NOT NULL REFERENCES applications(id),
+			secret_name TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			ciphertext TEXT NOT NULL,
+			wrapped_key_json TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			created_by TEXT,
+			PRIMARY KEY(application_id, secret_name)
+		)`,
+		`CREATE TABLE IF NOT EXISTS application_secret_provider_metadata (
+			application_id TEXT NOT NULL REFERENCES applications(id),
+			secret_name TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			created_by TEXT,
+			PRIMARY KEY(application_id, secret_name)
+		)`,
 		`CREATE TABLE IF NOT EXISTS protected_source_secret_sessions (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL REFERENCES projects(id),

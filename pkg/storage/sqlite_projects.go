@@ -766,6 +766,12 @@ func (s *SQLiteStore) DeleteApplication(id string) error {
 	if dependentCount > 0 {
 		return errors.New("application has associated results, schedules, or governance records")
 	}
+	if _, err := tx.Exec(`DELETE FROM application_secrets WHERE application_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM application_secret_provider_metadata WHERE application_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM releases WHERE application_id = ?`, id); err != nil {
 		return err
 	}
@@ -1724,6 +1730,8 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		// Application/release hierarchy and its governance records.
 		{`DELETE FROM release_sla_waivers WHERE project_id = ? OR release_id IN (SELECT id FROM releases WHERE project_id = ? OR application_id IN (SELECT id FROM applications WHERE project_id = ?))`, []any{id, id, id}},
 		{`DELETE FROM releases WHERE project_id = ? OR application_id IN (SELECT id FROM applications WHERE project_id = ?)`, []any{id, id}},
+		{`DELETE FROM application_secrets WHERE application_id IN (SELECT id FROM applications WHERE project_id = ?)`, []any{id}},
+		{`DELETE FROM application_secret_provider_metadata WHERE application_id IN (SELECT id FROM applications WHERE project_id = ?)`, []any{id}},
 		{`DELETE FROM applications WHERE project_id = ?`, []any{id}},
 
 		// Script-derived sensitive records and project repository contents.

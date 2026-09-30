@@ -264,7 +264,12 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "CI script selection changed while the run was being created")
 			return
 		}
-		if err := validateCIRunRequest(req, policy, script, s.runner.secretResolverForProject(req.ProjectID)); err != nil {
+		resolver, err := s.ciRunSecretResolver(req)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := validateCIRunRequest(req, policy, script, resolver); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -439,6 +444,20 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 	response, _ := s.buildCIRunResponse(r.Context(), test)
 	s.recordAuditEvent(r, "ci.run.create", "success", "test", test.ID, test.ProjectID, map[string]any{"repository": req.Source.Repository, "workflow_ref": req.Source.WorkflowRef, "run_id": req.Source.RunID, "run_attempt": req.Source.RunAttempt, "script_identity": scriptIdentity, "publish_check": metadata.PublishCheck})
 	writeJSON(w, http.StatusAccepted, response)
+}
+
+func (s *Server) ciRunSecretResolver(req ciRunCreateRequest) (engine.SecretResolver, error) {
+	if strings.TrimSpace(req.ReleaseID) == "" {
+		return s.runner.secretResolverForProject(req.ProjectID), nil
+	}
+	if s.store == nil {
+		return nil, errors.New("release storage is unavailable")
+	}
+	release, err := s.store.GetRelease(strings.TrimSpace(req.ReleaseID))
+	if err != nil || release == nil || normalizeProjectID(release.ProjectID) != normalizeProjectID(req.ProjectID) {
+		return nil, errors.New("release not found in the selected project")
+	}
+	return s.runner.secretResolverForScope(req.ProjectID, release.ApplicationID), nil
 }
 
 func ciRunNeedsStart(test *ManagedTest) bool {
@@ -748,7 +767,7 @@ func validateCIRunRequest(req ciRunCreateRequest, policy storage.GitHubActionsPo
 			return fmt.Errorf("execution.variables contains an invalid key")
 		}
 		if sensitiveEnvKey(trimmed) || sensitiveEnvValue(value) {
-			return fmt.Errorf("execution.variables is for non-secret overrides; %q must be a controller-managed project secret", key)
+			return fmt.Errorf("execution.variables is for non-secret overrides; %q must be a controller-managed secret", key)
 		}
 		if len(value) > ciRunMaxValueBytes || strings.ContainsRune(value, '\x00') {
 			return fmt.Errorf("execution.variables[%q] is invalid or too large", key)
@@ -788,7 +807,7 @@ func validateCIRunRequest(req ciRunCreateRequest, policy storage.GitHubActionsPo
 func validateCIRequiredProjectSecrets(script *dsl.Script, resolver engine.SecretResolver) error {
 	names, err := engine.ReferencedSecretNames(script)
 	if err != nil {
-		return fmt.Errorf("inspect controller-managed project secrets")
+		return fmt.Errorf("inspect controller-managed secrets")
 	}
 	if len(names) == 0 {
 		return nil
@@ -797,10 +816,10 @@ func validateCIRequiredProjectSecrets(script *dsl.Script, resolver engine.Secret
 	defer cancel()
 	_, missing, err := engine.ResolveSecretNames(ctx, names, resolver)
 	if err != nil {
-		return fmt.Errorf("resolve controller-managed project secrets: %w", err)
+		return fmt.Errorf("resolve controller-managed secrets: %w", err)
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("controller-managed project secret(s) could not be resolved: %s", strings.Join(missing, ", "))
+		return fmt.Errorf("controller-managed secret(s) could not be resolved: %s", strings.Join(missing, ", "))
 	}
 	return nil
 }

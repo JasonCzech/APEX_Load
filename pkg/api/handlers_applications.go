@@ -3,10 +3,13 @@ package api
 import (
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -174,12 +177,55 @@ func (s *Server) handleDeleteApplication(w http.ResponseWriter, r *http.Request)
 		projectID = application.ProjectID
 		name = application.Name
 	}
+	cleanupNames := []string{}
+	cleanupProviders := []string{}
+	if projectID != "" {
+		listed := []secretstore.Metadata{}
+		var err error
+		var records *storage.SQLiteStore
+		switch store := s.store.(type) {
+		case *storage.SQLiteStore:
+			records = store
+		case *storage.PostgresStore:
+			records = store.SQLiteStore
+		}
+		if records != nil {
+			var indexed []storage.ProjectSecretMetadata
+			indexed, err = (storage.ApplicationSecretStorage{SQLiteStore: records}).ListExternalProjectSecretMetadata(storage.ApplicationSecretScopeID(id))
+			for _, item := range indexed {
+				listed = append(listed, secretstore.Metadata{Name: item.SecretName, Provider: item.Provider})
+			}
+		} else if s.applicationSecretStore != nil {
+			listed, err = s.applicationSecretStore.List(r.Context(), storage.ApplicationSecretScopeID(id))
+		}
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "application secret metadata is unavailable")
+			return
+		}
+		providers := map[string]struct{}{}
+		for _, metadata := range listed {
+			if metadata.Provider == "encrypted_database" || metadata.Provider == "environment_read_only" {
+				continue
+			}
+			cleanupNames = append(cleanupNames, metadata.Name)
+			providers[metadata.Provider] = struct{}{}
+		}
+		for provider := range providers {
+			cleanupProviders = append(cleanupProviders, provider)
+		}
+		sort.Strings(cleanupNames)
+		sort.Strings(cleanupProviders)
+	}
 	if err := s.store.DeleteApplication(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	s.recordAuditEvent(r, "application.delete", "success", "application", id, projectID, map[string]any{"name": name})
-	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": id,
+		"external_secret_cleanup_required":  len(cleanupNames) > 0,
+		"external_secret_cleanup_names":     cleanupNames,
+		"external_secret_cleanup_providers": cleanupProviders,
+		"external_secret_cleanup_prefix":    engine.ProjectSecretBindingPrefix(storage.ApplicationSecretScopeID(id))})
 }
 
 func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {

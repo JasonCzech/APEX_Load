@@ -249,6 +249,9 @@ type TestRunner struct {
 	settingsStore               settingsPersistence
 	usageStore                  usageSnapshotPersistence
 	projectSecretStore          secretstore.Store
+	applicationSecretStore      secretstore.Store
+	applicationStore            applicationPersistence
+	libraryAssignmentStore      storage.LibraryAssignmentStore
 	// continuityKeyWrapper seals the run-supervision token into HA run-continuity
 	// checkpoints (run_continuity.go). Nil disables arming.
 	continuityKeyWrapper  keywrap.KeyWrapper
@@ -567,6 +570,7 @@ type ManagedTest struct {
 	scaleAdjustmentPrevious       map[string]int
 	cancel                        context.CancelFunc
 	groupSpecs                    []engine.GroupConfig
+	pinnedSecrets                 *runPinnedSecretState
 	runtimeHydrationError         string
 	runtimeSnapshotRepairRequired bool
 	creationAdopted               bool
@@ -1508,6 +1512,10 @@ func WithProjectSecretStore(store secretstore.Store) TestRunnerOption {
 	}
 }
 
+func WithApplicationSecretStore(store secretstore.Store) TestRunnerOption {
+	return func(tr *TestRunner) { tr.applicationSecretStore = store }
+}
+
 func withSecretReferenceMutationCoordinator(coordinator *projectMutationCoordinator) TestRunnerOption {
 	return func(tr *TestRunner) {
 		if coordinator != nil {
@@ -1565,6 +1573,59 @@ func (tr *TestRunner) secretResolverForProject(projectID string) engine.SecretRe
 	return engine.CacheSecretResolverForRun(secretstore.EngineResolver(tr.projectSecretStore, projectID))
 }
 
+// A run binds the application selected for that run. Script-only operations
+// use the library assignment instead, allowing one shared application binding
+// to serve every script in that application.
+func (tr *TestRunner) secretResolverForScope(projectID, applicationID string) engine.SecretResolver {
+	project := tr.secretResolverForProject(projectID)
+	applicationID = strings.TrimSpace(applicationID)
+	if applicationID == "" || tr == nil || tr.applicationSecretStore == nil {
+		return project
+	}
+	if tr.applicationStore != nil {
+		app, err := tr.applicationStore.GetApplication(applicationID)
+		if err != nil || app == nil || normalizeProjectID(app.ProjectID) != normalizeProjectID(projectID) {
+			return engine.SecretResolverFunc(func(string) (string, bool) { return "", false })
+		}
+	}
+	scopeID := storage.ApplicationSecretScopeID(applicationID)
+	return engine.CacheSecretResolverForRun(engine.ContextSecretResolverFunc(func(parent context.Context, name string) (string, bool) {
+		if parent == nil {
+			parent = context.Background()
+		}
+		ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+		value, _, err := tr.applicationSecretStore.Get(ctx, scopeID, name)
+		cancel()
+		switch {
+		case err == nil:
+			if engine.IsUsableResolvedSecretValue(value) {
+				return value, true
+			}
+			return engine.ResolveSecret(parent, project, name)
+		case errors.Is(err, secretstore.ErrNotFound):
+			return engine.ResolveSecret(parent, project, name)
+		default:
+			return "", false
+		}
+	}))
+}
+
+func (tr *TestRunner) secretResolverForScript(script *dsl.Script) engine.SecretResolver {
+	if script == nil {
+		return tr.secretResolverForProject("")
+	}
+	if tr != nil && tr.libraryAssignmentStore != nil && strings.TrimSpace(script.ID) != "" {
+		assignments, err := tr.libraryAssignmentStore.ListLibraryAssignments("script", []string{script.ID})
+		if err != nil {
+			return engine.SecretResolverFunc(func(string) (string, bool) { return "", false })
+		}
+		if assignment := assignments[script.ID]; assignment != nil && assignment.Application != nil {
+			return tr.secretResolverForScope(script.ProjectID, assignment.Application.ID)
+		}
+	}
+	return tr.secretResolverForProject(script.ProjectID)
+}
+
 func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunnerOption) *TestRunner {
 	tr := &TestRunner{
 		tests:                        make(map[string]*ManagedTest),
@@ -1608,6 +1669,12 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 		execution:                    localExecutionBackend{},
 		notifier:                     newNotificationDispatcher(nil),
 		routeCache:                   make(map[string]latencyRouteCacheEntry),
+	}
+	if assignments, ok := store.(storage.LibraryAssignmentStore); ok {
+		tr.libraryAssignmentStore = assignments
+	}
+	if applications, ok := store.(applicationPersistence); ok {
+		tr.applicationStore = applications
 	}
 	if journal, ok := store.(storage.ThresholdIncidentStore); ok {
 		tr.thresholdJournal = &thresholdJournalWriter{store: journal}

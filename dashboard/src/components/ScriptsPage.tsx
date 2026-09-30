@@ -68,6 +68,7 @@ type AuthoringHealthFilter = 'all' | 'blocked' | 'needs_replay' | 'missing_data'
 type ScriptSecretStatusPlan = {
   scriptId: string
   projectId?: string
+  applicationId?: string
   required: string[]
   signature: string
 }
@@ -81,11 +82,13 @@ function buildScriptSecretStatusPlans(
     const required = requiredScriptSecrets(script)
     if (required.length === 0) return []
     const projectId = script.project_id || activeProjectId
+    const applicationId = script.library_assignment?.application?.id
     return [{
       scriptId: script.id,
       projectId,
+      applicationId,
       required,
-      signature: `${projectId || ''}\u0000${required.join('\u0000')}`,
+      signature: `${projectId || ''}\u0000${applicationId || ''}\u0000${required.join('\u0000')}`,
     }]
   })
 }
@@ -245,16 +248,20 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
 
   const fetchSecretStatusesForPlans = useCallback(async (plans: readonly ScriptSecretStatusPlan[]) => {
     const projectId = plans[0]?.projectId
+    const applicationId = plans[0]?.applicationId
     if (!projectId || plans.length === 0) return {} as Record<string, ScriptSecretStatus>
     const required = Array.from(new Set(plans.flatMap(plan => plan.required))).sort()
     const responses = await Promise.all(Array.from({ length: Math.ceil(required.length / 256) }, (_, index) => (
-      api.getProjectSecretStatuses(projectId, required.slice(index * 256, (index + 1) * 256))
+      applicationId
+        ? api.getApplicationSecretStatuses(applicationId, required.slice(index * 256, (index + 1) * 256))
+        : api.getProjectSecretStatuses(projectId, required.slice(index * 256, (index + 1) * 256))
     )))
     const secrets = responses.flatMap(response => response.secrets)
     const configured = new Set(secrets.filter(secret => secret.configured).map(secret => secret.name))
     return Object.fromEntries(plans.map(plan => [plan.scriptId, {
       script_id: plan.scriptId,
       project_id: projectId,
+      application_id: applicationId,
       required: plan.required,
       configured: plan.required.filter(name => configured.has(name)),
       missing: plan.required.filter(name => !configured.has(name)),
@@ -280,7 +287,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       setSecretStatusStateByScript({})
       return
     }
-    if (typeof api.getProjectSecretStatuses !== 'function') {
+    if (typeof api.getProjectSecretStatuses !== 'function' || (plans.some(plan => plan.applicationId) && typeof api.getApplicationSecretStatuses !== 'function')) {
       setSecretStatusStateByScript(Object.fromEntries(plans.map(plan => [plan.scriptId, 'error'])))
       return
     }
@@ -307,12 +314,13 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       return () => { cancelled = true }
     }
 
-    const byProject = new Map<string, ScriptSecretStatusPlan[]>()
+    const byScope = new Map<string, ScriptSecretStatusPlan[]>()
     pendingPlans.forEach(plan => {
       if (!plan.projectId) return
-      byProject.set(plan.projectId, [...(byProject.get(plan.projectId) || []), plan])
+      const key = `${plan.projectId}\u0000${plan.applicationId || ''}`
+      byScope.set(key, [...(byScope.get(key) || []), plan])
     })
-    void Promise.all(Array.from(byProject.values()).map(async projectPlans => {
+    void Promise.all(Array.from(byScope.values()).map(async projectPlans => {
       try {
         const statuses = await fetchSecretStatusesForPlans(projectPlans)
         if (cancelled) return
@@ -348,7 +356,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
 
   const retryScriptSecretStatus = useCallback((script: StoredScript) => {
     const plan = secretStatusPlansRef.current.find(candidate => candidate.scriptId === script.id)
-    if (!plan?.projectId || typeof api.getProjectSecretStatuses !== 'function') {
+    if (!plan?.projectId || typeof api.getProjectSecretStatuses !== 'function' || (plan.applicationId && typeof api.getApplicationSecretStatuses !== 'function')) {
       if (isAddressableScriptId(script.id)) {
         setSecretStatusStateByScript(current => ({ ...current, [script.id]: 'error' }))
       }
@@ -1301,6 +1309,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
           scriptId={secretDialogScript.id}
           script={secretDialogScript.script}
           projectId={secretDialogScript.project_id || activeProjectId || ''}
+          applicationId={secretDialogScript.library_assignment?.application?.id}
           scriptName={secretDialogScript.name}
           onClose={() => setSecretDialogScript(null)}
           onConfigured={async () => {

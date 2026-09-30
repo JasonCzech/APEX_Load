@@ -605,8 +605,8 @@ func retryableStartSecretRequirement(err error) bool {
 // validateStartSecretRequirements keeps saved scripts independently
 // configurable while making StartTest the execution boundary: every static
 // {{secret.*}} reference must resolve before shakeout, INITIALIZING, backend
-// dispatch, or generator assignment. Engine construction repeats the check as
-// defense against a value being removed between preflight and launch.
+// dispatch, or generator assignment. Admission pins each resolved value for
+// the run, including shakeout, so later provider changes do not alter it.
 func (tr *TestRunner) validateStartSecretRequirements(id string) error {
 	tr.mu.RLock()
 	test := tr.tests[id]
@@ -625,7 +625,7 @@ func (tr *TestRunner) validateStartSecretRequirements(id string) error {
 	}
 	tr.mu.RUnlock()
 
-	projectResolvers := make(map[string]engine.SecretResolver)
+	valuesByGroup := make(map[int]map[string]string, len(groups))
 	resolutionCtx, resolutionCancel := engine.WithSecretResolutionBudget(context.Background())
 	defer resolutionCancel()
 	for index, group := range groups {
@@ -635,7 +635,7 @@ func (tr *TestRunner) validateStartSecretRequirements(id string) error {
 		names, err := engine.ReferencedSecretNames(group.Script)
 		if err != nil {
 			return &startSecretRequirementError{
-				message: fmt.Sprintf("group[%d] %q: inspect project secret references", index, group.Name),
+				message: fmt.Sprintf("group[%d] %q: inspect secret references", index, group.Name),
 				cause:   err,
 			}
 		}
@@ -646,18 +646,17 @@ func (tr *TestRunner) validateStartSecretRequirements(id string) error {
 		if projectID == "" {
 			projectID = defaultProjectID
 		}
-		resolver := projectResolvers[projectID]
-		if resolver == nil {
-			resolver = tr.secretResolverForProject(projectID)
-			projectResolvers[projectID] = resolver
-		}
+		// Pre-launch verification reads the current provider even when shakeout
+		// has already pinned the run's execution value. A removed source must
+		// still defer admission, and a changed source must go through review.
+		resolver := tr.secretResolverForScope(projectID, runSecretApplicationID(test))
 		if index < len(runtimeSecrets) {
 			resolver = overlayRuntimeSecretResolver(runtimeSecrets[index], resolver)
 		}
-		_, missing, err := engine.ResolveSecretNames(resolutionCtx, names, resolver)
+		resolved, missing, err := engine.ResolveSecretNames(resolutionCtx, names, resolver)
 		if err != nil {
 			return &startSecretRequirementError{
-				message:   fmt.Sprintf("group[%d] %q: project secret resolution failed: %v", index, group.Name, err),
+				message:   fmt.Sprintf("group[%d] %q: secret resolution failed: %v", index, group.Name, err),
 				retryable: true,
 				cause:     err,
 			}
@@ -668,10 +667,34 @@ func (tr *TestRunner) validateStartSecretRequirements(id string) error {
 				groupName = group.Script.Name
 			}
 			return &startSecretRequirementError{
-				message:   fmt.Sprintf("group %q: configure the following project secret(s) before starting the test: %s", groupName, strings.Join(missing, ", ")),
+				message:   fmt.Sprintf("group %q: configure the following secret(s) before starting the test: %s", groupName, strings.Join(missing, ", ")),
 				retryable: true,
 			}
 		}
+		valuesByGroup[index] = resolved
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.tests[id] != test {
+		return errStartAdmissionEvidenceStale
+	}
+	if test.pinnedSecrets == nil {
+		if len(valuesByGroup) == 0 {
+			return nil
+		}
+		return errors.New("run secret pin state is unavailable")
+	}
+	// A queued attempt that has not performed shakeout has not executed yet.
+	// Refresh its pin after a retry so a rotation supplies the first execution.
+	// Once shakeout or execution begins, keep its admitted value unchanged.
+	status := strings.ToUpper(strings.TrimSpace(test.Status))
+	if test.StartedAt == nil && (status == "QUEUED" || status == "PENDING") &&
+		test.pendingScriptShakeoutOutcome == nil && test.validatedScriptShakeoutPass == "" &&
+		(test.StartAuthorization == nil || (test.StartAuthorization.ScriptShakeoutPass == nil &&
+			test.StartAuthorization.ScriptShakeout == nil)) {
+		test.pinnedSecrets.replace(valuesByGroup)
+	} else {
+		test.pinnedSecrets.setIfAbsent(valuesByGroup)
 	}
 	return nil
 }
@@ -979,6 +1002,7 @@ type scriptShakeoutInputFingerprint struct {
 type scriptShakeoutExecutableSnapshot struct {
 	Version            int                               `json:"version"`
 	ProjectID          string                            `json:"project_id"`
+	ApplicationID      string                            `json:"application_id,omitempty"`
 	ScenarioMode       string                            `json:"scenario_mode,omitempty"`
 	Groups             any                               `json:"groups"`
 	DataPools          []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
@@ -989,6 +1013,7 @@ type scriptShakeoutExecutableSnapshot struct {
 
 type scriptShakeoutSecretSource struct {
 	ProjectID     string `json:"project_id"`
+	Scope         string `json:"scope,omitempty"`
 	Name          string `json:"name"`
 	Provider      string `json:"provider,omitempty"`
 	UpdatedAtNano int64  `json:"updated_at_unix_nano,omitempty"`
@@ -997,6 +1022,7 @@ type scriptShakeoutSecretSource struct {
 type scriptShakeoutPrivateSnapshot struct {
 	Version             int                               `json:"version"`
 	ProjectID           string                            `json:"project_id"`
+	ApplicationID       string                            `json:"application_id,omitempty"`
 	ScenarioMode        string                            `json:"scenario_mode,omitempty"`
 	Groups              any                               `json:"groups"`
 	DataPools           []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
@@ -1037,12 +1063,21 @@ func (tr *TestRunner) scriptShakeoutExecutableFingerprint(id string) (scriptShak
 		sort.Strings(runtimeSecretNames[index])
 	}
 	projectID := normalizeProjectID(test.ProjectID)
+	applicationID := runSecretApplicationID(test)
+	pinnedSecretValues := test.pinnedSecrets.snapshot()
 	scenarioMode := test.ScenarioMode
 	dataPools := cloneScenarioDataPoolBindings(test.DataPools)
 	runtimeSettings := cloneRuntimeSettings(test.RuntimeSettings)
 	secretStore := tr.projectSecretStore
+	applicationSecretStore := tr.applicationSecretStore
 	fingerprintKey := tr.scriptShakeoutFingerprintKey
 	tr.mu.RUnlock()
+	if applicationID != "" && tr.applicationStore != nil {
+		application, err := tr.applicationStore.GetApplication(applicationID)
+		if err != nil || application == nil || normalizeProjectID(application.ProjectID) != projectID {
+			return scriptShakeoutInputFingerprint{}, fmt.Errorf("selected application is unavailable for script shakeout")
+		}
+	}
 
 	publicGroups := decodeStoredGroups(encodeStoredGroups(groups))
 	for index := range publicGroups {
@@ -1059,6 +1094,7 @@ func (tr *TestRunner) scriptShakeoutExecutableFingerprint(id string) (scriptShak
 	publicSnapshot := scriptShakeoutExecutableSnapshot{
 		Version:            2,
 		ProjectID:          projectID,
+		ApplicationID:      applicationID,
 		ScenarioMode:       scenarioMode,
 		Groups:             encodeStoredGroups(publicGroups),
 		DataPools:          dataPools,
@@ -1068,6 +1104,7 @@ func (tr *TestRunner) scriptShakeoutExecutableFingerprint(id string) (scriptShak
 	privateSnapshot := scriptShakeoutPrivateSnapshot{
 		Version:             2,
 		ProjectID:           projectID,
+		ApplicationID:       applicationID,
 		ScenarioMode:        scenarioMode,
 		Groups:              encodeStoredGroups(groups),
 		DataPools:           dataPools,
@@ -1077,6 +1114,7 @@ func (tr *TestRunner) scriptShakeoutExecutableFingerprint(id string) (scriptShak
 
 	refsByProject := make(map[string]map[string]struct{})
 	overlayByProject := make(map[string]map[string]string)
+	pinnedByProject := make(map[string]map[string]string)
 	for index, group := range groups {
 		groupProjectID := projectID
 		if group.script != nil && strings.TrimSpace(group.script.ProjectID) != "" {
@@ -1087,6 +1125,15 @@ func (tr *TestRunner) scriptShakeoutExecutableFingerprint(id string) (scriptShak
 		}
 		if overlayByProject[groupProjectID] == nil {
 			overlayByProject[groupProjectID] = make(map[string]string)
+		}
+		if pinnedByProject[groupProjectID] == nil {
+			pinnedByProject[groupProjectID] = make(map[string]string)
+		}
+		for name, value := range pinnedSecretValues[index] {
+			if prior, exists := pinnedByProject[groupProjectID][name]; exists && prior != value {
+				return scriptShakeoutInputFingerprint{}, fmt.Errorf("secret %q has conflicting pinned values", name)
+			}
+			pinnedByProject[groupProjectID][name] = value
 		}
 		if group.script != nil {
 			names, err := engine.ReferencedSecretNames(group.script)
@@ -1125,16 +1172,45 @@ func (tr *TestRunner) scriptShakeoutExecutableFingerprint(id string) (scriptShak
 		sort.Strings(names)
 		for _, name := range names {
 			value, hasOverlay := overlayByProject[sourceProjectID][name]
+			pinned, hasPin := pinnedByProject[sourceProjectID][name]
+			if hasPin {
+				value = pinned
+			}
 			metadataProvider := ""
 			metadataUpdatedAt := time.Time{}
-			if secretStore != nil {
+			sourceScope := ""
+			foundSource := false
+			if applicationID != "" && applicationSecretStore != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				storedValue, metadata, getErr := applicationSecretStore.Get(ctx, storage.ApplicationSecretScopeID(applicationID), name)
+				cancel()
+				if getErr == nil && engine.IsUsableResolvedSecretValue(storedValue) {
+					foundSource = true
+					sourceScope = "application"
+					metadataProvider = strings.TrimSpace(metadata.Provider)
+					metadataUpdatedAt = metadata.UpdatedAt.UTC()
+					if value == "" {
+						value = storedValue
+					} else if !hmac.Equal([]byte(value), []byte(storedValue)) {
+						metadataUpdatedAt = time.Time{}
+					}
+				} else if getErr != nil && !errors.Is(getErr, secretstore.ErrNotFound) {
+					return scriptShakeoutInputFingerprint{}, &startSecretRequirementError{
+						message:   fmt.Sprintf("resolve secret source %q in application %q: %v", name, applicationID, getErr),
+						retryable: true, cause: getErr,
+					}
+				}
+			}
+			if !foundSource && secretStore != nil {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				storedValue, metadata, getErr := secretStore.Get(ctx, sourceProjectID, name)
 				cancel()
-				if getErr == nil {
+				if getErr == nil && engine.IsUsableResolvedSecretValue(storedValue) {
+					foundSource = true
+					sourceScope = "project"
 					metadataProvider = strings.TrimSpace(metadata.Provider)
 					metadataUpdatedAt = metadata.UpdatedAt.UTC()
-					if hasOverlay {
+					if value != "" || hasOverlay {
 						// Provider version metadata only attests to the provider's own
 						// value. A same-name execution overlay must not borrow that
 						// provenance unless it is exactly the attested value.
@@ -1144,7 +1220,7 @@ func (tr *TestRunner) scriptShakeoutExecutableFingerprint(id string) (scriptShak
 					} else {
 						value = storedValue
 					}
-				} else if !errors.Is(getErr, secretstore.ErrNotFound) {
+				} else if getErr != nil && !errors.Is(getErr, secretstore.ErrNotFound) {
 					// An execution overlay can run without the provider value, but its
 					// reusable evidence still depends on knowing whether that value is
 					// the exact provider-attested version. Treat provider outages as
@@ -1158,9 +1234,23 @@ func (tr *TestRunner) scriptShakeoutExecutableFingerprint(id string) (scriptShak
 					}
 				}
 			}
+			if hasPin && !foundSource {
+				ctx, cancel := engine.WithSecretResolutionBudget(context.Background())
+				current, ok := engine.ResolveSecret(ctx, tr.secretResolverForScope(sourceProjectID, applicationID), name)
+				cancel()
+				if !ok {
+					return scriptShakeoutInputFingerprint{}, &startSecretRequirementError{
+						message:   fmt.Sprintf("resolve executable secret %q in project %q", name, sourceProjectID),
+						retryable: true,
+					}
+				}
+				if !hmac.Equal([]byte(current), []byte(pinned)) {
+					sourceScope = "changed_unversioned"
+				}
+			}
 			if value == "" {
 				ctx, cancel := engine.WithSecretResolutionBudget(context.Background())
-				resolved, ok := engine.ResolveSecret(ctx, tr.secretResolverForProject(sourceProjectID), name)
+				resolved, ok := engine.ResolveSecret(ctx, tr.secretResolverForScope(sourceProjectID, applicationID), name)
 				cancel()
 				if !ok {
 					return scriptShakeoutInputFingerprint{}, &startSecretRequirementError{
@@ -1172,8 +1262,12 @@ func (tr *TestRunner) scriptShakeoutExecutableFingerprint(id string) (scriptShak
 			}
 			if metadataUpdatedAt.IsZero() {
 				reusable = false
-				if metadataProvider == "" && secretStore != nil {
-					metadataProvider = strings.TrimSpace(secretStore.Provider())
+				if metadataProvider == "" {
+					if applicationID != "" && applicationSecretStore != nil {
+						metadataProvider = strings.TrimSpace(applicationSecretStore.Provider())
+					} else if secretStore != nil {
+						metadataProvider = strings.TrimSpace(secretStore.Provider())
+					}
 				}
 			}
 			updatedAtNano := int64(0)
@@ -1181,7 +1275,7 @@ func (tr *TestRunner) scriptShakeoutExecutableFingerprint(id string) (scriptShak
 				updatedAtNano = metadataUpdatedAt.UnixNano()
 			}
 			publicSnapshot.SecretSources = append(publicSnapshot.SecretSources, scriptShakeoutSecretSource{
-				ProjectID: sourceProjectID, Name: name, Provider: metadataProvider, UpdatedAtNano: updatedAtNano,
+				ProjectID: sourceProjectID, Scope: sourceScope, Name: name, Provider: metadataProvider, UpdatedAtNano: updatedAtNano,
 			})
 			privateSnapshot.ResolvedSecrets = append(privateSnapshot.ResolvedSecrets, scriptShakeoutResolvedSecret{
 				ProjectID: sourceProjectID, Name: name, Value: value,
@@ -5390,7 +5484,6 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 	if err := validateEngineGroupBounds(groups); err != nil {
 		return nil, err
 	}
-	projectResolvers := make(map[string]engine.SecretResolver)
 	for index := range groups {
 		groups[index].ScenarioID = strings.TrimSpace(test.ScenarioID)
 		groups[index].RunID = test.ID
@@ -5398,11 +5491,7 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 		if groups[index].Script != nil && strings.TrimSpace(groups[index].Script.ProjectID) != "" {
 			projectID = groups[index].Script.ProjectID
 		}
-		resolver := projectResolvers[projectID]
-		if resolver == nil {
-			resolver = engine.CacheSecretResolverForRun(tr.secretResolverForProject(projectID))
-			projectResolvers[projectID] = resolver
-		}
+		resolver := engine.CacheSecretResolverForRun(tr.secretResolverForRunGroup(test, index, projectID))
 		if index < len(runtimeSecrets) {
 			resolver = overlayRuntimeSecretResolver(runtimeSecrets[index], resolver)
 		}
@@ -6008,9 +6097,8 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			continue
 		}
 		// The original start attempt can enter PENDING at the quota gate before
-		// static project secrets are checked. Resolve them at the promotion
-		// boundary so a queued run cannot bypass the ordinary StartTest preflight,
-		// including when a formerly valid secret was removed while it waited.
+		// static secrets are checked. Resolve them at the promotion boundary so
+		// a queued run cannot bypass the ordinary StartTest preflight.
 		if secretErr := tr.validateStartSecretRequirements(pendingID); secretErr != nil {
 			message := "pending test promotion secret requirements are no longer satisfied: " + secretErr.Error()
 			if retryableStartSecretRequirement(secretErr) {
@@ -6215,10 +6303,10 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			}
 		}
 		// Shakeout runs without tr.mu and may invoke user protocols for tens of
-		// seconds. Re-resolve secrets after it completes (and immediately before
-		// final admission) so rotation/removal during shakeout cannot pass on the
-		// strength of the earlier preflight. The resolver may perform remote I/O,
-		// so it must never run while holding the runner mutex.
+		// seconds. Verify its pinned secret snapshot again before final admission.
+		// An execution that already began shakeout keeps that snapshot even if a
+		// provider changes. Resolution may perform remote I/O and stays outside
+		// the runner mutex.
 		tr.mu.Unlock()
 		if secretErr := tr.validateStartSecretRequirements(pendingID); secretErr != nil {
 			message := "pending test promotion secret requirements are no longer satisfied: " + secretErr.Error()
@@ -6586,7 +6674,6 @@ func (tr *TestRunner) runScriptShakeoutReport(test *ManagedTest) (ScriptShakeout
 	if operationCtx == nil {
 		operationCtx = context.Background()
 	}
-	projectResolvers := make(map[string]engine.SecretResolver)
 	for index, group := range test.groupSpecs {
 		if err := operationCtx.Err(); err != nil {
 			report.EndedAt = time.Now().UTC()
@@ -6614,11 +6701,7 @@ func (tr *TestRunner) runScriptShakeoutReport(test *ManagedTest) (ScriptShakeout
 		if strings.TrimSpace(projectID) == "" {
 			projectID = test.ProjectID
 		}
-		resolver := projectResolvers[projectID]
-		if resolver == nil {
-			resolver = tr.secretResolverForProject(projectID)
-			projectResolvers[projectID] = resolver
-		}
+		resolver := tr.secretResolverForRunGroup(test, index, projectID)
 		if index < len(test.Groups) {
 			resolver = overlayRuntimeSecretResolver(test.Groups[index].runtimeSecretValues, resolver)
 		}

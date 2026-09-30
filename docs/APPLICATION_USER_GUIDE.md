@@ -379,7 +379,7 @@ real, varied user population. Templates are expanded in string fields at runtime
 | `{{param.name}}` | A named parameter from the script's `parameters` section only. |
 | `{{data.source.column}}` | A value from a bound data pool or data source, addressed as `source.column`. |
 | `{{env.KEY}}` | A runtime environment value, including `-env key=value` overrides passed at launch. |
-| `{{secret.NAME}}` | A project secret. Values are never shown in the UI and are always redacted from run output. |
+| `{{secret.NAME}}` | An application secret, falling back to the project secret of the same name. Values are never shown in the UI and are always redacted from run output. |
 | `{{file.name}}` | The content of a file data source. |
 | `{{fn.*}}` / `{{fake.*}}` | A generated value (see below). |
 
@@ -422,16 +422,24 @@ pool, so a rerun sees exactly the same data.
 
 ### Secrets
 
-**Project secrets** back the `{{secret.NAME}}` namespace, managed under
-[Access → Project secrets](#/access?setting=secrets). The UI shows only their metadata
-and status — never the values — and secret writes require an authorized human action.
+**Application and project secrets** back the `{{secret.NAME}}` namespace. Manage
+shared application credentials in **Settings → Applications → Application Secret Vault**
+and project defaults under [Access → Project secrets](#/access?setting=secrets).
+Scripts assigned to one application can use the same secret name. A managed run uses
+the application selected for that run, even if a script is assigned elsewhere; direct
+validation, replay, and debugging use the script's library application assignment.
+An application value overrides a project value of the same name. Unassigned scripts
+use project secrets. Rotating a secret changes its value for the next execution of
+each affected script; a running test keeps the value pinned at its start, including
+after continuity recovery. The UI shows metadata, status, and the effective scope,
+never the values. Secret writes require an authorized human action.
 Values resolved through `{{secret.NAME}}` are redacted from logs, snapshots, reports,
 and archives regardless of any other setting.
 
 Credentials that arrived *inside an imported script* are treated differently: the
 script keeps them literally so it stays runnable, and whether they are redacted from
 run output is a project setting (`log.redact_run_evidence`, off by default). Move them
-into project secrets when you want them genuinely protected.
+into application or project secrets when you want them genuinely protected.
 
 ## Validating And Replaying
 

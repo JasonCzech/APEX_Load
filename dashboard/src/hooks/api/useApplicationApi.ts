@@ -1,11 +1,16 @@
 import { useCallback, useMemo } from 'react'
 
 import { Application, LoadComparisonRequestOptions, LoadComparisonResponse, LoadComparisonScope, Release, ReleaseTrend } from '../../types'
+import type { ProjectSecretStatusesResponse, ProjectSecretUsage, ProjectSecretsResponse, ProjectSecretsWriteResponse, ProjectSecretWrite } from '../../types/secrets'
 import { apiFetch, request } from '../apiClient'
 import { withCallOptions, type ApiCallOptions } from './requestOptions'
 
 type DeleteEntityResponse = {
   deleted: string
+  external_secret_cleanup_required?: boolean
+  external_secret_cleanup_names?: string[]
+  external_secret_cleanup_providers?: string[]
+  external_secret_cleanup_prefix?: string
 }
 
 async function fetchBlob(path: string, options?: ApiCallOptions): Promise<Blob> {
@@ -18,6 +23,28 @@ async function fetchBlob(path: string, options?: ApiCallOptions): Promise<Blob> 
 }
 
 export function useApplicationApi() {
+  const listApplicationSecrets = useCallback(
+    (id: string, options?: ApiCallOptions) => request<ProjectSecretsResponse>(`/applications/${encodeURIComponent(id)}/secrets`, withCallOptions(undefined, options)), [])
+  const getApplicationSecretStatuses = useCallback(
+    (id: string, names: string[], options?: ApiCallOptions) => request<ProjectSecretStatusesResponse>(`/applications/${encodeURIComponent(id)}/secrets/status`, withCallOptions({
+      method: 'POST', body: JSON.stringify({ names }),
+    }, options)), [])
+  const getApplicationSecretUsage = useCallback(
+    (id: string, name: string, pagination?: { limit?: number; offset?: number }, options?: ApiCallOptions) => {
+      const params = new URLSearchParams()
+      if (pagination?.limit) params.set('limit', String(pagination.limit))
+      if (pagination?.offset) params.set('offset', String(pagination.offset))
+      return request<ProjectSecretUsage>(`/applications/${encodeURIComponent(id)}/secrets/${encodeURIComponent(name)}/usage?${params}`, withCallOptions(undefined, options))
+    }, [])
+  const createApplicationSecrets = useCallback(
+    (id: string, secrets: ProjectSecretWrite[], options?: ApiCallOptions) => request<ProjectSecretsWriteResponse>(`/applications/${encodeURIComponent(id)}/secrets`, withCallOptions({
+      method: 'POST', body: JSON.stringify({ secrets }), timeoutMs: 15000,
+    }, options)), [])
+  const rotateApplicationSecret = useCallback(
+    (id: string, name: string, value: string, usage?: { expected_usage_revision?: string; acknowledge_shared_usage?: boolean }, options?: ApiCallOptions) =>
+      request<ProjectSecretsWriteResponse>(`/applications/${encodeURIComponent(id)}/secrets/${encodeURIComponent(name)}`, withCallOptions({
+        method: 'PUT', body: JSON.stringify({ value, ...usage }), timeoutMs: 15000,
+      }, options)), [])
   const listApplications = useCallback((projectId?: string, options?: ApiCallOptions) => {
     const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''
     return request<{ applications: Application[]; count: number }>(`/applications${query}`, withCallOptions(undefined, options))
@@ -78,6 +105,11 @@ export function useApplicationApi() {
   return useMemo(
     () => ({
       listApplications,
+      listApplicationSecrets,
+      getApplicationSecretStatuses,
+      getApplicationSecretUsage,
+      createApplicationSecrets,
+      rotateApplicationSecret,
       createApplication,
       updateApplication,
       deleteApplication,
@@ -90,6 +122,6 @@ export function useApplicationApi() {
       getLoadComparison,
       deleteRelease,
     }),
-    [listApplications, createApplication, updateApplication, deleteApplication, listReleases, createRelease, updateRelease, archiveRelease, downloadReleaseTrend, getReleaseTrend, getLoadComparison, deleteRelease],
+    [listApplications, listApplicationSecrets, getApplicationSecretStatuses, getApplicationSecretUsage, createApplicationSecrets, rotateApplicationSecret, createApplication, updateApplication, deleteApplication, listReleases, createRelease, updateRelease, archiveRelease, downloadReleaseTrend, getReleaseTrend, getLoadComparison, deleteRelease],
   )
 }

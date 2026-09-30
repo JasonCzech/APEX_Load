@@ -960,6 +960,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		ExecutionPlanApproval:    decodeStoredExecutionPlanApproval(record.ExecutionPlanApproval),
 		initialArchiveProvenance: decodeStoredInitialProvenance(record.InitialProvenance),
 		Error:                    record.Error,
+		pinnedSecrets:            &runPinnedSecretState{},
 	}
 	if record.EndTime != nil {
 		managedTest.EndedAt = record.EndTime
@@ -1039,7 +1040,7 @@ func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
 		}
 		if err == nil {
 			for index := range specs {
-				resolver := tr.secretResolverForProject(specs[index].Script.ProjectID)
+				resolver := tr.boundSecretResolverForRunGroup(test, index, specs[index].Script.ProjectID)
 				if index < len(test.Groups) {
 					resolver = overlayRuntimeSecretResolver(test.Groups[index].runtimeSecretValues, resolver)
 				}
@@ -1093,7 +1094,7 @@ func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
 		// project store and therefore fails closed until values are configured.
 		groups[index].runtimeSecretValues = nil
 		if index < len(specs) {
-			specs[index].SecretResolver = tr.secretResolverForProject(specs[index].Script.ProjectID)
+			specs[index].SecretResolver = tr.boundSecretResolverForRunGroup(test, index, specs[index].Script.ProjectID)
 		}
 	}
 	test.RuntimeSettings = protectedRuntimeSettings
