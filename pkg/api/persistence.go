@@ -1297,6 +1297,7 @@ func trimTerminalManagedTestRuntime(test *ManagedTest) {
 	if test == nil || !isTerminalTestStatus(test.Status) {
 		return
 	}
+	test.pinnedSecrets.invalidate(true)
 	test.groupSpecs = nil
 	test.multiEngine = nil
 	test.goalControl = nil

@@ -314,7 +314,7 @@ func TestContainerAppsDeprovisionRequiresTerminalArchive(t *testing.T) {
 
 func TestContainerAppsCancelRollsBackWarmAppBeforeStoppingJob(t *testing.T) {
 	api := &fakeAPI{}
-	backend := &Backend{API: api, SubscriptionID: "sub", Target: &storage.ExecutionTarget{AzureContainerApps: &storage.AzureContainerAppsTargetSpec{ResourceGroup: "rg", WarmContainerApp: "warm", BurstJob: "job"}}}
+	backend := &Backend{API: api, SubscriptionID: "sub", Target: &storage.ExecutionTarget{StandingOwner: storage.CapacityOwnerApex, AzureContainerApps: &storage.AzureContainerAppsTargetSpec{ResourceGroup: "rg", WarmContainerApp: "warm", BurstJob: "job"}}}
 	if err := backend.Cancel(context.Background(), compute.CapacityRequest{RestoreStanding: true, RollbackStanding: 0, ProviderOperationIDs: []string{"execution-1"}}); err != nil {
 		t.Fatal(err)
 	}

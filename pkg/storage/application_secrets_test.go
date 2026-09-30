@@ -40,6 +40,13 @@ func TestApplicationSecretStorageIsolationAndDeletion(t *testing.T) {
 	if err != nil || !created {
 		t.Fatalf("create external metadata: %v %t", err, created)
 	}
+	listed, err := db.ListExternalApplicationSecretMetadata("app-a")
+	if err != nil || len(listed) != 1 || listed[0].SecretName != "EXTERNAL" || listed[0].Provider != "azure_key_vault" {
+		t.Fatalf("external cleanup metadata: %+v, %v", listed, err)
+	}
+	if other, err := db.ListExternalApplicationSecretMetadata("app-b"); err != nil || len(other) != 0 {
+		t.Fatalf("cross-application cleanup metadata: %+v, %v", other, err)
+	}
 	if err := db.DeleteApplication("app-a"); err != nil {
 		t.Fatal(err)
 	}

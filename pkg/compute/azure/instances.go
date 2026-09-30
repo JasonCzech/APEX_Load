@@ -121,13 +121,18 @@ func (b *InstancesBackend) Plan(_ context.Context, request compute.CapacityReque
 	return plan, nil
 }
 
-func (b *InstancesBackend) Reconcile(ctx context.Context, request compute.CapacityRequest) (compute.Observation, error) {
+func (b *InstancesBackend) Reconcile(ctx context.Context, request compute.CapacityRequest) (observation compute.Observation, err error) {
+	observed := append([]string(nil), request.ProviderOperationIDs...)
+	defer func() {
+		if err != nil {
+			observation.ProviderOperationID = strings.Join(observed, ",")
+		}
+	}()
 	plan, err := b.Plan(ctx, request)
 	if err != nil {
 		return compute.Observation{}, err
 	}
 	spec := b.Target.AzureContainerInstances
-	observed := append([]string(nil), request.ProviderOperationIDs...)
 	covered := make(map[string]struct{}, len(observed))
 
 	var template containerGroupResponse
@@ -226,7 +231,7 @@ func (b *InstancesBackend) Reconcile(ctx context.Context, request compute.Capaci
 	if err != nil {
 		return compute.Observation{}, err
 	}
-	observation := compute.Observation{Requested: request.Desired, Instances: instances, Observed: len(instances)}
+	observation = compute.Observation{ProviderOperationID: strings.Join(observed, ","), Requested: request.Desired, Instances: instances, Observed: len(instances)}
 	for _, instance := range instances {
 		switch {
 		case instance.Healthy:
@@ -410,10 +415,11 @@ func (b *InstancesBackend) Cancel(ctx context.Context, request compute.CapacityR
 	// A cancelled launch never ran a test, so no controller-pulled archive can
 	// exist on it. Deprovision still fences on the flag, so set it explicitly
 	// rather than letting the fence read an unset zero value.
+	instances, discoveryErr := compute.DiscoverCancellationInstances(ctx, request, instances, b.Discover)
 	for i := range instances {
 		instances[i].ArchiveTerminal = true
 	}
-	return b.Deprovision(ctx, request, instances)
+	return errors.Join(discoveryErr, b.Deprovision(ctx, request, instances))
 }
 
 func (b *InstancesBackend) Drain(context.Context, compute.CapacityRequest, []compute.Instance) error {

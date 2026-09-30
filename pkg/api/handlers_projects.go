@@ -23,6 +23,81 @@ type projectRequest struct {
 	Settings   storage.ProjectSettings `json:"settings,omitempty"`
 }
 
+type applicationSecretCleanupGuidance struct {
+	ApplicationID     string   `json:"application_id"`
+	Names             []string `json:"names"`
+	Providers         []string `json:"providers"`
+	Prefix            string   `json:"prefix"`
+	DiscoveryComplete bool     `json:"discovery_complete"`
+}
+
+// Called under the project mutation gate before graph deletion drops the
+// applications and their metadata. Only local, value-free records are read.
+func (s *Server) projectApplicationSecretCleanup(projectID string) ([]applicationSecretCleanupGuidance, error) {
+	applications, err := s.store.ListApplications()
+	if err != nil {
+		return nil, err
+	}
+	metadataStore, supported := s.store.(interface {
+		ListExternalApplicationSecretMetadata(string) ([]storage.ProjectSecretMetadata, error)
+	})
+	provider := secretStoreProvider(s.applicationSecretStore)
+	azure := strings.Contains(provider, "azure_key_vault")
+	external := azure || strings.Contains(provider, "aws_secrets_manager")
+	result := []applicationSecretCleanupGuidance{}
+	for _, application := range applications {
+		if application.ProjectID != projectID {
+			continue
+		}
+		if !supported {
+			if external {
+				return nil, errors.New("application secret metadata storage is unavailable")
+			}
+			continue
+		}
+		metadata, err := metadataStore.ListExternalApplicationSecretMetadata(application.ID)
+		if err != nil {
+			return nil, err
+		}
+		if len(metadata) == 0 && !external {
+			continue
+		}
+		cleanup := applicationSecretCleanupGuidance{
+			ApplicationID: application.ID, Names: []string{}, Providers: []string{},
+			Prefix: engine.ProjectSecretBindingPrefix(storage.ApplicationSecretScopeID(application.ID)),
+			// Pre-existing cloud secrets can be unindexed. Preserve their scope
+			// prefix and explicitly require operator discovery after deletion.
+			DiscoveryComplete: !external,
+		}
+		names, providers := map[string]bool{}, map[string]bool{}
+		if azure {
+			providers["azure_key_vault"] = true
+		}
+		if strings.Contains(provider, "aws_secrets_manager") {
+			providers["aws_secrets_manager"] = true
+		}
+		for _, item := range metadata {
+			if name := strings.TrimSpace(item.SecretName); name != "" {
+				names[name] = true
+			}
+			if provider := strings.TrimSpace(item.Provider); provider != "" {
+				providers[provider] = true
+			}
+		}
+		for name := range names {
+			cleanup.Names = append(cleanup.Names, name)
+		}
+		for provider := range providers {
+			cleanup.Providers = append(cleanup.Providers, provider)
+		}
+		sort.Strings(cleanup.Names)
+		sort.Strings(cleanup.Providers)
+		result = append(result, cleanup)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ApplicationID < result[j].ApplicationID })
+	return result, nil
+}
+
 func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "project storage is not configured")
@@ -519,7 +594,15 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	externalSecretCleanupRequired := len(externalSecretCleanupNames) > 0 || externalSecretCleanupPrefix != ""
+	applicationSecretCleanup, err := s.projectApplicationSecretCleanup(id)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "failed to enumerate externally retained application secrets")
+		return
+	}
+	for _, cleanup := range applicationSecretCleanup {
+		externalSecretDiscoveryComplete = externalSecretDiscoveryComplete && cleanup.DiscoveryComplete
+	}
+	externalSecretCleanupRequired := len(externalSecretCleanupNames) > 0 || externalSecretCleanupPrefix != "" || len(applicationSecretCleanup) > 0
 	tests, err := s.store.ListTests(id, nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to enumerate project tests: "+err.Error())
@@ -657,46 +740,50 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(cleanupErrors) > 0 {
 		s.recordAuditEventWithProjectSnapshot(r, "project.delete", "partial", "project", id, id, domainID, map[string]any{
-			"archive_cleanup_errors":             cleanupErrors,
-			"external_secret_cleanup_required":   externalSecretCleanupRequired,
-			"external_secret_cleanup_names":      externalSecretCleanupNames,
-			"external_secret_cleanup_providers":  externalSecretCleanupProviders,
-			"external_secret_cleanup_prefix":     externalSecretCleanupPrefix,
-			"secret_provider":                    secretProvider,
-			"external_secret_discovery_complete": externalSecretDiscoveryComplete,
+			"archive_cleanup_errors":              cleanupErrors,
+			"external_secret_cleanup_required":    externalSecretCleanupRequired,
+			"external_application_secret_cleanup": applicationSecretCleanup,
+			"external_secret_cleanup_names":       externalSecretCleanupNames,
+			"external_secret_cleanup_providers":   externalSecretCleanupProviders,
+			"external_secret_cleanup_prefix":      externalSecretCleanupPrefix,
+			"secret_provider":                     secretProvider,
+			"external_secret_discovery_complete":  externalSecretDiscoveryComplete,
 		})
 		// The project row and its governed secret metadata are already gone at
 		// this point. Preserve the external-provider cleanup guidance in the
 		// error response so an administrator is not forced to reconstruct it
 		// after a separate physical-artifact cleanup failure.
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"error":                              "project metadata was deleted but physical archive cleanup was incomplete: " + strings.Join(cleanupErrors, "; "),
-			"deleted":                            id,
-			"external_secret_cleanup_required":   externalSecretCleanupRequired,
-			"external_secret_cleanup_names":      externalSecretCleanupNames,
-			"external_secret_cleanup_providers":  externalSecretCleanupProviders,
-			"external_secret_cleanup_prefix":     externalSecretCleanupPrefix,
-			"secret_provider":                    secretProvider,
-			"external_secret_discovery_complete": externalSecretDiscoveryComplete,
+			"error":                               "project metadata was deleted but physical archive cleanup was incomplete: " + strings.Join(cleanupErrors, "; "),
+			"deleted":                             id,
+			"external_secret_cleanup_required":    externalSecretCleanupRequired,
+			"external_application_secret_cleanup": applicationSecretCleanup,
+			"external_secret_cleanup_names":       externalSecretCleanupNames,
+			"external_secret_cleanup_providers":   externalSecretCleanupProviders,
+			"external_secret_cleanup_prefix":      externalSecretCleanupPrefix,
+			"secret_provider":                     secretProvider,
+			"external_secret_discovery_complete":  externalSecretDiscoveryComplete,
 		})
 		return
 	}
 	s.recordAuditEventWithProjectSnapshot(r, "project.delete", "success", "project", id, id, domainID, map[string]any{
-		"external_secret_cleanup_required":   externalSecretCleanupRequired,
-		"external_secret_cleanup_names":      externalSecretCleanupNames,
-		"external_secret_cleanup_providers":  externalSecretCleanupProviders,
-		"external_secret_cleanup_prefix":     externalSecretCleanupPrefix,
-		"secret_provider":                    secretProvider,
-		"external_secret_discovery_complete": externalSecretDiscoveryComplete,
+		"external_secret_cleanup_required":    externalSecretCleanupRequired,
+		"external_application_secret_cleanup": applicationSecretCleanup,
+		"external_secret_cleanup_names":       externalSecretCleanupNames,
+		"external_secret_cleanup_providers":   externalSecretCleanupProviders,
+		"external_secret_cleanup_prefix":      externalSecretCleanupPrefix,
+		"secret_provider":                     secretProvider,
+		"external_secret_discovery_complete":  externalSecretDiscoveryComplete,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{
-		"deleted":                            id,
-		"external_secret_cleanup_required":   externalSecretCleanupRequired,
-		"external_secret_cleanup_names":      externalSecretCleanupNames,
-		"external_secret_cleanup_providers":  externalSecretCleanupProviders,
-		"external_secret_cleanup_prefix":     externalSecretCleanupPrefix,
-		"secret_provider":                    secretProvider,
-		"external_secret_discovery_complete": externalSecretDiscoveryComplete,
+		"deleted":                             id,
+		"external_secret_cleanup_required":    externalSecretCleanupRequired,
+		"external_application_secret_cleanup": applicationSecretCleanup,
+		"external_secret_cleanup_names":       externalSecretCleanupNames,
+		"external_secret_cleanup_providers":   externalSecretCleanupProviders,
+		"external_secret_cleanup_prefix":      externalSecretCleanupPrefix,
+		"secret_provider":                     secretProvider,
+		"external_secret_discovery_complete":  externalSecretDiscoveryComplete,
 	})
 }
 

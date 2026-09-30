@@ -111,8 +111,10 @@ func clearRunSnapshotBytes(value []byte) {
 // refresh during queued preflight, then remain fixed through execution. They
 // are never exposed through API JSON.
 type runPinnedSecretState struct {
-	mu     sync.RWMutex
-	groups map[int]map[string]string
+	mu       sync.RWMutex
+	groups   map[int]map[string]string
+	retired  bool
+	revision uint64
 }
 
 func (s *runPinnedSecretState) get(index int) (map[string]string, bool) {
@@ -121,6 +123,9 @@ func (s *runPinnedSecretState) get(index int) (map[string]string, bool) {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if s.retired {
+		return nil, true // A terminal run must never fall back to the live provider.
+	}
 	if s.groups == nil {
 		return nil, false
 	}
@@ -154,16 +159,47 @@ func (s *runPinnedSecretState) snapshot() map[int]map[string]string {
 func (s *runPinnedSecretState) setIfAbsent(values map[int]map[string]string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.groups != nil {
+	if s.groups != nil || s.retired {
 		return
 	}
 	s.groups = values
 }
 
-func (s *runPinnedSecretState) replace(values map[int]map[string]string) {
+// invalidate releases the shared snapshot after an executable edit or terminal
+// cleanup. Retiring also fences late admission work from repopulating it.
+func (s *runPinnedSecretState) invalidate(retire bool) {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.groups = values
+	s.groups = nil
+	s.retired = s.retired || retire
+	s.revision++
+}
+
+func (s *runPinnedSecretState) version() uint64 {
+	if s == nil {
+		return 0
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.revision
+}
+
+func (s *runPinnedSecretState) pinRevision(values map[int]map[string]string, revision uint64, refresh bool) bool {
+	if s == nil {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.retired || s.revision != revision {
+		return false
+	}
+	if s.groups == nil || refresh {
+		s.groups = values
+	}
+	return true
 }
 
 func runSecretApplicationID(test *ManagedTest) string {

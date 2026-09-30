@@ -615,6 +615,7 @@ func (tr *TestRunner) validateStartSecretRequirements(id string) error {
 		return fmt.Errorf("test not found: %s", id)
 	}
 	defaultProjectID := test.ProjectID
+	secretRevision := test.pinnedSecrets.version()
 	groups := testexec.CloneGroupSpecsWithResultSink(test.groupSpecs, nil)
 	runtimeSecrets := make([]map[string]string, len(test.Groups))
 	for index := range groups {
@@ -688,13 +689,12 @@ func (tr *TestRunner) validateStartSecretRequirements(id string) error {
 	// Refresh its pin after a retry so a rotation supplies the first execution.
 	// Once shakeout or execution begins, keep its admitted value unchanged.
 	status := strings.ToUpper(strings.TrimSpace(test.Status))
-	if test.StartedAt == nil && (status == "QUEUED" || status == "PENDING") &&
+	refresh := test.StartedAt == nil && (status == "QUEUED" || status == "PENDING") &&
 		test.pendingScriptShakeoutOutcome == nil && test.validatedScriptShakeoutPass == "" &&
 		(test.StartAuthorization == nil || (test.StartAuthorization.ScriptShakeoutPass == nil &&
-			test.StartAuthorization.ScriptShakeout == nil)) {
-		test.pinnedSecrets.replace(valuesByGroup)
-	} else {
-		test.pinnedSecrets.setIfAbsent(valuesByGroup)
+			test.StartAuthorization.ScriptShakeout == nil))
+	if !test.pinnedSecrets.pinRevision(valuesByGroup, secretRevision, refresh) {
+		return &startSecretRequirementError{message: "test changed during secret resolution; retry start", retryable: true}
 	}
 	return nil
 }

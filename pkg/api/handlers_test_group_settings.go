@@ -727,6 +727,7 @@ func (tr *TestRunner) UpdateTestGroupRuntimeSettings(id string, groupName string
 		return nil, fmt.Errorf("%w: %v", errTestGroupSettingsPersist, err)
 	}
 
+	test.pinnedSecrets.invalidate(false)
 	changedFields := make([]string, 0, len(changes))
 	for field := range changes {
 		changedFields = append(changedFields, field)
@@ -985,6 +986,7 @@ func (tr *TestRunner) UpdateTestGroupParameters(id string, groupName string, exp
 		return nil, fmt.Errorf("%w: %v", errTestGroupSettingsPersist, err)
 	}
 
+	test.pinnedSecrets.invalidate(false)
 	changed := make([]string, 0, len(changes))
 	for name := range changes {
 		changed = append(changed, name)

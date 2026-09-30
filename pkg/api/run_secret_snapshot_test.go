@@ -97,3 +97,44 @@ func TestQueuedStartSecretRetryRefreshesPinBeforeFirstExecution(t *testing.T) {
 		t.Fatalf("secret-free run required pin state: %v", err)
 	}
 }
+
+func TestTerminalRunsReleaseSharedSecretPins(t *testing.T) {
+	for _, status := range []string{"COMPLETE", "FAILED", "ABORTED", "PENDING", "RUNNING"} {
+		t.Run(status, func(t *testing.T) {
+			state := &runPinnedSecretState{}
+			state.setIfAbsent(map[int]map[string]string{0: {"TOKEN": "private-value"}})
+			test := &ManagedTest{Status: status, pinnedSecrets: state}
+			retainedCopy := *test
+			revision := state.version()
+			trimTerminalManagedTestRuntime(test)
+			if !isTerminalTestStatus(status) {
+				if values, _ := state.get(0); values["TOKEN"] != "private-value" {
+					t.Fatal("live pin cleared")
+				}
+				return
+			}
+			if retainedCopy.pinnedSecrets.snapshot() != nil {
+				t.Fatal("retained test copy still holds plaintext")
+			}
+			if state.pinRevision(map[int]map[string]string{0: {"TOKEN": "late-value"}}, revision, false) {
+				t.Fatal("terminal state accepted late admission")
+			}
+			state.setIfAbsent(map[int]map[string]string{0: {"TOKEN": "late-adoption"}})
+			if values, pinned := state.get(0); !pinned || len(values) != 0 {
+				t.Fatal("terminal state permits repopulation or provider fallback")
+			}
+		})
+	}
+}
+
+func TestEditedRunRejectsStaleSecretResolution(t *testing.T) {
+	state := &runPinnedSecretState{}
+	revision := state.version()
+	state.invalidate(false)
+	if state.pinRevision(map[int]map[string]string{0: {"OLD": "old"}}, revision, false) {
+		t.Fatal("accepted resolution from before edit")
+	}
+	if !state.pinRevision(map[int]map[string]string{0: {"NEW": "new"}}, state.version(), false) {
+		t.Fatal("rejected current resolution")
+	}
+}

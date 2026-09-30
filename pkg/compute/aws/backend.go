@@ -252,7 +252,13 @@ func (b *Backend) Plan(_ context.Context, request compute.CapacityRequest) (comp
 	return compute.Plan{Requested: request.Desired, Standing: standing, Launch: launch}, nil
 }
 
-func (b *Backend) Reconcile(ctx context.Context, request compute.CapacityRequest) (compute.Observation, error) {
+func (b *Backend) Reconcile(ctx context.Context, request compute.CapacityRequest) (observation compute.Observation, err error) {
+	providerIDs := append([]string(nil), request.ProviderOperationIDs...)
+	defer func() {
+		if err != nil {
+			observation.ProviderOperationID = strings.Join(providerIDs, ",")
+		}
+	}()
 	plan, err := b.Plan(ctx, request)
 	if err != nil {
 		return compute.Observation{}, err
@@ -270,7 +276,7 @@ func (b *Backend) Reconcile(ctx context.Context, request compute.CapacityRequest
 	spec := b.Target.AWSECSFargate
 	standingReady, standingPending := 0, 0
 	standingInstances := []compute.Instance(nil)
-	if plan.Standing >= 0 && spec.WarmService != "" {
+	if b.Target.StandingOwner == storage.CapacityOwnerApex && spec.WarmService != "" {
 		conflict, inspectErr := b.providerAutoscalerConflict(ctx)
 		if inspectErr != nil {
 			return compute.Observation{}, fmt.Errorf("inspect ECS Application Auto Scaling ownership: %w", inspectErr)
@@ -306,7 +312,6 @@ func (b *Backend) Reconcile(ctx context.Context, request compute.CapacityRequest
 		standingReady = min(len(standingInstances), min(services.Services[0].RunningCount, plan.Standing))
 		standingPending = max(plan.Standing-standingReady, services.Services[0].PendingCount)
 	}
-	providerIDs := append([]string(nil), request.ProviderOperationIDs...)
 	for len(providerIDs) < plan.Launch {
 		launchIndex := len(providerIDs)
 		intent := request.LaunchIntents[launchIndex]
@@ -364,7 +369,7 @@ func (b *Backend) Reconcile(ctx context.Context, request compute.CapacityRequest
 		return compute.Observation{}, err
 	}
 	instances = append(standingInstances, instances...)
-	observation := compute.Observation{ProviderOperationID: strings.Join(providerIDs, ","), Requested: request.Desired, Instances: instances}
+	observation = compute.Observation{ProviderOperationID: strings.Join(providerIDs, ","), Requested: request.Desired, Instances: instances}
 	for _, instance := range instances[len(standingInstances):] {
 		observation.Observed++
 		if instance.Healthy {
@@ -461,7 +466,7 @@ func awsResourceName(value string) string {
 }
 
 func (b *Backend) Cancel(ctx context.Context, request compute.CapacityRequest) error {
-	if request.RestoreStanding && strings.TrimSpace(b.Target.AWSECSFargate.WarmService) != "" {
+	if request.RestoreStanding && b.Target.StandingOwner == storage.CapacityOwnerApex && strings.TrimSpace(b.Target.AWSECSFargate.WarmService) != "" {
 		if err := b.API.Call(ctx, "UpdateService", map[string]any{
 			"cluster": b.Target.AWSECSFargate.Cluster, "service": b.Target.AWSECSFargate.WarmService,
 			"desiredCount": max(request.RollbackStanding, 0),
@@ -473,10 +478,11 @@ func (b *Backend) Cancel(ctx context.Context, request compute.CapacityRequest) e
 	if err != nil {
 		return err
 	}
+	instances, discoveryErr := compute.DiscoverCancellationInstances(ctx, request, instances, b.Discover)
 	for i := range instances {
 		instances[i].ArchiveTerminal = true
 	}
-	return b.Deprovision(ctx, request, instances)
+	return errors.Join(discoveryErr, b.Deprovision(ctx, request, instances))
 }
 
 func (b *Backend) Drain(context.Context, compute.CapacityRequest, []compute.Instance) error {

@@ -276,7 +276,7 @@ func TestFargateDeprovisionRequiresTerminalArchive(t *testing.T) {
 
 func TestFargateCancelRollsBackWarmServiceBeforeStoppingBurst(t *testing.T) {
 	api := &fakeAPI{}
-	backend := &Backend{API: api, Target: &storage.ExecutionTarget{AWSECSFargate: &storage.AWSECSFargateTargetSpec{Cluster: "apex", WarmService: "warm"}}}
+	backend := &Backend{API: api, Target: &storage.ExecutionTarget{StandingOwner: storage.CapacityOwnerApex, AWSECSFargate: &storage.AWSECSFargateTargetSpec{Cluster: "apex", WarmService: "warm"}}}
 	if err := backend.Cancel(context.Background(), compute.CapacityRequest{RestoreStanding: true, RollbackStanding: 0, ProviderOperationIDs: []string{"task-1"}}); err != nil {
 		t.Fatal(err)
 	}

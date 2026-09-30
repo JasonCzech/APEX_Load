@@ -196,7 +196,13 @@ func (b *Backend) Plan(_ context.Context, request compute.CapacityRequest) (comp
 	return compute.Plan{Requested: request.Desired, Standing: standing, Launch: launch}, nil
 }
 
-func (b *Backend) Reconcile(ctx context.Context, request compute.CapacityRequest) (compute.Observation, error) {
+func (b *Backend) Reconcile(ctx context.Context, request compute.CapacityRequest) (observation compute.Observation, err error) {
+	operationIDs := append([]string(nil), request.ProviderOperationIDs...)
+	defer func() {
+		if err != nil {
+			observation.ProviderOperationID = strings.Join(operationIDs, ",")
+		}
+	}()
 	plan, err := b.Plan(ctx, request)
 	if err != nil {
 		return compute.Observation{}, err
@@ -212,7 +218,7 @@ func (b *Backend) Reconcile(ctx context.Context, request compute.CapacityRequest
 		return compute.Observation{}, err
 	}
 	spec := b.Target.AzureContainerApps
-	if spec.WarmContainerApp != "" {
+	if b.Target.StandingOwner == storage.CapacityOwnerApex && spec.WarmContainerApp != "" {
 		var current armResourceResponse
 		if _, _, err := b.API.Do(ctx, http.MethodGet, b.resourcePath("containerApps", spec.WarmContainerApp, ""), nil, &current); err != nil {
 			return compute.Observation{}, fmt.Errorf("inspect warm Container App autoscaling ownership: %w", err)
@@ -225,7 +231,7 @@ func (b *Backend) Reconcile(ctx context.Context, request compute.CapacityRequest
 			return compute.Observation{}, err
 		}
 	}
-	operationIDs := make([]string, 0, plan.Launch)
+	operationIDs = make([]string, 0, plan.Launch)
 	operationIDSet := make(map[string]struct{}, plan.Launch)
 	appendOperationID := func(id string) {
 		id = strings.TrimSpace(id)
@@ -318,7 +324,7 @@ func (b *Backend) Reconcile(ctx context.Context, request compute.CapacityRequest
 	for _, instance := range instances {
 		resolvedOperationIDs = append(resolvedOperationIDs, instance.ProviderID)
 	}
-	observation := compute.Observation{ProviderOperationID: strings.Join(resolvedOperationIDs, ","), Requested: request.Desired, Observed: plan.Standing + len(instances), Ready: plan.Standing, Instances: instances}
+	observation = compute.Observation{ProviderOperationID: strings.Join(resolvedOperationIDs, ","), Requested: request.Desired, Observed: plan.Standing + len(instances), Ready: plan.Standing, Instances: instances}
 	for _, instance := range instances {
 		if instance.Healthy {
 			observation.Ready++
@@ -353,7 +359,7 @@ func (b *Backend) runtimeProfile(id string) (*storage.RuntimeProfile, error) {
 }
 
 func (b *Backend) Cancel(ctx context.Context, request compute.CapacityRequest) error {
-	if request.RestoreStanding && strings.TrimSpace(b.Target.AzureContainerApps.WarmContainerApp) != "" {
+	if request.RestoreStanding && b.Target.StandingOwner == storage.CapacityOwnerApex && strings.TrimSpace(b.Target.AzureContainerApps.WarmContainerApp) != "" {
 		standing := max(request.RollbackStanding, 0)
 		body := map[string]any{"properties": map[string]any{"template": map[string]any{"scale": map[string]any{
 			"minReplicas": standing, "maxReplicas": max(standing, 1),
@@ -387,10 +393,11 @@ func (b *Backend) Cancel(ctx context.Context, request compute.CapacityRequest) e
 		case <-timer.C:
 		}
 	}
+	instances, discoveryErr := compute.DiscoverCancellationInstances(ctx, request, instances, b.Discover)
 	for i := range instances {
 		instances[i].ArchiveTerminal = true
 	}
-	return b.Deprovision(ctx, request, instances)
+	return errors.Join(discoveryErr, b.Deprovision(ctx, request, instances))
 }
 func (b *Backend) Drain(context.Context, compute.CapacityRequest, []compute.Instance) error {
 	return nil

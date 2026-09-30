@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -817,5 +818,143 @@ func TestHandleUpdateProjectReconcilesPendingQueue(t *testing.T) {
 	promoted := waitForStatusAny(t, server.runner, second.ID, 5*time.Second, "INITIALIZING", "RUNNING", "COMPLETE")
 	if promoted.Status == "PENDING" {
 		t.Fatalf("expected pending test to be promoted after project update, got %s", promoted.Status)
+	}
+}
+
+func TestDeleteProjectPreservesApplicationSecretCleanupGuidance(t *testing.T) {
+	for _, partial := range []bool{false, true} {
+		for _, azure := range []bool{false, true} {
+			t.Run(fmt.Sprintf("partial=%t/azure=%t", partial, azure), func(t *testing.T) {
+				store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = store.Close() })
+				now := time.Now().UTC()
+				const projectID = "app-secret-project"
+				if err := store.SaveProject(&storage.Project{ID: projectID, Name: projectID, CreatedAt: now, UpdatedAt: now}); err != nil {
+					t.Fatal(err)
+				}
+				const appID = "retained-app"
+				if err := store.SaveApplication(&storage.Application{ID: appID, ProjectID: projectID, Name: appID, CreatedAt: now, UpdatedAt: now}); err != nil {
+					t.Fatal(err)
+				}
+				provider := "aws_secrets_manager"
+				if azure {
+					provider = "azure_key_vault"
+				}
+				adapter := storage.ApplicationSecretStorage{SQLiteStore: store}
+				if ok, err := adapter.CreateProjectSecretMetadata(&storage.ProjectSecretMetadata{ProjectID: storage.ApplicationSecretScopeID(appID), SecretName: "APP_TOKEN", Provider: provider, CreatedAt: now, UpdatedAt: now}); err != nil || !ok {
+					t.Fatalf("metadata: %t %v", ok, err)
+				}
+				server := NewServer(ServerConfig{Store: store})
+				if azure {
+					server.applicationSecretStore = &discoveryFailureSecretStore{}
+				}
+				if partial {
+					wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x4f}, 32)})
+					if err != nil {
+						t.Fatal(err)
+					}
+					server.brunoArtifacts, err = importartifact.NewEncryptedStore(importartifact.StoreOptions{RootDir: t.TempDir(), Wrapper: wrapper, ReadOnly: true})
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				response := httptest.NewRecorder()
+				server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+projectID, nil))
+				wantStatus := http.StatusOK
+				if partial {
+					wantStatus = http.StatusInternalServerError
+				}
+				if response.Code != wantStatus {
+					t.Fatalf("delete %d: %s", response.Code, response.Body.String())
+				}
+				var payload struct {
+					Required     bool                               `json:"external_secret_cleanup_required"`
+					Applications []applicationSecretCleanupGuidance `json:"external_application_secret_cleanup"`
+				}
+				if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+					t.Fatal(err)
+				}
+				if !payload.Required || len(payload.Applications) != 1 {
+					t.Fatalf("guidance: %s", response.Body.String())
+				}
+				guidance := payload.Applications[0]
+				if guidance.ApplicationID != appID || len(guidance.Names) != 1 || guidance.Names[0] != "APP_TOKEN" || len(guidance.Providers) != 1 || guidance.Providers[0] != provider || guidance.Prefix != engine.ProjectSecretBindingPrefix(storage.ApplicationSecretScopeID(appID)) {
+					t.Fatalf("guidance: %+v", guidance)
+				}
+				if _, err := store.GetApplication(appID); !errors.Is(err, sql.ErrNoRows) {
+					t.Fatalf("application still exists: %v", err)
+				}
+				events, err := store.ListAuditEvents(storage.AuditEventFilter{ProjectID: projectID, Limit: 10})
+				if err != nil {
+					t.Fatal(err)
+				}
+				raw, _ := json.Marshal(events)
+				if !bytes.Contains(raw, []byte("APP_TOKEN")) || !bytes.Contains(raw, []byte(guidance.Prefix)) {
+					t.Fatalf("audit lost cleanup info: %s", raw)
+				}
+			})
+		}
+	}
+}
+
+func TestProjectApplicationCleanupRetainsUnindexedCloudScope(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.SaveApplication(&storage.Application{ID: "unindexed-app", ProjectID: storage.DefaultProjectID, Name: "Unindexed"}); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: store})
+	server.applicationSecretStore = &discoveryFailureSecretStore{}
+	guidance, err := server.projectApplicationSecretCleanup(storage.DefaultProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range guidance {
+		if item.ApplicationID == "unindexed-app" {
+			found = true
+			if len(item.Names) != 0 || item.Prefix != engine.ProjectSecretBindingPrefix(storage.ApplicationSecretScopeID("unindexed-app")) || item.DiscoveryComplete {
+				t.Fatalf("unindexed cleanup: %+v", item)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("unindexed application scope was dropped")
+	}
+}
+
+type failingApplicationCleanupStore struct{ *storage.SQLiteStore }
+
+func (s *failingApplicationCleanupStore) ListExternalApplicationSecretMetadata(string) ([]storage.ProjectSecretMetadata, error) {
+	return nil, errors.New("metadata unavailable")
+}
+
+func TestDeleteProjectBlocksWhenApplicationCleanupMetadataUnavailable(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	const projectID = "unavailable-app-metadata"
+	if err := store.SaveProject(&storage.Project{ID: projectID, Name: projectID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveApplication(&storage.Application{ID: "unavailable-app", ProjectID: projectID, Name: "Unavailable"}); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: &failingApplicationCleanupStore{SQLiteStore: store}})
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+projectID, nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status %d: %s", response.Code, response.Body.String())
+	}
+	if _, err := store.GetProject(projectID); err != nil {
+		t.Fatalf("project deleted without cleanup metadata: %v", err)
 	}
 }

@@ -10,6 +10,12 @@ import (
 // distinct from every project ID at the provider and encryption boundaries.
 type ApplicationSecretStorage struct{ *SQLiteStore }
 
+// ListExternalApplicationSecretMetadata exposes value-free cleanup metadata to
+// graph deletion without requiring a configured (or reachable) secret provider.
+func (s *SQLiteStore) ListExternalApplicationSecretMetadata(applicationID string) ([]ProjectSecretMetadata, error) {
+	return (ApplicationSecretStorage{SQLiteStore: s}).ListExternalProjectSecretMetadata(ApplicationSecretScopeID(applicationID))
+}
+
 // A NUL-prefixed virtual ID keeps the provider's hashed physical namespace
 // and the encryption AAD disjoint from ordinary project identifiers.
 const applicationSecretPrefix = "\x00application:"

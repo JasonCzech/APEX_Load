@@ -122,6 +122,65 @@ type Backend interface {
 	Adopt(context.Context, AdoptionRequest) (Instance, error)
 }
 
+// DiscoverCancellationInstances recovers launches whose acceptance response was
+// lost. An incomplete discovery must not let callers mark all durable intents
+// terminated. Return known instances even on error so they can still be stopped.
+func DiscoverCancellationInstances(ctx context.Context, request CapacityRequest, known []Instance, discover func(context.Context, CapacityRequest) ([]Instance, error)) ([]Instance, error) {
+	instances := make([]Instance, 0, len(known))
+	seen := map[string]bool{}
+	confirmed := map[string]bool{}
+	appendUnique := func(instance Instance) {
+		if instance.ProviderID != "" && !seen[instance.ProviderID] {
+			seen[instance.ProviderID] = true
+			instances = append(instances, instance)
+		}
+	}
+	for index, instance := range known {
+		if instance.ProviderID == "" || seen[instance.ProviderID] {
+			continue
+		}
+		appendUnique(instance)
+		if nonce := instance.Tags["apexload.io/launch-nonce"]; nonce != "" {
+			confirmed[nonce] = true
+		} else if index < len(request.LaunchIntents) && instance.ProviderID != "" {
+			// Accepted identities are persisted in launch-intent order even
+			// before the provider exposes the injected environment or tags.
+			confirmed[request.LaunchIntents[index].LaunchNonce] = true
+		}
+	}
+	allConfirmed := func() bool {
+		for _, intent := range request.LaunchIntents {
+			if !confirmed[intent.LaunchNonce] {
+				return false
+			}
+		}
+		return true
+	}
+	if allConfirmed() {
+		return instances, nil
+	}
+	if request.OperationID == "" || request.OperationID == "startup-reconcile" || request.FleetPoolID == "" {
+		return instances, errors.New("cannot confirm launch cancellation without operation and pool identity")
+	}
+	request.ProviderOperationIDs = nil
+	discovered, err := discover(ctx, request)
+	if err != nil {
+		return instances, fmt.Errorf("discover unconfirmed launches before cancellation: %w", err)
+	}
+	for _, instance := range discovered {
+		if instance.Tags["apexload.io/operation-id"] == request.OperationID && instance.Tags["apexload.io/pool-id"] == request.FleetPoolID {
+			appendUnique(instance)
+			if nonce := instance.Tags["apexload.io/launch-nonce"]; nonce != "" {
+				confirmed[nonce] = true
+			}
+		}
+	}
+	if !allConfirmed() {
+		return instances, errors.New("launch cancellation is unconfirmed; retain durable intents for reconciliation")
+	}
+	return instances, nil
+}
+
 // EnsureArchiveTerminal is the destruction fence for ephemeral compute. A
 // cordoned/drained engine can still hold controller-pulled artifacts; stopping
 // it before this check would silently lose the archive.
