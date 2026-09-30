@@ -7,7 +7,7 @@ import StatusBadge from './StatusBadge'
 import TestNotesDialog from './TestNotesDialog'
 import { reportComparisonQualification } from './reportComparisonQualification'
 import { OrchestrationReturn } from './OrchestrationReturn'
-import type { ReportSection } from '../appRouting'
+import { parseAppViewFromHash, scopeAppViewToWorkspace, viewToLocationHash, workspaceScopeForAppView, type ReportSection } from '../appRouting'
 import TabList from './ux/TabList'
 import TestExecutionArchive from './TestExecutionArchive'
 import RunOutcomeSummary, { RunMetricPopulations } from './RunOutcomeSummary'
@@ -500,9 +500,15 @@ export default function RunReportPage({
         onClick={() => setArea(name)} onKeyDown={e => { const next = e.key === 'ArrowRight' ? (index+1)%areas.length : e.key === 'ArrowLeft' ? (index+areas.length-1)%areas.length : e.key === 'Home' ? 0 : e.key === 'End' ? areas.length-1 : -1; if(next >= 0){e.preventDefault();setArea(areas[next]);document.getElementById(`result-tab-${areas[next]}`)?.focus()} }}>{name === 'Comparison' ? 'Baseline Comparison' : name}</button>)}</TabList>
       <section role="tabpanel" id={`result-panel-${area}`} aria-labelledby={`result-tab-${area}`} className="run-report-area-content">
         {archiveModel.archiveLoading && <p role="status">Loading archived results...</p>}
-        {archiveModel.archiveError && <p role="alert" className="run-report-error">{archiveModel.archiveError}</p>}
+        {archiveModel.archiveError && <section className="run-report-panel" aria-label="Report unavailable">
+          <h2>Report could not be loaded</h2><p role="alert" className="run-report-error">{archiveModel.archiveError}</p>
+          <p>Retry to load the archived findings. Execution details remain available.</p>
+          <a className="btn btn-ghost" href={viewToLocationHash(scopeAppViewToWorkspace({ page: 'results' }, workspaceScopeForAppView(parseAppViewFromHash(window.location.hash))))}>Back to results</a>
+          <button type="button" className="btn btn-secondary" onClick={archiveModel.retryArchiveReport} disabled={archiveModel.archiveLoading}>Retry report</button>
+          <button type="button" className="btn btn-ghost" onClick={() => setArea('Execution')}>View execution details</button>
+        </section>}
         {hasArchive && <div hidden={area !== 'Comparison'}>{(area === 'Comparison' || initialComparisonId) && <BaselineComparisonWorkspace key={`${test.id}/${initialCompare || ''}`} test={test} initialBaseline={initialCompare} comparisonId={initialComparisonId} canEditPolicy={canPublishConfluence} onSnapshot={id => onNavigateReport({ section: 'comparison', comparisonId: id, lens: activeLens })} />}</div>}
-        {area === 'Summary' && hasArchive && <>
+        {area === 'Summary' && hasArchive && !archiveModel.archiveError && <>
           {report && <RunOutcomeSummary report={report} showPopulations={false} />}
           <RunReportKpiScorecard kpis={kpis} />
           <section className="run-report-panel"><h2>Findings and next steps</h2>

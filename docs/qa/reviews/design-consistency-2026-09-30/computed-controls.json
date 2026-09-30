@@ -1,0 +1,334 @@
+[
+  {
+    "accent": "#5f6f00",
+    "controls": [
+      {
+        "accent": "rgb(95, 111, 0)",
+        "bg": "rgb(238, 232, 213)",
+        "cls": "control-input",
+        "color": "rgb(0, 43, 54)",
+        "font": "14px",
+        "height": 33.99305725097656,
+        "label": "Dashboard color theme",
+        "outline": "rgb(0, 43, 54) none 2.22222px",
+        "type": "select-one"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(238, 232, 213)",
+        "cls": "settings-input cell-mono",
+        "color": "rgb(0, 43, 54)",
+        "font": "13px",
+        "height": 33.75,
+        "label": "Audit action",
+        "outline": "rgb(0, 43, 54) none 2.22222px",
+        "type": "text"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(238, 232, 213)",
+        "cls": "settings-input cell-mono",
+        "color": "rgb(0, 43, 54)",
+        "font": "13px",
+        "height": 33.75,
+        "label": "Audit actor type",
+        "outline": "rgb(0, 43, 54) none 2.22222px",
+        "type": "text"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(238, 232, 213)",
+        "cls": "settings-input cell-mono",
+        "color": "rgb(0, 43, 54)",
+        "font": "13px",
+        "height": 33.75,
+        "label": "Audit status",
+        "outline": "rgb(0, 43, 54) none 2.22222px",
+        "type": "text"
+      },
+      {
+        "accent": "rgb(95, 111, 0)",
+        "bg": "rgb(238, 232, 213)",
+        "cls": "settings-input",
+        "color": "rgb(0, 43, 54)",
+        "font": "13px",
+        "height": 37.690975189208984,
+        "label": "Project scopeAll authorized projectsACCBOBPMCSIOPUSUnassigned",
+        "outline": "rgb(0, 43, 54) none 2.22222px",
+        "type": "select-one"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(255, 255, 255)",
+        "cls": "",
+        "color": "rgb(0, 0, 0)",
+        "font": "13.3333px",
+        "height": 20.86805725097656,
+        "label": "From (local time)",
+        "outline": "rgb(0, 0, 0) none 2.22222px",
+        "type": "datetime-local"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(255, 255, 255)",
+        "cls": "",
+        "color": "rgb(0, 0, 0)",
+        "font": "13.3333px",
+        "height": 20.86805725097656,
+        "label": "Until (local time)",
+        "outline": "rgb(0, 0, 0) none 2.22222px",
+        "type": "datetime-local"
+      }
+    ],
+    "theme": "solarized-light"
+  },
+  {
+    "accent": "#4f46e5",
+    "controls": [
+      {
+        "accent": "rgb(79, 70, 229)",
+        "bg": "rgb(241, 245, 249)",
+        "cls": "control-input",
+        "color": "rgb(15, 23, 42)",
+        "font": "14px",
+        "height": 33.99305725097656,
+        "label": "Dashboard color theme",
+        "outline": "rgb(15, 23, 42) none 2.22222px",
+        "type": "select-one"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(241, 245, 249)",
+        "cls": "settings-input cell-mono",
+        "color": "rgb(15, 23, 42)",
+        "font": "13px",
+        "height": 33.75,
+        "label": "Audit action",
+        "outline": "rgb(15, 23, 42) none 2.22222px",
+        "type": "text"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(241, 245, 249)",
+        "cls": "settings-input cell-mono",
+        "color": "rgb(15, 23, 42)",
+        "font": "13px",
+        "height": 33.75,
+        "label": "Audit actor type",
+        "outline": "rgb(15, 23, 42) none 2.22222px",
+        "type": "text"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(241, 245, 249)",
+        "cls": "settings-input cell-mono",
+        "color": "rgb(15, 23, 42)",
+        "font": "13px",
+        "height": 33.75,
+        "label": "Audit status",
+        "outline": "rgb(15, 23, 42) none 2.22222px",
+        "type": "text"
+      },
+      {
+        "accent": "rgb(79, 70, 229)",
+        "bg": "rgb(241, 245, 249)",
+        "cls": "settings-input",
+        "color": "rgb(15, 23, 42)",
+        "font": "13px",
+        "height": 37.690975189208984,
+        "label": "Project scopeAll authorized projectsACCBOBPMCSIOPUSUnassigned",
+        "outline": "rgb(15, 23, 42) none 2.22222px",
+        "type": "select-one"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(255, 255, 255)",
+        "cls": "",
+        "color": "rgb(0, 0, 0)",
+        "font": "13.3333px",
+        "height": 20.86805725097656,
+        "label": "From (local time)",
+        "outline": "rgb(0, 0, 0) none 2.22222px",
+        "type": "datetime-local"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(255, 255, 255)",
+        "cls": "",
+        "color": "rgb(0, 0, 0)",
+        "font": "13.3333px",
+        "height": 20.86805725097656,
+        "label": "Until (local time)",
+        "outline": "rgb(0, 0, 0) none 2.22222px",
+        "type": "datetime-local"
+      }
+    ],
+    "theme": "light"
+  },
+  {
+    "accent": "#8b5cf6",
+    "controls": [
+      {
+        "accent": "rgb(139, 92, 246)",
+        "bg": "rgb(11, 12, 16)",
+        "cls": "control-input",
+        "color": "rgb(248, 250, 252)",
+        "font": "14px",
+        "height": 33.99305725097656,
+        "label": "Dashboard color theme",
+        "outline": "rgb(248, 250, 252) none 2.22222px",
+        "type": "select-one"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(11, 12, 16)",
+        "cls": "settings-input cell-mono",
+        "color": "rgb(248, 250, 252)",
+        "font": "13px",
+        "height": 33.75,
+        "label": "Audit action",
+        "outline": "rgb(248, 250, 252) none 2.22222px",
+        "type": "text"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(11, 12, 16)",
+        "cls": "settings-input cell-mono",
+        "color": "rgb(248, 250, 252)",
+        "font": "13px",
+        "height": 33.75,
+        "label": "Audit actor type",
+        "outline": "rgb(248, 250, 252) none 2.22222px",
+        "type": "text"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(11, 12, 16)",
+        "cls": "settings-input cell-mono",
+        "color": "rgb(248, 250, 252)",
+        "font": "13px",
+        "height": 33.75,
+        "label": "Audit status",
+        "outline": "rgb(248, 250, 252) none 2.22222px",
+        "type": "text"
+      },
+      {
+        "accent": "rgb(139, 92, 246)",
+        "bg": "rgb(11, 12, 16)",
+        "cls": "settings-input",
+        "color": "rgb(248, 250, 252)",
+        "font": "13px",
+        "height": 37.690975189208984,
+        "label": "Project scopeAll authorized projectsACCBOBPMCSIOPUSUnassigned",
+        "outline": "rgb(248, 250, 252) none 2.22222px",
+        "type": "select-one"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(59, 59, 59)",
+        "cls": "",
+        "color": "rgb(255, 255, 255)",
+        "font": "13.3333px",
+        "height": 20.86805725097656,
+        "label": "From (local time)",
+        "outline": "rgb(255, 255, 255) none 2.22222px",
+        "type": "datetime-local"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(59, 59, 59)",
+        "cls": "",
+        "color": "rgb(255, 255, 255)",
+        "font": "13.3333px",
+        "height": 20.86805725097656,
+        "label": "Until (local time)",
+        "outline": "rgb(255, 255, 255) none 2.22222px",
+        "type": "datetime-local"
+      }
+    ],
+    "theme": "dark"
+  },
+  {
+    "accent": "#ff6188",
+    "controls": [
+      {
+        "accent": "rgb(255, 97, 136)",
+        "bg": "rgb(39, 40, 34)",
+        "cls": "control-input",
+        "color": "rgb(248, 248, 242)",
+        "font": "14px",
+        "height": 33.99305725097656,
+        "label": "Dashboard color theme",
+        "outline": "rgb(248, 248, 242) none 2.22222px",
+        "type": "select-one"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(39, 40, 34)",
+        "cls": "settings-input cell-mono",
+        "color": "rgb(248, 248, 242)",
+        "font": "13px",
+        "height": 33.75,
+        "label": "API Endpoint",
+        "outline": "rgb(248, 248, 242) none 2.22222px",
+        "type": "text"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(39, 40, 34)",
+        "cls": "settings-input settings-input-number",
+        "color": "rgb(248, 248, 242)",
+        "font": "13px",
+        "height": 32.63888931274414,
+        "label": "Max Concurrent Tests",
+        "outline": "rgb(248, 248, 242) none 2.22222px",
+        "type": "number"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(39, 40, 34)",
+        "cls": "settings-input settings-input-number",
+        "color": "rgb(248, 248, 242)",
+        "font": "13px",
+        "height": 32.63888931274414,
+        "label": "Metrics Interval (seconds)",
+        "outline": "rgb(248, 248, 242) none 2.22222px",
+        "type": "number"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgb(39, 40, 34)",
+        "cls": "settings-input settings-input-number",
+        "color": "rgb(248, 248, 242)",
+        "font": "13px",
+        "height": 32.63888931274414,
+        "label": "Usage Snapshot Cadence (seconds)",
+        "outline": "rgb(248, 248, 242) none 2.22222px",
+        "type": "number"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgba(0, 0, 0, 0)",
+        "cls": "",
+        "color": "rgb(255, 255, 255)",
+        "font": "13.3333px",
+        "height": 12.986111640930176,
+        "label": "Desktop Client Promotion",
+        "outline": "rgb(255, 255, 255) none 2.22222px",
+        "type": "checkbox"
+      },
+      {
+        "accent": "auto",
+        "bg": "rgba(0, 0, 0, 0)",
+        "cls": "",
+        "color": "rgb(255, 255, 255)",
+        "font": "13.3333px",
+        "height": 12.986111640930176,
+        "label": "Client Software Downloads",
+        "outline": "rgb(255, 255, 255) none 2.22222px",
+        "type": "checkbox"
+      }
+    ],
+    "theme": "monokai-dimmed"
+  }
+]

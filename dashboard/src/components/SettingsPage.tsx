@@ -4448,18 +4448,18 @@ export default function SettingsPage({
                           <span className="setting-desc">Narrow the recent audit feed and CSV export by action, actor type, or status.</span>
                         </div>
                         <div className="settings-inline-actions">
-                          <input aria-label="Audit action" className="settings-input cell-mono" value={auditActionFilter} onChange={(e) => { setAuditActionFilter(e.target.value); setAuditOffset(0) }} placeholder="action" />
-                          <input aria-label="Audit actor type" className="settings-input cell-mono" value={auditActorTypeFilter} onChange={(e) => { setAuditActorTypeFilter(e.target.value); setAuditOffset(0) }} placeholder="actor_type" />
-                          <input aria-label="Audit status" className="settings-input cell-mono" value={auditStatusFilter} onChange={(e) => { setAuditStatusFilter(e.target.value); setAuditOffset(0) }} placeholder="status" />
+                          <label className="settings-filter-field">Audit action<input aria-label="Audit action" className="settings-input cell-mono" value={auditActionFilter} onChange={(e) => { setAuditActionFilter(e.target.value); setAuditOffset(0) }} placeholder="action" /></label>
+                          <label className="settings-filter-field">Audit actor type<input aria-label="Audit actor type" className="settings-input cell-mono" value={auditActorTypeFilter} onChange={(e) => { setAuditActorTypeFilter(e.target.value); setAuditOffset(0) }} placeholder="actor_type" /></label>
+                          <label className="settings-filter-field">Audit status<input aria-label="Audit status" className="settings-input cell-mono" value={auditStatusFilter} onChange={(e) => { setAuditStatusFilter(e.target.value); setAuditOffset(0) }} placeholder="status" /></label>
                           <button className="btn btn-secondary" type="button" onClick={exportAuditEvents} disabled={!canViewAudit}>
                             Export CSV
                           </button>
                         </div>
                       </div>
                       <div className="settings-inline-actions">
-                        <label>Project scope<select className="settings-input" value={auditProjectFilter} onChange={e => { setAuditProjectFilter(e.target.value); setAuditOffset(0) }}><option value="">All authorized projects</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-                        <label>From (local time)<input type="datetime-local" value={auditAfter} onChange={e => { setAuditAfter(e.target.value); setAuditOffset(0) }} /></label>
-                        <label>Until (local time)<input type="datetime-local" value={auditBefore} onChange={e => { setAuditBefore(e.target.value); setAuditOffset(0) }} /></label>
+                        <label className="settings-filter-field">Project scope<select className="settings-input" value={auditProjectFilter} onChange={e => { setAuditProjectFilter(e.target.value); setAuditOffset(0) }}><option value="">All authorized projects</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+                        <label className="settings-filter-field">From (local time)<input className="settings-input" type="datetime-local" value={auditAfter} onChange={e => { setAuditAfter(e.target.value); setAuditOffset(0) }} /></label>
+                        <label className="settings-filter-field">Until (local time)<input className="settings-input" type="datetime-local" value={auditBefore} onChange={e => { setAuditBefore(e.target.value); setAuditOffset(0) }} /></label>
                       </div>
                       {auditLoading && <p role="status">Loading audit history…</p>}
                       {auditLoadError && <p role="alert">{auditLoadError}</p>}

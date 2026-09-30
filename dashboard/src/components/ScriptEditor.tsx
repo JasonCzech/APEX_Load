@@ -1,3 +1,4 @@
+import TooltipButton from './ux/TooltipButton'
 import { AuthorInsertDialog } from './AuthorInsertDialog'
 import { actionBreadcrumb, dedupeAuthorIssues, humanActionType, insertAuthorAction, remapInsertedBreakpoints, changedDocumentLines, type InsertPosition } from './authorExperience'
 import { captureScript, type DebugRunRecord } from './debuggerExperience'
@@ -424,7 +425,7 @@ function CenterTabbedPane({
           const panelId = `center-tab-panel-${tab.id}`
           return (
             <div key={tab.id} className={`center-tab-item ${selected ? 'active' : ''} ${!tab.closeable ? 'pinned' : ''}`}>
-              <button
+              <TooltipButton
                 type="button"
                 id={tabButtonId}
                 role="tab"
@@ -438,9 +439,9 @@ function CenterTabbedPane({
               >
                 <span className="center-tab-dot" aria-hidden="true" />
                 <span className="center-tab-label">{tab.label}</span>
-              </button>
+              </TooltipButton>
               {tab.closeable && (
-                <button
+                <TooltipButton
                   type="button"
                   className="center-tab-close"
                   aria-label={`Close ${tab.label}`}
@@ -448,7 +449,7 @@ function CenterTabbedPane({
                   onClick={() => onCloseTab(tab.id)}
                 >
                   ×
-                </button>
+                </TooltipButton>
               )}
             </div>
           )
@@ -5197,7 +5198,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                               <div key={group.kind} className="reusable-blocks-group">
                                 <span className="reusable-blocks-group-label">{group.label}</span>
                                 {groupComponents.map(component => (
-                                  <button
+                                  <TooltipButton
                                     key={component.id}
                                     type="button"
                                     className="starter-block-card"
@@ -5206,7 +5207,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                                   >
                                     <strong>{component.name}</strong>
                                     <span>{component.summary}</span>
-                                  </button>
+                                  </TooltipButton>
                                 ))}
                               </div>
                             )
@@ -5216,7 +5217,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                               <span className="reusable-blocks-group-label">Your Blocks</span>
                               {authoringComponents.filter(isUserBlock).map(component => (
                                 <div key={component.id} className="starter-block-card user-block-card">
-                                  <button
+                                  <TooltipButton
                                     type="button"
                                     className="user-block-insert"
                                     onClick={() => insertAuthoringComponent(component)}
@@ -5224,8 +5225,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                                   >
                                     <strong>{component.name}</strong>
                                     <span>{component.summary}</span>
-                                  </button>
-                                  <button
+                                  </TooltipButton>
+                                  <TooltipButton
                                     type="button"
                                     className="btn-icon danger user-block-delete"
                                     aria-label={`Delete reusable block ${component.name}`}
@@ -5234,7 +5235,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                                     onClick={() => deleteUserBlock(component)}
                                   >
                                     ✕
-                                  </button>
+                                  </TooltipButton>
                                 </div>
                               ))}
                             </div>
@@ -5265,13 +5266,13 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                       {selectedBlockScopes.length > 0 && txnWrapDraft === null && (
                         <>
                           {canWrapBlockSelection && (
-                            <button className="btn btn-sm btn-secondary" onClick={beginWrapSelectionInTransaction} title="Wrap the selected actions in a named transaction (timed; SLAs attach to it)">
+                            <TooltipButton className="btn btn-sm btn-secondary" onClick={beginWrapSelectionInTransaction} title="Wrap the selected actions in a named transaction (timed; SLAs attach to it)">
                               Wrap {selectedBlockScopes.length} in transaction
-                            </button>
+                            </TooltipButton>
                           )}
-                          <button className="btn btn-sm btn-secondary" onClick={openSaveBlockModal} title="Save the selected actions as a reusable block">
+                          <TooltipButton className="btn btn-sm btn-secondary" onClick={openSaveBlockModal} title="Save the selected actions as a reusable block">
                             Save {selectedBlockScopes.length} as block
-                          </button>
+                          </TooltipButton>
                         </>
                       )}
                       {txnWrapDraft !== null && (() => {
@@ -5284,22 +5285,22 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                         return (
                         <span className="txn-wrap-inline">
                           <span className="txn-wrap-modes" role="group" aria-label="Transaction timing">
-                            <button
+                            <TooltipButton
                               type="button"
                               className={`btn btn-sm ${txnWrapMode === 'span' ? 'btn-secondary' : 'btn-ghost'}`}
                               onClick={() => setTxnWrapMode('span')}
                               title="Timed span — lr_start/end_transaction markers measure wall-clock time across the selection (includes think time)"
                             >
                               Timed span
-                            </button>
-                            <button
+                            </TooltipButton>
+                            <TooltipButton
                               type="button"
                               className={`btn btn-sm ${txnWrapMode === 'grouped' ? 'btn-secondary' : 'btn-ghost'}`}
                               onClick={() => setTxnWrapMode('grouped')}
                               title="Grouped — tag each selected action under one name (per-action response times, no span)"
                             >
                               Grouped
-                            </button>
+                            </TooltipButton>
                           </span>
                           <input
                             className="txn-wrap-input"
@@ -5400,7 +5401,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                                   onClick={event => event.stopPropagation()}
                                   onChange={() => toggleBlockSelection(item.key)}
                                 />
-                                <button
+                                <TooltipButton
                                   type="button"
                                   className={`action-breakpoint-button ${leafBpActive ? 'active' : ''}`}
                                   aria-label={`${leafBpActive ? 'Remove' : 'Set'} breakpoint on ${leafLabel}`}
@@ -5408,7 +5409,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                                   onClick={event => { event.stopPropagation(); leafBpHandler() }}
                                 >
                                   <span aria-hidden="true" />
-                                </button>
+                                </TooltipButton>
                               </div>
                               <span className="action-cell action-phase-label" style={indent} title={leafLabel}>{leafLabel}</span>
                               <span className="action-cell action-method" style={{ color: methodColor(item.method) }} title={item.method}>{item.method}</span>
@@ -5442,7 +5443,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                                 {typeLabel}
                               </span>
                               <span className="action-cell action-method" aria-hidden="true" />
-                              <button
+                              <TooltipButton
                                 type="button"
                                 className="action-cell action-name-text action-name-toggle"
                                 title={item.name}
@@ -5451,7 +5452,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                                 onClick={event => { event.stopPropagation(); toggleAuthorContainer(item.key) }}
                               >
                                 {item.name}
-                              </button>
+                              </TooltipButton>
                               <div className="action-cell action-cell-txn" />
                               <div className="action-cell action-item-signals">
                                 <span className="action-item-meta"><span className="metric-badge">{item.leafCount} {item.containerType === 'http_sequence' ? 'req' : 'step'}</span></span>
@@ -5505,7 +5506,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                                   onChange={() => toggleBlockSelection(rowBlockKey)}
                                 />
                               )}
-                              <button
+                              <TooltipButton
                                 type="button"
                                 className={`action-breakpoint-button ${actionBreakpointActive ? 'active' : ''}`}
                                 aria-label={actionBreakpointLabel}
@@ -5516,7 +5517,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                                 }}
                               >
                                 <span aria-hidden="true" />
-                              </button>
+                              </TooltipButton>
                             </div>
                             <span className="action-cell action-phase-label" title={`${phaseLabel} ${i + 1}`}>
                               {isContainerRow && (
@@ -5526,7 +5527,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                             </span>
                             <span className="action-cell action-method" style={{ color: methodColor(a.type) }} title={actionTypeSummary(a)}>{txnMarker ? 'TXN' : a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
                             {isContainerRow ? (
-                              <button
+                              <TooltipButton
                                 type="button"
                                 className="action-cell action-name-text action-name-toggle"
                                 title={actionRowLabel(a)}
@@ -5535,7 +5536,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                                 onClick={event => { event.stopPropagation(); toggleAuthorContainer(item.key) }}
                               >
                                 {actionRowLabel(a)}
-                              </button>
+                              </TooltipButton>
                             ) : (
                               <span className="action-cell action-name-text" title={actionRowLabel(a)}>{actionRowLabel(a)}</span>
                             )}
@@ -5585,10 +5586,10 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                               )}
                             </div>
                             <div className="action-item-actions">
-                              <button className="btn-icon" onClick={e => { e.stopPropagation(); movePhaseAction(phase, i, -1) }} disabled={i === 0} aria-label={`Move ${rowActionKind} up`} title="Move up">↑</button>
-                              <button className="btn-icon" onClick={e => { e.stopPropagation(); movePhaseAction(phase, i, 1) }} disabled={i === phaseActionCount - 1} aria-label={`Move ${rowActionKind} down`} title="Move down">↓</button>
-                              <button className="btn-icon" onClick={e => { e.stopPropagation(); duplicatePhaseAction(phase, i) }} aria-label={`Duplicate ${rowActionKind}`} title="Duplicate">⧉</button>
-                              <button className="btn-icon danger" onClick={e => { e.stopPropagation(); removePhaseAction(phase, i) }} aria-label={`Delete ${rowActionKind}`} title="Delete">✕</button>
+                              <TooltipButton className="btn-icon" onClick={e => { e.stopPropagation(); movePhaseAction(phase, i, -1) }} disabled={i === 0} aria-label={`Move ${rowActionKind} up`} title="Move up">↑</TooltipButton>
+                              <TooltipButton className="btn-icon" onClick={e => { e.stopPropagation(); movePhaseAction(phase, i, 1) }} disabled={i === phaseActionCount - 1} aria-label={`Move ${rowActionKind} down`} title="Move down">↓</TooltipButton>
+                              <TooltipButton className="btn-icon" onClick={e => { e.stopPropagation(); duplicatePhaseAction(phase, i) }} aria-label={`Duplicate ${rowActionKind}`} title="Duplicate">⧉</TooltipButton>
+                              <TooltipButton className="btn-icon danger" onClick={e => { e.stopPropagation(); removePhaseAction(phase, i) }} aria-label={`Delete ${rowActionKind}`} title="Delete">✕</TooltipButton>
                             </div>
                           </div>
                         )
@@ -5788,7 +5789,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         <strong>Ready for debug?</strong>
         <div className="readiness-header-actions">
           <span>{replayPreflightStatusLabel(replayPreflight)}</span>
-          <button
+          <TooltipButton
             type="button"
             className="btn btn-sm btn-secondary"
             onClick={() => { void handleValidateScript() }}
@@ -5796,7 +5797,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             title={validateScriptTitle}
           >
             {validating ? 'Checking...' : 'Recheck'}
-          </button>
+          </TooltipButton>
         </div>
       </div>
       <ReplayPreflightCard
@@ -5835,7 +5836,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         const showParameterDetails = selectedOutlineParameterExists && selectedOutlineParameter && !parameterPaneShowAuto
         const parameterPaneToggle = selectedOutlineParameterExists ? (
           <TabList className="parameter-pane-toggle" role="tablist" aria-label="Parameter view" onKeyDown={handleTabKey}>
-            <button
+            <TooltipButton
               type="button"
               role="tab"
               aria-selected={!parameterPaneShowAuto}
@@ -5844,7 +5845,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
               title={`Settings for ${selectedOutlineParameterName}`} tabIndex={(!parameterPaneShowAuto) ? 0 : -1}
             >
               Parameters
-            </button>
+            </TooltipButton>
             <button
               type="button"
               role="tab"
@@ -6014,8 +6015,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         {onClose && <button type="button" className="btn btn-sm btn-ghost" aria-label="Close script editor" onClick={handleCloseEditor}>Close editor</button>}
         <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setAuthorRailWidth(220); setAuthorOutlineCollapsed(false); setAuthorRightSidebarCollapsed(false); replayDebuggerController.resetLayout() }}>Reset layout</button>
         {workspaceTab === 'author' && <>
-          <button type="button" className="btn-icon editor-outline-action-button" onClick={undoEditorChange} disabled={jsonDirty || editorHistory.past.length === 0} title="Undo document change" aria-label="Undo document change"><EditorRailActionIcon kind="undo" /></button>
-          <button type="button" className="btn-icon editor-outline-action-button" onClick={redoEditorChange} disabled={jsonDirty || editorHistory.future.length === 0} title="Redo document change" aria-label="Redo document change"><EditorRailActionIcon kind="redo" /></button>
+          <TooltipButton type="button" className="btn-icon editor-outline-action-button" onClick={undoEditorChange} disabled={jsonDirty || editorHistory.past.length === 0} title="Undo document change" aria-label="Undo document change"><EditorRailActionIcon kind="undo" /></TooltipButton>
+          <TooltipButton type="button" className="btn-icon editor-outline-action-button" onClick={redoEditorChange} disabled={jsonDirty || editorHistory.future.length === 0} title="Redo document change" aria-label="Redo document change"><EditorRailActionIcon kind="redo" /></TooltipButton>
         </>}
         <button type="button" className="btn btn-sm btn-secondary" onClick={() => setShowSavedDiff(true)}>Review changes</button>
         <span>Saved: {scriptEditorDirty ? 'unsaved changes' : 'up to date'}</span>
@@ -6198,9 +6199,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         <div className="editor-header script-editor-local-action-proxy" hidden>
           <div className="editor-title-row">
             <div className="editor-actions">
-              <button className="btn btn-primary" onClick={handleSave} disabled={saveScriptDisabled} title={saveScriptTitle}>
+              <TooltipButton className="btn btn-primary" onClick={handleSave} disabled={saveScriptDisabled} title={saveScriptTitle}>
                 {saving ? 'Saving...' : 'Save Script'}
-              </button>
+              </TooltipButton>
               {onClose && <button className="btn btn-ghost" onClick={handleCloseEditor}>Close</button>}
             </div>
           </div>
@@ -6221,37 +6222,37 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
               </button>
             </TabList>
             <div className="script-ide-quick-actions" role="group" aria-label="Quick actions">
-              <button type="button" className="debugger-icon-btn" title={replayRunButtonTitle} onClick={() => void handleReplay()} disabled={replaying || saving || replayBlockedByMissingSecrets || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0}>
+              <TooltipButton type="button" className="debugger-icon-btn" title={replayRunButtonTitle} onClick={() => void handleReplay()} disabled={replaying || saving || replayBlockedByMissingSecrets || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0}>
                 <span className="debugger-icon" aria-hidden="true">&#9654;</span>
                 <span>{replaying ? 'Running...' : replayReport ? 'Debug again' : 'Debug one iteration'}</span>
-              </button>
+              </TooltipButton>
               {workspaceTab === 'debug' && (
                 <>
-                  <button type="button" className="debugger-icon-btn" title={isReplayPaused ? 'Continue' : 'Pause'} onClick={handlePauseResumeReplay} disabled={!activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}>
+                  <TooltipButton type="button" className="debugger-icon-btn" title={isReplayPaused ? 'Continue' : 'Pause'} onClick={handlePauseResumeReplay} disabled={!activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}>
                     <span className="debugger-icon" aria-hidden="true">{isReplayPaused ? '▶' : '⏸'}</span>
                     <span>{isReplayPaused ? 'Continue' : 'Pause'}</span>
-                  </button>
-                  <button type="button" className="debugger-icon-btn" title="Step to next action" onClick={() => void handleStepReplay('into')} disabled={stepReplayDisabled}>
+                  </TooltipButton>
+                  <TooltipButton type="button" className="debugger-icon-btn" title="Step to next action" onClick={() => void handleStepReplay('into')} disabled={stepReplayDisabled}>
                     <span className="debugger-icon" aria-hidden="true">&#10551;</span>
                     <span>{replayReport?.completed_at ? 'Restart in step mode' : 'Step'}</span>
-                  </button>
-                  <button type="button" className="debugger-icon-btn" title="Step over the current block (run the rest of it, pause after)" onClick={() => void handleStepReplay('over')} disabled={stepReplayDisabled}>
+                  </TooltipButton>
+                  <TooltipButton type="button" className="debugger-icon-btn" title="Step over the current block (run the rest of it, pause after)" onClick={() => void handleStepReplay('over')} disabled={stepReplayDisabled}>
                     <span className="debugger-icon" aria-hidden="true">&#10550;</span>
                     <span>{replayReport?.completed_at ? 'Restart in step mode (over)' : 'Step Over'}</span>
-                  </button>
-                  <button type="button" className="debugger-icon-btn" title="Run to the end of the enclosing loop" onClick={() => void handleStepReplay('loop_end')} disabled={stepReplayDisabled}>
+                  </TooltipButton>
+                  <TooltipButton type="button" className="debugger-icon-btn" title="Run to the end of the enclosing loop" onClick={() => void handleStepReplay('loop_end')} disabled={stepReplayDisabled}>
                     <span className="debugger-icon" aria-hidden="true">&#8635;</span>
                     <span>Finish Loop</span>
-                  </button>
-                  <button type="button" className="debugger-icon-btn" title="Stop debugger" onClick={handleStopReplay} disabled={!activeReplaySessionId || !replaying}>
+                  </TooltipButton>
+                  <TooltipButton type="button" className="debugger-icon-btn" title="Stop debugger" onClick={handleStopReplay} disabled={!activeReplaySessionId || !replaying}>
                     <span className="debugger-icon" aria-hidden="true">&#9209;</span>
                     <span>Stop</span>
-                  </button>
-                  <button type="button" className="debugger-icon-btn" title="Toggle breakpoint on selected action" onClick={toggleSelectedBreakpoint} disabled={debugActionRows.length === 0}>
+                  </TooltipButton>
+                  <TooltipButton type="button" className="debugger-icon-btn" title="Toggle breakpoint on selected action" onClick={toggleSelectedBreakpoint} disabled={debugActionRows.length === 0}>
                     <span className="debugger-icon" aria-hidden="true">●</span>
                     <span>Breakpoint</span>
-                  </button>
-                  <button
+                  </TooltipButton>
+                  <TooltipButton
                     ref={debuggerSettingsBtnRef}
                     type="button"
                     className={`debugger-icon-btn ${centerTabsState.activeTabId === 'runtime-settings' ? 'active' : ''}`}
@@ -6266,8 +6267,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                   >
                     <span className="debugger-icon" aria-hidden="true">&#9881;</span>
                     <span>Settings</span>
-                  </button>
-                  <button
+                  </TooltipButton>
+                  <TooltipButton
                     type="button"
                     className={`debugger-icon-btn ${!debugDetailCollapsed ? 'active' : ''}`}
                     title={debugDetailCollapsed ? 'Show detail panel (request/response + variables)' : 'Hide detail panel'}
@@ -6276,12 +6277,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                   >
                     <span className="debugger-icon" aria-hidden="true">▣</span>
                     <span>Panel</span>
-                  </button>
+                  </TooltipButton>
                   {replayReport && (
-                    <button type="button" className="debugger-icon-btn" title="Download Debug JSON" onClick={handleDownloadBrowserReplayExport}>
+                    <TooltipButton type="button" className="debugger-icon-btn" title="Download Debug JSON" onClick={handleDownloadBrowserReplayExport}>
                       <span className="debugger-icon" aria-hidden="true">&#8675;</span>
                       <span>Export</span>
-                    </button>
+                    </TooltipButton>
                   )}
                 </>
               )}
@@ -6604,9 +6605,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                 <div className="editor-outline-nav">
                   <div className="editor-outline-header editor-outline-header-actions-only">
                     <div className="editor-outline-actions">
-                      {!hasTopbarContributionProvider && <button type="button" className="btn-icon editor-outline-action-button primary" onClick={() => { void handleSave() }} disabled={saveScriptDisabled} title={saveScriptTitle} aria-label="Save script">
+                      {!hasTopbarContributionProvider && <TooltipButton type="button" className="btn-icon editor-outline-action-button primary" onClick={() => { void handleSave() }} disabled={saveScriptDisabled} title={saveScriptTitle} aria-label="Save script">
                         <EditorRailActionIcon kind="save" />
-                      </button>}
+                      </TooltipButton>}
 
                       <PanelToggle className="" expanded={true} panelName="outline side panel" collapsedLabel="Outline" controls="script-outline-panel" onToggle={() => setAuthorOutlineCollapsed(true)} />
                     </div>
@@ -6628,9 +6629,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                       const selected = !selectedOutlineParameterName && authorCodeFocus?.phase === phase && authorCodeFocus.actionIndex === item.row.actionIndex && (authorCodeFocus.stepPath || []).join('/') === ('stepPath' in item ? item.stepPath || [] : []).join('/')
                       return <div key={item.key} className="script-outline-row" style={{ paddingLeft: `${Math.min(item.depth, 8) * 12}px` }}>
                         {item.kind === 'container' && <button type="button" aria-label={`${expandedAuthorContainers.has(item.key) ? 'Collapse' : 'Expand'} ${name}`} aria-expanded={expandedAuthorContainers.has(item.key)} onClick={() => toggleAuthorContainer(item.key)}>{expandedAuthorContainers.has(item.key) ? '▾' : '▸'}</button>}
-                        <button type="button" data-outline-select aria-current={selected ? 'true' : undefined} title={name} onClick={() => item.kind === 'leaf' || (item.kind === 'container' && item.depth > 0) ? selectAuthorNestedItem(item) : selectAuthorPhaseAction(item.row)}>
+                        <TooltipButton type="button" data-outline-select aria-current={selected ? 'true' : undefined} title={name} onClick={() => item.kind === 'leaf' || (item.kind === 'container' && item.depth > 0) ? selectAuthorNestedItem(item) : selectAuthorPhaseAction(item.row)}>
                           <strong>{name || `${phase} ${item.row.actionIndex + 1}`}</strong><small>{humanActionType(item.kind === 'container' ? item.containerType : action.method || action.type)} · {item.depth > 0 ? `Nested step ${('stepPath' in item ? item.stepPath?.join(' › ') : '') || ''}` : `${item.row.phaseLabel} ${item.row.actionIndex + 1}`}{debugBreakpointKeys.has(item.key) ? ' · Breakpoint' : ''}{(actionIssueBuckets[phase]?.[item.row.actionIndex] || []).length ? ' · Needs attention' : ''}</small>
-                        </button>
+                        </TooltipButton>
                       </div>
                     })}
                     {!authorRenderRows.some(item => item.row.phase === phase) && <small>{outlineActionFilter ? 'No matching actions' : 'No actions'}</small>}

@@ -341,6 +341,10 @@ export default function ScriptsLibraryTable({
   const showSelection = canManageScripts && Boolean(onToggleScriptSelection) && Boolean(onToggleAllVisibleScripts)
   const columnCount = (showSelection ? 1 : 0) + (showSource ? 1 : 0) + 9
   const isEmpty = localScripts.length === 0 && remoteRows.length === 0
+  if (isEmpty && onCreate && canManageScripts) return <div className="empty-card">
+    <p>{emptyMessage}</p><p className="empty-hint">Create or import a script to begin building your test library.</p>
+    <button type="button" className="btn btn-primary" onClick={onCreate}>Create your first script</button>
+  </div>
   return (
     <div className="data-table">
       <LibraryPagination label="Script library" pagination={pagination} />

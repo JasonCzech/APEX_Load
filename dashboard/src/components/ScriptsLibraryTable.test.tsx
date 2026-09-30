@@ -466,6 +466,7 @@ describe('ScriptsLibraryTable federation', () => {
       root.render(<ScriptsLibraryTable {...baseProps} scripts={[]} onCreate={onCreate} />)
     })
 
+    expect(container.querySelector('table')).toBeNull()
     const createButton = findButton('Create your first script')
     expect(createButton).toBeDefined()
     await act(async () => { createButton?.click() })

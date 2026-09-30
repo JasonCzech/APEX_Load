@@ -243,19 +243,19 @@
 
   --success-bg: rgba(133, 153, 0, 0.12);
   --success-border: rgba(133, 153, 0, 0.25);
-  --success-text: #859900;
+  --success-text: #acbe48;
   
   --warning-bg: rgba(181, 137, 0, 0.12);
   --warning-border: rgba(181, 137, 0, 0.25);
-  --warning-text: #b58900;
+  --warning-text: #d9b84b;
   
   --danger-bg: rgba(220, 50, 47, 0.12);
   --danger-border: rgba(220, 50, 47, 0.25);
-  --danger-text: #dc322f;
+  --danger-text: #ff8175;
   
   --info-bg: rgba(38, 139, 210, 0.12);
   --info-border: rgba(38, 139, 210, 0.25);
-  --info-text: #268bd2;
+  --info-text: #66b8ed;
 
   --run-calendar-cron-bg: rgba(42, 161, 152, 0.18);
   --run-calendar-cron-border: rgba(42, 161, 152, 0.46);
@@ -325,19 +325,19 @@
 
   --success-bg: rgba(133, 153, 0, 0.12);
   --success-border: rgba(133, 153, 0, 0.25);
-  --success-text: #859900;
+  --success-text: #526000;
   
   --warning-bg: rgba(181, 137, 0, 0.12);
   --warning-border: rgba(181, 137, 0, 0.25);
-  --warning-text: #b58900;
+  --warning-text: #785900;
   
   --danger-bg: rgba(220, 50, 47, 0.12);
   --danger-border: rgba(220, 50, 47, 0.25);
-  --danger-text: #dc322f;
+  --danger-text: #b02523;
   
   --info-bg: rgba(101, 123, 131, 0.12);
   --info-border: rgba(101, 123, 131, 0.25);
-  --info-text: #657b83;
+  --info-text: #40565e;
   color-scheme: light;
 }
 
@@ -766,3 +766,27 @@ select option:checked {
   padding: 4px 10px;
   font-size: 12px;
 }
+
+/* Native controls share theme colors while retaining platform semantics. */
+:where(input[type="checkbox"], input[type="radio"]) {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  vertical-align: middle;
+  cursor: pointer;
+}
+:where(input, textarea) { color-scheme: inherit; }
+:where(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]):not([type="color"]):not([type="button"]):not([type="submit"]), textarea) {
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+:where(input, textarea)::placeholder { color: var(--text-muted); opacity: 1; }
+:where(input, textarea):disabled { cursor: not-allowed; opacity: .65; }
+:where(a[href]), :where(a[href]:visited) { color: var(--accent); }
+:where(a[href]:hover) { text-decoration: underline; text-underline-offset: 3px; }

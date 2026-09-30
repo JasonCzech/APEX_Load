@@ -241,7 +241,7 @@ function findButtonByText(root: ParentNode, text: string) {
 }
 
 function findButtonByTitle(root: ParentNode, title: string) {
-  return Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find(button => button.getAttribute('title') === title)
+  return Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find(button => (button.getAttribute('data-tooltip') || button.getAttribute('title')) === title)
 }
 
 function findReadinessCard(root: ParentNode) {
@@ -786,9 +786,9 @@ describe('ScriptEditor', () => {
     expect(apiMock.getScriptSecretStatus).toHaveBeenCalledWith('script-1')
     expect(container.querySelector('.script-secret-banner')?.textContent).toContain('1 project secret still needs configuration')
     const blockedRunButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.title.includes('Configure missing project secret before running'))
+      .find(button => (button.dataset.tooltip || button.title).includes('Configure missing project secret before running'))
     expect(blockedRunButton?.disabled).toBe(true)
-    expect(blockedRunButton?.title).toContain('LOGIN_TOKEN')
+    expect((blockedRunButton?.dataset.tooltip || blockedRunButton?.title)).toContain('LOGIN_TOKEN')
     expect(container.textContent).toContain('Configure missing project secret: LOGIN_TOKEN.')
     expect(container.textContent).toContain('Needs attention')
 
@@ -856,9 +856,9 @@ describe('ScriptEditor', () => {
     expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('project-1', ['RAW_JSON_TOKEN'])
     expect(container.querySelector('.script-secret-banner')?.textContent).toContain('1 project secret still needs configuration')
     const runButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.title.includes('Configure missing project secret before running'))
+      .find(button => (button.dataset.tooltip || button.title).includes('Configure missing project secret before running'))
     expect(runButton?.disabled).toBe(true)
-    expect(runButton?.title).toContain('RAW_JSON_TOKEN')
+    expect((runButton?.dataset.tooltip || runButton?.title)).toContain('RAW_JSON_TOKEN')
     expect(apiMock.startDraftScriptDebugSession).not.toHaveBeenCalled()
   })
 
@@ -904,9 +904,9 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('.script-secret-banner')?.textContent).toContain('1 project secret still needs configuration')
     const runButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.title.includes('Configure missing project secret before running'))
+      .find(button => (button.dataset.tooltip || button.title).includes('Configure missing project secret before running'))
     expect(runButton?.disabled).toBe(true)
-    expect(runButton?.title).toContain('LOGIN_TOKEN')
+    expect((runButton?.dataset.tooltip || runButton?.title)).toContain('LOGIN_TOKEN')
   })
 
   it('reports a created dedicated secret when the later editor save fails', async () => {
@@ -1036,7 +1036,7 @@ describe('ScriptEditor', () => {
 
     const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
     expect(saveButton?.disabled).toBe(false)
-    expect(saveButton?.getAttribute('title')).toBe('Save script')
+    expect((saveButton?.getAttribute('data-tooltip') || saveButton?.getAttribute('title'))).toBe('Save script')
     expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('project-1', ['LOGIN_TOKEN'])
     expect(container.querySelector('.script-secret-banner')?.textContent).toContain('1 project secret still needs configuration')
 
@@ -1073,7 +1073,7 @@ describe('ScriptEditor', () => {
     const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
     expect(saveButton?.disabled).toBe(false)
     let runButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.title.includes('Checking project secret configuration'))
+      .find(button => (button.dataset.tooltip || button.title).includes('Checking project secret configuration'))
     expect(runButton?.disabled).toBe(true)
     expect(apiMock.replayDraftScript).not.toHaveBeenCalled()
 
@@ -1084,7 +1084,7 @@ describe('ScriptEditor', () => {
     })
 
     runButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.title.includes('Project secret status is temporarily unavailable'))
+      .find(button => (button.dataset.tooltip || button.title).includes('Project secret status is temporarily unavailable'))
     expect(runButton?.disabled).toBe(true)
     expect(saveButton?.disabled).toBe(false)
     expect(apiMock.replayDraftScript).not.toHaveBeenCalled()
@@ -2940,7 +2940,7 @@ describe('ScriptEditor', () => {
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     expect(saveButton.disabled).toBe(false)
-    expect(saveButton.getAttribute('title')).toBe('Save script')
+    expect((saveButton.getAttribute('data-tooltip') || saveButton.getAttribute('title'))).toBe('Save script')
 
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2981,7 +2981,7 @@ describe('ScriptEditor', () => {
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     expect(saveButton.disabled).toBe(true)
-    expect(saveButton.getAttribute('title')).toBe('Fix invalid Script JSON before saving')
+    expect((saveButton.getAttribute('data-tooltip') || saveButton.getAttribute('title'))).toBe('Fix invalid Script JSON before saving')
 
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -5117,10 +5117,10 @@ describe('ScriptEditor', () => {
     expect(debuggerShell).not.toBeNull()
     expect(debuggerShell?.className).toContain('open')
     expect(debuggerShell?.querySelector('[aria-label="Debugger controls"]')).toBeNull()
-    expect(container.querySelectorAll('button[title="Run Replay"]')).toHaveLength(1)
-    expect(container.querySelectorAll('button[title="Step to next action"]')).toHaveLength(1)
-    expect(container.querySelectorAll('button[title="Stop debugger"]')).toHaveLength(1)
-    expect(container.querySelectorAll('button[title="Session overrides"]')).toHaveLength(1)
+    expect(container.querySelectorAll('button[data-tooltip="Run Replay"]')).toHaveLength(1)
+    expect(container.querySelectorAll('button[data-tooltip="Step to next action"]')).toHaveLength(1)
+    expect(container.querySelectorAll('button[data-tooltip="Stop debugger"]')).toHaveLength(1)
+    expect(container.querySelectorAll('button[data-tooltip="Session overrides"]')).toHaveLength(1)
 
     const runReplayButton = findDebuggerRunButton(container)
     expect(runReplayButton).toBeDefined()
@@ -5275,7 +5275,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const debuggerBreakpointButton = container.querySelector('.script-ide-debugger.open .debugger-gutter[title="Add breakpoint"]') as HTMLButtonElement | null
+    const debuggerBreakpointButton = container.querySelector('.script-ide-debugger.open .debugger-gutter[data-tooltip="Add breakpoint"]') as HTMLButtonElement | null
     expect(debuggerBreakpointButton).not.toBeNull()
     if (!debuggerBreakpointButton) {
       return
@@ -6827,7 +6827,7 @@ describe('ScriptEditor', () => {
       return
     }
     expect(saveButton.disabled).toBe(true)
-    expect(saveButton.getAttribute('title')).toBe('No unsaved changes to save')
+    expect((saveButton.getAttribute('data-tooltip') || saveButton.getAttribute('title'))).toBe('No unsaved changes to save')
 
     const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')
     expect(nameInput).toBeDefined()
@@ -6841,7 +6841,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(saveButton.disabled).toBe(false)
-    expect(saveButton.getAttribute('title')).toBe('Save script')
+    expect((saveButton.getAttribute('data-tooltip') || saveButton.getAttribute('title'))).toBe('Save script')
 
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -6910,7 +6910,7 @@ describe('ScriptEditor', () => {
     // does not exist until someone approves it.
     const saveButtonAfter = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
     expect(saveButtonAfter?.disabled).toBe(false)
-    expect(saveButtonAfter?.getAttribute('title')).toBe('Save script')
+    expect((saveButtonAfter?.getAttribute('data-tooltip') || saveButtonAfter?.getAttribute('title'))).toBe('Save script')
   })
 
   it('carries the editor folder onto the authoring session', async () => {

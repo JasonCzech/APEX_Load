@@ -1,0 +1,51 @@
+{
+  "base": "915674b3",
+  "review_rounds": [
+    {
+      "round": 1,
+      "findings": [
+        {
+          "issue": "Collapsed sidebar showed legacy CSS hover labels alongside TooltipButton help.",
+          "fix": "Removed navigation pseudo-element tooltip rules; retained the workspace summary tooltip.",
+          "regression": "Five-theme browser test collapses the sidebar, verifies one tooltip, and verifies Escape dismissal."
+        },
+        {
+          "issue": "Removing help text while a tooltip was open left aria-describedby pointing to an absent tooltip.",
+          "fix": "Only append the tooltip ID when both open and title are present.",
+          "regression": "Unit test removes help text while focused and verifies the original description remains."
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "findings": [],
+      "scope": "Reviewed final changes against current main: shared control CSS, tooltip adoption and keyboard behavior, report retry/navigation, empty states, draft-load ordering, and test updates."
+    },
+    {
+      "round": 3,
+      "findings": [],
+      "scope": "Final staged diff and regression results; all review findings resolved."
+    }
+  ],
+  "validation": {
+    "status": "passed",
+    "command": "APEXLOAD_E2E_PORT=18131 APEXLOAD_E2E_AUTH_PORT=18132 APEXLOAD_E2E_OUTPUT_ROOT=/tmp/apex-theme-review-cycle npm --prefix dashboard run test:cycle",
+    "typecheck": "passed",
+    "lint": "passed",
+    "unit": {
+      "files": 434,
+      "passed": 4612
+    },
+    "build": "passed",
+    "dev_admin": {
+      "passed": 165,
+      "skipped": 4,
+      "failed": 0
+    },
+    "local_auth": {
+      "passed": 85,
+      "skipped": 1,
+      "failed": 0
+    }
+  }
+}

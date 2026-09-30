@@ -621,13 +621,12 @@ describe('SourceMappingReview', () => {
     const unsupported = Array.from(coverage?.querySelectorAll('.source-map-status') || []).find(pill => pill.textContent?.includes('Unsupported:')) as HTMLElement | undefined
     const withoutOrigin = Array.from(coverage?.querySelectorAll('.source-map-status') || []).find(pill => pill.textContent?.includes('DSL without source origin:')) as HTMLElement | undefined
 
-    expect(converted?.dataset.tooltip).toContain('converted into executable generated DSL')
-    expect(converted?.getAttribute('title')).toBe(converted?.dataset.tooltip)
-    expect(converted?.tabIndex).toBe(0)
-    expect(preserved?.dataset.tooltip).toContain('supporting evidence')
-    expect(review?.dataset.tooltip).toContain('reviewer attention')
-    expect(unsupported?.dataset.tooltip).toContain('manual review')
-    expect(withoutOrigin?.dataset.tooltip).toContain('no traceable source mapping')
+    for (const [control, copy] of [[converted, 'converted into executable generated DSL'], [preserved, 'supporting evidence'], [review, 'reviewer attention'], [unsupported, 'manual review'], [withoutOrigin, 'no traceable source mapping']] as const) {
+      expect(control?.hasAttribute('title')).toBe(false)
+      await act(async () => { ((control as HTMLButtonElement)?.disabled ? control?.parentElement : control)?.focus() })
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(copy)
+      await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    }
   })
 
   it('explains preview limits separately from import issues and opens a shortened file', async () => {

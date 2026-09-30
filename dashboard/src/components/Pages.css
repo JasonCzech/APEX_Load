@@ -2049,7 +2049,7 @@
 }
 
 .access-danger-action {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .access-empty-state {
@@ -2687,7 +2687,7 @@
 }
 
 .results-compare-status.error {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .results-compare-grid {
@@ -3491,11 +3491,11 @@
   position: absolute;
   top: 12px;
   right: 12px;
-  border: 1px solid rgba(99, 102, 241, 0.4);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   border-radius: 999px;
   padding: 3px 7px;
   color: var(--accent);
-  background: rgba(99, 102, 241, 0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -3599,11 +3599,11 @@
 
 .authoring-session-status {
   width: fit-content;
-  border: 1px solid rgba(99, 102, 241, 0.35);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-radius: 999px;
   padding: 3px 8px;
   color: var(--accent);
-  background: rgba(99, 102, 241, 0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -3618,7 +3618,7 @@
 
 .authoring-session-status.ready {
   border-color: rgba(34, 197, 94, 0.35);
-  color: var(--success);
+  color: var(--success-text);
   background: rgba(34, 197, 94, 0.1);
 }
 
@@ -3645,7 +3645,7 @@
 }
 
 .authoring-session-blockers {
-  color: var(--danger) !important;
+  color: var(--danger-text) !important;
 }
 
 .authoring-correlation-repair {
@@ -3709,9 +3709,9 @@
 }
 
 .authoring-correlation-preview {
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
   border-radius: 8px;
-  background: rgba(99, 102, 241, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -3809,7 +3809,7 @@
 }
 
 .table-pagination-select:focus {
-  outline: 2px solid rgba(0, 163, 255, 0.24);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -4062,7 +4062,7 @@
 .reference-key-copy:hover:not(:disabled),
 .reference-key-copy:focus-visible:not(:disabled) {
   color: var(--accent);
-  background: rgba(99, 102, 241, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
   outline: none;
 }
 
@@ -4083,17 +4083,17 @@
 
 .protocol-badge.healthy {
   background: rgba(16, 185, 129, 0.14);
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .protocol-badge.warning {
   background: rgba(245, 158, 11, 0.14);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .protocol-badge.danger {
   background: rgba(239, 68, 68, 0.14);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .script-health-inline,
@@ -4142,19 +4142,19 @@
 
 .script-health-token.healthy {
   border-color: rgba(34, 197, 94, 0.28);
-  color: var(--success);
+  color: var(--success-text);
   background: rgba(34, 197, 94, 0.1);
 }
 
 .script-health-token.warning {
   border-color: rgba(245, 158, 11, 0.3);
-  color: var(--warning);
+  color: var(--warning-text);
   background: rgba(245, 158, 11, 0.12);
 }
 
 .script-health-token.danger {
   border-color: rgba(239, 68, 68, 0.3);
-  color: var(--danger);
+  color: var(--danger-text);
   background: rgba(239, 68, 68, 0.12);
 }
 
@@ -4260,7 +4260,7 @@
 .script-health-filter.active {
   border-color: var(--accent);
   color: var(--accent);
-  background: rgba(99, 102, 241, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .script-table-meta,
@@ -4374,8 +4374,8 @@
   line-height: 1.45;
 }
 
-.text-success { color: var(--success); }
-.text-danger { color: var(--danger); }
+.text-success { color: var(--success-text); }
+.text-danger { color: var(--danger-text); }
 .text-muted { color: var(--text-muted); }
 
 /* Monitoring page */
@@ -4602,13 +4602,15 @@
 }
 
 .monitor-header-badge.warning {
-  background: rgba(245, 158, 11, 0.18);
-  color: var(--warning);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border: 1px solid var(--warning-border);
 }
 
 .monitor-header-badge.danger {
-  background: rgba(239, 68, 68, 0.16);
-  color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  border: 1px solid var(--danger-border);
 }
 
 .monitor-body {
@@ -5102,7 +5104,7 @@
 }
 
 .telemetry-text-warning {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .telemetry-diagnostic-item {
@@ -5143,12 +5145,12 @@
 
 .telemetry-diagnostic-badge.warning {
   background: rgba(245, 158, 11, 0.18);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .telemetry-diagnostic-badge.danger {
   background: rgba(239, 68, 68, 0.16);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .telemetry-diagnostic-time {
@@ -5422,7 +5424,7 @@
   padding: 8px 10px;
   border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
   border-radius: 8px;
-  color: var(--warning);
+  color: var(--warning-text);
   background: color-mix(in srgb, var(--warning) 8%, transparent);
   font-size: 12px;
 }
@@ -5976,7 +5978,7 @@
   font-weight: 800;
   letter-spacing: 0;
   cursor: pointer;
-  box-shadow: 0 10px 22px rgba(99, 102, 241, 0.22);
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--accent) 22%, transparent);
   transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
   white-space: nowrap;
 }
@@ -5985,7 +5987,7 @@
   background: var(--accent-hover);
   border-color: var(--accent-hover);
   transform: translateY(-1px);
-  box-shadow: 0 12px 26px rgba(99, 102, 241, 0.28);
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .new-test-builder-button:focus-visible {
@@ -6020,7 +6022,7 @@
   width: 28px;
   height: 28px;
   border-radius: 999px;
-  background: rgba(99, 102, 241, 0.16);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
   display: inline-flex;
   align-items: center;
@@ -6033,7 +6035,7 @@
 
 .new-test-step-index.complete {
   background: rgba(34, 197, 94, 0.18);
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .new-test-step-header h3,
@@ -6324,7 +6326,7 @@
   letter-spacing: 0.05em;
   padding: 2px 7px;
   border-radius: 4px;
-  background: rgba(99, 102, 241, 0.12);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
 }
 
@@ -6422,7 +6424,7 @@
   padding: 2px 7px;
   border-radius: 999px;
   background: rgba(34, 197, 94, 0.16);
-  color: var(--success);
+  color: var(--success-text);
   font-size: 10px;
   font-style: normal;
   font-weight: 700;
@@ -6456,7 +6458,7 @@
   padding: 2px 7px;
   border-radius: 999px;
   background: rgba(34, 197, 94, 0.16);
-  color: var(--success);
+  color: var(--success-text);
   font-size: 10px;
   font-style: normal;
   font-weight: 800;
@@ -6488,7 +6490,7 @@
   border: 1px solid rgba(34, 197, 94, 0.32);
   border-radius: 8px;
   background: rgba(34, 197, 94, 0.12);
-  color: var(--success);
+  color: var(--success-text);
   font-size: 13px;
   font-weight: 600;
 }
@@ -6717,7 +6719,7 @@
   padding: 2px 7px;
   border-radius: 999px;
   background: rgba(34, 197, 94, 0.16);
-  color: var(--success);
+  color: var(--success-text);
   font-size: 10px;
   font-style: normal;
   font-weight: 700;
@@ -6881,7 +6883,7 @@
 }
 
 .new-test-summary-list div.warning dd {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .new-test-launch-actions {
@@ -6935,7 +6937,7 @@
 .new-test-launch-feedback.success {
   border-color: color-mix(in srgb, var(--success) 35%, var(--border));
   background: color-mix(in srgb, var(--success) 9%, transparent);
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .new-test-profile-card {
@@ -7100,7 +7102,7 @@
 .new-test-group-field-error {
   grid-column: 1 / -1;
   margin: -4px 0 0;
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -7168,7 +7170,7 @@
 }
 
 .new-test-generator-option em.warning {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .new-test-placement-summary {
@@ -7310,7 +7312,7 @@
 
 .btn-danger-outline {
   background: transparent;
-  color: var(--danger);
+  color: var(--danger-text);
   border: 1px solid var(--danger-border);
 }
 
@@ -7331,7 +7333,7 @@
 }
 
 .settings-notice {
-  color: var(--success);
+  color: var(--success-text);
   font-size: 13px;
   margin-top: -14px;
 }
@@ -7481,7 +7483,7 @@
 .settings-app-card.active,
 .settings-release-row.active {
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .settings-app-card span,
@@ -8089,7 +8091,7 @@ col.results-actions-col {
   gap: 4px;
   padding: 14px 18px 10px;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.04), transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent);
 }
 
 .settings-subgroup-title {
@@ -8209,11 +8211,11 @@ col.results-actions-col {
 }
 .settings-inline-warning {
   background: color-mix(in srgb, var(--warning) 12%, transparent);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 .settings-inline-error {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 .settings-inline-notice {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
@@ -8343,7 +8345,7 @@ col.results-actions-col {
 .settings-select:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .settings-select:disabled {
@@ -8853,12 +8855,12 @@ col.results-actions-col {
 }
 
 .repository-row-action.danger {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .repository-row-action.danger:hover:not(:disabled) {
   border-color: var(--danger);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .repository-row-action-muted {
@@ -8902,7 +8904,7 @@ col.results-actions-col {
 .repository-tab.active {
   border-color: var(--accent);
   color: var(--accent);
-  background: rgba(99, 102, 241, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .repository-warning-list {
@@ -8912,7 +8914,7 @@ col.results-actions-col {
   border: 1px solid rgba(245, 158, 11, 0.35);
   border-radius: 8px;
   background: rgba(245, 158, 11, 0.08);
-  color: var(--warning);
+  color: var(--warning-text);
   padding: 10px 12px;
   font-size: 12px;
 }
@@ -9084,7 +9086,7 @@ col.results-actions-col {
 }
 
 .repository-kind-pill {
-  background: rgba(99, 102, 241, 0.12);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
 }
 
@@ -9095,17 +9097,17 @@ col.results-actions-col {
 
 .repository-status-pill.healthy {
   background: rgba(34, 197, 94, 0.14);
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .repository-status-pill.warning {
   background: rgba(245, 158, 11, 0.14);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .repository-status-pill.danger {
   background: rgba(239, 68, 68, 0.14);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .repository-protocol-list {

@@ -1,3 +1,4 @@
+import TooltipButton from './components/ux/TooltipButton'
 import { takeMonitoringTabFocus } from './components/monitoringWorkspaceModel';
 import { contextualHelpHash } from './contextualHelp';
 import { terminalRunReportView } from './appRouting';
@@ -258,7 +259,7 @@ function topbarActionClass(action: TopbarAction): string {
 function renderTopbarAction(action: TopbarAction) {
   if (action.hidden) return null;
   return (
-    <button
+    <TooltipButton
       key={action.id}
       type="button"
       className={topbarActionClass(action)}
@@ -279,7 +280,7 @@ function renderTopbarAction(action: TopbarAction) {
           {action.compactLabel}
         </span>
       )}
-    </button>
+    </TooltipButton>
   );
 }
 
@@ -287,7 +288,7 @@ function renderTopbarMetaChip(chip: TopbarMetaChip) {
   if (chip.hidden) return null;
   if (chip.onClick) {
     return (
-      <button
+      <TooltipButton
         key={chip.id}
         type="button"
         className={`topbar-meta-chip issue-pill-button ${chip.tone || "default"}`}
@@ -296,7 +297,7 @@ function renderTopbarMetaChip(chip: TopbarMetaChip) {
         onClick={chip.onClick}
       >
         {chip.label}
-      </button>
+      </TooltipButton>
     );
   }
   return (

@@ -1,3 +1,4 @@
+import TooltipButton from './ux/TooltipButton'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import { executionLabel, eventLocation, type DebugRunRecord } from './debuggerExperience'
 import { DebugProfiles, DebugVariableWatches, DebugTimeline, DebugRunHistory, DebugBreakpointControls } from './DebuggerSessionTools'
@@ -372,7 +373,7 @@ export function ScriptReplayDebuggerView({
             <div className="debug-options-toolbar">
               <button type="button" className="btn btn-sm btn-secondary" ref={controller.debuggerSettingsBtnRef} aria-expanded={debuggerSettingsOpen} aria-controls="debug-session-options" onClick={() => setDebuggerSettingsOpen(value => !value)}>Debug options ({debugOverrideCount(replayOptions)})</button>
               <span>1 virtual user · {replayOptions.ignoreThinkTime ? 'Think time ignored' : 'Script think time'} · {replayOptions.logLevel} logging{replayOptions.startPaused ? ' · Start paused' : ''}</span>
-              <button type="button" className="btn btn-sm btn-secondary" disabled={!replayReport} title="Download Debug JSON" onClick={() => void onExportSession()}>Export session</button>
+              <TooltipButton type="button" className="btn btn-sm btn-secondary" disabled={!replayReport} title="Download Debug JSON" onClick={() => void onExportSession()}>Export session</TooltipButton>
               {optionsError && <span role="alert">{optionsError}</span>}
             </div>
             {debuggerSettingsOpen && (
@@ -493,7 +494,7 @@ export function ScriptReplayDebuggerView({
                 <span>{selectedReplayEvent ? `Inspecting ${eventLocation(selectedReplayEvent)} · ${selectedReplayEvent.action_name}` : currentDebugAction ? `Current: ${currentDebugAction.action_name}` : 'Select an action to inspect evidence'}</span>
                 <label><input type="checkbox" checked={followExecution} onChange={e => { if (e.target.checked) goCurrent(); else onFollowExecution(false) }} />Follow execution</label>
                 <button type="button" disabled={!replaying || !currentDebugAction} onClick={goCurrent}>Go to current action</button>
-                <button type="button" title="Runs prerequisites; during a paused run, stops at the next matching execution" disabled={!selectedRow || (replaying && !isReplayPaused)} onClick={() => { if (selectedRow) void onRunTo({ phase: selectedRow.phase, action_index: selectedRow.actionIndex, ...(selectedReplayEvent?.step_path?.length ? { step_path: selectedReplayEvent.step_path } : selectedReplayEvent?.request_index != null ? { request_index: selectedReplayEvent.request_index } : selectedItem?.kind === 'leaf' ? { step_path: selectedItem.stepPath } : {}) }) }}>Run to selected action</button>
+                <TooltipButton type="button" title="Runs prerequisites; during a paused run, stops at the next matching execution" disabled={!selectedRow || (replaying && !isReplayPaused)} onClick={() => { if (selectedRow) void onRunTo({ phase: selectedRow.phase, action_index: selectedRow.actionIndex, ...(selectedReplayEvent?.step_path?.length ? { step_path: selectedReplayEvent.step_path } : selectedReplayEvent?.request_index != null ? { request_index: selectedReplayEvent.request_index } : selectedItem?.kind === 'leaf' ? { step_path: selectedItem.stepPath } : {}) }) }}>Run to selected action</TooltipButton>
               </div>
               <div className="script-pane-switch" role="group" aria-label="Debug panes">{(isBrowserScript ? ['outline', 'editor'] as const : ['outline', 'editor', 'inspector'] as const).map(pane => <button type="button" key={pane} aria-pressed={narrowPane === pane} onClick={() => { setNarrowPane(pane); if (pane === 'inspector') setDebugDetailCollapsed(false) }}>{pane === 'outline' ? 'Outline' : pane === 'editor' ? 'Editor' : 'Inspector'}</button>)}</div>
               <div data-narrow-pane={narrowPane}
@@ -603,7 +604,7 @@ export function ScriptReplayDebuggerView({
                                 out.push(
                                   <div key={containerKey} className={`debugger-action-row container ${rollup} ${isCurrent ? 'current' : ''}`} style={indentStyle(item.depth)}>
                                     {isTopLevel ? (
-                                      <button
+                                      <TooltipButton
                                         type="button"
                                         className={`debugger-gutter ${gutterState}`}
                                         title={wholeActive ? `Remove breakpoint (whole ${typeLabel === 'SEQ' ? 'sequence' : 'block'})` : childBpCount > 0 ? `${childBpCount} sub-step breakpoint${childBpCount === 1 ? '' : 's'} — click to break before this block` : 'Break before this block'}
@@ -611,7 +612,7 @@ export function ScriptReplayDebuggerView({
                                         onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
                                       >
                                         <span className="debugger-breakpoint-dot" />
-                                      </button>
+                                      </TooltipButton>
                                     ) : (
                                       <span className="debugger-gutter debugger-gutter-spacer" aria-hidden="true" />
                                     )}
@@ -667,7 +668,7 @@ export function ScriptReplayDebuggerView({
                                   const groupExpanded = effectiveExpandedDebugSequences.has(stepKey)
                                   out.push(
                                     <div key={stepKey} className={`debugger-action-row child ${groupStatus} ${isCurrentGroup ? 'current' : ''}`} style={indentStyle(item.depth)}>
-                                      <button
+                                      <TooltipButton
                                         type="button"
                                         className={`debugger-gutter ${stepBpActive ? 'active' : ''}`}
                                         title={stepBpActive ? 'Remove sub-step breakpoint' : 'Add sub-step breakpoint (fires every iteration)'}
@@ -675,7 +676,7 @@ export function ScriptReplayDebuggerView({
                                         onClick={() => void toggleStepPathBreakpoint(phase, actionIndex, item.stepPath)}
                                       >
                                         <span className="debugger-breakpoint-dot" />
-                                      </button>
+                                      </TooltipButton>
                                       <button type="button" className="debugger-action-row-main" aria-expanded={groupExpanded} onClick={() => toggleDebugSequenceExpanded(stepKey)}>
                                         <span className="debugger-action-row-head">
                                           <span className="replay-event-phase">
@@ -751,7 +752,7 @@ export function ScriptReplayDebuggerView({
                                     style={indentStyle(item.depth)}
                                     ref={node => { if (eventIndex != null) replayEventRefs.current[eventIndex] = node }}
                                   >
-                                    <button
+                                    <TooltipButton
                                       type="button"
                                       className={`debugger-gutter ${bpActive ? 'active' : ''}`}
                                       data-disabled={disabledBreakpointKeys.has(bpKey)}
@@ -760,7 +761,7 @@ export function ScriptReplayDebuggerView({
                                       onClick={() => isHttpChild ? void toggleDebugBreakpoint(phase, actionIndex, item.requestIndex) : void toggleStepPathBreakpoint(phase, actionIndex, item.stepPath)}
                                     >
                                       <span className="debugger-breakpoint-dot" />
-                                    </button>
+                                    </TooltipButton>
                                     <button
                                       type="button"
                                       className="debugger-action-row-main"
@@ -803,7 +804,7 @@ export function ScriptReplayDebuggerView({
                                   className={`debugger-action-row ${rowStatus} ${isSelectedRow ? 'selected' : ''} ${isCurrentRow ? 'current' : ''}`}
                                   ref={node => { if (eventIndex != null) replayEventRefs.current[eventIndex] = node }}
                                 >
-                                  <button
+                                  <TooltipButton
                                     type="button"
                                     className={`debugger-gutter ${breakpointActive ? 'active' : ''}`}
                                     data-disabled={disabledBreakpointKeys.has(rowKey)}
@@ -812,7 +813,7 @@ export function ScriptReplayDebuggerView({
                                     onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
                                   >
                                     <span className="debugger-breakpoint-dot" />
-                                  </button>
+                                  </TooltipButton>
                                   <button
                                     type="button"
                                     className="debugger-action-row-main"
@@ -924,7 +925,7 @@ export function ScriptReplayDebuggerView({
                       )}
                       <button type="button" role="tab" aria-selected={debuggerTab === 'variables'} className={debuggerTab === 'variables' ? 'active' : ''} onClick={() => setDebuggerTab('variables')} tabIndex={(debuggerTab === 'variables') ? 0 : -1}>{replaying ? 'Live Variables' : 'Variables'}</button>
                     </TabList>
-                    <button
+                    <TooltipButton
                       type="button"
                       className="debugger-pane-close"
                       title="Close debug detail panel"
@@ -932,7 +933,7 @@ export function ScriptReplayDebuggerView({
                       onClick={() => { setDebugDetailCollapsed(true); setNarrowPane('editor') }}
                     >
                       ×
-                    </button>
+                    </TooltipButton>
                   </div>
                   <div className="debugger-center-body">
                     {debuggerTab === 'variables' ? (
@@ -1356,8 +1357,8 @@ export function ScriptReplayDebuggerView({
                   <div className="debugger-bottom-tabs">
                     <button type="button" aria-label={dockCollapsed ? "Expand logs and problems" : "Collapse logs and problems"} onClick={() => setDockCollapsed(value => !value)}>{dockCollapsed ? "Expand" : "Collapse"}</button>
                     <TabList role="tablist" aria-label="Debug logs and problems" className="debugger-bottom-tab-list" onKeyDown={handleTabKey}>
-                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'console'} className={debuggerBottomTab === 'console' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('console') }} title="Wire log — raw protocol request/response and engine output" tabIndex={(debuggerBottomTab === 'console') ? 0 : -1}>Engine logs</button>
-                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'timeline'} className={debuggerBottomTab === 'timeline' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('timeline') }} title="Flow log — actions, transactions, and variable changes in order" tabIndex={(debuggerBottomTab === 'timeline') ? 0 : -1}>Timeline</button>
+                    <TooltipButton type="button" role="tab" aria-selected={debuggerBottomTab === 'console'} className={debuggerBottomTab === 'console' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('console') }} title="Wire log — raw protocol request/response and engine output" tabIndex={(debuggerBottomTab === 'console') ? 0 : -1}>Engine logs</TooltipButton>
+                    <TooltipButton type="button" role="tab" aria-selected={debuggerBottomTab === 'timeline'} className={debuggerBottomTab === 'timeline' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('timeline') }} title="Flow log — actions, transactions, and variable changes in order" tabIndex={(debuggerBottomTab === 'timeline') ? 0 : -1}>Timeline</TooltipButton>
                     <button type="button" role="tab" aria-selected={debuggerBottomTab === 'problems'} className={debuggerBottomTab === 'problems' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('problems') }} tabIndex={(debuggerBottomTab === 'problems') ? 0 : -1}>Problems{problemCount + runtimeFailures.length > 0 ? ` ${problemCount + runtimeFailures.length}` : ''}</button>
 
                     </TabList>

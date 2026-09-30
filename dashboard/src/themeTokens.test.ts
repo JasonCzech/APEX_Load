@@ -143,6 +143,16 @@ describe('dashboard theme tokens', () => {
     expect(contrast(accentContrast, accent)).toBeGreaterThanOrEqual(4.5)
   })
 
+  it.each([':root', ":root[data-theme='light']", ":root[data-theme='solarized-dark']", ":root[data-theme='solarized-light']", ":root[data-theme='monokai-dimmed']"])('%s keeps semantic status text readable on tinted cards', selector => {
+    const block = themeBlock(selector)
+    const card = rgbaToken(block, 'bg-card')
+    const base = composite(card.color, rgb(token(block, 'bg-primary')), card.alpha)
+    for (const status of ['warning', 'danger', 'success', 'info']) {
+      const fill = rgbaToken(block, `${status}-bg`)
+      expect(rgbContrast(rgb(token(block, `${status}-text`)), composite(fill.color, base, fill.alpha)), status).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
   it('uses the accessible secondary text token for infrastructure readiness summaries', () => {
     const rule = pagesCss.match(/\.monitor-infrastructure-summary\s*\{([\s\S]*?)\}/)?.[1] || ''
     expect(rule).toContain('color: var(--text-secondary)')

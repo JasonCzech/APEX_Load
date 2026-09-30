@@ -1965,6 +1965,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
             <div className="empty-card">
               <p>No result sources yet.</p>
               <p className="empty-hint">Run a scenario or pull a remote result for this release to populate the library.</p>
+              {onNavigate && <button className="btn btn-primary" onClick={() => onNavigate('new-test')}>Create a test</button>}
             </div>
           ) : filteredRows.length === 0 ? (
             <div className="empty-card">

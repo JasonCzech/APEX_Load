@@ -10,7 +10,7 @@ export default function ThemeToggle({ theme, onThemeChange }: ThemeToggleProps) 
     <div className="theme-toggle" style={{ display: 'flex', alignItems: 'center' }}>
       <select
         className="control-input"
-        style={{ padding: '4px 8px', borderRadius: 'var(--radius)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)', fontSize: '14px', outline: 'none' }}
+        style={{ padding: '4px 8px', borderRadius: 'var(--radius)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)', fontSize: '14px' }}
         value={theme}
         onChange={(e) => onThemeChange(e.target.value as DashboardThemePreference)}
         aria-label="Dashboard color theme"

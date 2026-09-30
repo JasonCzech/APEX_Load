@@ -54,6 +54,7 @@ function ArchiveHarness({ test, baselineId }: { test: TestSummary | null; baseli
       <span data-testid="sort">{model.archiveTransactionSort ? `${model.archiveTransactionSort.key}:${model.archiveTransactionSort.direction}` : 'none'}</span>
       <span data-testid="status-filter">{model.archiveTransactionFilters.status || 'none'}</span>
       <span data-testid="error">{model.archiveError || 'none'}</span>
+      <button data-testid="retry" onClick={model.retryArchiveReport}>Retry report</button>
       <button data-testid="next" onClick={() => model.onNextPage()}>next</button>
       <button data-testid="inspect" onClick={() => model.onExpandedArchiveEventChange('row-1')}>inspect</button>
       <button data-testid="set-group" onClick={() => model.onSelectedArchiveGroupChange('Checkout')}>group</button>
@@ -85,6 +86,17 @@ describe('useExecutionArchiveModel', () => {
     container.remove()
     setDesktopApiCapability('')
     vi.clearAllMocks()
+  })
+
+  it('clears a report failure and loads fresh evidence on retry', async () => {
+    apiMock.getTestArchiveReport.mockRejectedValueOnce(new Error('Archive temporarily unavailable'))
+    await act(async () => root.render(<ArchiveHarness test={buildArchivedTest()} />))
+    expect(readTestId('error')).toBe('Archive temporarily unavailable')
+    expect(readTestId('loading')).toBe('idle')
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="retry"]')!.click())
+    expect(apiMock.getTestArchiveReport).toHaveBeenCalledTimes(2)
+    expect(readTestId('error')).toBe('none')
+    expect(readTestId('loading')).toBe('idle')
   })
 
   it('loads archive report, auto-selects the first action, and fetches transactions', async () => {

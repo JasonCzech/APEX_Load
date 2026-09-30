@@ -18,6 +18,22 @@ this directly. Suspect timing before suspecting the test.
 | `TestRunPreparedTestRetainsTestIdentityOnPollTimeout` | 2026-08-18 | 2 full-suite failures; 0 of 10 isolated repetitions before diagnosis | A 10 ms command-wide deadline could expire during preparation, before a test identity existed | QA program | No — fixed at the cause | n/a | **FIXED** |
 | `TestExecuteControllerCIAbortsOnCancellation` | 2026-08-18 | 1 concurrent full-suite failure; isolated and serial full-suite reruns passed | Under investigation: cancellation returned the expected result, but controller-teardown confirmation exceeded its deadline under three-lane CPU contention | QA program | No | n/a | **OBSERVED — first occurrence** |
 
+## Dashboard draft restoration observation — 2026-09-30
+
+During the design-consistency full dashboard cycle, `workflow-new-test.spec.ts` →
+`New Test saves drafts without execution, retains both tabs and validates recurring triggers`
+failed once in dev-admin at line 141: after **Restore saved draft**, Run Name became
+`Duplicate workload` instead of `Saved draft only`. No retries were enabled. The
+failure artifact is `dashboard/test-results/dev-admin/workflow-new-test-New-Test-bc9e9-alidates-recurring-triggers/`.
+An isolated follow-up run passed (1/1); this does not erase the original signal.
+Root cause: the Restore button became available from local storage before the
+scenario catalog request completed. Its empty catalog then produced a false
+“scenario has changed or is no longer available” error. Restore now waits for the
+current project catalog, with a visible explanation. A delayed-catalog unit test
+covers the race. Owner: dashboard UX follow-up. Status: fixed; delayed-catalog unit coverage and the draft workflow pass in
+both dev-admin and local-auth. No quarantine. The theme
+control matrix passed separately in both authentication profiles.
+
 ## FLAKE-3 — apexctl cancellation teardown confirmation
 
 **Location:** `cmd/apexctl/ci_test.go:1196`

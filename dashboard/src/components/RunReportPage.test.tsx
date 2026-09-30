@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => ({
   archiveModel: {
     hasArchive: false,
     archiveError: '',
+    retryArchiveReport: vi.fn(),
     archiveLoading: false,
     archiveReport: null as RunArchiveReport | null,
     archiveAnalysis: null,
@@ -220,6 +221,7 @@ describe('RunReportPage', () => {
     mocks.polling.test = null
     mocks.polling.error = ''
     mocks.archiveModel.archiveReport = null
+    mocks.archiveModel.archiveError = ''
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -233,6 +235,18 @@ describe('RunReportPage', () => {
     await act(async () => root.unmount())
     container.remove()
     vi.clearAllMocks()
+  })
+
+  it('offers recovery instead of pending findings after the archive request fails', async () => {
+    mocks.polling.test = buildTest('COMPLETE', true)
+    mocks.archiveModel.archiveError = 'Archive temporarily unavailable'
+    await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    expect(container.textContent).toContain('Report could not be loaded')
+    expect(container.textContent).not.toContain('Findings will appear')
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry report')!.click())
+    expect(mocks.archiveModel.retryArchiveReport).toHaveBeenCalledOnce()
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'View execution details')!.click())
+    expect(onNavigateReport).toHaveBeenCalledWith(expect.objectContaining({ section: 'execution' }))
   })
 
   it.each(['FAILED', 'COMPLETE', 'ABORTED'] as const)('keeps an unarchived %s run in the shared Results shell', async status => {
@@ -340,6 +354,7 @@ describe('RunReportPage', () => {
   it('does not label controller timing as archived evidence while the archive report is unavailable', async () => {
     mocks.polling.test = { ...buildTest('COMPLETE'), started_at: '2026-05-12T20:00:00Z', ended_at: '2026-05-12T20:05:00Z' }
     mocks.archiveModel.archiveReport = null
+    mocks.archiveModel.archiveError = ''
     await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
     expect(container.textContent).toContain('Lifecycle elapsed 5m')
     expect(container.textContent).toContain('Archived evidence elapsed Not recorded')

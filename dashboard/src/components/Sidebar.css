@@ -325,7 +325,6 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   min-height: 44px;
 }
 
-.sidebar.collapsed .nav-item::after,
 .sidebar.collapsed .workspace-summary::after {
   position: absolute;
   left: calc(100% + 8px);
@@ -346,17 +345,11 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   transition: opacity 0.12s ease, transform 0.12s ease;
 }
 
-.sidebar.collapsed .nav-item::after {
-  content: attr(data-nav-label);
-}
-
 .sidebar.collapsed .workspace-summary::after {
   content: attr(data-workspace-label);
   top: 8px;
 }
 
-.sidebar.collapsed .nav-item:hover::after,
-.sidebar.collapsed .nav-item:focus-visible::after,
 .sidebar.collapsed .workspace-summary:hover::after,
 .sidebar.collapsed .workspace-summary:focus-visible::after {
   opacity: 1;

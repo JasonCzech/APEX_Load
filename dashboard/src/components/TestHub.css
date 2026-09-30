@@ -36,7 +36,7 @@
 }
 
 .scenario-item.has-active {
-  background: rgba(99, 102, 241, 0.03);
+  background: color-mix(in srgb, var(--accent) 3%, transparent);
 }
 
 .scenario-item.expanded {
@@ -110,7 +110,7 @@
 
 .scenario-shakeout-badge {
   background: rgba(239, 68, 68, 0.14);
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: 10px;
   font-weight: 700;
   padding: 3px 8px;
@@ -229,7 +229,7 @@
 
 .run-live-stats {
   font-size: 12px;
-  color: var(--success);
+  color: var(--success-text);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -237,7 +237,7 @@
 .run-alert-badge {
   font-size: 11px;
   font-weight: 700;
-  color: var(--danger);
+  color: var(--danger-text);
   background: rgba(239, 68, 68, 0.12);
   border: 1px solid rgba(239, 68, 68, 0.2);
   padding: 4px 8px;
@@ -296,7 +296,7 @@
   padding: 12px 14px;
   border: 1px solid var(--accent, #6366f1);
   border-radius: 10px;
-  background: rgba(99, 102, 241, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .scenario-name-prompt > span {
@@ -327,13 +327,13 @@
 }
 
 .scenario-builder-progress span.ready {
-  color: var(--success);
+  color: var(--success-text);
   border-color: rgba(34, 197, 94, 0.28);
   background: rgba(34, 197, 94, 0.08);
 }
 
 .scenario-builder-progress span.blocked {
-  color: var(--danger);
+  color: var(--danger-text);
   border-color: rgba(239, 68, 68, 0.28);
   background: rgba(239, 68, 68, 0.08);
 }
@@ -580,7 +580,7 @@
 
 .stepped-ramp-equation em {
   flex-basis: 100%;
-  color: var(--warning);
+  color: var(--warning-text);
   font-style: normal;
 }
 
@@ -1000,7 +1000,7 @@
 }
 
 .scenario-source-card.selected,
-.scenario-source-card:hover,
+.scenario-source-card:hover:not(:disabled),
 .scenario-shape-catalog-card.selected {
   border-color: var(--accent);
   background: var(--accent-soft);
@@ -1614,7 +1614,7 @@
 }
 
 .scenario-field-error {
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: 12px;
   font-weight: 600;
 }
@@ -1856,13 +1856,13 @@
 }
 
 .scenario-stage-status.ok {
-  color: var(--success);
+  color: var(--success-text);
   background: var(--success-bg);
   border: 1px solid var(--success-border);
 }
 
 .scenario-stage-status.warning {
-  color: var(--warning);
+  color: var(--warning-text);
   background: var(--warning-bg);
   border: 1px solid var(--warning-border);
 }
@@ -2006,7 +2006,7 @@
 }
 
 .scenario-load-status.ready {
-  color: var(--success);
+  color: var(--success-text);
   background: rgba(34, 197, 94, 0.12);
 }
 
@@ -2016,7 +2016,7 @@
 }
 
 .scenario-load-status.blocked {
-  color: var(--danger);
+  color: var(--danger-text);
   background: rgba(239, 68, 68, 0.12);
 }
 
@@ -2515,7 +2515,7 @@
 /* Scenario authoring: compact hierarchy and usable controls at operator widths. */
 fieldset.scenario-builder { min-width: 0; border: 0; margin-inline: 0; }
 .scenario-source-pending, .scenario-save-notice { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-secondary); }
-.scenario-save-notice { color: var(--success); }
+.scenario-save-notice { color: var(--success-text); }
 .scenario-create-button { margin: 12px 0; }
 .scenario-builder-actions { flex-wrap: wrap; padding-bottom: 12px; }
 .scenario-add-group-card { min-height: 44px; padding: 10px 14px; flex-direction: row; justify-content: flex-start; }
@@ -2624,3 +2624,5 @@ fieldset.scenario-builder { min-width: 0; border: 0; margin-inline: 0; }
 }
 .scenario-builder .new-test-readiness-body { padding: 16px; display: grid; gap: 12px; }
 .scenario-builder .new-test-readiness-body li p, .scenario-builder .scenario-review-details li p { margin-top: 6px; }
+
+.scenario-source-card:disabled { cursor: not-allowed; opacity: .65; }

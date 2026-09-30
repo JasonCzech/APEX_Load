@@ -1,3 +1,4 @@
+import TooltipButton from './ux/TooltipButton'
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
 import { MappingReviewDetails } from './MappingReviewDetails'
 import { useMappingReviewState } from './useMappingReviewState'
@@ -666,33 +667,31 @@ export default function SourceMappingReview({
               const category = chip.key as MappingCategory
               const active = categoryFilter === category
               return (
-                <button
+                <TooltipButton
                   key={chip.key}
                   type="button"
                   className={`source-map-status source-map-status-filter ${CATEGORY_CLASS[chip.key]}${active ? ' active' : ''}`}
                   title={chip.tooltip}
-                  data-tooltip={chip.tooltip}
                   aria-pressed={active}
                   disabled={chip.value === 0}
                   onClick={() => toggleCategoryFilter(category)}
                 >
                   {chip.label}: {chip.value}
-                </button>
+                </TooltipButton>
               )
             })}
             {dslDocument && (
-              <button type="button" disabled={identity.checking} aria-expanded={showNoOrigin} onClick={() => setShowNoOrigin(value => !value)}
+              <TooltipButton type="button" disabled={identity.checking} aria-expanded={showNoOrigin} onClick={() => setShowNoOrigin(value => !value)}
                 className={`source-map-status ${coverage.dslWithoutOrigin > 0 ? 'unsupported' : 'converted'}`}
                 title={COVERAGE_TOOLTIPS.dslWithoutOrigin}
-                data-tooltip={COVERAGE_TOOLTIPS.dslWithoutOrigin}
               >
                 DSL without source origin: {identity.checking ? 'Verifying…' : coverage.dslWithoutOrigin}
-              </button>
+              </TooltipButton>
             )}
           </div>
           {onToggleWorkspaceMaximized && (
             <div className="source-map-header-actions">
-              <button
+              <TooltipButton
                 type="button"
                 className="btn btn-sm btn-ghost source-map-workspace-toggle"
                 aria-pressed={workspaceMaximized}
@@ -700,7 +699,7 @@ export default function SourceMappingReview({
                 onClick={onToggleWorkspaceMaximized}
               >
                 {workspaceMaximized ? 'Restore workspace' : 'Expand workspace'}
-              </button>
+              </TooltipButton>
             </div>
           )}
         </div>

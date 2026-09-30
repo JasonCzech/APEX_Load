@@ -62,6 +62,7 @@ export const DEFAULT_ARCHIVE_TRANSACTION_FILTERS: ArchiveTransactionFilters = {
 
 interface ExecutionArchiveModel {
   hasArchive: boolean
+  retryArchiveReport: () => void
   archiveError: string
   archiveLoading: boolean
   archiveReport: RunArchiveReport | null
@@ -135,6 +136,8 @@ export function useExecutionArchiveModel(test: TestSummary | null, includeReleas
   const [archiveAnalysisLoading, setArchiveAnalysisLoading] = useState(false)
   const [archiveTransactionsLoading, setArchiveTransactionsLoading] = useState(false)
   const [archiveError, setArchiveError] = useState('')
+  const [reportAttempt, setReportAttempt] = useState(0)
+  const retryArchiveReport = useCallback(() => setReportAttempt(value => value + 1), [])
   const [archiveAnalysisError, setArchiveAnalysisError] = useState('')
   const [selectedArchiveAction, setSelectedArchiveAction] = useState('')
   const [selectedArchiveSOAPOperation, setSelectedArchiveSOAPOperation] = useState('')
@@ -248,7 +251,7 @@ export function useExecutionArchiveModel(test: TestSummary | null, includeReleas
     return () => {
       cancelled = true
     }
-  }, [api, archiveCompletedAt, hasArchive, testID, testStatus, includeReleaseTrend])
+  }, [api, archiveCompletedAt, hasArchive, testID, testStatus, includeReleaseTrend, reportAttempt])
 
   useEffect(() => {
     if (!hasArchive || !isTerminalStatus(testStatus) || !selectedArchiveAction) {
@@ -479,6 +482,7 @@ export function useExecutionArchiveModel(test: TestSummary | null, includeReleas
   return {
     hasArchive,
     archiveError,
+    retryArchiveReport,
     archiveLoading,
     archiveReport,
     archiveAnalysis,

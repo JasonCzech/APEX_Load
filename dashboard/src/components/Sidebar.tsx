@@ -1,3 +1,4 @@
+import TooltipButton from './ux/TooltipButton'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useAuthApi } from '../hooks/api/useAuthApi'
@@ -450,7 +451,7 @@ export default function Sidebar({
         >
             <p className="workspace-context-heading">Change workspace</p>
       <div className="sidebar-project" ref={domainSelectorRef}>
-        <button
+        <TooltipButton
           className="project-selector"
           onClick={toggleDomainMenu}
           title={activeDomain?.name || 'Domain'}
@@ -465,7 +466,7 @@ export default function Sidebar({
               <span className="project-chevron">⌄</span>
             </>
           )}
-        </button>
+        </TooltipButton>
         {domainOpen && !collapsed && (
           <div className="project-menu" id="sidebar-domain-options" aria-label="Domain options">
             <div className="project-menu-list">
@@ -488,7 +489,7 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar-project" ref={projectSelectorRef}>
-        <button
+        <TooltipButton
           className="project-selector"
           onClick={toggleProjectMenu}
           title={activeProject?.name || 'Project'}
@@ -503,7 +504,7 @@ export default function Sidebar({
               <span className="project-chevron">⌄</span>
             </>
           )}
-        </button>
+        </TooltipButton>
         {projectOpen && !collapsed && (
           <div className="project-menu" id="sidebar-project-options" aria-label="Project options">
             <div className="project-menu-list">
@@ -543,7 +544,7 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar-project" ref={applicationSelectorRef}>
-        <button
+        <TooltipButton
           className="project-selector"
           onClick={toggleApplicationMenu}
           title={activeApplication?.name || 'Application'}
@@ -558,7 +559,7 @@ export default function Sidebar({
               <span className="project-chevron">⌄</span>
             </>
           )}
-        </button>
+        </TooltipButton>
         {applicationOpen && !collapsed && (
           <div className="project-menu" id="sidebar-application-options" aria-label="Application options">
             <div className="project-menu-list">
@@ -602,7 +603,7 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar-project" ref={releaseSelectorRef}>
-        <button
+        <TooltipButton
           className="project-selector"
           onClick={toggleReleaseMenu}
           title={activeRelease?.name || 'Release'}
@@ -617,7 +618,7 @@ export default function Sidebar({
               <span className="project-chevron">⌄</span>
             </>
           )}
-        </button>
+        </TooltipButton>
         {releaseOpen && !collapsed && (
           <div className="project-menu" id="sidebar-release-options" aria-label="Release options">
             <div className="project-menu-list">
@@ -658,7 +659,7 @@ export default function Sidebar({
 
       <nav className="sidebar-nav" aria-label="Primary navigation">
         {visibleNavItemsById.get('new-test') && (
-          <button
+          <TooltipButton
             className={`nav-item nav-item-primary ${active === 'new-test' ? 'active' : ''}`}
             onClick={() => onNavigate('new-test')}
             title="New Test"
@@ -668,7 +669,7 @@ export default function Sidebar({
           >
             <span className="nav-icon">{visibleNavItemsById.get('new-test')?.icon}</span>
             {!collapsed && <span className="nav-label">New Test</span>}
-          </button>
+          </TooltipButton>
         )}
         {NAV_GROUPS.map(group => {
           const items = group.itemIds
@@ -679,7 +680,7 @@ export default function Sidebar({
             <div className="sidebar-nav-group" key={group.label}>
               {!collapsed && <p className="sidebar-nav-group-label">{group.label}</p>}
               {items.map(item => (
-                <button
+                <TooltipButton
                   key={item.id}
                   className={`nav-item ${active === item.id ? 'active' : ''}`}
                   onClick={() => onNavigate(item.id)}
@@ -690,7 +691,7 @@ export default function Sidebar({
                 >
                   <span className="nav-icon">{item.icon}</span>
                   {!collapsed && <span className="nav-label">{item.label}</span>}
-                </button>
+                </TooltipButton>
               ))}
             </div>
           )
@@ -781,7 +782,7 @@ export default function Sidebar({
             <BuildBadge placement="up" />
           </div>
         </div>
-        <button
+        <TooltipButton
           className="collapse-btn"
           onClick={() => setCollapsed(!collapsed)}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -795,7 +796,7 @@ export default function Sidebar({
               <polyline points="15 18 9 12 15 6" />
             )}
           </svg>
-        </button>
+        </TooltipButton>
       </div>
       {showProjectModal && (
         <ProjectModal

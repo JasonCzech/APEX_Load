@@ -362,6 +362,7 @@ describe('ResultsPage', () => {
   })
 
   it('shows a loading state before rendering an empty release result list', async () => {
+    const navigate = vi.fn()
     let resolveTests: (value: { tests: never[] }) => void = () => {}
     apiMock.listTests.mockReturnValueOnce(new Promise(resolve => {
       resolveTests = resolve
@@ -372,6 +373,7 @@ describe('ResultsPage', () => {
     await act(async () => {
       root.render(
         <ResultsPage
+          onNavigate={navigate}
           testStatuses={{}}
           onSelectTest={vi.fn()}
 		  activeApplication={{ id: 'app-1', project_id: 'project-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
@@ -392,6 +394,8 @@ describe('ResultsPage', () => {
 
     expect(container.textContent).not.toContain('Loading result sources...')
     expect(container.textContent).toContain('No result sources yet.')
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Create a test')!.click())
+    expect(navigate).toHaveBeenCalledWith('new-test')
   })
 
   it('disambiguates comparison labels when selected runs have the same scenario name', async () => {

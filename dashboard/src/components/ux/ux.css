@@ -77,8 +77,8 @@
 }
 .ux-form-field { display: grid; gap: 8px; margin-top: 16px; }
 .ux-form-field > label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
-.ux-form-field :is(input, select, textarea) { box-sizing: border-box; width: 100%; min-height: 36px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); padding: 8px 12px; font: inherit; }
-.ux-form-field :is(input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ux-form-field :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { box-sizing: border-box; width: 100%; min-height: 36px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); padding: 8px 12px; font: inherit; }
+.ux-form-field :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ux-panel-toggle > svg { flex: 0 0 16px; }
 .ux-panel-toggle > span { font-size: 12px; line-height: 1.4; }
 .run-calendar-nav .run-calendar-nav-btn { display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; }
@@ -141,3 +141,11 @@
 .library-source-controls .ux-library-toolbar { margin-block: 4px; gap: 4px; }
 .library-source-controls .library-source-header h3 { margin-bottom: 4px; font-size: 14px; }
 .library-source-controls .library-toolbar-subtitle { margin-bottom: 0; }
+
+.settings-filter-field { display: grid; gap: 6px; flex: 1 1 180px; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.settings-inline-actions:has(.settings-filter-field) { align-items: end; flex-wrap: wrap; }
+.ux-library-toolbar-main > label, .ux-library-filter-fields > label { font-size: 12px; font-weight: 600; color: var(--text-secondary); display: flex; flex-direction: column; gap: 6px; }
+
+.library-filter:has(select) { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+
+.library-filter > span { color: var(--text-muted); font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }

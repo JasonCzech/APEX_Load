@@ -1,0 +1,4 @@
+.ux-tooltip-anchor { display: contents; }
+/* A disabled button cannot receive focus; its wrapper provides keyboard help. */
+.ux-tooltip-anchor:has(> button:disabled) { display: inline-flex; }
+.ux-tooltip { position: fixed; z-index: 10000; width: max-content; max-width: min(320px, calc(100vw - 16px)); padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); box-shadow: var(--shadow-md); font-size: 12px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }

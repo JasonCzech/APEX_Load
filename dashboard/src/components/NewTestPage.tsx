@@ -544,7 +544,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [pageMode, setPageMode] = useState<'launch' | 'schedules'>('launch')
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const { runGuarded } = useNavigationGuardRunner()
-  const [scenarioState, setScenarioState] = useState<{ projectID: string; scenarios: StoredScenario[] }>({ projectID: '', scenarios: [] })
+  const [scenarioState, setScenarioState] = useState<{ projectID: string; scenarios: StoredScenario[]; loaded: boolean }>({ projectID: '', scenarios: [], loaded: false })
+  const scenarioCatalogReady = scenarioState.projectID === activeProjectID && scenarioState.loaded
   const scenarios = scenarioState.projectID === activeProjectID ? scenarioState.scenarios : EMPTY_SCENARIOS
   const [scenarioId, setScenarioId] = useState(initialScenarioId || '')
   const [captureRetry, setCaptureRetry] = useState(0)
@@ -744,7 +745,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   })
 
   useLayoutEffect(() => {
-    setScenarioState({ projectID: activeProjectID, scenarios: [] })
+    setScenarioState({ projectID: activeProjectID, scenarios: [], loaded: false })
     setTimeslotState({ projectID: activeProjectID, timeslots: [] })
     setScenarioId('')
     setSelectedTimeslotId('')
@@ -822,7 +823,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     const projectID = activeProjectID
     const requestGeneration = ++scenarioRequestGenerationRef.current
     if (!projectID) {
-      setScenarioState({ projectID: '', scenarios: [] })
+      setScenarioState({ projectID: '', scenarios: [], loaded: false })
       setScenarioId('')
       return
     }
@@ -833,7 +834,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
         || activeProjectIDRef.current !== projectID
       ) return
       const next = res.scenarios || []
-      setScenarioState({ projectID, scenarios: next })
+      setScenarioState({ projectID, scenarios: next, loaded: true })
       setScenarioId(prev => {
         if (next.some(item => item.id === prev)) return prev
         if (initialScenarioId && next.some(item => item.id === initialScenarioId)) return initialScenarioId
@@ -2666,7 +2667,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       <div className="new-test-draft-toolbar">
         <span>Run Setup and Schedules keep your edits when switching tabs.</span>
         <button type="button" className="btn btn-secondary" onClick={() => saveDraftRef.current()} disabled={!scenario}>Save draft</button>
-        {savedDraft && <button type="button" className="btn btn-secondary" onClick={() => runGuarded(() => {
+        {savedDraft && <button type="button" className="btn btn-secondary" disabled={!scenarioCatalogReady} aria-describedby={!scenarioCatalogReady ? 'new-test-restore-help' : undefined} onClick={() => runGuarded(() => {
           if (!scenarios.some(item => item.id === savedDraft.scenarioId && (item.updated_at || '') === savedDraft.scenarioUpdatedAt)) {
             setError('The saved scenario has changed or is no longer available. Select it again and review its current settings.')
             return
@@ -2674,6 +2675,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
           setScenarioId(savedDraft.scenarioId)
           setRestoreDraft(savedDraft)
         })}>Restore saved draft</button>}
+        {savedDraft && !scenarioCatalogReady && <span id="new-test-restore-help">The scenario list must load before this draft can be restored.</span>}
       </div>
       {draftNotice && <p role="status">{draftNotice}</p>}
       {error && <ErrorDiagnostic error={error} fallback="Unable to create or load test setup" compact className="new-test-error-diagnostic" />}
@@ -3326,7 +3328,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                 </div>
               </div>
               <div className="settings-group new-test-setup-grid">
-                <label>Launch application<select aria-label="Launch application" className="settings-input" value={activeApplication?.id || ''} onChange={event => { const next = applications.find(item => item.id === event.target.value); if (next) { launchPlacementPinnedRef.current = true; explicitPlacementRef.current = true; setLaunchApplication(next) } }}><option value="" disabled>Select application</option>{applications.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+                <label className="settings-filter-field">Launch application<select aria-label="Launch application" className="settings-input" value={activeApplication?.id || ''} onChange={event => { const next = applications.find(item => item.id === event.target.value); if (next) { launchPlacementPinnedRef.current = true; explicitPlacementRef.current = true; setLaunchApplication(next) } }}><option value="" disabled>Select application</option>{applications.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
                 <div className="setting-row">
                   <div className="setting-info">
                     <span className="setting-label" id="new-test-run-name-label">Run Name</span>

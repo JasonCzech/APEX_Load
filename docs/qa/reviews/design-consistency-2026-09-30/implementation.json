@@ -1,0 +1,99 @@
+{
+  "status": "Implemented and verified",
+  "changes": [
+    {
+      "finding": "F01",
+      "area": "Theme selector",
+      "change": "Removed the inline outline override so keyboard focus uses the shared theme ring."
+    },
+    {
+      "finding": "F02",
+      "area": "Status contrast",
+      "change": "Adjusted semantic text colors in both Solarized themes. Monitoring badges now use matched background, border and text tokens; audited editor, library and scenario status text uses semantic text colors."
+    },
+    {
+      "finding": "F03",
+      "area": "Native controls",
+      "change": "Added a shared checkbox/radio accent and size, plus text-field, placeholder and disabled baselines. Destructive confirmation keeps its danger accent; FormField no longer stretches checkboxes into text fields."
+    },
+    {
+      "finding": "F04",
+      "area": "Governance dates",
+      "change": "Applied themed input styling to both datetime fields and consistent labels and spacing to the audit filters."
+    },
+    {
+      "finding": "F05",
+      "area": "Hover help",
+      "change": "Added a shared themed TooltipButton and adopted it for sidebar controls, topbar actions, editor controls, debugger controls and source-mapping chips. Supports keyboard help, Escape, viewport positioning, hoverable content and disabled-action explanations. Chart tooltips retain their existing specialized theme helper."
+    },
+    {
+      "finding": "F06",
+      "area": "Focus and selected states",
+      "change": "Replaced fixed indigo decorations in the audited settings, editor and scenario styles with derived theme accents. Pagination focus uses the shared ring."
+    },
+    {
+      "finding": "F07",
+      "area": "Links",
+      "change": "Added a low-specificity themed link and visited-link baseline, preserving component-specific navigation styles."
+    },
+    {
+      "finding": "F08",
+      "area": "Labels and density",
+      "change": "Standardized library filter labels, scenario sorting, launch application and governance filter labels. Retained compact controls where intentional."
+    },
+    {
+      "finding": "F09",
+      "area": "Disabled choices",
+      "change": "Excluded disabled scenario cards from selected-looking hover styles, with a disabled cursor and muted state."
+    },
+    {
+      "finding": "F10",
+      "area": "Report recovery",
+      "change": "Added Retry report, Back to results with workspace scope, and View execution details. Failed requests no longer display pending findings or the empty summary KPI grid. The backend archive failure itself is outside this presentation fix."
+    },
+    {
+      "finding": "F11",
+      "area": "Navigation and empty states",
+      "change": "Preserved distinct navigation families with common focus treatment. Empty Results offers Create a test; a new script library presents a create/import prompt without an empty table scaffold. Saved-draft restoration also waits for the current scenario catalog, preventing a false missing-scenario error during loading."
+    },
+    {
+      "finding": "F12",
+      "area": "Regression protection",
+      "change": "Added five-theme browser assertions to both auth profiles, semantic contrast tests, tooltip interaction/state tests, report retry tests and empty-state navigation coverage."
+    }
+  ],
+  "validation": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed; existing large-chunk advisory remains",
+    "unit": {
+      "files": 434,
+      "passed": 4607,
+      "command": "npm --prefix dashboard test"
+    },
+    "dev_admin_full": {
+      "passed": 164,
+      "skipped": 4,
+      "failed": 0,
+      "command": "APEXLOAD_E2E_PORT=18121 APEXLOAD_E2E_OUTPUT_ROOT=/tmp/apex-theme-full-dev-final scripts/run-e2e.sh"
+    },
+    "local_auth_affected": {
+      "passed": 16,
+      "failed": 0,
+      "files": [
+        "workflow-theme-controls.spec.ts",
+        "workflow-new-test.spec.ts",
+        "workflow-application-secrets.spec.ts"
+      ]
+    },
+    "local_auth_end_to_end_journey": {
+      "passed": 1,
+      "failed": 0,
+      "file": "workflow-local-auth.spec.ts",
+      "case": "sign in, build workspace, import, edit, launch, stop and retrieve the same run"
+    },
+    "theme_matrix": "All five themes passed in both authentication profiles, including final library-label assertions.",
+    "initial_cycle": "The initial test:cycle run was not clean. Dev-admin had three failures, all corrected and covered by the clean full rerun. Local-auth had 77 passes, one skip and seven failures: five final label assertions ran against the earlier embedded build; two setup helpers needed catalog reload/current tab navigation. All seven were covered by passing final-build focused reruns. The complete local-auth profile was not rerun after the last changes."
+  },
+  "final_review": "review.json"
+}
