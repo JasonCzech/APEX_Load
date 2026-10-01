@@ -3344,6 +3344,20 @@ export interface operations {
               "samples"?: number;
               "timestamp"?: string;
             }>;
+            "statistical_findings"?: Array<{
+              "advisory"?: boolean;
+              "baseline_buckets"?: number;
+              "baseline_end"?: string;
+              "baseline_mean"?: number;
+              "baseline_start"?: string;
+              "baseline_stddev"?: number;
+              "current"?: number;
+              "exceeded"?: boolean;
+              "metric_name"?: string;
+              "threshold"?: number;
+              "timestamp"?: string;
+              "z_score"?: number;
+            }>;
             "summary_timeline"?: Array<{
               "active_vusers"?: number;
               "error_pct"?: number;
@@ -25319,6 +25333,7 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
+                "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: ({
                   "browser_render_lag_ms"?: number;
@@ -25670,6 +25685,12 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+                "statistical_findings"?: Array<{
+                  "advisory": boolean;
+                  "baseline_end": string;
+                  "baseline_start": string;
+                  "timestamp": string;
+                }>;
                 "target_tps"?: number;
                 "telemetry"?: ({
                   "browser_render_lag_ms"?: number;
@@ -31799,6 +31820,12 @@ export interface operations {
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
+              "statistical_findings"?: Array<{
+                "advisory": boolean;
+                "baseline_end": string;
+                "baseline_start": string;
+                "timestamp": string;
+              }>;
               "target_tps"?: number;
               "telemetry"?: ({
                 "browser_render_lag_ms"?: number;
@@ -32970,6 +32997,20 @@ export interface operations {
                 }) | null;
                 "tps": number;
               }) | null>;
+              "statistical_findings"?: Array<{
+                "advisory": boolean;
+                "baseline_buckets": number;
+                "baseline_end": string;
+                "baseline_mean": number;
+                "baseline_start": string;
+                "baseline_stddev": number;
+                "current": number;
+                "exceeded": boolean;
+                "metric_name": string;
+                "threshold": number;
+                "timestamp": string;
+                "z_score": number;
+              }>;
               "target_tps"?: number;
               "telemetry"?: ({
                 "browser_render_lag_ms"?: number;
@@ -35575,6 +35616,97 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleDependencyEvidence": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "at"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "advisory": boolean;
+            "coverage": string;
+            "graph"?: ({
+              "edges": Array<{
+                "dependency_type"?: string;
+                "error_pct"?: number;
+                "errors"?: number;
+                "p95_ms"?: number;
+                "source": string;
+                "target": string;
+                "transactions"?: number;
+              }>;
+              "nodes": Array<{
+                "dependency_type"?: string;
+                "error_pct"?: number;
+                "errors"?: number;
+                "id": string;
+                "kind": string;
+                "label": string;
+                "p95_ms"?: number;
+                "status"?: string;
+                "transactions"?: number;
+              }>;
+            }) | null;
+            "interval_seconds": number;
+            "monitors": Array<{
+              "coverage": string;
+              "dependency": string;
+              "metrics": Array<string>;
+              "name": string;
+              "source_id": string;
+              "state": string;
+            }>;
+            "timestamp": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -47294,6 +47426,7 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
+                "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: ({
                   "browser_render_lag_ms"?: number;
@@ -47645,6 +47778,12 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+                "statistical_findings"?: Array<{
+                  "advisory": boolean;
+                  "baseline_end": string;
+                  "baseline_start": string;
+                  "timestamp": string;
+                }>;
                 "target_tps"?: number;
                 "telemetry"?: ({
                   "browser_render_lag_ms"?: number;
@@ -52638,6 +52777,20 @@ export interface operations {
               "samples": number;
               "timestamp": string;
             }>;
+            "statistical_findings"?: Array<{
+              "advisory": boolean;
+              "baseline_buckets": number;
+              "baseline_end": string;
+              "baseline_mean": number;
+              "baseline_start": string;
+              "baseline_stddev": number;
+              "current": number;
+              "exceeded": boolean;
+              "metric_name": string;
+              "threshold": number;
+              "timestamp": string;
+              "z_score": number;
+            }>;
             "summary_timeline"?: Array<{
               "active_vusers": number;
               "error_pct": number;
@@ -57443,6 +57596,12 @@ export interface operations {
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
+              "statistical_findings"?: Array<{
+                "advisory": boolean;
+                "baseline_end": string;
+                "baseline_start": string;
+                "timestamp": string;
+              }>;
               "target_tps"?: number;
               "telemetry"?: ({
                 "browser_render_lag_ms"?: number;
@@ -58614,6 +58773,20 @@ export interface operations {
                 }) | null;
                 "tps": number;
               }) | null>;
+              "statistical_findings"?: Array<{
+                "advisory": boolean;
+                "baseline_buckets": number;
+                "baseline_end": string;
+                "baseline_mean": number;
+                "baseline_start": string;
+                "baseline_stddev": number;
+                "current": number;
+                "exceeded": boolean;
+                "metric_name": string;
+                "threshold": number;
+                "timestamp": string;
+                "z_score": number;
+              }>;
               "target_tps"?: number;
               "telemetry"?: ({
                 "browser_render_lag_ms"?: number;
@@ -69894,6 +70067,8 @@ export interface operations {
       content: {
         "application/json": {
           "collector_id"?: string;
+          "collector_public_key"?: string;
+          "credential_ref"?: string;
           "destination"?: string;
           "enabled"?: boolean;
           "id"?: string;
@@ -69902,6 +70077,7 @@ export interface operations {
           "pack"?: string;
           "project_id"?: string;
           "revision"?: number;
+          "service"?: string;
         };
       };
     };
@@ -69963,6 +70139,8 @@ export interface operations {
       content: {
         "application/json": {
           "collector_id"?: string;
+          "collector_public_key"?: string;
+          "credential_ref"?: string;
           "destination"?: string;
           "enabled"?: boolean;
           "id"?: string;
@@ -69971,6 +70149,7 @@ export interface operations {
           "pack"?: string;
           "project_id"?: string;
           "revision"?: number;
+          "service"?: string;
         };
       };
     };
@@ -70032,6 +70211,8 @@ export interface operations {
       content: {
         "application/json": {
           "collector_id"?: string;
+          "collector_public_key"?: string;
+          "credential_ref"?: string;
           "destination"?: string;
           "enabled"?: boolean;
           "id"?: string;
@@ -70040,6 +70221,7 @@ export interface operations {
           "pack"?: string;
           "project_id"?: string;
           "revision"?: number;
+          "service"?: string;
         };
       };
     };
@@ -73997,6 +74179,12 @@ export interface operations {
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
+              "statistical_findings"?: Array<{
+                "advisory": boolean;
+                "baseline_end": string;
+                "baseline_start": string;
+                "timestamp": string;
+              }>;
               "target_tps"?: number;
               "telemetry"?: ({
                 "browser_render_lag_ms"?: number;
@@ -75168,6 +75356,20 @@ export interface operations {
                 }) | null;
                 "tps": number;
               }) | null>;
+              "statistical_findings"?: Array<{
+                "advisory": boolean;
+                "baseline_buckets": number;
+                "baseline_end": string;
+                "baseline_mean": number;
+                "baseline_start": string;
+                "baseline_stddev": number;
+                "current": number;
+                "exceeded": boolean;
+                "metric_name": string;
+                "threshold": number;
+                "timestamp": string;
+                "z_score": number;
+              }>;
               "target_tps"?: number;
               "telemetry"?: ({
                 "browser_render_lag_ms"?: number;
@@ -76677,6 +76879,7 @@ export interface operations {
     requestBody?: {
       content: {
         "application/json": {
+          "capacity"?: Record<string, unknown>;
           "expected_revision"?: string;
           "preparation_id"?: string;
           "revision"?: number;
@@ -76828,6 +77031,7 @@ export interface operations {
     requestBody?: {
       content: {
         "application/json": {
+          "capacity"?: Record<string, unknown>;
           "expected_revision"?: string;
           "preparation_id"?: string;
           "revision"?: number;
@@ -85165,6 +85369,7 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
+                "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: ({
                   "browser_render_lag_ms"?: number;
@@ -85516,6 +85721,12 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+                "statistical_findings"?: Array<{
+                  "advisory": boolean;
+                  "baseline_end": string;
+                  "baseline_start": string;
+                  "timestamp": string;
+                }>;
                 "target_tps"?: number;
                 "telemetry"?: ({
                   "browser_render_lag_ms"?: number;
@@ -86564,6 +86775,7 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
+                "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: ({
                   "browser_render_lag_ms"?: number;
@@ -86915,6 +87127,12 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+                "statistical_findings"?: Array<{
+                  "advisory": boolean;
+                  "baseline_end": string;
+                  "baseline_start": string;
+                  "timestamp": string;
+                }>;
                 "target_tps"?: number;
                 "telemetry"?: ({
                   "browser_render_lag_ms"?: number;
@@ -87963,6 +88181,7 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
+                "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: ({
                   "browser_render_lag_ms"?: number;
@@ -88314,6 +88533,12 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+                "statistical_findings"?: Array<{
+                  "advisory": boolean;
+                  "baseline_end": string;
+                  "baseline_start": string;
+                  "timestamp": string;
+                }>;
                 "target_tps"?: number;
                 "telemetry"?: ({
                   "browser_render_lag_ms"?: number;
@@ -89362,6 +89587,7 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
+                "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: ({
                   "browser_render_lag_ms"?: number;
@@ -89713,6 +89939,12 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+                "statistical_findings"?: Array<{
+                  "advisory": boolean;
+                  "baseline_end": string;
+                  "baseline_start": string;
+                  "timestamp": string;
+                }>;
                 "target_tps"?: number;
                 "telemetry"?: ({
                   "browser_render_lag_ms"?: number;
@@ -90761,6 +90993,7 @@ export interface operations {
                   "thread_count"?: number;
                 }) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
+                "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: ({
                   "browser_render_lag_ms"?: number;
@@ -91112,6 +91345,12 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+                "statistical_findings"?: Array<{
+                  "advisory": boolean;
+                  "baseline_end": string;
+                  "baseline_start": string;
+                  "timestamp": string;
+                }>;
                 "target_tps"?: number;
                 "telemetry"?: ({
                   "browser_render_lag_ms"?: number;
@@ -111651,6 +111890,12 @@ export interface operations {
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
+              "statistical_findings"?: Array<{
+                "advisory": boolean;
+                "baseline_end": string;
+                "baseline_start": string;
+                "timestamp": string;
+              }>;
               "target_tps"?: number;
               "telemetry"?: ({
                 "browser_render_lag_ms"?: number;
@@ -112822,6 +113067,20 @@ export interface operations {
                 }) | null;
                 "tps": number;
               }) | null>;
+              "statistical_findings"?: Array<{
+                "advisory": boolean;
+                "baseline_buckets": number;
+                "baseline_end": string;
+                "baseline_mean": number;
+                "baseline_start": string;
+                "baseline_stddev": number;
+                "current": number;
+                "exceeded": boolean;
+                "metric_name": string;
+                "threshold": number;
+                "timestamp": string;
+                "z_score": number;
+              }>;
               "target_tps"?: number;
               "telemetry"?: ({
                 "browser_render_lag_ms"?: number;
@@ -128755,6 +129014,9 @@ export interface paths {
   "/api/v1/tests/{id}/comparison-baseline/pin": {
     "post": operations["handlePinComparisonBaseline"];
     "delete": operations["handleUnpinComparisonBaseline"];
+  };
+  "/api/v1/tests/{id}/dependency-evidence": {
+    "get": operations["handleDependencyEvidence"];
   };
   "/api/v1/tests/{id}/duration": {
     "patch": operations["handleAdjustDuration"];

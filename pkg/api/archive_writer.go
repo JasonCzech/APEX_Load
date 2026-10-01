@@ -554,6 +554,7 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 	}
 	activeRuntimeSeconds := live.ActiveRuntimeSeconds
 	record := IntervalSummaryRecord{
+		ObservationState:         live.ObservationState,
 		CompletedIterations:      live.CompletedIterations,
 		Timestamp:                live.Timestamp,
 		TestID:                   w.manifest.TestID,

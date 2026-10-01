@@ -45,3 +45,16 @@ it('clears a pending operation when switching to another run', async () => {
   await act(async () => root.render(<PreparationControls projectId="p" testId="two" status="QUEUED" canEdit />))
   expect(container.querySelector('button')!.disabled).toBe(false)
 })
+
+it('submits explicit ephemeral capacity and spot limits', async () => {
+  request.mockImplementation(async (path: string, options?: RequestInit) => path.includes('capabilities') ? { preparation_enabled: true } : options?.method === 'POST' ? { state: 'preparing' } : { state: 'none' })
+  await act(async () => root.render(<PreparationControls projectId="p" testId="run" status="QUEUED" canEdit />))
+  const selection = container.querySelector('select')!
+  await act(async () => { selection.value = 'ephemeral'; selection.dispatchEvent(new Event('change', { bubbles: true })) })
+  const spot = container.querySelectorAll('select')[1]
+  await act(async () => { spot.value = 'required'; spot.dispatchEvent(new Event('change', { bubbles: true })) })
+  const button = [...container.querySelectorAll('button')].find(b => b.textContent === 'Prepare')!
+  await act(async () => button.click())
+  const posted = request.mock.calls.find(([, opts]) => opts?.method === 'POST')!
+  expect(JSON.parse(posted[1].body)).toMatchObject({ capacity: { selection: 'ephemeral', spot: 'required', spot_ceiling_percent: 50 } })
+})

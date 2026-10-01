@@ -103,6 +103,8 @@ type parquetResourceSample struct {
 }
 
 type parquetIntervalSummary struct {
+	ObservationState       string  `parquet:"name=observation_state, type=BYTE_ARRAY, convertedtype=UTF8"`
+	SampleWindowSeconds    float64 `parquet:"name=sample_window_seconds, type=DOUBLE"`
 	TimestampUnixMs        int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
 	TimestampRFC3339       string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	TestID                 string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
@@ -347,6 +349,7 @@ func toParquetSummaries(items []IntervalSummaryRecord) []parquetIntervalSummary 
 	rows := make([]parquetIntervalSummary, 0, len(items))
 	for _, item := range items {
 		rows = append(rows, parquetIntervalSummary{
+			ObservationState: item.ObservationState, SampleWindowSeconds: item.SampleWindowSeconds,
 			TimestampUnixMs:        item.Timestamp.UnixMilli(),
 			TimestampRFC3339:       item.Timestamp.Format(time.RFC3339Nano),
 			TestID:                 item.TestID,

@@ -118,7 +118,7 @@ func (tr *TestRunner) journalThresholdEvaluation(test *ManagedTest, live *LiveMe
 		// Persist only the bounded incident fields, not trace samples, host metadata,
 		// load-level arrays, or credentials carried by unrelated telemetry messages.
 		payload := map[string]any{}
-		for _, key := range []string{"metric", "value", "threshold", "target_tps", "gap_pct", "action", "transaction", "dependency_type", "dependency_target"} {
+		for _, key := range []string{"metric", "value", "threshold", "target_tps", "gap_pct", "action", "transaction", "dependency_type", "dependency_target", "evidence", "explanation"} {
 			if value, ok := a[key]; ok {
 				payload[key] = value
 			}

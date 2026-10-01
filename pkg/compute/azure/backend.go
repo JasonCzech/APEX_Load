@@ -172,6 +172,15 @@ func (b *Backend) Validate(ctx context.Context) []compute.ProbeResult {
 }
 
 func (b *Backend) Plan(_ context.Context, request compute.CapacityRequest) (compute.Plan, error) {
+	if _, err := request.Policy.SpotCount(request.Desired, b.Describe()); err != nil {
+		return compute.Plan{}, err
+	}
+	if request.Policy.Selection == "existing" {
+		return compute.Plan{}, errors.New("existing capacity must be reserved without provider reconciliation")
+	}
+	if request.Policy.Selection == "ephemeral" {
+		request.WarmFloor = 0
+	}
 	if request.Desired < 0 {
 		return compute.Plan{}, errors.New("desired capacity must not be negative")
 	}
@@ -218,12 +227,12 @@ func (b *Backend) Reconcile(ctx context.Context, request compute.CapacityRequest
 		return compute.Observation{}, err
 	}
 	spec := b.Target.AzureContainerApps
-	if b.Target.StandingOwner == storage.CapacityOwnerApex && spec.WarmContainerApp != "" {
+	if request.Policy.Selection != "ephemeral" && b.Target.StandingOwner == storage.CapacityOwnerApex && spec.WarmContainerApp != "" {
 		var current armResourceResponse
 		if _, _, err := b.API.Do(ctx, http.MethodGet, b.resourcePath("containerApps", spec.WarmContainerApp, ""), nil, &current); err != nil {
 			return compute.Observation{}, fmt.Errorf("inspect warm Container App autoscaling ownership: %w", err)
 		}
-		if b.Target.StandingOwner == storage.CapacityOwnerApex && current.hasScaleRules() {
+		if request.Policy.Selection != "ephemeral" && b.Target.StandingOwner == storage.CapacityOwnerApex && current.hasScaleRules() {
 			return compute.Observation{}, fmt.Errorf("%w: warm Container App has provider-side scale rules", compute.ErrOwnershipConflict)
 		}
 		body := map[string]any{"properties": map[string]any{"template": map[string]any{"scale": map[string]any{"minReplicas": plan.Standing, "maxReplicas": max(plan.Standing, 1)}}}}

@@ -10,9 +10,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/internal/filelock"
 )
+
+type collectorSpool struct {
+	Version      int                             `json:"version"`
+	Pending      map[string]*RunSampleBatch      `json:"pending"`
+	OTLPAccepted map[string]map[string]time.Time `json:"otlp_accepted,omitempty"`
+}
 
 func (a *Agent) spoolPath() string {
 	hash := sha256.Sum256([]byte(a.cfg.ControllerURL + "\x00" + a.cfg.CollectorID))
@@ -39,7 +46,18 @@ func (a *Agent) loadSpool() error {
 		return errors.New("collector spool exceeds limit")
 	}
 	var batches map[string]*RunSampleBatch
-	if err = json.Unmarshal(data, &batches); err != nil {
+	var document collectorSpool
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal(data, &fields); err == nil && fields["version"] != nil {
+		err = json.Unmarshal(data, &document)
+		if err == nil && document.Version != 2 {
+			err = errors.New("unsupported spool version")
+		}
+		batches = document.Pending
+	} else if err == nil {
+		err = json.Unmarshal(data, &batches)
+	}
+	if err != nil {
 		return errors.New("invalid collector spool; refusing to discard unacknowledged evidence")
 	}
 	if len(batches) > 32 {
@@ -55,6 +73,23 @@ func (a *Agent) loadSpool() error {
 			}
 		}
 	}
+	if len(document.OTLPAccepted) > 32 {
+		return errors.New("OTLP spool job limit exceeded")
+	}
+	for id, seen := range document.OTLPAccepted {
+		if id == "" || len(id) > 256 || len(seen) > 1024 {
+			return errors.New("invalid OTLP acknowledgement spool")
+		}
+		for key, at := range seen {
+			if len(key) != 64 || at.IsZero() {
+				return errors.New("invalid OTLP acknowledgement")
+			}
+		}
+	}
+	a.otlpAccepted = document.OTLPAccepted
+	if batches == nil {
+		batches = map[string]*RunSampleBatch{}
+	}
 	a.pendingBatches = batches
 	return nil
 }
@@ -66,7 +101,7 @@ func (a *Agent) saveSpool() error {
 	if len(a.pendingBatches) > 32 {
 		return errors.New("collector spool job limit exceeded")
 	}
-	data, err := json.Marshal(a.pendingBatches)
+	data, err := json.Marshal(collectorSpool{Version: 2, Pending: a.pendingBatches, OTLPAccepted: a.otlpAccepted})
 	if err != nil {
 		return err
 	}

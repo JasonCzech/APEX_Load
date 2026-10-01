@@ -29,7 +29,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Tier-0
 | Playwright spec files | 3 | 54 | assertion-driven |
 | Go statement coverage | 77.01% | 77.01% | ratchet |
 | Go coverage floor enforced | 0 | 0 | 1 |
-| Packages with no test file | 6 | 7 | 3 |
+| Packages with no test file | 6 | 6 | 3 |
 | Open inherited review defects | 11 | 1 | 0 |
 | Resource-leak linters enabled | 0 | 1 | 1 |
 | Converter golden files | 0 | 30 | all registered converters |
@@ -45,7 +45,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Tier-0
 
 | GREEN | PARTIAL | MISSING | Total |
 |---:|---:|---:|---:|
-| 644 | 0 | 0 | 644 |
+| 645 | 0 | 0 | 645 |
 
 ## Gate tiers
 

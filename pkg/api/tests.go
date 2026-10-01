@@ -1084,6 +1084,7 @@ func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {
 		return nil
 	}
 	cloned := *metrics
+	cloned.StatisticalFindings = append([]StatisticalFinding(nil), metrics.StatisticalFindings...)
 	cloned.ObservationValidUntil = cloneTimePtr(metrics.ObservationValidUntil)
 	cloned.ErrorBreakdown = cloneStringInt64Map(metrics.ErrorBreakdown)
 	cloned.Transactions = cloneTxMetricsMap(metrics.Transactions)

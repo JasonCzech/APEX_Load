@@ -83,7 +83,7 @@ test('preparation readiness can renew and Start sends its immutable revision', a
   const preparation = () => ({ id: 'prepared', state, revision, execution_revision: 'immutable-execution-revision', expires_at: '2026-01-01T00:30:00Z' })
   await page.route('**/api/v1/analysis/capabilities?*', route => route.fulfill({ json: { preparation_enabled: true } }))
   await page.route(`**/api/v1/tests/${id}/preparation`, async route => {
-    if (route.request().method() === 'POST') { const body = route.request().postDataJSON(); if (body.preparation_id) expect(body.revision).toBe(revision); state = 'ready'; revision++ }
+    if (route.request().method() === 'POST') { const body = route.request().postDataJSON(); if (body.preparation_id) expect(body.revision).toBe(revision); else expect(body.capacity).toEqual({ selection: 'ephemeral', spot: 'required', spot_ceiling_percent: 50, on_demand_floor: 1 }); state = 'ready'; revision++ }
     await route.fulfill({ json: preparation() })
   })
   await page.route(`**/api/v1/tests/${id}/start`, async route => {
@@ -93,9 +93,39 @@ test('preparation readiness can renew and Start sends its immutable revision', a
   await page.goto(`/#/test/${id}?${scopeQuery(workspace)}`); await page.reload()
   const area = page.getByRole('region', { name: 'Run preparation', exact: true })
   await expect(area).toBeVisible()
+  await test.info().attach('preparation-controls', { body: await area.evaluate(node => node.outerHTML), contentType: 'text/html' })
+  await area.getByLabel('Capacity', { exact: true }).selectOption('ephemeral')
+  await area.getByLabel('Spot policy', { exact: true }).selectOption('required')
+  await area.getByLabel('On-demand generator floor', { exact: true }).fill('1')
   await area.getByRole('button', { name: 'Prepare', exact: true }).click()
   await expect(area).toContainText('ready')
   await area.getByRole('button', { name: 'Renew readiness', exact: true }).click()
   await area.getByRole('button', { name: 'Start prepared run', exact: true }).click()
   await expect(area).toContainText('consumed'); expect(started).toBe(true)
+})
+
+
+test('dependency evidence selects the same UTC interval for the monitor overlay', async ({ page, trackRun }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request; const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace)
+  const id = idOf(await json(await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, name: 'Dependency evidence', duration: '1s', groups: [{ name: 'requests', script_id: scriptId, vusers: 1 }] } })))
+  trackRun(id)
+  await page.route('**/api/v1/analysis/capabilities?*', route => route.fulfill({ json: { monitoring_enabled: true, diagnostics_enabled: true } }))
+  await page.route(`**/api/v1/tests/${id}/monitors`, route => route.fulfill({ json: [{ id: 'job', source: { id: 'jvm', name: 'JVM' }, state: 'collecting', next_sequence: 1 }] }))
+  await page.route(`**/api/v1/tests/${id}/dependency-evidence*`, route => route.fulfill({ json: { timestamp: '2026-01-01T00:00:10Z', interval_seconds: 2, coverage: 'observed', graph: { nodes: [{ id: 'orders', kind: 'dependency', label: 'orders', dependency_type: 'grpc', p95_ms: 25 }] }, monitors: [{ source_id: 'jvm', name: 'JVM', dependency: 'orders', state: 'collecting', coverage: 'observed', metrics: ['jvm.heap.used'] }] } }))
+  let inspected = false
+  await page.route(`**/api/v1/tests/${id}/monitor-series?*`, route => {
+    const query = new URL(route.request().url()).searchParams
+    expect(query.get('from')).toBe('2026-01-01T00:00:08.000Z'); expect(query.get('to')).toBe('2026-01-01T00:00:10Z')
+    expect(query.get('source_id')).toBe('jvm'); expect(query.get('metric')).toBe('jvm.heap.used'); inspected = true
+    return route.fulfill({ json: { points: [{ timestamp_utc: '2026-01-01T00:00:09Z', unit: 'bytes', kind: 'gauge', value: 1024, quality: 'valid' }], has_more: false } })
+  })
+  await page.goto(`/#/test/${id}?${scopeQuery(workspace)}`); await page.reload()
+  const area = page.getByRole('region', { name: 'Run monitor evidence', exact: true })
+  await expect(area).toContainText('orders (grpc)')
+  await area.getByRole('button', { name: 'Inspect jvm.heap.used', exact: true }).click()
+  await expect(area).toContainText('Selected interval:')
+  await area.getByRole('button', { name: 'Refresh monitor overlay', exact: true }).click()
+  await expect(area).toContainText('1 valid / 1 observed samples'); expect(inspected).toBe(true)
 })

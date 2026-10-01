@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import type { StatisticalFinding } from '../types/analysis'
 import { grpcSummaryLines } from '../utils/grpcDiagnostics'
 import GRPCDiagnosticsPanel from './GRPCDiagnosticsPanel'
 import WebSocketDiagnosticsPanel from './WebSocketDiagnosticsPanel'
@@ -8,6 +9,7 @@ import { GoalConfig, LiveDependencyMap, LiveErrorPattern, MetricsHistoryPoint, R
 import TransactionResponseTimeSLATable from './TransactionResponseTimeSLATable'
 
 interface MetricsSummary {
+  statistical_findings?: StatisticalFinding[]
   p50_ms?: number
   p90_ms?: number
   p95_ms?: number
@@ -102,6 +104,10 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
 
   return (
     <>
+      {(metrics?.statistical_findings?.length ?? 0) > 0 && <section className="tx-section" aria-label="Statistical findings">
+        <h3>Statistical findings</h3><p>Advisory deviations from comparable load windows. These findings do not stop the run or establish a cause.</p>
+        {metrics?.statistical_findings?.map(finding => <article key={finding.metric_name}><h4>{finding.metric_name}</h4><p>{finding.current.toFixed(2)} observed · {finding.z_score.toFixed(2)} standard deviations from {finding.baseline_buckets} comparable buckets (mean {finding.baseline_mean.toFixed(2)}, standard deviation {finding.baseline_stddev.toFixed(2)}).</p><p>Baseline: {new Date(finding.baseline_start).toLocaleTimeString()}–{new Date(finding.baseline_end).toLocaleTimeString()}</p></article>)}
+      </section>}
       <GRPCDiagnosticsPanel transactions={transactions} />
       <WebSocketDiagnosticsPanel transactions={transactions} />
       {topServerTelemetry.length > 0 && (

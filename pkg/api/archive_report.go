@@ -65,6 +65,9 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		ELKSamples:          elkSamples,
 		DynatraceEvidence:   dynatraceEvidence,
 	}
+	if diagnosticsProjectEnabled(manifest.Provenance.ProjectID) {
+		report.StatisticalFindings = archiveStatisticalFindings(manifest.Provenance.ProjectID, record.TestID, summaries)
+	}
 	faultTimelineBuckets := make(map[time.Time]*RunArchiveSOAPFaultTimelineBucket)
 	payloadTimelineBuckets := make(map[time.Time]*RunArchiveSOAPPayloadTimelineBucket)
 	actionSummaryBuckets := make(map[string][]archiveActionSummaryBucket)

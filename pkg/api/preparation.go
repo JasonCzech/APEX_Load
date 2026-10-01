@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/compute"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -129,12 +130,17 @@ func (s *Server) handlePreparation(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
 	var req struct {
-		TTLSeconds       int    `json:"ttl_seconds"`
-		ExpectedRevision string `json:"expected_revision"`
-		PreparationID    string `json:"preparation_id"`
-		Revision         int64  `json:"revision"`
+		Capacity         compute.CapacityPolicy `json:"capacity"`
+		TTLSeconds       int                    `json:"ttl_seconds"`
+		ExpectedRevision string                 `json:"expected_revision"`
+		PreparationID    string                 `json:"preparation_id"`
+		Revision         int64                  `json:"revision"`
 	}
 	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
+		return
+	}
+	if err := req.Capacity.Validate(); err != nil {
+		writeError(w, 400, err.Error())
 		return
 	}
 	if req.TTLSeconds == 0 {
@@ -151,6 +157,7 @@ func (s *Server) handlePreparation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "test not found")
 		return
 	}
+	assignment := cloneGeneratorAssignmentSettings(test.Assignment)
 	unsupported := test.ScriptShakeout
 	for _, group := range test.groupSpecs {
 		if group.Script != nil && (group.Script.Protocol == "java_vuser" || group.Script.Protocol == "bruno") {
@@ -158,6 +165,26 @@ func (s *Server) handlePreparation(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.runner.mu.RUnlock()
+	if req.PreparationID == "" && req.Capacity.Selection == "ephemeral" {
+		if assignment == nil || assignment.PoolID == "" || s.capacityBackends == nil {
+			writeError(w, 422, "ephemeral preparation requires a supported capacity pool")
+			return
+		}
+		pool, loadErr := s.store.GetFleetPool(assignment.PoolID)
+		if loadErr != nil {
+			writeError(w, 422, "capacity pool unavailable")
+			return
+		}
+		backend, _, backendErr := s.capacityBackends.BackendForPool(r.Context(), pool)
+		if backendErr != nil {
+			writeError(w, 422, "target cannot provision preparation-owned ephemeral capacity")
+			return
+		}
+		if _, policyErr := req.Capacity.SpotCount(max(1, pool.DesiredSize, pool.MinSize), backend.Describe()); policyErr != nil {
+			writeError(w, 422, policyErr.Error())
+			return
+		}
+	}
 	if unsupported {
 		writeError(w, 422, "this runtime or shakeout policy cannot currently guarantee traffic-free preparation")
 		return
@@ -204,7 +231,7 @@ func (s *Server) handlePreparation(w http.ResponseWriter, r *http.Request) {
 	if key == "" {
 		key = uuid.NewString()
 	}
-	p, err := store.CreatePreparation(storage.Preparation{ID: uuid.NewString(), TestID: id, ProjectID: project, ExecutionRevision: revision, IdempotencyKey: key, OwnerFence: term.ownerID, CreatedAt: now, ExpiresAt: now.Add(time.Duration(req.TTLSeconds) * time.Second)})
+	p, err := store.CreatePreparation(storage.Preparation{Capacity: req.Capacity, ID: uuid.NewString(), TestID: id, ProjectID: project, ExecutionRevision: revision, IdempotencyKey: key, OwnerFence: term.ownerID, CreatedAt: now, ExpiresAt: now.Add(time.Duration(req.TTLSeconds) * time.Second)})
 	if err != nil {
 		writeError(w, 409, err.Error())
 		return
@@ -239,7 +266,7 @@ func (s *Server) handlePreparation(w http.ResponseWriter, r *http.Request) {
 // any runtime preflight, protocol initialization, probe, or execution commit.
 func (tr *TestRunner) awaitPreparedStart(test *ManagedTest) error {
 	if test.preparationID == "" {
-		return nil
+		return tr.validatePreparedMonitorReadiness(test.ID)
 	}
 	store, ok := tr.testStore.(storage.PreparationStore)
 	if !ok {
@@ -374,6 +401,11 @@ func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
 	})
 	if !ok {
 		return errors.New("collector readiness storage unavailable")
+	}
+	if monitorStore, ok := tr.testStore.(storage.RunMonitorStore); ok {
+		if err := validateRequiredMonitorCredentials(context.Background(), monitorStore, tr.projectSecretStore, project, scenario); err != nil {
+			return err
+		}
 	}
 	return tr.trackDurableWrite(func() error { return store.ValidateRunMonitorReadiness(project, id, scenario, time.Now().UTC()) })
 }

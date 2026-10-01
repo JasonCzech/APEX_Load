@@ -37,6 +37,7 @@ type ProbeResult struct {
 }
 
 type CapacityRequest struct {
+	Policy               CapacityPolicy `json:"policy,omitempty"`
 	OperationID          string         `json:"operation_id"`
 	IdempotencyKey       string         `json:"idempotency_key"`
 	ExecutionTargetID    string         `json:"execution_target_id"`

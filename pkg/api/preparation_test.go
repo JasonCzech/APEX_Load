@@ -136,3 +136,24 @@ func TestPreparationLocalZeroTrafficUntilStart(t *testing.T) {
 		})
 	}
 }
+
+func TestPreparationRejectsUnsupportedEphemeralBeforeExecution(t *testing.T) {
+	t.Setenv("APEXLOAD_PREPARATION_PROJECTS", "proj-a")
+	server, _ := newTimeslotServer(t)
+	script, err := server.runner.StoreScriptDurable(&dsl.Script{ID: "capacity-script", Name: "capacity", Version: "1", Protocol: "http", ProjectID: "proj-a", Config: dsl.ScriptConfig{BaseURL: "http://127.0.0.1:1"}, Actions: []dsl.Action{{Name: "load", Type: "request", Method: "GET", Target: "/"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := server.runner.CreateTest(CreateTestRequest{Name: "prepare", ProjectID: "proj-a", ScriptID: script.ID, VUsers: 1, Duration: "1s", scriptShakeoutProvided: true, resourceBaselineProvided: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply := timeslotRequest(t, server, "POST", "/api/v1/tests/"+run.ID+"/preparation", map[string]any{"capacity": map[string]any{"selection": "ephemeral", "spot": "required", "spot_ceiling_percent": 50}})
+	if reply.Code != 422 {
+		t.Fatalf("unsupported capacity: %d %s", reply.Code, reply.Body.String())
+	}
+	current, _ := server.runner.GetTest(run.ID)
+	if current.Status != "QUEUED" {
+		t.Fatalf("unsupported preparation changed status: %s", current.Status)
+	}
+}

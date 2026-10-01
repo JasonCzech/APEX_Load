@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/compute"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -43,6 +44,11 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	fileID := flags.String("file-id", "", "file ID within an import")
 	preparationID := flags.String("preparation-id", "", "ready preparation ID")
 	revision := flags.String("revision", "", "expected execution revision when starting")
+	selection := flags.String("capacity", "", "existing or ephemeral preparation capacity")
+	spot := flags.String("spot", "off", "off, preferred, or required")
+	floor := flags.Int("on-demand-floor", 0, "minimum on-demand ephemeral generators")
+	ceiling := flags.Int("spot-ceiling", 0, "maximum spot percentage")
+	at := flags.String("at", "", "dependency observation timestamp (RFC3339)")
 	ttl := flags.Duration("ttl", 30*time.Minute, "readiness lifetime")
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -86,7 +92,11 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 		switch action {
 		case "create":
 			method = http.MethodPost
-			body, _ = json.Marshal(map[string]any{"ttl_seconds": int(ttl.Seconds())})
+			policy := compute.CapacityPolicy{Selection: *selection, Spot: *spot, OnDemandFloor: *floor, SpotCeilingPercent: *ceiling}
+			if err := policy.Validate(); err != nil {
+				return err
+			}
+			body, _ = json.Marshal(map[string]any{"ttl_seconds": int(ttl.Seconds()), "capacity": policy})
 		case "show":
 		case "renew":
 			version, err := strconv.ParseInt(*revision, 10, 64)
@@ -125,13 +135,25 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 			if action == "bind" {
 				method = http.MethodPut
 			}
+		case "dependencies":
+			if err := requireID(); err != nil {
+				return err
+			}
+			path = "/api/v1/tests/" + url.PathEscape(*id) + "/dependency-evidence"
+			if *at != "" {
+				parsed, err := time.Parse(time.RFC3339Nano, *at)
+				if err != nil {
+					return errors.New("--at must be an RFC3339 timestamp")
+				}
+				path += "?at=" + url.QueryEscape(parsed.UTC().Format(time.RFC3339Nano))
+			}
 		case "run":
 			if err := requireID(); err != nil {
 				return err
 			}
 			path = "/api/v1/tests/" + url.PathEscape(*id) + "/monitors"
 		default:
-			return errors.New("monitor actions: sources, create-source, bindings, bind, run")
+			return errors.New("monitor actions: sources, create-source, bindings, bind, run, dependencies")
 		}
 		if method != http.MethodGet && len(body) == 0 {
 			return errors.New("--file JSON configuration is required")

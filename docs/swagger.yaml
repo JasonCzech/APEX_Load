@@ -9358,6 +9358,44 @@ paths:
                           timestamp:
                             type: string
                             format: date-time
+                    statistical_findings:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          advisory:
+                            type: boolean
+                          baseline_buckets:
+                            type: integer
+                            format: int64
+                          baseline_end:
+                            type: string
+                            format: date-time
+                          baseline_mean:
+                            type: number
+                            format: double
+                          baseline_start:
+                            type: string
+                            format: date-time
+                          baseline_stddev:
+                            type: number
+                            format: double
+                          current:
+                            type: number
+                            format: double
+                          exceeded:
+                            type: boolean
+                          metric_name:
+                            type: string
+                          threshold:
+                            type: number
+                            format: double
+                          timestamp:
+                            type: string
+                            format: date-time
+                          z_score:
+                            type: number
+                            format: double
                     summary_timeline:
                       type: array
                       items:
@@ -52969,6 +53007,10 @@ paths:
               properties:
                 collector_id:
                   type: string
+                collector_public_key:
+                  type: string
+                credential_ref:
+                  type: string
                 destination:
                   type: string
                 enabled:
@@ -52987,6 +53029,8 @@ paths:
                 revision:
                   type: integer
                   format: int64
+                service:
+                  type: string
       responses:
         "200":
           description: OK
@@ -53064,6 +53108,10 @@ paths:
               properties:
                 collector_id:
                   type: string
+                collector_public_key:
+                  type: string
+                credential_ref:
+                  type: string
                 destination:
                   type: string
                 enabled:
@@ -53082,6 +53130,8 @@ paths:
                 revision:
                   type: integer
                   format: int64
+                service:
+                  type: string
       responses:
         "200":
           description: OK
@@ -53163,6 +53213,10 @@ paths:
               properties:
                 collector_id:
                   type: string
+                collector_public_key:
+                  type: string
+                credential_ref:
+                  type: string
                 destination:
                   type: string
                 enabled:
@@ -53181,6 +53235,8 @@ paths:
                 revision:
                   type: integer
                   format: int64
+                service:
+                  type: string
       responses:
         "200":
           description: OK
@@ -61872,6 +61928,11 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            statistical_findings:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             target_tps:
                               type: number
                               format: double
@@ -63015,6 +63076,27 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          statistical_findings:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                advisory:
+                                  type: boolean
+                                baseline_end:
+                                  type: string
+                                  format: date-time
+                                baseline_start:
+                                  type: string
+                                  format: date-time
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - advisory
+                                - baseline_end
+                                - baseline_start
+                                - timestamp
                           target_tps:
                             type: number
                             format: double
@@ -66112,6 +66194,11 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            statistical_findings:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             target_tps:
                               type: number
                               format: double
@@ -67255,6 +67342,27 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          statistical_findings:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                advisory:
+                                  type: boolean
+                                baseline_end:
+                                  type: string
+                                  format: date-time
+                                baseline_start:
+                                  type: string
+                                  format: date-time
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - advisory
+                                - baseline_end
+                                - baseline_start
+                                - timestamp
                           target_tps:
                             type: number
                             format: double
@@ -70353,6 +70461,11 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            statistical_findings:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             target_tps:
                               type: number
                               format: double
@@ -71496,6 +71609,27 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          statistical_findings:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                advisory:
+                                  type: boolean
+                                baseline_end:
+                                  type: string
+                                  format: date-time
+                                baseline_start:
+                                  type: string
+                                  format: date-time
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - advisory
+                                - baseline_end
+                                - baseline_start
+                                - timestamp
                           target_tps:
                             type: number
                             format: double
@@ -74606,6 +74740,11 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            statistical_findings:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             target_tps:
                               type: number
                               format: double
@@ -75749,6 +75888,27 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          statistical_findings:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                advisory:
+                                  type: boolean
+                                baseline_end:
+                                  type: string
+                                  format: date-time
+                                baseline_start:
+                                  type: string
+                                  format: date-time
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - advisory
+                                - baseline_end
+                                - baseline_start
+                                - timestamp
                           target_tps:
                             type: number
                             format: double
@@ -78859,6 +79019,11 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            statistical_findings:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             target_tps:
                               type: number
                               format: double
@@ -80002,6 +80167,27 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          statistical_findings:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                advisory:
+                                  type: boolean
+                                baseline_end:
+                                  type: string
+                                  format: date-time
+                                baseline_start:
+                                  type: string
+                                  format: date-time
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - advisory
+                                - baseline_end
+                                - baseline_start
+                                - timestamp
                           target_tps:
                             type: number
                             format: double
@@ -83112,6 +83298,11 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            statistical_findings:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             target_tps:
                               type: number
                               format: double
@@ -84255,6 +84446,27 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          statistical_findings:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                advisory:
+                                  type: boolean
+                                baseline_end:
+                                  type: string
+                                  format: date-time
+                                baseline_start:
+                                  type: string
+                                  format: date-time
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - advisory
+                                - baseline_end
+                                - baseline_start
+                                - timestamp
                           target_tps:
                             type: number
                             format: double
@@ -87365,6 +87577,11 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            statistical_findings:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             target_tps:
                               type: number
                               format: double
@@ -88508,6 +88725,27 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          statistical_findings:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                advisory:
+                                  type: boolean
+                                baseline_end:
+                                  type: string
+                                  format: date-time
+                                baseline_start:
+                                  type: string
+                                  format: date-time
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - advisory
+                                - baseline_end
+                                - baseline_start
+                                - timestamp
                           target_tps:
                             type: number
                             format: double
@@ -251015,6 +251253,27 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        statistical_findings:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              advisory:
+                                type: boolean
+                              baseline_end:
+                                type: string
+                                format: date-time
+                              baseline_start:
+                                type: string
+                                format: date-time
+                              timestamp:
+                                type: string
+                                format: date-time
+                            required:
+                              - advisory
+                              - baseline_end
+                              - baseline_start
+                              - timestamp
                         target_tps:
                           type: number
                           format: double
@@ -255006,6 +255265,57 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      statistical_findings:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            advisory:
+                              type: boolean
+                            baseline_buckets:
+                              type: integer
+                              format: int64
+                            baseline_end:
+                              type: string
+                              format: date-time
+                            baseline_mean:
+                              type: number
+                              format: double
+                            baseline_start:
+                              type: string
+                              format: date-time
+                            baseline_stddev:
+                              type: number
+                              format: double
+                            current:
+                              type: number
+                              format: double
+                            exceeded:
+                              type: boolean
+                            metric_name:
+                              type: string
+                            threshold:
+                              type: number
+                              format: double
+                            timestamp:
+                              type: string
+                              format: date-time
+                            z_score:
+                              type: number
+                              format: double
+                          required:
+                            - advisory
+                            - baseline_buckets
+                            - baseline_end
+                            - baseline_mean
+                            - baseline_start
+                            - baseline_stddev
+                            - current
+                            - exceeded
+                            - metric_name
+                            - threshold
+                            - timestamp
+                            - z_score
                       target_tps:
                         type: number
                         format: double
@@ -261114,6 +261424,27 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        statistical_findings:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              advisory:
+                                type: boolean
+                              baseline_end:
+                                type: string
+                                format: date-time
+                              baseline_start:
+                                type: string
+                                format: date-time
+                              timestamp:
+                                type: string
+                                format: date-time
+                            required:
+                              - advisory
+                              - baseline_end
+                              - baseline_start
+                              - timestamp
                         target_tps:
                           type: number
                           format: double
@@ -265105,6 +265436,57 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      statistical_findings:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            advisory:
+                              type: boolean
+                            baseline_buckets:
+                              type: integer
+                              format: int64
+                            baseline_end:
+                              type: string
+                              format: date-time
+                            baseline_mean:
+                              type: number
+                              format: double
+                            baseline_start:
+                              type: string
+                              format: date-time
+                            baseline_stddev:
+                              type: number
+                              format: double
+                            current:
+                              type: number
+                              format: double
+                            exceeded:
+                              type: boolean
+                            metric_name:
+                              type: string
+                            threshold:
+                              type: number
+                              format: double
+                            timestamp:
+                              type: string
+                              format: date-time
+                            z_score:
+                              type: number
+                              format: double
+                          required:
+                            - advisory
+                            - baseline_buckets
+                            - baseline_end
+                            - baseline_mean
+                            - baseline_start
+                            - baseline_stddev
+                            - current
+                            - exceeded
+                            - metric_name
+                            - threshold
+                            - timestamp
+                            - z_score
                       target_tps:
                         type: number
                         format: double
@@ -282038,6 +282420,57 @@ paths:
                       required:
                         - samples
                         - timestamp
+                  statistical_findings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        advisory:
+                          type: boolean
+                        baseline_buckets:
+                          type: integer
+                          format: int64
+                        baseline_end:
+                          type: string
+                          format: date-time
+                        baseline_mean:
+                          type: number
+                          format: double
+                        baseline_start:
+                          type: string
+                          format: date-time
+                        baseline_stddev:
+                          type: number
+                          format: double
+                        current:
+                          type: number
+                          format: double
+                        exceeded:
+                          type: boolean
+                        metric_name:
+                          type: string
+                        threshold:
+                          type: number
+                          format: double
+                        timestamp:
+                          type: string
+                          format: date-time
+                        z_score:
+                          type: number
+                          format: double
+                      required:
+                        - advisory
+                        - baseline_buckets
+                        - baseline_end
+                        - baseline_mean
+                        - baseline_start
+                        - baseline_stddev
+                        - current
+                        - exceeded
+                        - metric_name
+                        - threshold
+                        - timestamp
+                        - z_score
                   summary_timeline:
                     type: array
                     items:
@@ -290166,6 +290599,27 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        statistical_findings:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              advisory:
+                                type: boolean
+                              baseline_end:
+                                type: string
+                                format: date-time
+                              baseline_start:
+                                type: string
+                                format: date-time
+                              timestamp:
+                                type: string
+                                format: date-time
+                            required:
+                              - advisory
+                              - baseline_end
+                              - baseline_start
+                              - timestamp
                         target_tps:
                           type: number
                           format: double
@@ -294157,6 +294611,57 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      statistical_findings:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            advisory:
+                              type: boolean
+                            baseline_buckets:
+                              type: integer
+                              format: int64
+                            baseline_end:
+                              type: string
+                              format: date-time
+                            baseline_mean:
+                              type: number
+                              format: double
+                            baseline_start:
+                              type: string
+                              format: date-time
+                            baseline_stddev:
+                              type: number
+                              format: double
+                            current:
+                              type: number
+                              format: double
+                            exceeded:
+                              type: boolean
+                            metric_name:
+                              type: string
+                            threshold:
+                              type: number
+                              format: double
+                            timestamp:
+                              type: string
+                              format: date-time
+                            z_score:
+                              type: number
+                              format: double
+                          required:
+                            - advisory
+                            - baseline_buckets
+                            - baseline_end
+                            - baseline_mean
+                            - baseline_start
+                            - baseline_stddev
+                            - current
+                            - exceeded
+                            - metric_name
+                            - threshold
+                            - timestamp
+                            - z_score
                       target_tps:
                         type: number
                         format: double
@@ -300209,6 +300714,27 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        statistical_findings:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              advisory:
+                                type: boolean
+                              baseline_end:
+                                type: string
+                                format: date-time
+                              baseline_start:
+                                type: string
+                                format: date-time
+                              timestamp:
+                                type: string
+                                format: date-time
+                            required:
+                              - advisory
+                              - baseline_end
+                              - baseline_start
+                              - timestamp
                         target_tps:
                           type: number
                           format: double
@@ -304200,6 +304726,57 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      statistical_findings:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            advisory:
+                              type: boolean
+                            baseline_buckets:
+                              type: integer
+                              format: int64
+                            baseline_end:
+                              type: string
+                              format: date-time
+                            baseline_mean:
+                              type: number
+                              format: double
+                            baseline_start:
+                              type: string
+                              format: date-time
+                            baseline_stddev:
+                              type: number
+                              format: double
+                            current:
+                              type: number
+                              format: double
+                            exceeded:
+                              type: boolean
+                            metric_name:
+                              type: string
+                            threshold:
+                              type: number
+                              format: double
+                            timestamp:
+                              type: string
+                              format: date-time
+                            z_score:
+                              type: number
+                              format: double
+                          required:
+                            - advisory
+                            - baseline_buckets
+                            - baseline_end
+                            - baseline_mean
+                            - baseline_start
+                            - baseline_stddev
+                            - current
+                            - exceeded
+                            - metric_name
+                            - threshold
+                            - timestamp
+                            - z_score
                       target_tps:
                         type: number
                         format: double
@@ -306384,6 +306961,185 @@ paths:
       tags:
         - Tests
       x-handler: handlePinComparisonBaseline
+  /api/v1/tests/{id}/dependency-evidence:
+    get:
+      summary: Dependency Evidence
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleDependencyEvidence
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  advisory:
+                    type: boolean
+                  coverage:
+                    type: string
+                  graph:
+                    type: object
+                    properties:
+                      edges:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            dependency_type:
+                              type: string
+                            error_pct:
+                              type: number
+                              format: double
+                            errors:
+                              type: integer
+                              format: int64
+                            p95_ms:
+                              type: number
+                              format: double
+                            source:
+                              type: string
+                            target:
+                              type: string
+                            transactions:
+                              type: integer
+                              format: int64
+                          required:
+                            - source
+                            - target
+                      nodes:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            dependency_type:
+                              type: string
+                            error_pct:
+                              type: number
+                              format: double
+                            errors:
+                              type: integer
+                              format: int64
+                            id:
+                              type: string
+                            kind:
+                              type: string
+                            label:
+                              type: string
+                            p95_ms:
+                              type: number
+                              format: double
+                            status:
+                              type: string
+                            transactions:
+                              type: integer
+                              format: int64
+                          required:
+                            - id
+                            - kind
+                            - label
+                    required:
+                      - edges
+                      - nodes
+                    nullable: true
+                  interval_seconds:
+                    type: number
+                    format: double
+                  monitors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        coverage:
+                          type: string
+                        dependency:
+                          type: string
+                        metrics:
+                          type: array
+                          items:
+                            type: string
+                        name:
+                          type: string
+                        source_id:
+                          type: string
+                        state:
+                          type: string
+                      required:
+                        - coverage
+                        - dependency
+                        - metrics
+                        - name
+                        - source_id
+                        - state
+                  timestamp:
+                    type: string
+                    format: date-time
+                required:
+                  - advisory
+                  - coverage
+                  - interval_seconds
+                  - monitors
+                  - timestamp
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: at
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleDependencyEvidence
   /api/v1/tests/{id}/duration:
     patch:
       summary: Adjust Duration
@@ -316349,6 +317105,10 @@ paths:
             schema:
               type: object
               properties:
+                capacity:
+                  type: object
+                  description: 'Go type: compute.CapacityPolicy'
+                  additionalProperties: true
                 expected_revision:
                   type: string
                 preparation_id:
@@ -316545,6 +317305,10 @@ paths:
             schema:
               type: object
               properties:
+                capacity:
+                  type: object
+                  description: 'Go type: compute.CapacityPolicy'
+                  additionalProperties: true
                 expected_revision:
                   type: string
                 preparation_id:

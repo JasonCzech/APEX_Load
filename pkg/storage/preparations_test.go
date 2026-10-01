@@ -24,6 +24,11 @@ func TestPreparationCASIdempotencyAndExpiry(t *testing.T) {
 	if got, err := s.CreatePreparation(retry); err != nil || got.ID != created.ID {
 		t.Fatalf("retry: %+v %v", got, err)
 	}
+	retry.Capacity.Selection = "existing"
+	if _, err := s.CreatePreparation(retry); !errors.Is(err, ErrPreparationConflict) {
+		t.Fatalf("changed capacity policy: %v", err)
+	}
+	retry.Capacity = p.Capacity
 	retry.ExecutionRevision = strings.Repeat("b", 64)
 	if _, err := s.CreatePreparation(retry); !errors.Is(err, ErrPreparationConflict) {
 		t.Fatalf("changed request: %v", err)

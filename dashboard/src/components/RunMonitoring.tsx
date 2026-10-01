@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import DependencyEvidence from './DependencyEvidence'
 import { request } from '../hooks/apiClient'
 import type { AnalysisCapabilities, AnalysisPoint } from '../types/analysis'
 import type { MetricsHistoryPoint, MonitoringCollectorListResponse } from '../types'
 
-interface Source { id: string; name: string; project_id?: string; revision: number; collector_id: string; pack: string; destination?: string; interval_seconds: number; enabled: boolean }
+interface Source { credential_ref?: string; collector_public_key?: string; service?: string; id: string; name: string; project_id?: string; revision: number; collector_id: string; pack: string; destination?: string; interval_seconds: number; enabled: boolean }
 interface Bindings { revision: number; sources: { source_id: string; required: boolean }[] }
 interface Job { id: string; source: Source; state: string; next_sequence: number; coverage_reason?: string }
 const sourcesPath = (project: string) => `/projects/${encodeURIComponent(project)}/monitor-sources`
@@ -46,8 +47,13 @@ export function RunMonitorSources({ projectId, canManage = false }: { projectId?
       <legend>{draft.id ? 'Edit source' : 'New source'}</legend>
       <label>Name<input value={draft.name} maxLength={256} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
       <label>Collector<select value={draft.collector_id} onChange={e => setDraft({ ...draft, collector_id: e.target.value })}><option value="">Select a collector</option>{collectors.map(c => <option key={c.id} value={c.id}>{c.name} · {c.health}</option>)}</select></label>
-      <label>Pack<select value={draft.pack} onChange={e => setDraft({ ...draft, pack: e.target.value, destination: '' })}>{['linux-hosts', 'go-runtime', 'prometheus'].map(p => <option key={p}>{p}</option>)}</select></label>
-      {draft.pack === 'prometheus' && <label>Approved scrape URL<input type="url" value={draft.destination ?? ''} onChange={e => setDraft({ ...draft, destination: e.target.value })} /></label>}
+      <label>Pack<select value={draft.pack} onChange={e => setDraft({ ...draft, pack: e.target.value, destination: '', credential_ref: '', collector_public_key: '' })}>{['linux-hosts', 'go-runtime', 'prometheus', 'ssh-linux', 'otel-metrics', 'jmx', 'jdbc'].map(p => <option key={p}>{p}</option>)}</select></label>
+      {!['linux-hosts', 'go-runtime'].includes(draft.pack) && <label>Approved destination<input type="url" value={draft.destination ?? ''} onChange={e => setDraft({ ...draft, destination: e.target.value })} /></label>}
+      <label>Dependency identity<input value={draft.service ?? ''} maxLength={128} onChange={e => setDraft({ ...draft, service: e.target.value })} /><small>Exact dependency label used to link collected evidence.</small></label>
+      {['ssh-linux', 'jmx', 'jdbc'].includes(draft.pack) && <>
+        <label>Project credential secret name<input value={draft.credential_ref ?? ''} maxLength={128} onChange={e => setDraft({ ...draft, credential_ref: e.target.value })} /></label>
+        <label>Collector X25519 public key<input value={draft.collector_public_key ?? ''} onChange={e => setDraft({ ...draft, collector_public_key: e.target.value })} /><small>Enroll the public key from the approved collector. Jobs seal credentials to this key.</small></label>
+      </>}
       <label>Collection interval (seconds)<input type="number" min={1} max={3600} value={draft.interval_seconds} onChange={e => setDraft({ ...draft, interval_seconds: Number(e.target.value) })} /></label>
       <label><input type="checkbox" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })} />Enabled</label>
       <button type="button" disabled={!draft.name || !draft.collector_id} onClick={() => void save()}>Save monitor source</button>
@@ -87,13 +93,14 @@ export function RunMonitorTimeline({ projectId, testId, history }: { projectId?:
   const [source, setSource] = useState('')
   const [metric, setMetric] = useState('')
   const [dimensions, setDimensions] = useState('{}')
+  const [window, setWindow] = useState<{ from: string; to: string }>()
   const [points, setPoints] = useState<(AnalysisPoint & { relative_time_ms?: number })[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const controller = useRef<AbortController>()
   useEffect(() => {
     const c = new AbortController()
-    setJobs([]); setPoints([]); setError(''); setBusy(false); setSource('')
+    setJobs([]); setPoints([]); setError(''); setBusy(false); setSource(''); setWindow(undefined)
     if (enabled) void request<Job[]>(`/tests/${encodeURIComponent(testId)}/monitors`, { signal: c.signal }).then(j => { if (!c.signal.aborted) setJobs(j) }).catch(e => { if (!c.signal.aborted) setError(String(e)) })
     return () => { c.abort(); controller.current?.abort() }
   }, [testId, enabled])
@@ -107,6 +114,7 @@ export function RunMonitorTimeline({ projectId, testId, history }: { projectId?:
       for (let pageNumber = 0; ; pageNumber++) {
         if (pageNumber >= 100) throw new Error('Monitoring evidence exceeds the scan limit; narrow the requested selection.')
         const query = new URLSearchParams({ metric, source_id: source, dimensions: JSON.stringify(filters), after_job: afterJob, after_sequence: String(afterSequence) })
+        if (window) { query.set('from', window.from); query.set('to', window.to) }
         const page = await request<{ points: typeof points; has_more: boolean; after_job: string; after_sequence: number }>(`/tests/${encodeURIComponent(testId)}/monitor-series?${query}`, { signal: c.signal })
         collected.push(...page.points); if (collected.length > 10000) throw new Error('Series exceeds 10,000 points. Use a bounded comparison window in Analysis.')
         if (!page.has_more) break
@@ -119,10 +127,11 @@ export function RunMonitorTimeline({ projectId, testId, history }: { projectId?:
   }
   const rows: { time: number; monitor?: number; latency?: number }[] = []
   for (const point of points) rows.push({ time: Date.parse(point.timestamp_utc), monitor: point.quality === 'valid' ? point.value : undefined })
-  for (const point of history) if (point.timestampMs !== undefined) rows.push({ time: point.timestampMs, latency: point.avgMs })
+  for (const point of history) if (point.timestampMs !== undefined && (!window || (point.timestampMs >= Date.parse(window.from) && point.timestampMs <= Date.parse(window.to)))) rows.push({ time: point.timestampMs, latency: point.avgMs })
   rows.sort((a, b) => a.time - b.time)
   return <section className="tx-section" aria-label="Run monitor evidence">
-    <h3>Run monitor evidence</h3><p>Aligned by elapsed wall time, including pauses. Associations do not establish causation.</p>
+    <DependencyEvidence testId={testId} projectId={projectId} select={(source, metric, from, to) => { controller.current?.abort(); setBusy(false); setSource(source); setMetric(metric); setDimensions('{}'); setWindow({ from, to }); setPoints([]) }} />
+    <h3>Run monitor evidence</h3>{window && <p>Selected interval: {window.from} – {window.to} <button type="button" onClick={() => { setWindow(undefined); setPoints([]) }}>Clear time window</button></p>}<p>Aligned by elapsed wall time, including pauses. Associations do not establish causation.</p>
     <ul>{jobs.map(j => <li key={j.id}>{j.source.name} · {j.state} · {j.next_sequence} accepted batches{j.coverage_reason ? ` · ${j.coverage_reason}` : ''}</li>)}</ul>
     {error && <p role="alert">{error}</p>}
     <label>Monitor source<select value={source} onChange={e => { setSource(e.target.value); setPoints([]) }}><option value="">Select a source</option>{jobs.map(j => <option key={j.id} value={j.source.id}>{j.source.name}</option>)}</select></label>

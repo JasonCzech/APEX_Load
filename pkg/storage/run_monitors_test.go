@@ -202,3 +202,14 @@ func TestMonitorSourceValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestMonitorPackRejectsUnusedCredentials(t *testing.T) {
+	_, source, _ := monitorFixture(t)
+	for _, pack := range []string{"linux-hosts", "go-runtime", "otel-metrics", "prometheus"} {
+		source.Pack = pack
+		source.CredentialRef = "unused"
+		if err := source.Validate(); err == nil {
+			t.Fatalf("%s accepted ignored credentials", pack)
+		}
+	}
+}

@@ -58,7 +58,7 @@ pkg/
                    token, or Azure AD service principal for AKS. NewRemoteClient reaches
                    registered external clusters; see docs/CLUSTERS_AND_CLOUD.md.
   recordagent/   — Local recording-agent runtime (Playwright/Chromium provisioning + bridge)
-  collectoragent/ — Dependency-free monitoring-collector agent (token auth, heartbeat + host metric packs)
+  collectoragent/ — Monitoring collector with signed jobs, sealed credentials, Linux/Prometheus, SSH, OTLP and restricted Java packs
   compute/       — Provider-neutral async capacity backends (Kubernetes, Azure Container Apps/Jobs, ECS Fargate)
   telemetry/     — Opt-in OpenTelemetry tracing setup + HTTP instrumentation (off unless APEXLOAD_OTEL_ENABLED)
   trafficprofile/ — Production time-series parsing, normalization, shaping, and runtime profile contracts

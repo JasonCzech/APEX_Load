@@ -228,6 +228,15 @@ func (b *Backend) Validate(ctx context.Context) []compute.ProbeResult {
 }
 
 func (b *Backend) Plan(_ context.Context, request compute.CapacityRequest) (compute.Plan, error) {
+	if _, err := request.Policy.SpotCount(request.Desired, b.Describe()); err != nil {
+		return compute.Plan{}, err
+	}
+	if request.Policy.Selection == "existing" {
+		return compute.Plan{}, errors.New("existing capacity must be reserved without provider reconciliation")
+	}
+	if request.Policy.Selection == "ephemeral" {
+		request.WarmFloor = 0
+	}
 	info := b.Describe()
 	if request.Desired < 0 {
 		return compute.Plan{}, errors.New("desired capacity must not be negative")
@@ -276,7 +285,7 @@ func (b *Backend) Reconcile(ctx context.Context, request compute.CapacityRequest
 	spec := b.Target.AWSECSFargate
 	standingReady, standingPending := 0, 0
 	standingInstances := []compute.Instance(nil)
-	if b.Target.StandingOwner == storage.CapacityOwnerApex && spec.WarmService != "" {
+	if request.Policy.Selection != "ephemeral" && b.Target.StandingOwner == storage.CapacityOwnerApex && spec.WarmService != "" {
 		conflict, inspectErr := b.providerAutoscalerConflict(ctx)
 		if inspectErr != nil {
 			return compute.Observation{}, fmt.Errorf("inspect ECS Application Auto Scaling ownership: %w", inspectErr)
@@ -350,7 +359,9 @@ func (b *Backend) Reconcile(ctx context.Context, request compute.CapacityRequest
 				map[string]string{"key": "apexload.io/launch-nonce", "value": intent.LaunchNonce},
 			},
 		}
-		if profile != nil && strings.EqualFold(strings.TrimSpace(profile.CapacityType), "spot") {
+		spotCount, _ := request.Policy.SpotCount(request.Desired, b.Describe())
+		useSpot := request.Policy.Selection == "ephemeral" && launchIndex >= plan.Launch-spotCount || request.Policy.Selection == "" && profile != nil && strings.EqualFold(strings.TrimSpace(profile.CapacityType), "spot")
+		if useSpot {
 			input["capacityProviderStrategy"] = []any{map[string]any{"capacityProvider": "FARGATE_SPOT", "weight": 1}}
 		} else {
 			input["launchType"] = "FARGATE"

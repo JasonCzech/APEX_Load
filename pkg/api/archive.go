@@ -320,6 +320,7 @@ type ResourceSample struct {
 }
 
 type IntervalSummaryRecord struct {
+	ObservationState         string                             `json:"observation_state,omitempty"`
 	CompletedIterations      int64                              `json:"completed_iterations,omitempty"`
 	Timestamp                time.Time                          `json:"timestamp"`
 	TestID                   string                             `json:"test_id"`
@@ -419,6 +420,7 @@ type RunArchiveIdentityNames struct {
 }
 
 type RunArchiveReport struct {
+	StatisticalFindings               []StatisticalFinding                   `json:"statistical_findings,omitempty"`
 	BaselineComparison                *BaselineComparisonSnapshot            `json:"baseline_comparison,omitempty"`
 	IdentityNames                     RunArchiveIdentityNames                `json:"identity_names"`
 	Outcome                           *IntegrationOutcome                    `json:"outcome,omitempty"`

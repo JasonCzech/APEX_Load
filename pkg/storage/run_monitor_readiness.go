@@ -1,8 +1,11 @@
 package storage
 
 import (
+	"crypto/ecdh"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -25,16 +28,35 @@ func (s *SQLiteStore) SaveCollectorRunReadiness(project, collector string, packs
 		return errors.New("invalid collector readiness")
 	}
 	for _, pack := range packs {
-		if pack != "go-runtime" && pack != "linux-hosts" && pack != "prometheus" {
+		if pack != "go-runtime" && pack != "linux-hosts" && pack != "prometheus" && pack != "ssh-linux" && pack != "otel-metrics" && pack != "jmx" && pack != "jdbc" {
 			return errors.New("unsupported collector pack")
 		}
 	}
 	for _, destination := range destinations {
-		source := MonitorSource{ID: "validation", ProjectID: project, Name: "validation", CollectorID: collector, Pack: "prometheus", Destination: destination, IntervalSeconds: 1}
-		if err := source.Validate(); err != nil {
-			return err
+		valid := false
+		raw, key, hasKey := strings.Cut(destination, "#")
+		if hasKey {
+			decoded, err := base64.StdEncoding.DecodeString(key)
+			if err != nil {
+				return errors.New("invalid readiness encryption key")
+			}
+			if _, err = ecdh.X25519().NewPublicKey(decoded); err != nil {
+				return err
+			}
+		}
+		for _, pack := range packs {
+			if pack == "prometheus" {
+				source := MonitorSource{ID: "validation", ProjectID: project, Name: "validation", CollectorID: collector, Pack: pack, Destination: destination, IntervalSeconds: 1}
+				valid = valid || source.Validate() == nil
+			} else if pack == "ssh-linux" || pack == "jmx" || pack == "jdbc" || pack == "otel-metrics" {
+				valid = valid || (pack == "otel-metrics" && !hasKey || pack != "otel-metrics" && hasKey) && validateRemoteMonitorDestination(pack, raw) == nil
+			}
+		}
+		if !valid {
+			return errors.New("unapproved readiness destination")
 		}
 	}
+
 	p, _ := json.Marshal(packs)
 	d, _ := json.Marshal(destinations)
 	tx, err := s.db.Begin()

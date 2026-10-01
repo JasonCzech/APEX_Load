@@ -465,6 +465,9 @@ func attachCapacityLaunchIntents(request *compute.CapacityRequest, intents []*st
 }
 
 func (s *Server) restartAsyncCapacityProvisioning(request *storage.ProvisioningRequest, pool *storage.FleetPool) (bool, error) {
+	if isAutomaticRunCapacityRequest(request) {
+		return true, errors.New("run-owned capacity must be retried through a new preparation or run; standalone retry would lose the immutable execution policy")
+	}
 	if request == nil || pool == nil || request.ExecutionTargetID == "" || s.capacityBackends == nil {
 		return false, nil
 	}
@@ -587,6 +590,27 @@ func generatorMaxInstanceLifetime() time.Duration {
 }
 
 func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runErr error) {
+	policy := compute.CapacityPolicy{}
+	if test != nil && test.preparationID != "" {
+		prepared, ok := s.store.(storage.PreparationStore)
+		if !ok {
+			return errors.New("preparation store unavailable")
+		}
+		p, err := prepared.GetPreparation(test.preparationID)
+		if err != nil {
+			return err
+		}
+		policy = p.Capacity
+		if err := policy.Validate(); err != nil {
+			return err
+		}
+		if policy.Selection == "existing" {
+			return nil
+		}
+		if policy.Selection == "ephemeral" && (test.Assignment == nil || test.Assignment.PoolID == "" || s.capacityBackends == nil) {
+			return errors.New("ephemeral preparation requires an approved asynchronous capacity pool")
+		}
+	}
 	if s == nil || test == nil || test.Assignment == nil || strings.TrimSpace(test.Assignment.PoolID) == "" || s.capacityBackends == nil {
 		return nil
 	}
@@ -596,6 +620,9 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 	}
 	backend, target, err := s.capacityBackends.BackendForPool(ctx, pool)
 	if err != nil {
+		if policy.Selection == "ephemeral" {
+			return errors.New("target cannot provision preparation-owned ephemeral capacity")
+		}
 		if errors.Is(err, errCapacityBackendUnavailable) {
 			// Kubernetes/static execution targets continue through their existing
 			// discovery and scaler paths. A PaaS target, however, must fail visibly
@@ -636,6 +663,7 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 	// Automatic runs maintain the configured warm floor. A failed cold start
 	// cleans up burst instances but must not tear the warm service back down.
 	base.RestoreStanding = false
+	base.Policy = policy
 	base.TestID = test.ID
 	base.ConnectivityMode = target.ConnectivityMode
 	plan, err := backend.Plan(ctx, base)

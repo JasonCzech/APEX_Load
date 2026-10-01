@@ -33,6 +33,7 @@ func TestWorkflowPreparationAndSources(t *testing.T) {
 		{"prepare", []string{"renew", "--id", "run", "--preparation-id", "p", "--revision", "2"}, "POST", "/api/v1/tests/run/preparation"},
 		{"analysis", []string{"mappings", "--project", "p"}, "GET", "/api/v1/analysis/mappings"},
 		{"analysis", []string{"comparisons", "--project", "p"}, "GET", "/api/v1/analysis/comparisons"},
+		{"monitor", []string{"dependencies", "--id", "run", "--at", "2026-01-01T00:00:00Z"}, "GET", "/api/v1/tests/run/dependency-evidence"},
 		{"monitor", []string{"sources", "--project", "p"}, "GET", "/api/v1/projects/p/monitor-sources"},
 		{"analysis", []string{"capabilities", "--project", "p"}, "GET", "/api/v1/analysis/capabilities"},
 	} {
@@ -54,7 +55,7 @@ func TestWorkflowRejectsIncompleteCommandsWithoutNetwork(t *testing.T) {
 	for _, tc := range []struct {
 		kind string
 		args []string
-	}{{"prepare", nil}, {"prepare", []string{"start", "--id", "run"}}, {"analysis", []string{"create", "--project", "p"}}, {"monitor", []string{"sources"}}} {
+	}{{"prepare", nil}, {"prepare", []string{"start", "--id", "run"}}, {"analysis", []string{"create", "--project", "p"}}, {"monitor", []string{"sources"}}, {"monitor", []string{"dependencies", "--id", "run", "--at", "invalid"}}} {
 		if err := executeWorkflowCommand(context.Background(), tc.kind, tc.args, &bytes.Buffer{}); err == nil {
 			t.Fatalf("accepted %+v", tc)
 		}

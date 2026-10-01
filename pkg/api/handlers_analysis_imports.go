@@ -120,7 +120,7 @@ func (s *Server) loadAnalysisImportMetadata(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) handleAnalysisCapabilities(w http.ResponseWriter, r *http.Request) {
 	project := r.URL.Query().Get("project_id")
-	writeJSON(w, 200, map[string]any{"monitoring_enabled": runMonitoringEnabled(project), "preparation_enabled": preparationProjectEnabled(project), "native_parquet": analytics.Available(), "enabled": analysisProjectEnabled(project), "chunk_bytes": analysisUploadChunk, "max_import_bytes": analysisImportMaxBytes, "heavy_jobs": 1, "threads": 2, "memory_limit": "2GiB"})
+	writeJSON(w, 200, map[string]any{"diagnostics_enabled": diagnosticsProjectEnabled(project), "monitoring_enabled": runMonitoringEnabled(project), "preparation_enabled": preparationProjectEnabled(project), "native_parquet": analytics.Available(), "enabled": analysisProjectEnabled(project), "chunk_bytes": analysisUploadChunk, "max_import_bytes": analysisImportMaxBytes, "heavy_jobs": 1, "threads": 2, "memory_limit": "2GiB"})
 }
 
 func (s *Server) handleAnalysisImports(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,7 @@ package api
 import "net/http"
 
 var runMonitoringAPIRouteCatalog = apiRouteCatalog{Domain: "run-monitoring", Routes: []apiRouteSpec{
+	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/dependency-evidence", "handleDependencyEvidence", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleDependencyEvidence) }),
 	newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/preparation", "handlePreparation", editorProjectAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handlePreparation) }),
 	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/preparation", "handlePreparation", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handlePreparation) }),
 	newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/tests/{id}/preparation", "handlePreparation", editorProjectAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handlePreparation) }),

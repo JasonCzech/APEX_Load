@@ -11,6 +11,9 @@ import (
 
 func protocolReportLines(report *RunArchiveReport) []string {
 	lines := []string{"Client-observed measurements; unavailable phases are not inferred. Histogram percentiles are approximate. Findings are advisory."}
+	for _, finding := range report.StatisticalFindings {
+		lines = append(lines, fmt.Sprintf("%s at %s: %.2f standard deviations from %d comparable buckets (mean %.3f, standard deviation %.3f). Advisory association.", finding.MetricName, finding.Timestamp.Format("15:04:05Z07:00"), finding.ZScore, finding.BaselineBuckets, finding.BaselineMean, finding.BaselineStdDev))
+	}
 	keys := sortedArchiveReportStatKeys(report.ByAction)
 	// Rank method hotspots by measured client call P95, retaining stable names
 	// for ties. This never substitutes call time for server processing time.

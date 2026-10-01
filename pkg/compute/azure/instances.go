@@ -101,6 +101,15 @@ func (b *InstancesBackend) Validate(ctx context.Context) []compute.ProbeResult {
 }
 
 func (b *InstancesBackend) Plan(_ context.Context, request compute.CapacityRequest) (compute.Plan, error) {
+	if _, err := request.Policy.SpotCount(request.Desired, b.Describe()); err != nil {
+		return compute.Plan{}, err
+	}
+	if request.Policy.Selection == "existing" {
+		return compute.Plan{}, errors.New("existing capacity must be reserved without provider reconciliation")
+	}
+	if request.Policy.Selection == "ephemeral" {
+		request.WarmFloor = 0
+	}
 	if request.Desired < 0 {
 		return compute.Plan{}, errors.New("desired capacity must not be negative")
 	}

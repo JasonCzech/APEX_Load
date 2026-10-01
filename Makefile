@@ -276,3 +276,10 @@ java-host-broker:
 java-host-facade:
 	@mkdir -p bin
 	go build $(GOFLAGS) $(LDFLAGS) -o bin/apexload-java-host-facade ./cmd/apexload-java-host-facade
+
+.PHONY: monitor-java-helper test-monitor-java
+monitor-java-helper:
+	./runners/monitor-java/build.sh
+
+test-monitor-java:
+	python3 runners/monitor-java/test_helper.py

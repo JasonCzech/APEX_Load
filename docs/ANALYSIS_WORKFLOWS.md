@@ -66,8 +66,9 @@ archive includes hashed `monitor_evidence.v1.jsonl` evidence and coverage
 metadata. The execution page overlays selected monitor measurements with run
 latency. Missing/stale evidence is not plotted as zero.
 
-Only the implemented packs are accepted. SSH, OTLP metrics ingestion, JMX,
-JDBC, CloudWatch and Azure Monitor adapters are separate follow-on work;
+The collector supports fixed SSH/Linux, bounded OTLP/HTTP JSON, and restricted
+JMX/JDBC packs in addition to Linux/runtime/Prometheus. CloudWatch and Azure
+Monitor adapters remain separate follow-on work;
 selecting one cannot silently return host metrics.
 
 ## Prepare before Start
@@ -167,3 +168,85 @@ claimed. Cloud live acceptance and cross-platform release outcomes must be
 recorded from actual executions before broader support is advertised.
 
 Analytical storage is bound durably to its first configured archive namespace. All replicas must use that namespace. A changed filesystem root, bucket, prefix, or cloud identity stops analytical artifact access and cleanup with an explicit error. Restore the configuration, or migrate all analytical artifacts and the `analysis_storage_identity_v1` setting together offline with writers stopped; changing only the setting is unsafe. Dataset metadata and cancellation remain available when the native build capability or project flag is disabled. Physical deletion still requires the matching storage namespace.
+
+
+## Collector adapter configuration
+
+Use signed jobs for remote packs. `--adapter-targets` names a local JSON file of
+approved pack/destination pairs. A scenario cannot change this allowlist.
+For SSH, include the exact OpenSSH `host_key`; the only command reads loadavg,
+meminfo, and uptime from `/proc`. No supplied command is executed.
+
+Provide a protected `--credential-key-file` containing the base64 X25519 private
+key. Enroll its public key in the project-admin source configuration using
+`collector_public_key`. Set `credential_ref` to a project secret whose JSON value
+contains `username` and `password`, or `private_key` for SSH. Credential bundles
+are sealed to the collector and bound to project, job, source revision,
+destination, and a one-minute signed lease. Readiness advertises the same public
+key. Changing credentials never writes plaintext into spool or archive files.
+
+OTLP uses `--otlp-listen 127.0.0.1:4318` and a protected `--otlp-token-file` (32 or
+more bytes). Approve `otel-metrics` with an `otlp://stream-name` destination.
+Emitters POST uncompressed OTLP JSON to `/v1/metrics` with bearer authentication
+and `X-APEX-Monitor-Stream: otlp://stream-name`. Remote access requires a TLS proxy.
+The receiver accepts gauges and cumulative monotonic sums, retaining timestamps
+and bounded string attributes. Unsupported histogram, summary, delta, or
+attribute semantics return explicit partial-success rejection counts. Payloads
+are capped at 1 MiB and 512 buffered points per stream; full buffers return 429.
+No automatic exporter/probe traffic is introduced by preparation.
+
+Build and configure the [restricted Java helper](../runners/monitor-java/README.md)
+for the `jmx` and PostgreSQL `jdbc` packs. Broader database drivers and attribute
+packs require explicit implementations and acceptance; they are not advertised.
+
+## Qualified diagnostics and dependency evidence
+
+Enable `APEXLOAD_DIAGNOSTICS_PROJECTS` with a comma-separated project allowlist.
+Live TPS, average response time, and error percentage are compared with 30
+consecutive buckets having the same VUser count, load levels, and interval.
+Staleness, missing buckets, telemetry drops, and pauses break qualification.
+Zero-variance baselines remain unscored. Three-standard-deviation findings and
+repeated error patterns are advisory; explicit SLA stop rules are unchanged.
+Findings flow through existing incident history/webhook delivery. Reports derive
+the same statistical evidence from retained interval summaries.
+
+Set a source's `service` to the exact dependency label displayed by the run.
+Dependency drilldown returns one actual interval with monitor coverage and
+selectable metric links. It never averages percentile values or treats an
+association as proof of cause. Missing and bounded-scan coverage are visible.
+
+## Preparation capacity policies
+
+Preparation accepts an immutable `capacity` object. `selection: existing`
+reserves available generators without a provider mutation. `selection: ephemeral`
+requires an approved asynchronous launch-capable pool; unsupported local/static
+or Kubernetes targets fail before preparation starts. Azure Apps/Jobs/Instances
+and ECS reuse their durable launch intent and cancellation paths.
+
+`spot` is `off`, `preferred`, or `required`. ECS spot must be approved by a target
+runtime profile. `on_demand_floor` and `spot_ceiling_percent` bound the exact
+integer allocation. Required spot fails when unsupported or rounded to zero.
+Preferred uses on-demand where spot is unsupported; it does not fall back across
+clouds or regions, or retry failed provider spot launches as on-demand. Standing
+services are not scaled by ephemeral preparation. Once consumed, existing
+archive-terminal teardown fences govern cleanup. Standalone provisioning retries
+of run-owned requests are refused because they would lose execution ownership.
+
+Equivalent CLI flags are `--capacity`, `--spot`, `--on-demand-floor`, and
+`--spot-ceiling` on `apexctl prepare create`.
+
+OTLP receiver buffering is bounded to 512 samples per approved stream and five
+minutes. The receiver returns explicit partial rejection for unsupported units,
+semantics, timestamps or dimensions, and HTTP 429 when full. Late arrivals within
+this retention period remain collectable. Per-run accepted sample identities and
+pending batches survive collector restart through the spool. The passive receiver acknowledges HTTP ingestion only after its protected local
+journal has been replaced and synced. It refuses ingestion until the collector
+holds its spool ownership lock and has recovered that journal. Five-minute
+retention still applies; this is not an OTLP archival gateway.
+
+Dependency monitor links now carry the selected UTC interval into the overlay.
+A bounded receipt scan reports `scan_limited` rather than claiming absent historical
+evidence is zero; mixed valid and invalid observations report incomplete coverage.
+
+Use `apexctl monitor dependencies --id RUN --at 2026-01-01T00:00:00Z` to inspect
+the same qualified dependency interval through the CLI (omit `--at` for latest).

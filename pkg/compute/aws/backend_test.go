@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -390,6 +391,45 @@ func TestResolveEndpointRejectsCredentialExfiltrationHosts(t *testing.T) {
 	for _, endpoint := range []string{"http://ecs.us-east-1.amazonaws.com", "https://example.com", "https://vpce-123.ecs.us-east-1.vpce.amazonaws.com"} {
 		if _, err := ResolveEndpoint(endpoint, "us-east-1"); err == nil {
 			t.Errorf("ResolveEndpoint(%q) succeeded", endpoint)
+		}
+	}
+}
+
+func TestFargatePreparationSpotFloorAndStandingIsolation(t *testing.T) {
+	api := &fakeAPI{}
+	backend := &Backend{API: api, ControllerID: "controller", Target: &storage.ExecutionTarget{Kind: storage.ExecutionTargetAWSECSFargate, StandingOwner: storage.CapacityOwnerApex, BurstOwner: storage.CapacityOwnerApex, AWSECSFargate: &storage.AWSECSFargateTargetSpec{Cluster: "apex", WarmService: "warm", BurstTaskDefinition: "burst", Subnets: []string{"subnet"}}, RuntimeProfiles: []storage.RuntimeProfile{{ID: "spot", CapacityType: "spot"}}}}
+	request := compute.CapacityRequest{OperationID: "op", ExecutionTargetID: "target", FleetPoolID: "pool", Desired: 4, WarmFloor: 3, Policy: compute.CapacityPolicy{Selection: "ephemeral", Spot: "required", OnDemandFloor: 1, SpotCeilingPercent: 50}}
+	for i := 0; i < 4; i++ {
+		request.LaunchIntents = append(request.LaunchIntents, compute.LaunchIntent{ClientToken: fmt.Sprint("token", i), GeneratorID: fmt.Sprint("generator", i), LaunchNonce: fmt.Sprint("nonce", i)})
+	}
+	if _, err := backend.Reconcile(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	spot, onDemand := 0, 0
+	for _, call := range api.calls {
+		if call.action == "UpdateService" {
+			t.Fatal("ephemeral preparation mutated standing capacity")
+		}
+		if call.action == "RunTask" {
+			if call.input["capacityProviderStrategy"] != nil {
+				spot++
+			} else {
+				onDemand++
+			}
+		}
+	}
+	if spot != 2 || onDemand != 2 {
+		t.Fatalf("allocation spot=%d on-demand=%d", spot, onDemand)
+	}
+	request.Policy.Spot = "off"
+	request.Policy.SpotCeilingPercent = 0
+	api.calls = nil
+	if _, err := backend.Reconcile(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range api.calls {
+		if call.input["capacityProviderStrategy"] != nil {
+			t.Fatal("off policy launched spot")
 		}
 	}
 }

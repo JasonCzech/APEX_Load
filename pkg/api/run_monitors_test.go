@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,7 +35,7 @@ func TestRunMonitoringAPIArtifactsAndRetry(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	created := timeslotRequest(t, server, http.MethodPost, "/api/v1/projects/proj-a/monitor-sources", storage.MonitorSource{Name: "runtime", CollectorID: "monitor-collector", Pack: "go-runtime", IntervalSeconds: 1, Enabled: true})
+	created := timeslotRequest(t, server, http.MethodPost, "/api/v1/projects/proj-a/monitor-sources", storage.MonitorSource{Name: "runtime", Service: "orders", CollectorID: "monitor-collector", Pack: "go-runtime", IntervalSeconds: 15, Enabled: true})
 	if created.Code != 200 {
 		t.Fatalf("create: %d %s", created.Code, created.Body.String())
 	}
@@ -80,6 +81,44 @@ func TestRunMonitoringAPIArtifactsAndRetry(t *testing.T) {
 	series := timeslotRequest(t, server, http.MethodGet, "/api/v1/tests/monitor-run/monitor-series?source_id="+source.ID+"&metric=goroutines", nil)
 	if series.Code != 200 {
 		t.Fatalf("series: %d %s", series.Code, series.Body.String())
+	}
+	for _, test := range []struct {
+		query         string
+		status, count int
+	}{
+		{"&from=invalid", 400, 0},
+		{"&from=" + url.QueryEscape(now.Format(time.RFC3339Nano)) + "&to=" + url.QueryEscape(now.Add(-time.Second).Format(time.RFC3339Nano)), 400, 0},
+		{"&from=" + url.QueryEscape(now.Add(time.Second).Format(time.RFC3339Nano)), 200, 0},
+		{"&from=" + url.QueryEscape(now.Add(-time.Second).Format(time.RFC3339Nano)) + "&to=" + url.QueryEscape(now.Format(time.RFC3339Nano)), 200, 1},
+	} {
+		response := timeslotRequest(t, server, http.MethodGet, "/api/v1/tests/monitor-run/monitor-series?source_id="+source.ID+"&metric=goroutines"+test.query, nil)
+		if response.Code != test.status {
+			t.Fatalf("window: %d %s", response.Code, response.Body.String())
+		}
+		if test.status == 200 {
+			var body struct {
+				Points []analysis.MetricPoint `json:"points"`
+			}
+			if json.Unmarshal(response.Body.Bytes(), &body) != nil || len(body.Points) != test.count {
+				t.Fatalf("window selection: %s", response.Body.String())
+			}
+		}
+	}
+	t.Setenv("APEXLOAD_DIAGNOSTICS_PROJECTS", "proj-a")
+	for _, test := range []struct {
+		offset   time.Duration
+		coverage string
+	}{{0, "observed"}, {2 * time.Second, "missing"}} {
+		at := now.Add(test.offset)
+		live := &LiveMetrics{Timestamp: at, SampleWindowSeconds: 1, DependencyMap: buildLiveDependencyMap(map[string]*TxMetrics{"orders": {Count: 1, DependencyType: "grpc"}})}
+		server.runner.mu.Lock()
+		server.runner.tests["monitor-run"] = &ManagedTest{ID: "monitor-run", ProjectID: "proj-a", Status: "RUNNING", LiveMetrics: live, History: []*LiveMetrics{live}}
+		server.runner.mu.Unlock()
+		reply := timeslotRequest(t, server, http.MethodGet, "/api/v1/tests/monitor-run/dependency-evidence?at="+url.QueryEscape(at.Format(time.RFC3339Nano)), nil)
+		var evidence DependencyEvidenceResponse
+		if reply.Code != 200 || json.Unmarshal(reply.Body.Bytes(), &evidence) != nil || len(evidence.Monitors) != 1 || evidence.Monitors[0].Coverage != test.coverage {
+			t.Fatalf("dependency window: %d %s", reply.Code, reply.Body.String())
+		}
 	}
 	bad := batch
 	bad.Job.Payload += " "

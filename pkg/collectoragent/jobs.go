@@ -21,20 +21,22 @@ import (
 // RunJob grants a short collection lease for one immutable run/source binding.
 // Destination is also checked against local operator configuration before I/O.
 type RunJob struct {
-	ID              string    `json:"id"`
-	ProjectID       string    `json:"project_id"`
-	RunID           string    `json:"run_id"`
-	ScenarioID      string    `json:"scenario_id,omitempty"`
-	CollectorID     string    `json:"collector_id"`
-	SourceID        string    `json:"source_id"`
-	SourceRevision  int64     `json:"source_revision"`
-	Pack            string    `json:"pack"`
-	Destination     string    `json:"destination,omitempty"`
-	IntervalSeconds int       `json:"interval_seconds"`
-	StartedAt       time.Time `json:"started_at"`
-	ExpiresAt       time.Time `json:"expires_at"`
-	LeaseExpiresAt  time.Time `json:"lease_expires_at"`
-	NextSequence    int64     `json:"next_sequence"`
+	UnavailableReason string             `json:"unavailable_reason,omitempty"`
+	Credentials       *SealedCredentials `json:"credentials,omitempty"`
+	ID                string             `json:"id"`
+	ProjectID         string             `json:"project_id"`
+	RunID             string             `json:"run_id"`
+	ScenarioID        string             `json:"scenario_id,omitempty"`
+	CollectorID       string             `json:"collector_id"`
+	SourceID          string             `json:"source_id"`
+	SourceRevision    int64              `json:"source_revision"`
+	Pack              string             `json:"pack"`
+	Destination       string             `json:"destination,omitempty"`
+	IntervalSeconds   int                `json:"interval_seconds"`
+	StartedAt         time.Time          `json:"started_at"`
+	ExpiresAt         time.Time          `json:"expires_at"`
+	LeaseExpiresAt    time.Time          `json:"lease_expires_at"`
+	NextSequence      int64              `json:"next_sequence"`
 }
 
 type SignedRunJob struct {
@@ -61,7 +63,7 @@ func SignRunJob(job RunJob, key ed25519.PrivateKey) (SignedRunJob, error) {
 
 func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, now time.Time) (RunJob, error) {
 	var job RunJob
-	if len(key) != ed25519.PublicKeySize || len(signed.Payload) > 8192 || len(signed.Signature) > 128 {
+	if len(key) != ed25519.PublicKeySize || len(signed.Payload) > 32768 || len(signed.Signature) > 128 {
 		return job, errors.New("invalid signed monitor job")
 	}
 	sig, err := base64.RawStdEncoding.DecodeString(signed.Signature)
@@ -95,13 +97,21 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 				return err
 			}
 			active[job.ID] = true
-			if !slices.Contains(a.cfg.Packs, job.Pack) || job.Pack == "prometheus" && job.Destination != a.cfg.PrometheusURL || job.Pack != "prometheus" && job.Destination != "" {
+			if job.UnavailableReason != "" {
+				return errors.New("monitor job is temporarily unavailable")
+			}
+			_, adapterApproved := a.adapterTarget(job)
+			localApproved := (job.Pack == "go-runtime" || job.Pack == "linux-hosts") && job.Destination == ""
+			prometheusApproved := job.Pack == "prometheus" && job.Destination == a.cfg.PrometheusURL
+			if !slices.Contains(a.cfg.Packs, job.Pack) || !(localApproved || prometheusApproved || adapterApproved) {
 				return errors.New("monitor job destination or pack is not locally approved")
 			}
+
 			// A persisted batch survives process restart. The durable controller
 			// cursor also resolves a lost response after successful acceptance.
 			batch := a.pendingBatches[job.ID]
 			if batch != nil && batch.Sequence < job.NextSequence {
+				a.acknowledgeOTLP(job, batch.Points)
 				delete(a.pendingBatches, job.ID)
 				batch = nil
 			}
@@ -109,63 +119,104 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 				if until := a.nextCollection[job.ID]; now.Before(until) {
 					return nil
 				}
-				copyAgent := *a
-				copyAgent.cfg.Packs = []string{job.Pack}
-				leaseCtx, cancel := context.WithDeadline(ctx, job.LeaseExpiresAt)
-				hb, collectErr := copyAgent.collect(leaseCtx)
-				cancel()
-				if collectErr != nil {
-					return collectErr
-				}
-				points := []analysis.MetricPoint{}
-				for _, pack := range hb.Packs {
-					keys := make([]string, 0, len(pack.Samples))
-					for name := range pack.Samples {
-						keys = append(keys, name)
+				var points []analysis.MetricPoint
+				if adapterApproved {
+					leaseCtx, cancel := context.WithDeadline(ctx, job.LeaseExpiresAt)
+					points, err = a.collectAdapter(leaseCtx, job)
+					cancel()
+					if err != nil {
+						return err
 					}
-					sort.Strings(keys)
-					for _, name := range keys {
-						value := pack.Samples[name]
-						meta := pack.SampleMetadata[name]
-						kind := meta.Kind
-						if kind == "" {
-							kind = analysis.KindGauge
+					for i := range points {
+						if err := normalizeAdapterPoint(&points[i]); err != nil {
+							return err
 						}
-						at := pack.Timestamp
-						if meta.Timestamp != nil {
-							at = *meta.Timestamp
-						}
-						p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: job.ProjectID, RunID: job.RunID, ScenarioID: job.ScenarioID, Source: job.SourceID, Host: job.CollectorID, TimestampUTC: at.UTC(), MetricName: name, Value: &value, Kind: kind, Quality: analysis.QualityValid}
-						p.Unit, p.Dimensions = meta.Unit, meta.Dimensions
-						if meta.Name != "" {
-							p.MetricName = meta.Name
-						}
-						if job.Pack != "prometheus" {
-							p.Unit = localMetricUnit(name)
-						}
-						if p.Unit != "" {
-							unit, scale, err := analysis.NormalizeUnit(p.Unit)
-							if err != nil {
-								return err
-							}
-							p.Unit = unit
-							value *= scale
-						}
-						if meta.Quality == analysis.QualityMissing {
-							p.Quality = analysis.QualityMissing
-							p.Value = nil
-						}
-						p, err = analysis.NormalizeRunClock(p, job.StartedAt)
+						points[i].ProjectID = job.ProjectID
+						points[i].RunID = job.RunID
+						points[i].ScenarioID = job.ScenarioID
+						points[i].Source = job.SourceID
+						points[i].Host = job.CollectorID
+						points[i].ReceivedAt = time.Time{}
+						points[i], err = analysis.NormalizeRunClock(points[i], job.StartedAt)
 						if err != nil {
 							return err
 						}
-						points = append(points, p)
+					}
+				} else {
+					copyAgent := *a
+					copyAgent.cfg.Packs = []string{job.Pack}
+					leaseCtx, cancel := context.WithDeadline(ctx, job.LeaseExpiresAt)
+					hb, collectErr := copyAgent.collect(leaseCtx)
+					cancel()
+					if collectErr != nil {
+						return collectErr
+					}
+					points = []analysis.MetricPoint{}
+					for _, pack := range hb.Packs {
+						keys := make([]string, 0, len(pack.Samples))
+						for name := range pack.Samples {
+							keys = append(keys, name)
+						}
+						sort.Strings(keys)
+						for _, name := range keys {
+							value := pack.Samples[name]
+							meta := pack.SampleMetadata[name]
+							kind := meta.Kind
+							if kind == "" {
+								kind = analysis.KindGauge
+							}
+							at := pack.Timestamp
+							if meta.Timestamp != nil {
+								at = *meta.Timestamp
+							}
+							p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: job.ProjectID, RunID: job.RunID, ScenarioID: job.ScenarioID, Source: job.SourceID, Host: job.CollectorID, TimestampUTC: at.UTC(), MetricName: name, Value: &value, Kind: kind, Quality: analysis.QualityValid}
+							p.Unit, p.Dimensions = meta.Unit, meta.Dimensions
+							if meta.Name != "" {
+								p.MetricName = meta.Name
+							}
+							if job.Pack != "prometheus" {
+								p.Unit = localMetricUnit(name)
+							}
+							if p.Unit != "" {
+								unit, scale, err := analysis.NormalizeUnit(p.Unit)
+								if err != nil {
+									return err
+								}
+								p.Unit = unit
+								value *= scale
+							}
+							if meta.Quality == analysis.QualityMissing {
+								p.Quality = analysis.QualityMissing
+								p.Value = nil
+							}
+							p, err = analysis.NormalizeRunClock(p, job.StartedAt)
+							if err != nil {
+								return err
+							}
+							points = append(points, p)
+						}
 					}
 				}
 				if len(points) == 0 {
+					if job.Pack == "otel-metrics" {
+						return nil
+					}
 					return errors.New("monitor job returned no samples")
 				}
+				if job.Pack == "otel-metrics" {
+					// Metadata expansion must not strand an acknowledged OTLP
+					// export behind the controller's request-size bound. The
+					// receiver retains the unacknowledged remainder durably.
+					points, err = boundedMonitorPoints(points)
+					if err != nil {
+						return err
+					}
+				}
 				batch = &RunSampleBatch{Job: envelope, Sequence: job.NextSequence, Points: points}
+				encoded, err := json.Marshal(batch)
+				if err != nil || len(encoded) > 1<<20 {
+					return errors.New("monitor batch exceeds byte limit")
+				}
 				a.pendingBatches[job.ID] = batch
 				if err := a.saveSpool(); err != nil {
 					return err
@@ -179,11 +230,18 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 			if err := a.jobRequest(ctx, http.MethodPost, "jobs/"+url.PathEscape(job.ID)+"/samples", batch, nil); err != nil {
 				return err
 			}
+			a.acknowledgeOTLP(job, batch.Points)
 			delete(a.pendingBatches, job.ID)
 			if err := a.saveSpool(); err != nil {
 				return err
 			}
 			a.nextCollection[job.ID] = now.Add(time.Duration(job.IntervalSeconds) * time.Second)
+			if job.Pack == "otel-metrics" {
+				remaining, _ := a.collectAdapter(ctx, job)
+				if len(remaining) > 0 {
+					a.nextCollection[job.ID] = now
+				}
+			}
 			return nil
 		}()
 		if err != nil {
@@ -193,6 +251,11 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 	for id := range a.pendingBatches {
 		if !active[id] {
 			delete(a.pendingBatches, id)
+		}
+	}
+	for id := range a.otlpAccepted {
+		if !active[id] {
+			delete(a.otlpAccepted, id)
 		}
 	}
 	for id := range a.nextCollection {
@@ -220,9 +283,7 @@ func (a *Agent) jobRequest(ctx context.Context, method, path string, body, resul
 	req.Header.Set("Content-Type", "application/json")
 	if path == "jobs" {
 		ad := RunJobReadiness{Packs: a.cfg.Packs, SigningKey: base64.StdEncoding.EncodeToString(a.cfg.ControllerPublicKey)}
-		if a.cfg.PrometheusURL != "" {
-			ad.Destinations = []string{a.cfg.PrometheusURL}
-		}
+		ad.Destinations = a.approvedDestinations()
 		payload, _ := json.Marshal(ad)
 		req.Header.Set("X-APEX-Monitor-Readiness", string(payload))
 	}
@@ -240,11 +301,11 @@ func (a *Agent) jobRequest(ctx context.Context, method, path string, body, resul
 		_, err = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 		return err
 	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, 512<<10+1))
+	data, err := io.ReadAll(io.LimitReader(response.Body, 2<<20+1))
 	if err != nil {
 		return err
 	}
-	if len(data) > 512<<10 {
+	if len(data) > 2<<20 {
 		return errors.New("monitor job response exceeds limit")
 	}
 	return json.Unmarshal(data, result)
@@ -254,4 +315,51 @@ type RunJobReadiness struct {
 	Packs        []string `json:"packs"`
 	Destinations []string `json:"destinations"`
 	SigningKey   string   `json:"signing_key"`
+}
+
+func normalizeAdapterPoint(point *analysis.MetricPoint) error {
+	switch point.Unit {
+	case "By":
+		point.Unit = "bytes"
+	case "1":
+		point.Unit = "ratio"
+	case "{count}":
+		point.Unit = "count"
+	}
+	if point.Unit == "" {
+		return nil
+	}
+	unit, scale, err := analysis.NormalizeUnit(point.Unit)
+	if err != nil {
+		return err
+	}
+	point.Unit = unit
+	if point.Value != nil {
+		value := *point.Value * scale
+		point.Value = &value
+	}
+	return nil
+}
+
+// Reserve enough envelope space for the largest renewed signed lease. A retry
+// can carry a larger credential envelope without changing source observations.
+func boundedMonitorPoints(points []analysis.MetricPoint) ([]analysis.MetricPoint, error) {
+	const limit = (1 << 20) - (96 << 10)
+	low, high := 0, len(points)
+	for low < high {
+		middle := (low + high + 1) / 2
+		body, err := json.Marshal(points[:middle])
+		if err != nil {
+			return nil, err
+		}
+		if len(body) <= limit {
+			low = middle
+		} else {
+			high = middle - 1
+		}
+	}
+	if low == 0 {
+		return nil, errors.New("monitor point exceeds batch byte limit")
+	}
+	return points[:low], nil
 }

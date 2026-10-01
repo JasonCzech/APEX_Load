@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/jasonczech/apexload/pkg/compute"
 	"reflect"
 	"time"
 )
@@ -11,6 +12,7 @@ import (
 var ErrPreparationConflict = errors.New("preparation changed, expired, or was already consumed")
 
 type Preparation struct {
+	Capacity          compute.CapacityPolicy      `json:"capacity,omitempty"`
 	ID                string                      `json:"id"`
 	ProjectID         string                      `json:"project_id"`
 	TestID            string                      `json:"test_id"`
@@ -37,6 +39,9 @@ type PreparationStore interface {
 }
 
 func (s *SQLiteStore) CreatePreparation(p Preparation) (*Preparation, error) {
+	if err := p.Capacity.Validate(); err != nil {
+		return nil, err
+	}
 	if p.ID == "" || p.TestID == "" || p.ProjectID == "" || len(p.ExecutionRevision) != 64 || len(p.IdempotencyKey) < 1 || len(p.IdempotencyKey) > 128 || p.ExpiresAt.Sub(p.CreatedAt) < 5*time.Minute || p.ExpiresAt.Sub(p.CreatedAt) > 4*time.Hour {
 		return nil, errors.New("invalid preparation identity or TTL")
 	}
@@ -62,7 +67,7 @@ func (s *SQLiteStore) CreatePreparation(p Preparation) (*Preparation, error) {
 			return nil, err
 		}
 		existing, err := s.GetPreparation(existingID)
-		if err == nil && (existing.ExecutionRevision != p.ExecutionRevision || existing.ProjectID != p.ProjectID) {
+		if err == nil && (existing.ExecutionRevision != p.ExecutionRevision || existing.ProjectID != p.ProjectID || existing.Capacity != p.Capacity) {
 			return nil, ErrPreparationConflict
 		}
 		return existing, err

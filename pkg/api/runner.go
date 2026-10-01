@@ -816,6 +816,7 @@ type RunLogicGoalSnapshot struct {
 }
 
 type LiveMetrics struct {
+	StatisticalFindings []StatisticalFinding `json:"statistical_findings,omitempty"`
 	// ObservationState is stale for expired active observations and historical for
 	// terminal projections. Values and sample timestamps remain unchanged.
 	// ObservationValidUntil bounds freshness, including the oldest distributed

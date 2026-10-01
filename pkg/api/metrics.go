@@ -506,6 +506,9 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	enrichLiveErrorPatternsWithEvidence(test, test.errorPatterns)
 	live.ErrorPatterns = liveErrorPatternsList(test.errorPatterns)
 	live.ErrorEvidence = nil
+	if diagnosticsProjectEnabled(test.ProjectID) && test.Status == "RUNNING" {
+		live.StatisticalFindings = statisticalFindings(test.ProjectID, test.ID, live, test.History)
+	}
 	test.TelemetryHealth = cloneTelemetryRunHealth(telemetryRunHealth)
 	if live.Latency == nil {
 		live.Latency = cloneNetworkLatency(test.lastNetworkLatency)
@@ -1077,6 +1080,9 @@ func (tr *TestRunner) evaluateThresholdAlertsAndStops(test *ManagedTest, live *L
 	stopForError := allowStops && tr.shouldStopForEffectiveErrorThreshold(test, live, settings.Thresholds)
 	stopForP99 := allowStops && tr.shouldStopForSustainedP99(test, live, settings.Thresholds)
 	applyThresholdAlertStopActions(alerts, stopForError, stopForP99)
+	if diagnosticsProjectEnabled(test.ProjectID) {
+		alerts = append(alerts, advisoryDiagnosticAlerts(live)...)
+	}
 	tr.journalThresholdEvaluation(test, live, alerts)
 	for _, alert := range alerts {
 		alert["project_id"] = projectID

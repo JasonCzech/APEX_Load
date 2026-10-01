@@ -31,6 +31,9 @@ import (
 
 // Config configures a collector agent.
 type Config struct {
+	CredentialPrivateKey []byte
+	AdapterTargets       []AdapterTarget
+	OTLP                 *OTLPReceiver
 	// ControllerPublicKey enables signed run-bound collection. In this mode
 	// heartbeats report availability only and never poll monitor sources.
 	ControllerPublicKey ed25519.PublicKey
@@ -58,6 +61,7 @@ type Agent struct {
 	client         *http.Client
 	pendingBatches map[string]*RunSampleBatch
 	nextCollection map[string]time.Time
+	otlpAccepted   map[string]map[string]time.Time
 }
 
 type metricPack struct {
@@ -108,6 +112,11 @@ func New(cfg Config) (*Agent, error) {
 		}
 	}
 	cfg.Packs = append([]string(nil), cfg.Packs...)
+	cfg.CredentialPrivateKey = append([]byte(nil), cfg.CredentialPrivateKey...)
+	cfg.AdapterTargets = append([]AdapterTarget(nil), cfg.AdapterTargets...)
+	if err := validateAdapterTargets(cfg); err != nil {
+		return nil, err
+	}
 	seenPacks := make(map[string]bool)
 	for _, pack := range cfg.Packs {
 		if seenPacks[pack] {
@@ -115,6 +124,25 @@ func New(cfg Config) (*Agent, error) {
 		}
 		seenPacks[pack] = true
 		switch pack {
+		case "ssh-linux", "jmx", "jdbc", "otel-metrics":
+			if len(cfg.ControllerPublicKey) == 0 {
+				return nil, fmt.Errorf("remote adapters require signed run jobs")
+			}
+			if pack == "otel-metrics" && cfg.OTLP == nil {
+				return nil, fmt.Errorf("OTLP receiver not configured")
+			}
+			if pack != "otel-metrics" && len(cfg.CredentialPrivateKey) != 32 {
+				return nil, fmt.Errorf("collector encryption private key required")
+			}
+			approved := false
+			for _, target := range cfg.AdapterTargets {
+				if target.Pack == pack {
+					approved = true
+				}
+			}
+			if !approved {
+				return nil, fmt.Errorf("adapter requires local destination approval")
+			}
 		case "linux-hosts", "go-runtime":
 		case "prometheus":
 			if strings.TrimSpace(cfg.PrometheusURL) == "" {
@@ -140,6 +168,12 @@ func New(cfg Config) (*Agent, error) {
 	}
 	if len(cfg.ControllerPublicKey) != 0 && len(cfg.ControllerPublicKey) != ed25519.PublicKeySize {
 		return nil, fmt.Errorf("invalid controller monitor public key")
+	}
+	if cfg.OTLP != nil {
+		if cfg.SpoolDirectory == "" {
+			return nil, fmt.Errorf("OTLP requires a durable spool directory")
+		}
+		cfg.OTLP.requireJournal = true
 	}
 	cfg.ControllerPublicKey = append(ed25519.PublicKey(nil), cfg.ControllerPublicKey...)
 	return &Agent{cfg: cfg, client: client, pendingBatches: map[string]*RunSampleBatch{}, nextCollection: map[string]time.Time{}}, nil
@@ -192,6 +226,12 @@ func (a *Agent) Run(ctx context.Context) error {
 	defer unlock()
 	if err = a.loadSpool(); err != nil {
 		return err
+	}
+	if a.cfg.OTLP != nil {
+		if err := a.cfg.OTLP.openJournal(a.spoolPath() + ".otlp"); err != nil {
+			return err
+		}
+		defer a.cfg.OTLP.closeJournal()
 	}
 	interval := a.cfg.Interval
 	if len(a.cfg.ControllerPublicKey) > 0 {

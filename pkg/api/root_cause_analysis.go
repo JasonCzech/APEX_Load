@@ -93,6 +93,14 @@ func buildRunRootCauseSummary(testID string, report *RunArchiveReport) RunRootCa
 			addFinding("protocol", "warning", "Advisory: "+finding.Rule, name+": "+finding.Message, []string{"by_action." + name + ".diagnostic_findings"}, 50)
 		}
 	}
+	for i, finding := range report.StatisticalFindings {
+		if i >= 10 {
+			break
+		}
+		addFinding("statistical", "warning", "Advisory: "+finding.MetricName,
+			fmt.Sprintf("%.2f standard deviations from %d comparable buckets (%s to %s). Association does not establish causation.", finding.ZScore, finding.BaselineBuckets, finding.BaselineStart.Format(time.RFC3339), finding.BaselineEnd.Format(time.RFC3339)),
+			[]string{fmt.Sprintf("statistical_findings[%d]", i)}, 30)
+	}
 	for _, coverage := range report.Manifest.MonitorCoverage {
 		if coverage.Reason != "" {
 			addFinding("monitoring", "warning", "Incomplete monitor coverage", coverage.SourceID+": "+coverage.Reason, []string{"manifest.monitor_coverage"}, 35)

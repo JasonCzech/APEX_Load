@@ -213,7 +213,27 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 		if j.ExpiresAt.Before(lease) {
 			lease = j.ExpiresAt
 		}
-		envelope, err := collectoragent.SignRunJob(collectoragent.RunJob{ID: j.ID, ProjectID: j.ProjectID, RunID: j.RunID, ScenarioID: j.ScenarioID, CollectorID: j.Source.CollectorID, SourceID: j.Source.ID, SourceRevision: j.Source.Revision, Pack: j.Source.Pack, Destination: j.Source.Destination, IntervalSeconds: j.Source.IntervalSeconds, StartedAt: j.StartedAt, ExpiresAt: j.ExpiresAt, LeaseExpiresAt: lease, NextSequence: j.NextSequence}, key)
+		job := collectoragent.RunJob{ID: j.ID, ProjectID: j.ProjectID, RunID: j.RunID, ScenarioID: j.ScenarioID, CollectorID: j.Source.CollectorID, SourceID: j.Source.ID, SourceRevision: j.Source.Revision, Pack: j.Source.Pack, Destination: j.Source.Destination, IntervalSeconds: j.Source.IntervalSeconds, StartedAt: j.StartedAt, ExpiresAt: j.ExpiresAt, LeaseExpiresAt: lease, NextSequence: j.NextSequence}
+		if j.Source.CredentialRef != "" {
+			// Return a signed unavailable job instead of failing the collector's
+			// entire poll. Healthy overlapping runs must continue collecting.
+			if s.projectSecretStore == nil {
+				job.UnavailableReason = "monitor credential store unavailable"
+			} else {
+				secret, _, resolveErr := s.projectSecretStore.Get(r.Context(), j.ProjectID, j.Source.CredentialRef)
+				var credentials collectoragent.Credentials
+				publicKey, decodeErr := base64.StdEncoding.DecodeString(j.Source.CollectorPublicKey)
+				if resolveErr != nil || len(secret) > 16<<10 || json.Unmarshal([]byte(secret), &credentials) != nil || decodeErr != nil {
+					job.UnavailableReason = "monitor credential unavailable"
+				} else {
+					job.Credentials, err = collectoragent.SealCredentials(job, publicKey, credentials)
+					if err != nil {
+						job.UnavailableReason = "cannot seal monitor credentials"
+					}
+				}
+			}
+		}
+		envelope, err := collectoragent.SignRunJob(job, key)
 		if err != nil {
 			writeError(w, 503, "cannot sign monitor job")
 			return
@@ -272,6 +292,7 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 			writeError(w, 400, "invalid monitor run timestamp")
 			return
 		}
+		canonical.Service = job.Source.Service
 		batch.Points[i] = canonical
 	}
 	body, err := json.Marshal(batch.Points)
@@ -337,6 +358,21 @@ func (s *Server) handleRunMonitorSeries(w http.ResponseWriter, r *http.Request) 
 		writeError(w, 400, "metric and source_id are required")
 		return
 	}
+	var from, to time.Time
+	for key, target := range map[string]*time.Time{"from": &from, "to": &to} {
+		if raw := r.URL.Query().Get(key); raw != "" {
+			parsed, err := time.Parse(time.RFC3339Nano, raw)
+			if err != nil {
+				writeError(w, 400, "invalid series window timestamp")
+				return
+			}
+			*target = parsed.UTC()
+		}
+	}
+	if !from.IsZero() && !to.IsZero() && !to.After(from) {
+		writeError(w, 400, "series window must have positive duration")
+		return
+	}
 	selection := AnalysisSeriesSelection{Host: r.URL.Query().Get("host")}
 	if raw := r.URL.Query().Get("dimensions"); raw != "" {
 		if len(raw) > 8192 || json.Unmarshal([]byte(raw), &selection.Dimensions) != nil || len(selection.Dimensions) > 16 {
@@ -372,7 +408,7 @@ func (s *Server) handleRunMonitorSeries(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		for _, p := range batch {
-			if p.MetricName != metric || p.Source != source || !matchesAnalysisDimensions(p, selection) {
+			if p.MetricName != metric || p.Source != source || !matchesAnalysisDimensions(p, selection) || (!from.IsZero() && p.TimestampUTC.Before(from)) || (!to.IsZero() && p.TimestampUTC.After(to)) {
 				continue
 			}
 			p.ReceivedAt = receipt.ReceivedAt

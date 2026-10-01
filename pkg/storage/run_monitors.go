@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"crypto/ecdh"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -76,15 +78,18 @@ type RunMonitorStore interface {
 // MonitorSource contains only public collection configuration. Credentials are
 // resolved on the assigned collector; bearer tokens must never enter this row.
 type MonitorSource struct {
-	ID              string `json:"id"`
-	ProjectID       string `json:"project_id"`
-	Name            string `json:"name"`
-	Revision        int64  `json:"revision"`
-	CollectorID     string `json:"collector_id"`
-	Pack            string `json:"pack"`
-	Destination     string `json:"destination,omitempty"`
-	IntervalSeconds int    `json:"interval_seconds"`
-	Enabled         bool   `json:"enabled"`
+	CredentialRef      string `json:"credential_ref,omitempty"`
+	CollectorPublicKey string `json:"collector_public_key,omitempty"`
+	Service            string `json:"service,omitempty"`
+	ID                 string `json:"id"`
+	ProjectID          string `json:"project_id"`
+	Name               string `json:"name"`
+	Revision           int64  `json:"revision"`
+	CollectorID        string `json:"collector_id"`
+	Pack               string `json:"pack"`
+	Destination        string `json:"destination,omitempty"`
+	IntervalSeconds    int    `json:"interval_seconds"`
+	Enabled            bool   `json:"enabled"`
 }
 
 type MonitorBinding struct {
@@ -255,7 +260,7 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 				if err = json.Unmarshal([]byte(destinationsJSON), &destinations); err != nil {
 					return nil, err
 				}
-				if started.Sub(seen) > 90*time.Second || seen.After(started.Add(30*time.Second)) || !slices.Contains(packs, job.Source.Pack) || job.Source.Destination != "" && !slices.Contains(destinations, job.Source.Destination) {
+				if started.Sub(seen) > 90*time.Second || seen.After(started.Add(30*time.Second)) || !slices.Contains(packs, job.Source.Pack) || job.Source.Destination != "" && !slices.Contains(destinations, job.Source.ReadinessDestination()) {
 					job.CoverageReason = "collector_run_configuration_unavailable"
 				}
 			}
@@ -430,11 +435,33 @@ func (m MonitorSource) Validate() error {
 	if m.IntervalSeconds < 1 || m.IntervalSeconds > 3600 {
 		return errors.New("monitor interval must be 1-3600 seconds")
 	}
+	if len(m.Service) > 128 || len(m.CredentialRef) > 128 {
+		return errors.New("monitor identity exceeds limit")
+	}
+	if m.Pack != "ssh-linux" && m.Pack != "jmx" && m.Pack != "jdbc" && (m.CredentialRef != "" || m.CollectorPublicKey != "") {
+		return errors.New("this monitor pack does not accept sealed credentials")
+	}
+	if m.CredentialRef != "" {
+		key, err := base64.StdEncoding.DecodeString(m.CollectorPublicKey)
+		if err != nil {
+			return errors.New("invalid collector encryption key")
+		}
+		if _, err = ecdh.X25519().NewPublicKey(key); err != nil {
+			return errors.New("invalid collector encryption key")
+		}
+	}
 	switch m.Pack {
 	case "linux-hosts", "go-runtime":
 		if m.Destination != "" {
 			return errors.New("local host packs do not accept destinations")
 		}
+	case "ssh-linux", "jmx", "jdbc":
+		if m.CredentialRef == "" {
+			return errors.New("remote monitor requires project secret reference and enrolled collector encryption key")
+		}
+		return validateRemoteMonitorDestination(m.Pack, m.Destination)
+	case "otel-metrics":
+		return validateRemoteMonitorDestination(m.Pack, m.Destination)
 	case "prometheus":
 		u, err := url.Parse(m.Destination)
 		if err != nil || len(m.Destination) > 2048 || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
@@ -623,4 +650,26 @@ func (s *SQLiteStore) SaveMonitorBindings(b MonitorBindings, expected int64) (*M
 		return nil, err
 	}
 	return &b, nil
+}
+
+func validateRemoteMonitorDestination(pack, destination string) error {
+	u, err := url.Parse(destination)
+	if err != nil || len(destination) > 2048 || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" || u.Hostname() == "" {
+		return errors.New("invalid monitor destination")
+	}
+	expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp"}[pack]
+	if u.Scheme != expected || pack != "jdbc" && u.Path != "" {
+		return errors.New("invalid monitor destination scheme or path")
+	}
+	if pack == "jmx" && u.Port() == "" {
+		return errors.New("JMX requires a fixed TLS registry/server port")
+	}
+	return nil
+}
+
+func (m MonitorSource) ReadinessDestination() string {
+	if m.CredentialRef != "" {
+		return m.Destination + "#" + m.CollectorPublicKey
+	}
+	return m.Destination
 }

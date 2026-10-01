@@ -782,8 +782,13 @@ func thresholdAlertNotificationEvent(test *ManagedTest, status string, alert map
 			summary += fmt.Sprintf(" (%.2f%% gap)", gap)
 		}
 	}
+	if alert["action"] == "advisory" {
+		if explanation, ok := alert["explanation"].(string); ok {
+			summary = explanation
+		}
+	}
 	rawTransaction, _ := alert["transaction"].(string)
-	if transaction := sanitizeThresholdAlertText(rawTransaction); transaction != "" {
+	if transaction := sanitizeThresholdAlertText(rawTransaction); transaction != "" && alert["action"] != "advisory" {
 		summary = fmt.Sprintf("%s %.2f exceeded threshold %.2f for transaction %s", metric, value, threshold, transaction)
 	}
 	return NotificationEvent{
