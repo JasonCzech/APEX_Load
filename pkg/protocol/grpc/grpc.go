@@ -95,7 +95,7 @@ func (g *GRPC) Init(ctx context.Context, config map[string]any) error {
 		return err
 	}
 
-	opts := []googlegrpc.DialOption{}
+	opts := []googlegrpc.DialOption{googlegrpc.WithStatsHandler(rpcStatsHandler{})}
 	if authority, ok := stringConfig(config, "grpc_authority"); ok {
 		opts = append(opts, googlegrpc.WithAuthority(authority))
 	}
@@ -137,6 +137,8 @@ func (g *GRPC) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 		return result, nil
 	}
+	recorder := &rpcDiagnosticRecorder{}
+	ctx = context.WithValue(ctx, diagnosticContextKey{}, recorder)
 	callCtx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 
@@ -153,6 +155,7 @@ func (g *GRPC) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	default:
 		err = fmt.Errorf("unsupported grpc action type: %s", action.Type)
 	}
+	result.ServerTelemetry = recorder.snapshot()
 	result.Duration = time.Since(result.StartTime)
 	if err != nil {
 		result.Success = false
@@ -250,7 +253,9 @@ func (g *GRPC) invokeUnary(ctx context.Context, action *protocol.Action, result 
 	fullMethod := "/" + string(method.Parent().FullName()) + "/" + string(method.Name())
 
 	result.BytesSent = int64(len(action.Body))
+	callCtx = beginRPC(callCtx, method)
 	err = g.conn.Invoke(callCtx, fullMethod, request, response)
+	recordTransportEnd(callCtx, err)
 	if err != nil {
 		return err
 	}
@@ -278,8 +283,10 @@ func (g *GRPC) invokeServerStream(ctx context.Context, action *protocol.Action, 
 	}
 	callCtx := metadata.NewOutgoingContext(ctx, g.callMetadata(action))
 
+	callCtx = beginRPC(callCtx, method)
 	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method))
 	if err != nil {
+		recordTransportEnd(callCtx, err)
 		return err
 	}
 	request, requestBytes, err := buildDynamicMessage(method.Input(), action.Body)
@@ -287,21 +294,27 @@ func (g *GRPC) invokeServerStream(ctx context.Context, action *protocol.Action, 
 		return err
 	}
 	result.BytesSent = int64(requestBytes)
-	if err := stream.SendMsg(request); err != nil {
-		return err
+	sendErr := stream.SendMsg(request)
+	if sendErr != nil && !errors.Is(sendErr, io.EOF) {
+		recordTransportEnd(callCtx, sendErr)
+		return sendErr
 	}
-	if err := stream.CloseSend(); err != nil {
-		return err
+	if sendErr == nil {
+		if err := stream.CloseSend(); err != nil {
+			return err
+		}
 	}
 
-	responseBody, received, err := receiveStreamMessages(stream, method.Output(), intParam(action.Params, "max_messages", 1))
+	responseBody, _, err := receiveStreamMessages(stream, method.Output(), intParam(action.Params, "max_messages", 1))
 	if err != nil {
 		return err
+	}
+	if sendErr != nil {
+		return fmt.Errorf("grpc stream closed while sending the request: %w", sendErr)
 	}
 	result.ResponseBody = string(responseBody)
 	result.BytesReceived = int64(len(responseBody))
 	result.StatusCode = int(codes.OK)
-	result.ServerTelemetry = &protocol.ServerTelemetry{MessagesSent: 1, MessagesReceived: received}
 	return g.applyResponseChecks(action, result, responseBody)
 }
 
@@ -319,20 +332,33 @@ func (g *GRPC) invokeClientStream(ctx context.Context, action *protocol.Action, 
 		return err
 	}
 
+	callCtx = beginRPC(callCtx, method)
 	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method))
 	if err != nil {
+		recordTransportEnd(callCtx, err)
 		return err
 	}
-	sent, sentBytes, err := sendStreamMessages(stream, method.Input(), bodies)
+	sent, sentBytes, sendErr := sendStreamMessages(stream, method.Input(), bodies)
+	result.BytesSent = int64(sentBytes)
+	if sendErr != nil && !errors.Is(sendErr, io.EOF) {
+		recordTransportEnd(callCtx, sendErr)
+		return sendErr
+	}
+	if sendErr == nil {
+		if err := stream.CloseSend(); err != nil {
+			return err
+		}
+	}
+	// SendMsg may return EOF when the peer rejects a stream early. RecvMsg is
+	// still required to observe its status/trailers instead of reporting Unknown.
+	response := dynamicpb.NewMessage(method.Output())
+	err = stream.RecvMsg(response)
+	recordTransportEnd(callCtx, err)
 	if err != nil {
 		return err
 	}
-	if err := stream.CloseSend(); err != nil {
-		return err
-	}
-	response := dynamicpb.NewMessage(method.Output())
-	if err := stream.RecvMsg(response); err != nil {
-		return err
+	if sent != len(bodies) {
+		return fmt.Errorf("grpc stream ended after sending %d of %d request messages: %w", sent, len(bodies), sendErr)
 	}
 	responseBody, err := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(response)
 	if err != nil {
@@ -345,7 +371,6 @@ func (g *GRPC) invokeClientStream(ctx context.Context, action *protocol.Action, 
 	result.ResponseBody = string(responseBody)
 	result.BytesReceived = int64(len(responseBody))
 	result.StatusCode = int(codes.OK)
-	result.ServerTelemetry = &protocol.ServerTelemetry{MessagesSent: sent, MessagesReceived: 1}
 	return g.applyResponseChecks(action, result, responseBody)
 }
 
@@ -357,36 +382,72 @@ func (g *GRPC) invokeBidiStream(ctx context.Context, action *protocol.Action, re
 	if !method.IsStreamingClient() || !method.IsStreamingServer() {
 		return fmt.Errorf("grpc_bidi_stream requires a bidirectional streaming method, got %q", action.Target)
 	}
-	callCtx := metadata.NewOutgoingContext(ctx, g.callMetadata(action))
+	callCtx, cancel := context.WithCancel(metadata.NewOutgoingContext(ctx, g.callMetadata(action)))
+	defer cancel()
 	bodies, err := streamBodies(action)
 	if err != nil {
-		return err
-	}
-
-	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method))
-	if err != nil {
-		return err
-	}
-	sent, sentBytes, err := sendStreamMessages(stream, method.Input(), bodies)
-	if err != nil {
-		return err
-	}
-	if err := stream.CloseSend(); err != nil {
 		return err
 	}
 	maxMessages := intParam(action.Params, "max_messages", len(bodies))
 	if maxMessages <= 0 {
 		maxMessages = len(bodies)
 	}
-	responseBody, received, err := receiveStreamMessages(stream, method.Output(), maxMessages)
+	if maxMessages > dsl.MaxGRPCStreamMessages {
+		return fmt.Errorf("grpc max_messages exceeds limit %d", dsl.MaxGRPCStreamMessages)
+	}
+	callCtx = beginRPC(callCtx, method)
+	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method))
 	if err != nil {
+		recordTransportEnd(callCtx, err)
 		return err
 	}
-	result.BytesSent = int64(sentBytes)
+	// gRPC permits one sender and one receiver concurrently. Sending the entire
+	// request before reading can deadlock when both peers exhaust flow control.
+	type sendResult struct {
+		count, bytes int
+		err          error
+	}
+	sent := make(chan sendResult, 1)
+	go func() {
+		count, bytes, sendErr := sendStreamMessages(stream, method.Input(), bodies)
+		if sendErr == nil {
+			sendErr = stream.CloseSend()
+		}
+		if sendErr != nil && !errors.Is(sendErr, io.EOF) {
+			cancel()
+		}
+		sent <- sendResult{count: count, bytes: bytes, err: sendErr}
+	}()
+	responseBody, _, receiveErr := receiveStreamMessages(stream, method.Output(), maxMessages)
+	var sender sendResult
+	select {
+	case sender = <-sent:
+	default:
+		// A receive limit/error must also unblock an outstanding writer. Join it
+		// before returning, so cancellation cannot leave a sender goroutine alive.
+		cancel()
+		sender = <-sent
+	}
+	result.BytesSent = int64(sender.bytes)
+	if receiveErr != nil {
+		if grpcstatus.Code(receiveErr) == codes.Canceled && sender.err != nil && !errors.Is(sender.err, io.EOF) {
+			if _, transportError := grpcstatus.FromError(sender.err); transportError {
+				recordTransportEnd(callCtx, sender.err)
+			}
+			return sender.err
+		}
+		return receiveErr
+	}
+	if sender.count != len(bodies) {
+		return fmt.Errorf("grpc stream ended after sending %d of %d request messages: %w", sender.count, len(bodies), sender.err)
+	}
+	if sender.err != nil && callCtx.Err() == nil {
+		return sender.err
+	}
+
 	result.ResponseBody = string(responseBody)
 	result.BytesReceived = int64(len(responseBody))
 	result.StatusCode = int(codes.OK)
-	result.ServerTelemetry = &protocol.ServerTelemetry{MessagesSent: sent, MessagesReceived: received}
 	return g.applyResponseChecks(action, result, responseBody)
 }
 
@@ -519,13 +580,13 @@ func sendStreamMessages(stream googlegrpc.ClientStream, input protoreflect.Messa
 		totalBytes += len(body)
 	}
 	sentBytes := 0
-	for _, body := range bodies {
+	for i, body := range bodies {
 		message, size, err := buildDynamicMessage(input, body)
 		if err != nil {
-			return 0, 0, err
+			return i, sentBytes, err
 		}
 		if err := stream.SendMsg(message); err != nil {
-			return 0, 0, err
+			return i, sentBytes, err
 		}
 		sentBytes += size
 	}
@@ -540,10 +601,13 @@ func receiveStreamMessages(stream googlegrpc.ClientStream, output protoreflect.M
 		return nil, 0, fmt.Errorf("grpc max_messages exceeds limit %d", dsl.MaxGRPCStreamMessages)
 	}
 	messages := make([]json.RawMessage, 0, maxMessages)
-	var totalBytes int
+	totalBytes := 2 // JSON array brackets
 	for len(messages) < maxMessages {
 		response := dynamicpb.NewMessage(output)
 		err := stream.RecvMsg(response)
+		if err != nil {
+			recordTransportEnd(stream.Context(), err)
+		}
 		if err == io.EOF {
 			break
 		}
@@ -555,10 +619,17 @@ func receiveStreamMessages(stream googlegrpc.ClientStream, output protoreflect.M
 			return nil, len(messages), fmt.Errorf("encode grpc response body: %w", err)
 		}
 		totalBytes += len(encoded)
+		if len(messages) > 0 {
+			totalBytes++ // separating comma
+		}
 		if totalBytes > dsl.MaxGRPCStreamBytes {
+			markReceiveLimit(stream.Context())
 			return nil, len(messages), fmt.Errorf("grpc streamed response exceeds %d byte limit", dsl.MaxGRPCStreamBytes)
 		}
 		messages = append(messages, json.RawMessage(encoded))
+	}
+	if len(messages) == maxMessages {
+		markReceiveLimit(stream.Context())
 	}
 	encoded, err := json.Marshal(messages)
 	return encoded, len(messages), err

@@ -610,6 +610,7 @@ func cloneTxMetricsMap(in map[string]*TxMetrics) map[string]*TxMetrics {
 		clone := *tx
 		if tx.ServerTelemetry != nil {
 			telemetry := *tx.ServerTelemetry
+			telemetry.GRPC = telemetry.GRPC.Clone()
 			telemetry.RequestSizeClasses = cloneTelemetryClassCounts(tx.ServerTelemetry.RequestSizeClasses)
 			telemetry.ResponseSizeClasses = cloneTelemetryClassCounts(tx.ServerTelemetry.ResponseSizeClasses)
 			telemetry.RequestPayloadHistogram = cloneTelemetryClassCounts(tx.ServerTelemetry.RequestPayloadHistogram)

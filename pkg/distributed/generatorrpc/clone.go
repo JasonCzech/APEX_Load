@@ -112,6 +112,7 @@ func cloneServerTelemetry(input *protocol.ServerTelemetry) *ServerTelemetry {
 		return nil
 	}
 	return &ServerTelemetry{
+		GRPC:                   input.GRPC.Clone(),
 		ServerProcessingMs:     input.ServerProcessingMs,
 		TransferMs:             input.TransferMs,
 		RequestPayloadKB:       input.RequestPayloadKB,

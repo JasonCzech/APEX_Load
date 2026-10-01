@@ -917,6 +917,10 @@ func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConf
 		result.ClientMetrics.BrowserEngine = scrubSensitiveTextWithConfig(result.ClientMetrics.BrowserEngine, config)
 	}
 	if result.ServerTelemetry != nil {
+		if result.ServerTelemetry.GRPC != nil {
+			result.ServerTelemetry.GRPC = result.ServerTelemetry.GRPC.Clone()
+			result.ServerTelemetry.GRPC.Method = scrubSensitiveTextWithConfig(result.ServerTelemetry.GRPC.Method, config)
+		}
 		result.ServerTelemetry.RequestSizeClass = scrubSensitiveTextWithConfig(result.ServerTelemetry.RequestSizeClass, config)
 		result.ServerTelemetry.ResponseSizeClass = scrubSensitiveTextWithConfig(result.ServerTelemetry.ResponseSizeClass, config)
 		result.ServerTelemetry.SOAPFaultCode = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPFaultCode, config)

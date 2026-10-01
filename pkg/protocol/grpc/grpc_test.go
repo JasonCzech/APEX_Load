@@ -152,6 +152,15 @@ func TestGRPCUnaryWithReflection(t *testing.T) {
 	if result.BytesSent == 0 || result.BytesReceived == 0 {
 		t.Fatalf("bytes sent/received = %d/%d", result.BytesSent, result.BytesReceived)
 	}
+	if result.ServerTelemetry == nil || result.ServerTelemetry.MessagesSent != 1 || result.ServerTelemetry.MessagesReceived != 1 ||
+		result.ServerTelemetry.RequestPayloadKB <= 0 || result.ServerTelemetry.ResponsePayloadKB <= 0 || result.ServerTelemetry.FirstEventMs <= 0 || result.ServerTelemetry.FirstEventMs > float64(result.Duration)/float64(time.Millisecond) {
+		t.Fatalf("unary protobuf telemetry = %#v", result.ServerTelemetry)
+	}
+	wantRequestBytes := proto.Size(&pb.ScriptPayload{ScriptId: "script-1", Content: []byte("{}"), ContentHash: "hash-1"})
+	wantResponseBytes := proto.Size(&pb.ScriptAck{Cached: true, ContentHash: "hash-1"})
+	if result.ServerTelemetry.RequestPayloadKB != float64(wantRequestBytes)/1024 || result.ServerTelemetry.ResponsePayloadKB != float64(wantResponseBytes)/1024 {
+		t.Fatalf("protobuf sizes = %+v, want %d/%d bytes", result.ServerTelemetry, wantRequestBytes, wantResponseBytes)
+	}
 	if !strings.Contains(result.ResponseBody, `"cached":true`) {
 		t.Fatalf("ResponseBody = %s", result.ResponseBody)
 	}

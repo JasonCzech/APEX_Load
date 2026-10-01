@@ -34,6 +34,7 @@ import ConfirmRunActionModal from './ConfirmRunActionModal'
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
+import GRPCDiagnosticsPanel from './GRPCDiagnosticsPanel'
 import TestExecutionRunState from './TestExecutionRunState'
 import TestExecutionInfrastructure from './TestExecutionInfrastructure'
 import ErrorDiagnostic from './ErrorDiagnostic'
@@ -989,6 +990,7 @@ export default function TestExecution({
       category: 'Investigation',
       description: 'Health signals, throughput tracking, and capacity evidence.',
       render: () => (
+        <>
         <TestExecutionStatusPanels
           isGoalOriented={isGoalOriented}
           goalDescription={describeGoalController(goalStatus)}
@@ -999,6 +1001,8 @@ export default function TestExecution({
           groupMetrics={groupMetrics}
           groupColors={GROUP_COLORS}
         />
+        <GRPCDiagnosticsPanel transactions={summaryTransactions} />
+        </>
       ),
     },
     {

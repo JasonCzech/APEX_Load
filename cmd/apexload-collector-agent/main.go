@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -29,7 +30,12 @@ func main() {
 	collectorID := fs.String("collector-id", os.Getenv("APEXLOAD_COLLECTOR_ID"), "Collector ID issued at registration")
 	token := fs.String("token", os.Getenv("APEXLOAD_COLLECTOR_TOKEN"), "Collector token (or APEXLOAD_COLLECTOR_TOKEN)")
 	interval := fs.Duration("interval", 15*time.Second, "Heartbeat interval")
-	packs := fs.String("packs", envOr("APEXLOAD_COLLECTOR_PACKS", "linux-hosts"), "Comma-separated metric pack names (must be in the collector's allow-list)")
+	defaultPacks := "linux-hosts"
+	if runtime.GOOS != "linux" {
+		defaultPacks = "go-runtime"
+	}
+	packs := fs.String("packs", envOr("APEXLOAD_COLLECTOR_PACKS", defaultPacks), "Comma-separated metric pack names (must be in the collector's allow-list)")
+	prometheusURL := fs.String("prometheus-url", os.Getenv("APEXLOAD_COLLECTOR_PROMETHEUS_URL"), "Prometheus text-exposition endpoint for the prometheus pack")
 	insecure := fs.Bool("insecure", strings.EqualFold(strings.TrimSpace(os.Getenv("APEXLOAD_COLLECTOR_ALLOW_INSECURE")), "true"),
 		"Permit a non-loopback plain-http controller URL (sends the token in cleartext; use only on a trusted network)")
 	_ = fs.Parse(os.Args[1:])
@@ -40,6 +46,7 @@ func main() {
 		Token:         *token,
 		Interval:      *interval,
 		Packs:         splitPacks(*packs),
+		PrometheusURL: *prometheusURL,
 		AllowInsecure: *insecure,
 	})
 	if err != nil {

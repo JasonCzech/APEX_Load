@@ -15,6 +15,8 @@ Automatic publishing is off by default. A project administrator can enable it on
 
 APEX Load exposes controller metrics at `GET /metrics`. When `APEXLOAD_METRICS_ADDR` is set, `/metrics` is served only on that dedicated listener. When `APEXLOAD_METRICS_TOKEN` is set, scrapes must include `Authorization: Bearer <token>`.
 
+The workstation collector agent has separate source-specific packs. `linux-hosts` reads Linux `/proc` host metrics, `go-runtime` reads the agent process, and `prometheus` scrapes an explicitly configured `-prometheus-url` (or `APEXLOAD_COLLECTOR_PROMETHEUS_URL`). The collector must be registered with each selected pack in its allow-list. The initial Prometheus pack accepts text exposition 0.0.4 with up to 512 finite, unlabeled numeric samples from a 1 MiB response. It preserves declared metric kinds and explicit millisecond timestamps; undeclared kinds remain unknown. Labeled and non-finite samples are counted as skipped and degrade the heartbeat. Duplicate samples and unsupported formats fail the scrape. Scrapes have a 10-second deadline and do not follow redirects; the URL cannot contain credentials, query parameters, or a fragment. An unavailable source degrades the heartbeat and is not reported under another pack name. The collector metrics API also returns a bounded `metric_points` projection with collector identity, source timestamps, and current freshness. `metric_points_coverage` counts returned, omitted, invalid, and source-skipped samples. These live snapshots are not yet bound to a run or stored in its archive.
+
 The controller is scrape-only. Remote write is configured on the external Prometheus server; see `deployments/k8s/monitoring/prometheus-remote-write-example.yaml`.
 
 ### Controller

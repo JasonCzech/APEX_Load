@@ -65,6 +65,7 @@ pkg/
   debugserver/   — Optional net/http/pprof listener, gated by APEXLOAD_PPROF_ADDR
   runtimetuning/ — GOMAXPROCS/GOMEMLIMIT resolution from cgroup limits
   perfevidence/  — Controlled local performance probes + component evidence reports
+  analysis/      — Shared validated metric-point model and time-series correlation primitives
   Java execution stack:
   javarunner/    — Shared policy-enforcing Java Vuser primitives (classpath, command, containment);
                    deliberately depends on neither dsl nor protocol so authoring and execution share it

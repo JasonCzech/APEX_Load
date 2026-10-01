@@ -257,6 +257,7 @@ type BrowserDeviceMetrics struct {
 }
 
 type ServerTelemetry struct {
+	GRPC                   *protocol.GRPCDiagnostics
 	ServerProcessingMs     float64
 	TransferMs             float64
 	RequestPayloadKB       float64
@@ -452,6 +453,9 @@ const FeatureSecretBundleV1 = "secret_bundle_v1"
 // per-execution success-capture hints and enforces cumulative item/byte budgets
 // in its archive recorder.
 const FeatureMessageDetailCaptureV1 = "message_detail_capture_v1"
+
+// FeatureGRPCDiagnosticsV1 advertises typed client RPC evidence with optional measurements.
+const FeatureGRPCDiagnosticsV1 = "grpc_diagnostics_v1"
 
 const FeatureControlParallelV1 = "control_parallel_v1"
 
@@ -1396,6 +1400,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		var serverTelemetry *ServerTelemetry
 		if tx.GetServerTelemetry() != nil {
 			serverTelemetry = &ServerTelemetry{
+				GRPC:                   grpcDiagnosticsFromProto(tx.GetServerTelemetry().GetGrpc()),
 				ServerProcessingMs:     tx.GetServerTelemetry().GetServerProcessingMs(),
 				TransferMs:             tx.GetServerTelemetry().GetTransferMs(),
 				RequestPayloadKB:       tx.GetServerTelemetry().GetRequestPayloadKb(),

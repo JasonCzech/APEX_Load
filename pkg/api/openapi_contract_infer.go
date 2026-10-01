@@ -166,11 +166,12 @@ func applyGenericImportBatchContract(route discoveredRoute, contract *inferredRo
 // used most heavily by REST request and response contracts. Loading the entire
 // module would make generation sensitive to unrelated packages and build-tag
 // variants; these packages cover the public storage, DSL, execution, recorder,
-// and converter models that handlers decode or return directly.
+// protocol, and converter models that handlers decode or return directly.
 var openAPICrossPackageDirectories = map[string]string{
 	"dsl":      "dsl",
 	"engine":   "engine",
 	"k6":       "convert/k6",
+	"protocol": "protocol",
 	"recorder": "recorder",
 	"sample":   "convert/sample",
 	"storage":  "storage",
@@ -1492,7 +1493,14 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 			definitionKey := pkg.Name + "." + value.Sel.Name
 			if definition := typeDefinitions[definitionKey]; definition != nil && !visiting[definitionKey] {
 				visiting[definitionKey] = true
-				schema := openAPISchemaForASTTypeInPackage(definition, typeDefinitions, visiting, depth+1, pkg.Name)
+				modelDepth := depth + 1
+				// These bounded evidence records sit inside deeply nested run
+				// responses. Resolve their complete contract with a fresh depth
+				// budget; retain the cycle guard and the general model limit.
+				if pkg.Name == "protocol" && (value.Sel.Name == "GRPCDiagnostics" || value.Sel.Name == "GRPCSummary" || value.Sel.Name == "ServerTelemetry") {
+					modelDepth = 0
+				}
+				schema := openAPISchemaForASTTypeInPackage(definition, typeDefinitions, visiting, modelDepth, pkg.Name)
 				delete(visiting, definitionKey)
 				return schema
 			}

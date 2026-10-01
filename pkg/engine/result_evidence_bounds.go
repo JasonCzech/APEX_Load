@@ -94,6 +94,9 @@ func boundResultMetadata(result *protocol.Result) {
 		result.ClientMetrics.BrowserEngine = cloneBoundedResultString(result.ClientMetrics.BrowserEngine, maxResultMetadataBytes)
 	}
 	if result.ServerTelemetry != nil {
+		if !result.ServerTelemetry.GRPC.Valid() {
+			result.ServerTelemetry.GRPC = nil
+		}
 		result.ServerTelemetry.RequestSizeClass = cloneBoundedResultString(result.ServerTelemetry.RequestSizeClass, maxResultMetadataBytes)
 		result.ServerTelemetry.ResponseSizeClass = cloneBoundedResultString(result.ServerTelemetry.ResponseSizeClass, maxResultMetadataBytes)
 		result.ServerTelemetry.SOAPFaultCode = cloneBoundedResultString(result.ServerTelemetry.SOAPFaultCode, maxResultMetadataBytes)

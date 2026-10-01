@@ -511,29 +511,30 @@ type ClientMetrics struct {
 }
 
 type ServerTelemetry struct {
-	ServerProcessingMs     float64 `json:"server_processing_ms,omitempty"`
-	TransferMs             float64 `json:"transfer_ms,omitempty"`
-	SerializationMs        float64 `json:"serialization_ms,omitempty"`
-	DeserializationMs      float64 `json:"deserialization_ms,omitempty"`
-	RequestPayloadKB       float64 `json:"request_payload_kb,omitempty"`
-	RequestSizeClass       string  `json:"request_size_class,omitempty"`
-	ResponsePayloadKB      float64 `json:"response_payload_kb,omitempty"`
-	ResponseSizeClass      string  `json:"response_size_class,omitempty"`
-	EnvelopeOverheadKB     float64 `json:"envelope_overhead_kb,omitempty"`
-	SOAPFaultCode          string  `json:"soap_fault_code,omitempty"`
-	SOAPFaultCategory      string  `json:"soap_fault_category,omitempty"`
-	SOAPNamespaceConflict  string  `json:"soap_namespace_conflict,omitempty"`
-	RedirectCount          int     `json:"redirect_count,omitempty"`
-	RedirectMs             float64 `json:"redirect_ms,omitempty"`
-	FirstEventMs           float64 `json:"first_event_ms,omitempty"`
-	EventCount             int     `json:"event_count,omitempty"`
-	MessageLatencyMs       float64 `json:"message_latency_ms,omitempty"`
-	MessagesSent           int     `json:"messages_sent,omitempty"`
-	MessagesReceived       int     `json:"messages_received,omitempty"`
-	MessagesSentPerSec     float64 `json:"messages_sent_per_sec,omitempty"`
-	MessagesReceivedPerSec float64 `json:"messages_received_per_sec,omitempty"`
-	ConsumerLagMs          float64 `json:"consumer_lag_ms,omitempty"`
-	ConsumerOffsetLag      int64   `json:"consumer_offset_lag,omitempty"` // offset/sequence backlog behind the partition tail (Kafka/Event Hubs); a count, not a duration
+	GRPC                   *GRPCDiagnostics `json:"grpc,omitempty"`
+	ServerProcessingMs     float64          `json:"server_processing_ms,omitempty"`
+	TransferMs             float64          `json:"transfer_ms,omitempty"`
+	SerializationMs        float64          `json:"serialization_ms,omitempty"`
+	DeserializationMs      float64          `json:"deserialization_ms,omitempty"`
+	RequestPayloadKB       float64          `json:"request_payload_kb,omitempty"`
+	RequestSizeClass       string           `json:"request_size_class,omitempty"`
+	ResponsePayloadKB      float64          `json:"response_payload_kb,omitempty"`
+	ResponseSizeClass      string           `json:"response_size_class,omitempty"`
+	EnvelopeOverheadKB     float64          `json:"envelope_overhead_kb,omitempty"`
+	SOAPFaultCode          string           `json:"soap_fault_code,omitempty"`
+	SOAPFaultCategory      string           `json:"soap_fault_category,omitempty"`
+	SOAPNamespaceConflict  string           `json:"soap_namespace_conflict,omitempty"`
+	RedirectCount          int              `json:"redirect_count,omitempty"`
+	RedirectMs             float64          `json:"redirect_ms,omitempty"`
+	FirstEventMs           float64          `json:"first_event_ms,omitempty"`
+	EventCount             int              `json:"event_count,omitempty"`
+	MessageLatencyMs       float64          `json:"message_latency_ms,omitempty"`
+	MessagesSent           int              `json:"messages_sent,omitempty"`
+	MessagesReceived       int              `json:"messages_received,omitempty"`
+	MessagesSentPerSec     float64          `json:"messages_sent_per_sec,omitempty"`
+	MessagesReceivedPerSec float64          `json:"messages_received_per_sec,omitempty"`
+	ConsumerLagMs          float64          `json:"consumer_lag_ms,omitempty"`
+	ConsumerOffsetLag      int64            `json:"consumer_offset_lag,omitempty"` // offset/sequence backlog behind the partition tail (Kafka/Event Hubs); a count, not a duration
 	// Messaging reliability counters (per-transaction; the engine/controller sum
 	// them into run totals). Populated by the messaging protocols (JMS family,
 	// Kafka, Event Hubs) for honest queue-test reliability accounting.

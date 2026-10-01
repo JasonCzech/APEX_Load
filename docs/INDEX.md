@@ -42,6 +42,7 @@ kept for planning or audit context only.
 | [SCRIPT_LIFECYCLE.md](SCRIPT_LIFECYCLE.md) | Script source-to-run lifecycle |
 | [SCRIPT_DEBUGGER_GUIDE.md](SCRIPT_DEBUGGER_GUIDE.md) | Script replay debugger workflow, routes, and imported runtime-setting/capture diagnostics |
 | [PROTOCOL_SUPPORT.md](PROTOCOL_SUPPORT.md) | Web/API, browser, messaging, Java Vuser, and SAP GUI support boundaries |
+| [PROTOCOL_DIAGNOSTICS.md](PROTOCOL_DIAGNOSTICS.md) | gRPC measurement semantics, availability, distributed summaries, and archive compatibility |
 | [IMPORT_FIDELITY_AND_REPAIRS.md](IMPORT_FIDELITY_AND_REPAIRS.md) | JMeter and LoadRunner import fidelity, source-plan execution, guided repair, native archive compatibility, and regression coverage |
 | [RUNTIME_SETTINGS_PARITY.md](RUNTIME_SETTINGS_PARITY.md) | Runtime-settings parity evidence and API contract |
 | [PERFORMANCE_BENCHMARKS.md](PERFORMANCE_BENCHMARKS.md) | Harness-overhead benchmark, local performance evidence, and browser benchmark procedures |

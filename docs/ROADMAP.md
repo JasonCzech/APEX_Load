@@ -8,10 +8,10 @@ Source note: consolidated 2026-09-24 from the former `RUNTIME_TELEMETRY_SLA_PLAN
 
 | Track | Status | Open work |
 | --- | --- | --- |
-| [Runtime telemetry SLA](#runtime-telemetry-sla) | Twelve implementation slices landed | Correlation/dependency metadata for remaining protocols; dependency maps and error-pattern cards |
+| [Runtime telemetry SLA](#runtime-telemetry-sla) | Twelve implementation slices landed; shared metric-point contract and source-specific collector packs added | Durable run-bound monitoring, correlation/dependency metadata for remaining protocols; dependency maps and error-pattern cards |
 | [Protocol telemetry parity](#protocol-telemetry-parity) | Shared `ServerTelemetry` baseline landed; no protocol has full Layer 3 | WebSocket and gRPC L2/L3, Java HTTP object-vs-wire delta, JMS ack latency and broker-managed DLQ discovery, intelligence layer |
 | [Script authoring consolidation](#script-authoring-consolidation) | Phases 1-2 done; 3-5 in progress | Scenario-assembly tightening, reopen-after-save consistency, parity pass and adapter removal |
-| [PT Analysis Parquet import](#pt-analysis-native-parquet-import) | Proposed; no DuckDB/Arrow dependency in `go.mod` | Everything |
+| [PT Analysis Parquet import](#pt-analysis-native-parquet-import) | Bounded schema inspector landed; import/query workflow proposed | Upload, mapping, normalization, DuckDB queries, dashboard analysis |
 | [Messaging](#messaging) | Most of the program landed | IBM MQ native (P2.5), Solace SMF (P2.6), Event Hubs deployment env vars/HOWTO and consumer parity, depth gaps |
 | [Browser and mobile](#browser-and-mobile) | Device emulation, client metrics, import MVP and UX health slice landed | Measured benchmark publication, WebKit process attribution, TrueClient fixtures, HAR V2, UX intelligence beyond thresholds |
 | [CloudTest outcome parity](#cloudtest-outcome-parity) | Active; initial vertical slices implemented | Fixture-proven import mappings, run-bound monitoring, media, chart export coverage |
@@ -39,6 +39,8 @@ Landed so far:
 
 Open: expand correlation/dependency metadata to protocols beyond HTTP and JMS; add dependency maps and error-pattern cards to live monitoring; sustained SLA-breach and baseline-versus-current reporting remain limited.
 
+Foundation since the last consolidation: `pkg/analysis` defines validated metric points, wall-clock alignment, correlation scoring, and advisory 30-bucket/three-sigma anomaly scoring with explicit missing/stale quality; collector snapshots can expose the metric-point projection. The collector agent now differentiates Linux host, Go runtime, and bounded Prometheus scalar packs. Statistical inputs are bounded to 10,000 points per series and require unique timestamps. Counters and aggregate summaries require explicit conversion before scoring; anomaly baselines require comparable gauge buckets. These analyzers are not yet connected to run evidence. Run bindings, durable monitor samples, and archive correlation remain open.
+
 ---
 
 ## Protocol telemetry parity
@@ -62,6 +64,7 @@ Landed:
 - SOAP: operation tagging, fault categorization by code, namespace-conflict detection, envelope-overhead tracking, live per-operation aggregation and cards, archive grouping/drill-down/fault distribution and minute timelines. SOAP has the full analytical surface the captured telemetry supports.
 - Java HTTP: dependency tagging, helper/codec metadata, raw codec timing retention.
 - JMS: payload sizing and size-class distributions, request/reply timing, message counts and throughput, message latency, consumer-lag retention and live trend, messaging cards, sampled broker-pressure diagnostics, topic fan-out analysis, dead-letter diagnostics for explicitly classified DLQ destinations.
+- gRPC diagnostic capture now covers unary, server/client streaming, and bidirectional calls: bounded method identity, client call and first-response timing, remaining deadline budget, observed terminal status, and protobuf message counts/sizes (including partial failures). Optional typed evidence survives distributed RPC and JSONL/Parquet transaction artifacts; live summaries and archive details distinguish missing observations from zero. Bidirectional calls read while sending. Codec/HTTP2 phase hooks, qualified baseline comparisons, method hotspot/deadline findings, and WebSocket depth remain open; see [protocol diagnostic semantics](PROTOCOL_DIAGNOSTICS.md).
 - Previous-run comparison baselines on `GetTest`, used by the execution summary and server telemetry panel.
 
 Open work (effort estimates from the original plan):
@@ -72,7 +75,7 @@ Open work (effort estimates from the original plan):
 | Java HTTP | Codec overhead chart (serialization share of total time) | L3 | `dashboard/` | 1 day |
 | WebSocket | `WebSocketTelemetry`/shared fields, handshake timing, per-message send/receive timestamps, write-buffer depth and backpressure flag, ping/pong latency | L2 | `protocol.go`, `websocket/websocket.go` | ~3.5 days |
 | WebSocket | Connection health score, dashboard cards, throughput regression alerts, P50/P90/P99 per message type, dead-connection detection | L3 | `engine/metrics.go`, `dashboard/`, `api/` | ~5 days |
-| gRPC | Per-method timing via interceptors, stream message counter and throughput, protobuf marshal timing, status distribution, HTTP/2 stream and metadata timing | L2 | `grpc/grpc.go` | ~3 days |
+| gRPC | Client call/first-response timing, counts, sizes, statuses and deadline budgets landed. Remaining: supported codec/transport hooks and throughput analysis (no inferred server-processing or HTTP/2 phase timings) | L2 | `grpc/grpc.go` | ~3 days |
 | gRPC | Method hotspot detection, error classification, deadline-budget tracking and alerts, dashboard cards | L3 | `engine/metrics.go`, `dashboard/`, `api/` | ~4.5 days |
 | JMS | Consumer acknowledgement latency; broker-side latency isolation; queue-depth sampling (provider management API) | L2 | `jms/jms.go` | 0.5 day + provider-specific |
 | JMS | Automatic broker-managed dead-letter discovery / queue-depth correlation | L3 | `jms/jms.go`, `api/` | 1.5 days |
@@ -125,7 +128,7 @@ Key code: `pkg/dsl/parser.go` and `types.go`; `pkg/api/handlers_scripts.go`, `ha
 
 ## PT Analysis native Parquet import
 
-Status: Proposed. No DuckDB/Arrow dependency exists in `go.mod` yet.
+Status: Proposed import workflow. A bounded Parquet footer/schema inspector now exists in `pkg/analysis`, using the repository's existing Parquet/Thrift dependencies; no DuckDB dependency or dataset import workflow exists yet. `go.mod` has an indirect Arrow dependency, but it is not used for PT Analysis.
 
 Decision: import Parquet natively, preserve the original file, and normalize its meaning into the dashboard's canonical analysis model. Do not analyze arbitrary Parquet schemas directly, and do not convert to CSV/JSON as the primary path (that loses schema, types, compression and efficient column scans); conversion is only for exports, debugging or an optimized cache.
 

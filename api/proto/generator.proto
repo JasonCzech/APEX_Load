@@ -569,6 +569,23 @@ message ServerTelemetry {
   int32 event_too_large_count = 27;
   double end_to_end_latency_ms = 28;
   string partition_id = 29;
+  GRPCDiagnostics grpc = 30;
+}
+
+// Optional client-observed diagnostics. Missing status/first-message fields
+// remain unavailable; a receive limit does not prove the remote RPC succeeded.
+message GRPCDiagnostics {
+  string method = 1;
+  string mode = 2;
+  double call_ms = 3;
+  optional double first_message_ms = 4;
+  optional double deadline_budget_ms = 5;
+  optional int32 status_code = 6;
+  int64 messages_sent = 7;
+  int64 messages_received = 8;
+  int64 request_bytes = 9;
+  int64 response_bytes = 10;
+  bool receive_limit_reached = 11;
 }
 
 message TransactionMetric {

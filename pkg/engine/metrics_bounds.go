@@ -2,6 +2,7 @@ package engine
 
 import (
 	"strings"
+	"unsafe"
 
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -66,6 +67,10 @@ func compactMetricsResult(input *protocol.Result) *protocol.Result {
 	}
 	if input.ServerTelemetry != nil {
 		server := *input.ServerTelemetry
+		server.GRPC = server.GRPC.Clone()
+		if !server.GRPC.Valid() {
+			server.GRPC = nil
+		}
 		server.PartitionID = boundedMetricString(server.PartitionID, maxMetricLabelBytes)
 		server.RequestSizeClass = boundedMetricString(server.RequestSizeClass, maxMetricLabelBytes)
 		server.ResponseSizeClass = boundedMetricString(server.ResponseSizeClass, maxMetricLabelBytes)
@@ -134,6 +139,11 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 			}
 			if telemetry := value.ServerTelemetry; telemetry != nil {
 				bytes += 512
+				if telemetry.GRPC != nil {
+					// The distributions and status buckets are inline arrays, so
+					// the pointed-to struct size accounts for the full allocation.
+					bytes += int(unsafe.Sizeof(*telemetry.GRPC))
+				}
 				for partition := range telemetry.PartitionEvents {
 					bytes += len(partition) + 24
 				}

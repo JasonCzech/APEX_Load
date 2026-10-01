@@ -1520,6 +1520,9 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 		}
 		available = append(available, normalized)
 		features = append(features, normalized)
+		if normalized == "grpc" {
+			features = append(features, FeatureGRPCDiagnosticsV1)
+		}
 		if capabilitySupported {
 			features = append(features, capabilities.Features...)
 		}
@@ -2229,6 +2232,7 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		var protoServerTelemetry *pb.ServerTelemetry
 		if tx.ServerTelemetry != nil {
 			protoServerTelemetry = &pb.ServerTelemetry{
+				Grpc:                   grpcDiagnosticsToProto(tx.ServerTelemetry.GRPC),
 				ServerProcessingMs:     tx.ServerTelemetry.ServerProcessingMs,
 				TransferMs:             tx.ServerTelemetry.TransferMs,
 				RequestPayloadKb:       tx.ServerTelemetry.RequestPayloadKB,

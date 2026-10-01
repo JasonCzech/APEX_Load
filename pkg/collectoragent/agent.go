@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -31,6 +33,9 @@ type Config struct {
 	Interval      time.Duration
 	Packs         []string
 	HTTPClient    *http.Client
+	// PrometheusURL is an explicitly configured scrape endpoint. It is required
+	// when the prometheus pack is enabled; credentials must not be put in the URL.
+	PrometheusURL string
 	// AllowInsecure permits a non-loopback plain-http controller URL. Off by
 	// default: the agent's bearer token would otherwise be sent in cleartext
 	// across the network. Set it only for a trusted-network deployment, where it
@@ -45,9 +50,16 @@ type Agent struct {
 }
 
 type metricPack struct {
-	Pack      string             `json:"pack"`
-	Timestamp time.Time          `json:"timestamp"`
-	Samples   map[string]float64 `json:"samples"`
+	Pack           string                    `json:"pack"`
+	Timestamp      time.Time                 `json:"timestamp"`
+	Samples        map[string]float64        `json:"samples"`
+	SampleMetadata map[string]sampleMetadata `json:"sample_metadata,omitempty"`
+	SkippedSamples int                       `json:"skipped_samples,omitempty"`
+}
+
+type sampleMetadata struct {
+	Kind      string     `json:"kind"`
+	Timestamp *time.Time `json:"timestamp,omitempty"`
 }
 
 type heartbeat struct {
@@ -74,7 +86,38 @@ func New(cfg Config) (*Agent, error) {
 		cfg.Interval = 15 * time.Second
 	}
 	if len(cfg.Packs) == 0 {
-		cfg.Packs = []string{"linux-hosts"}
+		if runtime.GOOS == "linux" {
+			cfg.Packs = []string{"linux-hosts"}
+		} else {
+			cfg.Packs = []string{"go-runtime"}
+		}
+	}
+	cfg.Packs = append([]string(nil), cfg.Packs...)
+	seenPacks := make(map[string]bool)
+	for _, pack := range cfg.Packs {
+		if seenPacks[pack] {
+			return nil, fmt.Errorf("duplicate metric pack %q", pack)
+		}
+		seenPacks[pack] = true
+		switch pack {
+		case "linux-hosts", "go-runtime":
+		case "prometheus":
+			if strings.TrimSpace(cfg.PrometheusURL) == "" {
+				return nil, fmt.Errorf("prometheus pack requires prometheus URL")
+			}
+		default:
+			return nil, fmt.Errorf("unsupported metric pack %q", pack)
+		}
+	}
+	if cfg.PrometheusURL != "" {
+		parsed, err := url.Parse(cfg.PrometheusURL)
+		// Validate secret-bearing URL components before any transport warning.
+		if err != nil || parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" {
+			return nil, fmt.Errorf("prometheus URL must not contain credentials, query parameters, or a fragment")
+		}
+		if err := validateControllerURL(cfg.PrometheusURL, cfg.AllowInsecure); err != nil {
+			return nil, fmt.Errorf("prometheus URL: %w", err)
+		}
 	}
 	client := cfg.HTTPClient
 	if client == nil {
@@ -137,23 +180,58 @@ func (a *Agent) Run(ctx context.Context) error {
 }
 
 func (a *Agent) tick(ctx context.Context) {
-	if err := a.pushHeartbeat(ctx, a.collect()); err != nil {
+	hb, collectErr := a.collect(ctx)
+	if collectErr != nil {
+		slog.Warn("collector metric collection degraded", "collector_id", a.cfg.CollectorID, "err", collectErr)
+	}
+	if err := a.pushHeartbeat(ctx, hb); err != nil {
 		slog.Warn("collector heartbeat failed", "collector_id", a.cfg.CollectorID, "err", err)
 		return
 	}
 	slog.Debug("collector heartbeat sent", "collector_id", a.cfg.CollectorID)
 }
 
-// collect builds one metric pack per configured pack name from dependency-free
-// host signals.
-func (a *Agent) collect() heartbeat {
-	now := time.Now().UTC()
-	samples := hostSamples()
+// collect only advertises packs backed by their actual source. Failed packs
+// make the heartbeat degraded and are omitted instead of relabeling host data.
+func (a *Agent) collect(ctx context.Context) (heartbeat, error) {
 	packs := make([]metricPack, 0, len(a.cfg.Packs))
+	var firstErr error
 	for _, name := range a.cfg.Packs {
-		packs = append(packs, metricPack{Pack: name, Timestamp: now, Samples: samples})
+		pack := metricPack{Pack: name}
+		var samples map[string]float64
+		var err error
+		switch name {
+		case "linux-hosts":
+			samples = linuxHostSamples()
+			if len(samples) == 0 {
+				err = fmt.Errorf("linux host metrics unavailable")
+			}
+		case "go-runtime":
+			samples = goRuntimeSamples()
+		case "prometheus":
+			pack, err = a.prometheusSamples(ctx)
+			samples = pack.Samples
+		}
+		if err != nil || len(samples) == 0 {
+			if err == nil {
+				err = fmt.Errorf("no supported samples available")
+			}
+			if firstErr == nil {
+				firstErr = fmt.Errorf("%s: %w", name, err)
+			}
+			continue
+		}
+		pack.Pack, pack.Timestamp, pack.Samples = name, time.Now().UTC(), samples
+		packs = append(packs, pack)
+		if pack.SkippedSamples > 0 && firstErr == nil {
+			firstErr = fmt.Errorf("%s: skipped %d unsupported samples", name, pack.SkippedSamples)
+		}
 	}
-	return heartbeat{Health: "healthy", Packs: packs}
+	health := "healthy"
+	if firstErr != nil {
+		health = "degraded"
+	}
+	return heartbeat{Health: health, Packs: packs}, firstErr
 }
 
 func (a *Agent) pushHeartbeat(ctx context.Context, hb heartbeat) error {
@@ -168,7 +246,10 @@ func (a *Agent) pushHeartbeat(ctx context.Context, hb heartbeat) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+a.cfg.Token)
-	resp, err := a.client.Do(req)
+	client := *a.client
+	// A redirect must not carry the collector token to another destination.
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -184,17 +265,20 @@ func (a *Agent) pushHeartbeat(ctx context.Context, hb heartbeat) error {
 	return nil
 }
 
-// hostSamples returns dependency-free host/process signals. Go runtime metrics are
-// available everywhere; load average + memory come from /proc on Linux.
-func hostSamples() map[string]float64 {
+// goRuntimeSamples returns metrics of the collector process itself.
+func goRuntimeSamples() map[string]float64 {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
-	samples := map[string]float64{
+	return map[string]float64{
 		"num_cpu":       float64(runtime.NumCPU()),
 		"goroutines":    float64(runtime.NumGoroutine()),
 		"heap_alloc_mb": float64(mem.HeapAlloc) / (1024 * 1024),
 		"go_sys_mb":     float64(mem.Sys) / (1024 * 1024),
 	}
+}
+
+func linuxHostSamples() map[string]float64 {
+	samples := map[string]float64{}
 	if load, ok := readLoadAvg(); ok {
 		samples["load_avg_1m"] = load
 	}
@@ -203,6 +287,157 @@ func hostSamples() map[string]float64 {
 		samples["mem_available_mb"] = available
 	}
 	return samples
+}
+
+// hostSamples remains the process and host diagnostic helper for callers that
+// explicitly need both groups; it is never sent under an unrelated pack name.
+func hostSamples() map[string]float64 {
+	samples := goRuntimeSamples()
+	for key, value := range linuxHostSamples() {
+		samples[key] = value
+	}
+	return samples
+}
+
+const maxPrometheusBodyBytes = 1 << 20
+const maxPrometheusSamples = 512
+
+func (a *Agent) prometheusSamples(ctx context.Context) (metricPack, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.cfg.PrometheusURL, nil)
+	if err != nil {
+		return metricPack{}, err
+	}
+	req.Header.Set("Accept", "text/plain; version=0.0.4")
+	client := *a.client
+	// Scrape only the explicitly configured endpoint.
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(req)
+	if err != nil {
+		return metricPack{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return metricPack{}, fmt.Errorf("scrape returned %d", resp.StatusCode)
+	}
+	if contentType := resp.Header.Get("Content-Type"); contentType != "" {
+		mediaType, parameters, err := mime.ParseMediaType(contentType)
+		if err != nil || mediaType != "text/plain" || (parameters["version"] != "" && parameters["version"] != "0.0.4") {
+			return metricPack{}, fmt.Errorf("scrape requires Prometheus text exposition 0.0.4")
+		}
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxPrometheusBodyBytes+1))
+	if err != nil {
+		return metricPack{}, err
+	}
+	if len(body) > maxPrometheusBodyBytes {
+		return metricPack{}, fmt.Errorf("scrape exceeds %d bytes", maxPrometheusBodyBytes)
+	}
+	return parsePrometheusScalars(string(body))
+}
+
+// parsePrometheusScalars accepts only unlabeled finite samples. Labeled
+// measurements need bounded dimension handling before they can be admitted.
+func parsePrometheusScalars(body string) (metricPack, error) {
+	pack := metricPack{Samples: make(map[string]float64), SampleMetadata: make(map[string]sampleMetadata)}
+	if len(body) > maxPrometheusBodyBytes {
+		return metricPack{}, fmt.Errorf("scrape exceeds %d bytes", maxPrometheusBodyBytes)
+	}
+	lines := strings.Split(body, "\n")
+	types := make(map[string]string)
+	for _, line := range lines {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) < 2 || fields[0] != "#" || fields[1] != "TYPE" {
+			continue
+		}
+		if len(fields) != 4 || len(fields[2]) > 128 || !validPrometheusMetricName(fields[2]) {
+			return metricPack{}, fmt.Errorf("invalid Prometheus TYPE declaration")
+		}
+		if _, exists := types[fields[2]]; exists {
+			return metricPack{}, fmt.Errorf("duplicate Prometheus TYPE declaration")
+		}
+		if len(types) >= maxPrometheusSamples {
+			return metricPack{}, fmt.Errorf("too many Prometheus TYPE declarations")
+		}
+		switch fields[3] {
+		case "gauge", "counter", "histogram", "summary", "untyped":
+		default:
+			return metricPack{}, fmt.Errorf("unsupported Prometheus TYPE")
+		}
+		types[fields[2]] = fields[3]
+	}
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 || strings.ContainsAny(fields[0], "{}") {
+			pack.SkippedSamples++
+			continue
+		}
+		name := fields[0]
+		if len(fields) > 3 || len(name) > 128 || !validPrometheusMetricName(name) {
+			return metricPack{}, fmt.Errorf("invalid Prometheus sample syntax")
+		}
+		if _, exists := pack.Samples[name]; exists {
+			return metricPack{}, fmt.Errorf("duplicate Prometheus sample")
+		}
+		value, err := strconv.ParseFloat(fields[1], 64)
+		if err != nil {
+			return metricPack{}, fmt.Errorf("invalid Prometheus sample value")
+		}
+		if math.IsInf(value, 0) || math.IsNaN(value) {
+			pack.SkippedSamples++
+			continue
+		}
+		if len(pack.Samples) >= maxPrometheusSamples {
+			return metricPack{}, fmt.Errorf("scrape exceeds %d accepted samples", maxPrometheusSamples)
+		}
+		kind := types[name]
+		if kind == "" {
+			for _, suffix := range []string{"_sum", "_count", "_bucket"} {
+				if strings.HasSuffix(name, suffix) {
+					parent := types[strings.TrimSuffix(name, suffix)]
+					if parent == "histogram" || parent == "summary" {
+						kind = parent
+						break
+					}
+				}
+			}
+		}
+		if kind == "" || kind == "untyped" {
+			kind = "unknown"
+		}
+		metadata := sampleMetadata{Kind: kind}
+		if len(fields) == 3 {
+			millis, err := strconv.ParseInt(fields[2], 10, 64)
+			if err != nil {
+				return metricPack{}, fmt.Errorf("invalid Prometheus sample timestamp")
+			}
+			at := time.UnixMilli(millis).UTC()
+			if at.Year() < 1 || at.Year() > 9999 {
+				return metricPack{}, fmt.Errorf("Prometheus sample timestamp out of range")
+			}
+			metadata.Timestamp = &at
+		}
+		pack.Samples[name], pack.SampleMetadata[name] = value, metadata
+	}
+	if len(pack.Samples) == 0 {
+		return metricPack{}, fmt.Errorf("scrape contained no supported unlabeled finite samples")
+	}
+	return pack, nil
+}
+
+func validPrometheusMetricName(name string) bool {
+	for i, r := range name {
+		valid := r == '_' || r == ':' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || i > 0 && r >= '0' && r <= '9'
+		if !valid {
+			return false
+		}
+	}
+	return name != ""
 }
 
 func readLoadAvg() (float64, bool) {

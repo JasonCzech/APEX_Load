@@ -592,7 +592,9 @@ describe('ScriptImportReview', () => {
     })
     expect(container.textContent).toContain('New finding')
     expect(container.textContent).not.toContain('Finding 00100')
-  })
+  // This deliberate 10,000-finding scale fixture verifies bounded DOM output,
+  // not a five-second host-performance SLA. Leave headroom for parallel CI.
+  }, 15_000)
 
   it('renders an explicit accessible reason whenever the owner disables saving', () => {
     const onSave = vi.fn()
@@ -710,6 +712,22 @@ describe('ScriptImportReview', () => {
     expect(preview).not.toContain('raw-boundary-canary')
     expect(preview.length).toBeLessThan(21_000)
     expect(container.textContent).toContain('Preview truncated for browser performance')
+  })
+
+  it('redacts quoted credential fields beside identifier text after bounding scans', () => {
+    act(() => root.render(<ScriptImportReview
+      title="Review Generated Script"
+      script={script}
+      previewData={{ raw: `prefix"password":"quoted-boundary-canary"\nother'authorization'='second-boundary-canary'\n?headers%5Btoken%5D=encoded-boundary-canary\n123password=numeric-prefix-canary\ncombinedpassword=combined-prefix-canary\n%61pi_key=encoded-leading-canary\n%2570assword=double-encoded-leading-canary` }}
+    />))
+    const preview = container.querySelector('.script-import-review-preview pre')?.textContent || ''
+    expect(preview).not.toContain('quoted-boundary-canary')
+    expect(preview).not.toContain('second-boundary-canary')
+    expect(preview).not.toContain('encoded-boundary-canary')
+    expect(preview).not.toContain('numeric-prefix-canary')
+    expect(preview).not.toContain('combined-prefix-canary')
+    expect(preview).not.toContain('encoded-leading-canary')
+    expect(preview).not.toContain('double-encoded-leading-canary')
   })
 
   it('auto-applies safe references and allows values to be configured later', async () => {

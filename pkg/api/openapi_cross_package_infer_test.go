@@ -22,6 +22,28 @@ func TestOpenAPICrossPackageModelSchemasAreResolved(t *testing.T) {
 		assert      func(*testing.T, oasSchema)
 	}{
 		{
+			name:        "gRPC evidence preserves optional observations",
+			packageName: "protocol",
+			typeName:    "GRPCDiagnostics",
+			assert: func(t *testing.T, schema oasSchema) {
+				for _, field := range []string{"first_message_ms", "deadline_budget_ms", "status_code"} {
+					property := schema.Properties[field]
+					if (property.Type != "number" && property.Type != "integer") || !property.Nullable || containsOpenAPIField(schema.Required, field) {
+						t.Fatalf("%s must be an optional nullable measurement: %#v", field, property)
+					}
+				}
+				if schema.Properties["method"].Type != "string" || schema.Properties["messages_received"].Type != "integer" {
+					t.Fatal("gRPC identity or counters are opaque")
+				}
+			},
+		},
+		{
+			name:        "gRPC summaries expose mergeable distributions",
+			packageName: "protocol",
+			typeName:    "GRPCSummary",
+			assert:      assertGRPCSummaryOpenAPISchema,
+		},
+		{
 			name:        "storage user includes session epoch and nested bindings",
 			packageName: "storage",
 			typeName:    "User",
@@ -135,6 +157,18 @@ func TestGeneratedOpenAPIRoutesUseCrossPackageSchemas(t *testing.T) {
 		t.Fatalf("unmarshal generated OpenAPI: %v", err)
 	}
 
+	testResponse := document.Paths["/api/v1/tests/{id}"]["get"].Responses["200"].Content["application/json"].Schema
+	transactions := testResponse.Properties["live_metrics"].Properties["transactions"]
+	encoded, err := yaml.Marshal(transactions.AdditionalProperties)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var transaction oasSchema
+	if err := yaml.Unmarshal(encoded, &transaction); err != nil {
+		t.Fatal(err)
+	}
+	assertGRPCSummaryOpenAPISchema(t, transaction.Properties["server_telemetry"].Properties["grpc"])
+
 	userResponse := document.Paths["/api/v1/auth/users/{id}/revoke-sessions"]["post"].Responses["200"]
 	userSchema := userResponse.Content["application/json"].Schema
 	if userSchema.Properties["session_epoch"].Type != "integer" {
@@ -169,6 +203,21 @@ func TestGeneratedOpenAPIRoutesUseCrossPackageSchemas(t *testing.T) {
 			if !containsOpenAPIField(schema.Required, field) {
 				t.Errorf("POST %s required fields = %v, want %s", route.path, schema.Required, field)
 			}
+		}
+	}
+}
+
+func assertGRPCSummaryOpenAPISchema(t *testing.T, schema oasSchema) {
+	t.Helper()
+	if schema.Properties["samples"].Type != "integer" {
+		t.Fatalf("gRPC summary is opaque: %#v", schema)
+	}
+	for _, field := range []string{"call_ms", "first_message_ms", "deadline_budget_ms"} {
+		distribution := schema.Properties[field]
+		buckets := distribution.Properties["buckets"]
+		if distribution.Properties["count"].Type != "integer" || distribution.Properties["sum"].Type != "number" ||
+			buckets.Type != "array" || buckets.Items == nil || buckets.Items.Type != "integer" {
+			t.Fatalf("%s has an opaque diagnostic distribution: %#v", field, distribution)
 		}
 	}
 }

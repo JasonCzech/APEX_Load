@@ -12,9 +12,12 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/analysis"
 )
 
 // collectorStaleAfter is the freshness window after which a collector's latest
@@ -33,9 +36,16 @@ const (
 
 // collectorMetricPack is one scoped metric pack pushed by a collector agent.
 type collectorMetricPack struct {
-	Pack      string             `json:"pack"`
-	Timestamp time.Time          `json:"timestamp"`
-	Samples   map[string]float64 `json:"samples"`
+	Pack           string                             `json:"pack"`
+	Timestamp      time.Time                          `json:"timestamp"`
+	Samples        map[string]float64                 `json:"samples"`
+	SampleMetadata map[string]collectorSampleMetadata `json:"sample_metadata,omitempty"`
+	SkippedSamples int                                `json:"skipped_samples,omitempty"`
+}
+
+type collectorSampleMetadata struct {
+	Kind      string     `json:"kind"`
+	Timestamp *time.Time `json:"timestamp,omitempty"`
 }
 
 // collectorMetricSnapshot is the latest heartbeat payload for a collector.
@@ -138,6 +148,7 @@ func (s *Server) handleCollectorHeartbeat(w http.ResponseWriter, r *http.Request
 	now := time.Now().UTC()
 	packs := make([]collectorMetricPack, 0, len(req.Packs))
 	accepted := make([]string, 0, len(req.Packs))
+	seenPacks := make(map[string]bool)
 	for _, p := range req.Packs {
 		name := strings.TrimSpace(p.Pack)
 		if name == "" {
@@ -151,11 +162,24 @@ func (s *Server) handleCollectorHeartbeat(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("metric pack %q has too many samples (max %d)", name, maxCollectorSamplesPerPack))
 			return
 		}
+		if seenPacks[name] {
+			writeError(w, http.StatusBadRequest, "duplicate metric pack")
+			return
+		}
+		seenPacks[name] = true
+		if err := validateCollectorSampleMetadata(p); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if p.SkippedSamples > 0 && health == "healthy" {
+			health = "degraded"
+		}
 		ts := p.Timestamp
 		if ts.IsZero() {
 			ts = now
 		}
-		packs = append(packs, collectorMetricPack{Pack: name, Timestamp: ts, Samples: p.Samples})
+		p.Pack, p.Timestamp = name, ts
+		packs = append(packs, p)
 		accepted = append(accepted, name)
 	}
 
@@ -196,25 +220,111 @@ func (s *Server) handleGetCollectorMetrics(w http.ResponseWriter, r *http.Reques
 	snap, ok := s.collectorMetrics.get(collector.ID)
 	if !ok {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"collector_id": collector.ID,
-			"project_id":   normalizeProjectID(collector.ProjectID),
-			"health":       collector.Health,
-			"packs":        []collectorMetricPack{},
-			"stale":        true,
-			"pending":      true,
+			"collector_id":           collector.ID,
+			"project_id":             normalizeProjectID(collector.ProjectID),
+			"health":                 collector.Health,
+			"packs":                  []collectorMetricPack{},
+			"metric_points":          []analysis.MetricPoint{},
+			"metric_points_coverage": collectorPointCoverage{},
+			"stale":                  true,
+			"pending":                true,
 		})
 		return
 	}
-	age := time.Since(snap.ReceivedAt)
+	now := time.Now().UTC()
+	age := now.Sub(snap.ReceivedAt)
+	points, coverage := collectorSnapshotMetricPoints(snap, now)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"collector_id": snap.CollectorID,
-		"project_id":   snap.ProjectID,
-		"health":       snap.Health,
-		"received_at":  snap.ReceivedAt,
-		"age_seconds":  int(age.Seconds()),
-		"stale":        age > collectorStaleAfter,
-		"packs":        snap.Packs,
+		"collector_id":           snap.CollectorID,
+		"project_id":             snap.ProjectID,
+		"health":                 snap.Health,
+		"received_at":            snap.ReceivedAt,
+		"age_seconds":            int(age.Seconds()),
+		"stale":                  age > collectorStaleAfter,
+		"packs":                  snap.Packs,
+		"metric_points":          points,
+		"metric_points_coverage": coverage,
 	})
+}
+
+func validateCollectorSampleMetadata(pack collectorMetricPack) error {
+	if len(pack.SampleMetadata) > len(pack.Samples) || pack.SkippedSamples < 0 || pack.SkippedSamples > 1<<20 {
+		return fmt.Errorf("invalid collector sample metadata bounds")
+	}
+	for name, metadata := range pack.SampleMetadata {
+		if _, ok := pack.Samples[name]; !ok {
+			return fmt.Errorf("metadata must refer to a supplied sample")
+		}
+		switch metadata.Kind {
+		case analysis.KindUnknown, analysis.KindGauge, analysis.KindCounter, analysis.KindHistogram, analysis.KindSummary, analysis.KindObservation:
+		default:
+			return fmt.Errorf("invalid collector sample kind")
+		}
+		if metadata.Timestamp != nil && metadata.Timestamp.IsZero() {
+			return fmt.Errorf("sample timestamp must be nonzero")
+		}
+	}
+	return nil
+}
+
+type collectorPointCoverage struct {
+	Returned      int `json:"returned"`
+	Omitted       int `json:"omitted"`
+	Invalid       int `json:"invalid"`
+	SourceSkipped int `json:"source_skipped"`
+}
+
+// collectorSnapshotMetricPoints exposes a bounded live projection. No run
+// association is inferred from project membership. Omitted/invalid evidence is
+// counted explicitly; collection identity and source timestamps are retained.
+func collectorSnapshotMetricPoints(snap collectorMetricSnapshot, now time.Time) ([]analysis.MetricPoint, collectorPointCoverage) {
+	const maxPreviewPoints = 512
+	points := make([]analysis.MetricPoint, 0, maxPreviewPoints)
+	coverage := collectorPointCoverage{}
+	for _, pack := range snap.Packs {
+		coverage.SourceSkipped += pack.SkippedSamples
+		keys := make([]string, 0, len(pack.Samples))
+		for key := range pack.Samples {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			value := pack.Samples[key]
+			kind, at := analysis.KindUnknown, pack.Timestamp
+			if pack.Pack == "linux-hosts" || pack.Pack == "go-runtime" {
+				kind = analysis.KindGauge
+			}
+			if metadata, ok := pack.SampleMetadata[key]; ok {
+				kind = metadata.Kind
+				if metadata.Timestamp != nil {
+					at = *metadata.Timestamp
+				}
+			}
+			quality := analysis.QualityValid
+			if at.After(snap.ReceivedAt.Add(30 * time.Second)) {
+				quality = analysis.QualityClockSkewed
+			} else if now.Sub(snap.ReceivedAt) > collectorStaleAfter || now.Sub(at) > collectorStaleAfter || snap.ReceivedAt.Sub(at) > collectorStaleAfter {
+				quality = analysis.QualityStale
+			}
+			point := analysis.MetricPoint{
+				SchemaVersion: analysis.SchemaVersion, ProjectID: snap.ProjectID,
+				Source: pack.Pack, TimestampUTC: at.UTC(), ReceivedAt: snap.ReceivedAt.UTC(),
+				Dimensions: map[string]string{"collector_id": snap.CollectorID},
+				MetricName: key, Kind: kind, Value: &value, Quality: quality,
+			}
+			if point.Validate() != nil {
+				coverage.Invalid++
+				continue
+			}
+			if len(points) == maxPreviewPoints {
+				coverage.Omitted++
+				continue
+			}
+			points = append(points, point)
+		}
+	}
+	coverage.Returned = len(points)
+	return points, coverage
 }
 
 func (s *Server) broadcastCollectorHeartbeat(snap collectorMetricSnapshot, packs []string) {

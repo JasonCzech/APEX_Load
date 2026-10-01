@@ -290,7 +290,11 @@ function redactPreviewText(value: string): string {
     (_match, scheme: string) => `${scheme}${PROTECTED_PREVIEW_VALUE}@`,
   )
   safe = safe.replace(
-    /(["']?)([A-Za-z][A-Za-z0-9_.%[\]-]*)\1\s*([:=])\s*(\{\{secret\.[A-Za-z0-9_.-]{1,249}\}\}|"[^"]*"|'[^']*'|(?:bearer|basic)\s+[^\s,}&]+|[^\s,}&]+)/gi,
+    // Only start at a field boundary. Retrying an unbounded identifier from
+    // every character of a long delimiter-free string makes this quadratic.
+    // The boundary follows the optional quote so quoted fields remain matched
+    // even when the preceding text ends in an identifier character.
+    /(["']?)(?<![A-Za-z0-9_.%[\]-])([A-Za-z0-9_.%[\]-]+)\1\s*([:=])\s*(\{\{secret\.[A-Za-z0-9_.-]{1,249}\}\}|"[^"]*"|'[^']*'|(?:bearer|basic)\s+[^\s,}&]+|[^\s,}&]+)/gi,
     (match: string, quote: string, name: string, delimiter: string, rawValue: string) => {
       if (!isSensitiveCredentialPreviewKey(name)) return match
       const unquoted = rawValue.replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, (_value, doubleQuoted, singleQuoted) => doubleQuoted ?? singleQuoted ?? '')
@@ -299,7 +303,9 @@ function redactPreviewText(value: string): string {
     },
   )
   safe = safe.replace(
-    /(["']?)((?:[a-z0-9]+[_-])*(?:authorization|password|passwd|passphrase|secret|client[_-]?secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|api[_-]?key|apikey|private[_-]?key|session(?:[_-]?(?:id|token))?|sid|csrf(?:[_-]?token)?|xsrf(?:[_-]?token)?|cookie|dsn))\1\s*[:=]\s*(?!(?:"|')?\{\{secret\.)("[^"]*"|'[^']*'|[^\s,}&]+)/gi,
+    // Preserve the fallback's conservative suffix matching (e.g. 123password)
+    // while consuming each complete identifier only once.
+    /(["']?)(?<![A-Za-z0-9_.%[\]-])([A-Za-z0-9_.%[\]-]*(?:authorization|password|passwd|passphrase|secret|client[_-]?secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|api[_-]?key|apikey|private[_-]?key|session(?:[_-]?(?:id|token))?|sid|csrf(?:[_-]?token)?|xsrf(?:[_-]?token)?|cookie|dsn))\1\s*[:=]\s*(?!(?:"|')?\{\{secret\.)("[^"]*"|'[^']*'|[^\s,}&]+)/gi,
     (_match, _quote: string, name: string) => `${name}=${PROTECTED_PREVIEW_VALUE}`,
   )
   safe = safe.replace(

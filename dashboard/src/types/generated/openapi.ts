@@ -1734,7 +1734,25 @@ export interface operations {
               "latest_seen"?: string;
               "sample"?: string;
               "signature"?: string;
-              "snapshot"?: (Record<string, unknown>) | null;
+              "snapshot"?: ({
+                "console_entries"?: Array<Record<string, unknown>>;
+                "dom_summary"?: (Record<string, unknown>) | null;
+                "html"?: string;
+                "network_entries"?: Array<Record<string, unknown>>;
+                "omitted_resources"?: number;
+                "page_title"?: string;
+                "page_url"?: string;
+                "request_body"?: string;
+                "request_headers"?: Record<string, string>;
+                "request_method"?: string;
+                "request_url"?: string;
+                "resources"?: Array<Record<string, unknown>>;
+                "response_body"?: string;
+                "response_body_state"?: string;
+                "response_headers"?: Record<string, string>;
+                "response_status"?: number;
+                "screenshot_base64"?: string;
+              }) | null;
             }>;
             "evidence_tiers"?: Array<{
               "count"?: number;
@@ -14048,7 +14066,12 @@ export interface operations {
           "health"?: string;
           "packs"?: Array<{
             "pack"?: string;
+            "sample_metadata"?: Record<string, {
+              "kind"?: string;
+              "timestamp"?: (string) | null;
+            }>;
             "samples"?: Record<string, number>;
+            "skipped_samples"?: number;
             "timestamp"?: string;
           }>;
         };
@@ -27582,6 +27605,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -27651,6 +27706,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -28529,6 +28616,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -28614,6 +28733,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -28732,7 +28883,21 @@ export interface operations {
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
                 "p99_ms"?: number;
-                "pod_capacity"?: (Record<string, unknown>) | null;
+                "pod_capacity"?: ({
+                  "bottleneck"?: string;
+                  "confidence": string;
+                  "dedicated": boolean;
+                  "headroom_pct": number;
+                  "incarnation": string;
+                  "model_version": string;
+                  "observed_at_unix_ms": number;
+                  "remaining": Record<string, unknown>;
+                  "remaining_pct": number;
+                  "reserved": Record<string, unknown>;
+                  "reserved_pct": number;
+                  "schedulable": Record<string, unknown>;
+                  "state": string;
+                }) | null;
                 "region"?: string;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
@@ -28903,6 +29068,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -29021,6 +29218,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -29139,6 +29368,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -36064,9 +36325,79 @@ export interface operations {
             }>;
             "pod_capacity_warnings"?: Array<string>;
             "pod_placements"?: Array<{
-              "after": Record<string, unknown>;
-              "before": Record<string, unknown>;
-              "proposed": Record<string, unknown>;
+              "after": {
+                "bottleneck"?: string;
+                "confidence": string;
+                "dedicated": boolean;
+                "headroom_pct": number;
+                "incarnation": string;
+                "model_version": string;
+                "observed_at_unix_ms": number;
+                "remaining": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "remaining_pct": number;
+                "reserved": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "reserved_pct": number;
+                "schedulable": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "state": string;
+              };
+              "before": {
+                "bottleneck"?: string;
+                "confidence": string;
+                "dedicated": boolean;
+                "headroom_pct": number;
+                "incarnation": string;
+                "model_version": string;
+                "observed_at_unix_ms": number;
+                "remaining": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "remaining_pct": number;
+                "reserved": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "reserved_pct": number;
+                "schedulable": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "state": string;
+              };
+              "proposed": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
+                "protocols"?: Record<string, number>;
+                "vusers": number;
+              };
               "target": string;
             }>;
             "resource_baseline"?: boolean;
@@ -39338,9 +39669,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -39351,7 +39714,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -39363,7 +39730,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -39383,7 +39763,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -39405,7 +39803,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -39418,7 +39843,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -39442,7 +39871,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -39584,7 +40031,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -41345,7 +41810,57 @@ export interface operations {
             "phase"?: string;
             "region"?: string;
             "signature": string;
-            "snapshot"?: (Record<string, unknown>) | null;
+            "snapshot"?: ({
+              "console_entries"?: Array<{
+                "level"?: string;
+                "source"?: string;
+                "text"?: string;
+                "timestamp"?: string;
+              }>;
+              "dom_summary"?: ({
+                "ready_state"?: string;
+                "title"?: string;
+                "visible_text"?: Array<string>;
+              }) | null;
+              "html"?: string;
+              "network_entries"?: Array<{
+                "bytes_received"?: number;
+                "duration_ms"?: number;
+                "failure_kind"?: string;
+                "method"?: string;
+                "request_body"?: string;
+                "request_body_encoding"?: string;
+                "request_body_truncated"?: boolean;
+                "request_headers"?: Record<string, string>;
+                "resource_type"?: string;
+                "response_headers"?: Record<string, string>;
+                "status_code"?: number;
+                "url"?: string;
+              }>;
+              "omitted_resources"?: number;
+              "page_title"?: string;
+              "page_url"?: string;
+              "request_body"?: string;
+              "request_headers"?: Record<string, string>;
+              "request_method": string;
+              "request_url": string;
+              "resources"?: Array<{
+                "cache_hit"?: boolean;
+                "failure_kind"?: string;
+                "request_headers"?: Record<string, string>;
+                "request_url": string;
+                "response_body"?: string;
+                "response_body_state": string;
+                "response_headers"?: Record<string, string>;
+                "response_status": number;
+                "truncated"?: boolean;
+              }>;
+              "response_body"?: string;
+              "response_body_state"?: string;
+              "response_headers"?: Record<string, string>;
+              "response_status": number;
+              "screenshot_base64"?: string;
+            }) | null;
             "status": string;
             "status_code"?: number;
             "timestamp": string;
@@ -44051,7 +44566,21 @@ export interface operations {
                 "net_error_in_per_sec"?: number;
                 "net_error_out_per_sec"?: number;
                 "open_fd_count"?: number;
-                "pod_capacity"?: (Record<string, unknown>) | null;
+                "pod_capacity"?: ({
+                  "bottleneck"?: string;
+                  "confidence": string;
+                  "dedicated": boolean;
+                  "headroom_pct": number;
+                  "incarnation": string;
+                  "model_version": string;
+                  "observed_at_unix_ms": number;
+                  "remaining": Record<string, unknown>;
+                  "remaining_pct": number;
+                  "reserved": Record<string, unknown>;
+                  "reserved_pct": number;
+                  "schedulable": Record<string, unknown>;
+                  "state": string;
+                }) | null;
                 "pod_name"?: string;
                 "pod_placement"?: ({
                   "name": string;
@@ -44690,7 +45219,21 @@ export interface operations {
                 "net_error_in_per_sec"?: number;
                 "net_error_out_per_sec"?: number;
                 "open_fd_count"?: number;
-                "pod_capacity"?: (Record<string, unknown>) | null;
+                "pod_capacity"?: ({
+                  "bottleneck"?: string;
+                  "confidence": string;
+                  "dedicated": boolean;
+                  "headroom_pct": number;
+                  "incarnation": string;
+                  "model_version": string;
+                  "observed_at_unix_ms": number;
+                  "remaining": Record<string, unknown>;
+                  "remaining_pct": number;
+                  "reserved": Record<string, unknown>;
+                  "reserved_pct": number;
+                  "schedulable": Record<string, unknown>;
+                  "state": string;
+                }) | null;
                 "pod_name"?: string;
                 "pod_placement"?: ({
                   "name": string;
@@ -45691,7 +46234,29 @@ export interface operations {
               "latest_seen": string;
               "sample": string;
               "signature": string;
-              "snapshot"?: (Record<string, unknown>) | null;
+              "snapshot"?: ({
+                "console_entries"?: Array<Record<string, unknown>>;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
+                "html"?: string;
+                "network_entries"?: Array<Record<string, unknown>>;
+                "omitted_resources"?: number;
+                "page_title"?: string;
+                "page_url"?: string;
+                "request_body"?: string;
+                "request_headers"?: Record<string, string>;
+                "request_method": string;
+                "request_url": string;
+                "resources"?: Array<Record<string, unknown>>;
+                "response_body"?: string;
+                "response_body_state"?: string;
+                "response_headers"?: Record<string, string>;
+                "response_status": number;
+                "screenshot_base64"?: string;
+              }) | null;
             }>;
             "evidence_tiers"?: Array<{
               "count"?: number;
@@ -48769,9 +49334,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -48782,7 +49379,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -48794,7 +49395,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -48814,7 +49428,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -48836,7 +49468,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -48849,7 +49508,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -48873,7 +49536,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -49028,7 +49709,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -49129,9 +49828,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -49142,7 +49873,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -49154,7 +49889,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -49174,7 +49922,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -49196,7 +49962,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -49209,7 +50002,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -49233,7 +50030,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -49388,7 +50203,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -49600,7 +50433,39 @@ export interface operations {
               "net_error_in_per_sec"?: number;
               "net_error_out_per_sec"?: number;
               "open_fd_count"?: number;
-              "pod_capacity"?: (Record<string, unknown>) | null;
+              "pod_capacity"?: ({
+                "bottleneck"?: string;
+                "confidence": string;
+                "dedicated": boolean;
+                "headroom_pct": number;
+                "incarnation": string;
+                "model_version": string;
+                "observed_at_unix_ms": number;
+                "remaining": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "remaining_pct": number;
+                "reserved": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "reserved_pct": number;
+                "schedulable": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "state": string;
+              }) | null;
               "pod_name"?: string;
               "pod_placement"?: ({
                 "name": string;
@@ -50102,6 +50967,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -50171,6 +51068,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -51049,6 +51978,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -51134,6 +52095,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -51252,7 +52245,21 @@ export interface operations {
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
                 "p99_ms"?: number;
-                "pod_capacity"?: (Record<string, unknown>) | null;
+                "pod_capacity"?: ({
+                  "bottleneck"?: string;
+                  "confidence": string;
+                  "dedicated": boolean;
+                  "headroom_pct": number;
+                  "incarnation": string;
+                  "model_version": string;
+                  "observed_at_unix_ms": number;
+                  "remaining": Record<string, unknown>;
+                  "remaining_pct": number;
+                  "reserved": Record<string, unknown>;
+                  "reserved_pct": number;
+                  "schedulable": Record<string, unknown>;
+                  "state": string;
+                }) | null;
                 "region"?: string;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
@@ -51423,6 +52430,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -51541,6 +52580,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -51659,6 +52730,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -54569,7 +55672,21 @@ export interface operations {
                 "net_error_in_per_sec"?: number;
                 "net_error_out_per_sec"?: number;
                 "open_fd_count"?: number;
-                "pod_capacity"?: (Record<string, unknown>) | null;
+                "pod_capacity"?: ({
+                  "bottleneck"?: string;
+                  "confidence": string;
+                  "dedicated": boolean;
+                  "headroom_pct": number;
+                  "incarnation": string;
+                  "model_version": string;
+                  "observed_at_unix_ms": number;
+                  "remaining": Record<string, unknown>;
+                  "remaining_pct": number;
+                  "reserved": Record<string, unknown>;
+                  "reserved_pct": number;
+                  "schedulable": Record<string, unknown>;
+                  "state": string;
+                }) | null;
                 "pod_name"?: string;
                 "pod_placement"?: ({
                   "name": string;
@@ -63667,9 +64784,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -63680,7 +64829,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -63692,7 +64845,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -63712,7 +64878,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -63734,7 +64918,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -63747,7 +64958,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -63771,7 +64986,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -63913,7 +65146,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -64115,9 +65366,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -64128,7 +65411,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -64140,7 +65427,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -64160,7 +65460,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -64182,7 +65500,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -64195,7 +65540,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -64219,7 +65568,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -64374,7 +65741,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -64480,9 +65865,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -64493,7 +65910,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -64505,7 +65926,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -64525,7 +65959,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -64547,7 +65999,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -64560,7 +66039,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -64584,7 +66067,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -64739,7 +66240,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -64994,6 +66513,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -65063,6 +66614,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -65941,6 +67524,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -66026,6 +67641,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -66144,7 +67791,21 @@ export interface operations {
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
                 "p99_ms"?: number;
-                "pod_capacity"?: (Record<string, unknown>) | null;
+                "pod_capacity"?: ({
+                  "bottleneck"?: string;
+                  "confidence": string;
+                  "dedicated": boolean;
+                  "headroom_pct": number;
+                  "incarnation": string;
+                  "model_version": string;
+                  "observed_at_unix_ms": number;
+                  "remaining": Record<string, unknown>;
+                  "remaining_pct": number;
+                  "reserved": Record<string, unknown>;
+                  "reserved_pct": number;
+                  "schedulable": Record<string, unknown>;
+                  "state": string;
+                }) | null;
                 "region"?: string;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
@@ -66315,6 +67976,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -66433,6 +68126,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -66551,6 +68276,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -67666,9 +69423,79 @@ export interface operations {
             "decision": string;
             "intent"?: string;
             "pod_placements"?: Array<{
-              "after": Record<string, unknown>;
-              "before": Record<string, unknown>;
-              "proposed": Record<string, unknown>;
+              "after": {
+                "bottleneck"?: string;
+                "confidence": string;
+                "dedicated": boolean;
+                "headroom_pct": number;
+                "incarnation": string;
+                "model_version": string;
+                "observed_at_unix_ms": number;
+                "remaining": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "remaining_pct": number;
+                "reserved": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "reserved_pct": number;
+                "schedulable": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "state": string;
+              };
+              "before": {
+                "bottleneck"?: string;
+                "confidence": string;
+                "dedicated": boolean;
+                "headroom_pct": number;
+                "incarnation": string;
+                "model_version": string;
+                "observed_at_unix_ms": number;
+                "remaining": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "remaining_pct": number;
+                "reserved": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "reserved_pct": number;
+                "schedulable": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                  "protocols"?: Record<string, number>;
+                  "vusers": number;
+                };
+                "state": string;
+              };
+              "proposed": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
+                "protocols"?: Record<string, number>;
+                "vusers": number;
+              };
               "target": string;
             }>;
             "queue_allowed": boolean;
@@ -68597,7 +70424,20 @@ export interface operations {
           }>;
           "include_static_assets"?: boolean;
           "name"?: string;
-          "network_entries"?: Array<Record<string, unknown>>;
+          "network_entries"?: Array<{
+            "bytes_received"?: number;
+            "duration_ms"?: number;
+            "failure_kind"?: string;
+            "method"?: string;
+            "request_body"?: string;
+            "request_body_encoding"?: string;
+            "request_body_truncated"?: boolean;
+            "request_headers"?: Record<string, string>;
+            "resource_type"?: string;
+            "response_headers"?: Record<string, string>;
+            "status_code"?: number;
+            "url"?: string;
+          }>;
           "project_id"?: string;
           "replay_session_id"?: string;
           "source_browser_script"?: ({
@@ -84065,9 +85905,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -84078,7 +85950,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -84090,7 +85966,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -84110,7 +85999,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -84132,7 +86039,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -84145,7 +86079,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -84169,7 +86107,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -84311,7 +86267,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -84513,9 +86487,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -84526,7 +86532,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -84538,7 +86548,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -84558,7 +86581,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -84580,7 +86621,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -84593,7 +86661,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -84617,7 +86689,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -84772,7 +86862,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -84878,9 +86986,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -84891,7 +87031,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -84903,7 +87047,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -84923,7 +87080,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -84945,7 +87120,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -84958,7 +87160,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -84982,7 +87188,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -85137,7 +87361,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -90429,9 +92671,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -90442,7 +92716,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -90454,7 +92732,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -90474,7 +92765,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -90496,7 +92805,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -90509,7 +92845,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -90533,7 +92873,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -90675,7 +93033,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -91521,9 +93897,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -91534,7 +93942,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -91546,7 +93958,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -91566,7 +93991,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -91588,7 +94031,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -91601,7 +94071,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -91625,7 +94099,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -91767,7 +94259,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -92729,9 +95239,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -92742,7 +95284,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -92754,7 +95300,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -92774,7 +95333,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -92796,7 +95373,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -92809,7 +95413,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -92833,7 +95441,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -92988,7 +95614,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -93897,9 +96541,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -93910,7 +96586,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -93922,7 +96602,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -93942,7 +96635,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -93964,7 +96675,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -93977,7 +96715,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -94001,7 +96743,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -94156,7 +96916,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -95066,9 +97844,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -95079,7 +97889,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -95091,7 +97905,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -95111,7 +97938,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -95133,7 +97978,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -95146,7 +98018,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -95170,7 +98046,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -95325,7 +98219,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -96234,9 +99146,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -96247,7 +99191,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -96259,7 +99207,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -96279,7 +99240,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -96301,7 +99280,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -96314,7 +99320,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -96338,7 +99348,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -96493,7 +99521,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -96722,9 +99768,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -96735,7 +99813,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -96747,7 +99829,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -96767,7 +99862,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -96789,7 +99902,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -96802,7 +99942,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -96826,7 +99970,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -96981,7 +100143,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -97096,9 +100276,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -97109,7 +100321,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -97121,7 +100337,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -97141,7 +100370,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -97163,7 +100410,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -97176,7 +100450,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -97200,7 +100478,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -97355,7 +100651,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -97461,9 +100775,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -97474,7 +100820,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -97486,7 +100836,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -97506,7 +100869,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -97528,7 +100909,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -97541,7 +100949,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -97565,7 +100977,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -97707,7 +101137,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -97904,9 +101352,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -97917,7 +101397,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -97929,7 +101413,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -97949,7 +101446,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -97971,7 +101486,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -97984,7 +101526,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -98008,7 +101554,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -98163,7 +101727,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -98264,9 +101846,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -98277,7 +101891,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -98289,7 +101907,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -98309,7 +101940,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -98331,7 +101980,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -98344,7 +102020,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -98368,7 +102048,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -98523,7 +102221,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -99341,6 +103057,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -99410,6 +103158,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -100288,6 +104068,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -100373,6 +104185,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -100491,7 +104335,21 @@ export interface operations {
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
                 "p99_ms"?: number;
-                "pod_capacity"?: (Record<string, unknown>) | null;
+                "pod_capacity"?: ({
+                  "bottleneck"?: string;
+                  "confidence": string;
+                  "dedicated": boolean;
+                  "headroom_pct": number;
+                  "incarnation": string;
+                  "model_version": string;
+                  "observed_at_unix_ms": number;
+                  "remaining": Record<string, unknown>;
+                  "remaining_pct": number;
+                  "reserved": Record<string, unknown>;
+                  "reserved_pct": number;
+                  "schedulable": Record<string, unknown>;
+                  "state": string;
+                }) | null;
                 "region"?: string;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
@@ -100662,6 +104520,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -100780,6 +104670,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -100898,6 +104820,38 @@ export interface operations {
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -108836,9 +112790,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -108849,7 +112835,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -108861,7 +112851,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -108881,7 +112884,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -108903,7 +112924,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -108916,7 +112964,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -108940,7 +112992,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -109095,7 +113165,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -109210,9 +113298,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -109223,7 +113343,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -109235,7 +113359,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -109255,7 +113392,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -109277,7 +113432,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -109290,7 +113472,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -109314,7 +113500,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -109469,7 +113673,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -109584,9 +113806,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -109597,7 +113851,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -109609,7 +113867,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -109629,7 +113900,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -109651,7 +113940,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -109664,7 +113980,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -109688,7 +114008,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -109843,7 +114181,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -109958,9 +114314,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -109971,7 +114359,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -109983,7 +114375,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -110003,7 +114408,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -110025,7 +114448,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -110038,7 +114488,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -110062,7 +114516,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -110217,7 +114689,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;
@@ -113929,9 +118419,41 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
-                "console_entries"?: Array<Record<string, unknown>>;
+                "console_entries"?: Array<{
+                  "level"?: string;
+                  "source"?: string;
+                  "text"?: string;
+                  "timestamp"?: string;
+                }>;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -113942,7 +118464,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -113954,7 +118480,20 @@ export interface operations {
                 "iteration_path"?: Array<number>;
                 "leaf_ordinal"?: number;
                 "method"?: string;
-                "network_entries"?: Array<Record<string, unknown>>;
+                "network_entries"?: Array<{
+                  "bytes_received"?: number;
+                  "duration_ms"?: number;
+                  "failure_kind"?: string;
+                  "method"?: string;
+                  "request_body"?: string;
+                  "request_body_encoding"?: string;
+                  "request_body_truncated"?: boolean;
+                  "request_headers"?: Record<string, string>;
+                  "resource_type"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "status_code"?: number;
+                  "url"?: string;
+                }>;
                 "page_title"?: string;
                 "page_url"?: string;
                 "parent_action_name"?: string;
@@ -113974,7 +118513,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -113996,7 +118553,34 @@ export interface operations {
                 "action_name": string;
                 "action_type": string;
                 "body"?: string;
-                "client_metrics"?: (Record<string, unknown>) | null;
+                "client_metrics"?: ({
+                  "action_duration_ms"?: number;
+                  "blocking_resource_count"?: number;
+                  "browser_engine"?: string;
+                  "browser_process_cpu_pct"?: number;
+                  "browser_process_mem_mb"?: number;
+                  "cls_score"?: number;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "dom_complete_ms"?: number;
+                  "dom_content_loaded_ms"?: number;
+                  "fcp_ms"?: number;
+                  "inp_ms"?: number;
+                  "js_heap_total_mb"?: number;
+                  "js_heap_used_mb"?: number;
+                  "layout_count"?: number;
+                  "layout_duration_ms"?: number;
+                  "lcp_ms"?: number;
+                  "load_event_ms"?: number;
+                  "long_task_count"?: number;
+                  "recalc_style_count"?: number;
+                  "resource_transfer_kb"?: number;
+                  "script_duration_ms"?: number;
+                  "task_duration_ms"?: number;
+                  "total_resource_count"?: number;
+                  "ttfb_ms"?: number;
+                }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "diagnosis"?: ({
@@ -114009,7 +118593,11 @@ export interface operations {
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
                 }) | null;
-                "dom_summary"?: (Record<string, unknown>) | null;
+                "dom_summary"?: ({
+                  "ready_state"?: string;
+                  "title"?: string;
+                  "visible_text"?: Array<string>;
+                }) | null;
                 "duration_ms": number;
                 "error_message"?: string;
                 "event_id"?: string;
@@ -114033,7 +118621,25 @@ export interface operations {
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
-                "snapshot"?: (Record<string, unknown>) | null;
+                "snapshot"?: ({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
                 "source_profile"?: string;
@@ -114175,7 +118781,25 @@ export interface operations {
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
-                "snapshots"?: Array<(Record<string, unknown>) | null>;
+                "snapshots"?: Array<({
+                  "console_entries"?: Array<Record<string, unknown>>;
+                  "dom_summary"?: (Record<string, unknown>) | null;
+                  "html"?: string;
+                  "network_entries"?: Array<Record<string, unknown>>;
+                  "omitted_resources"?: number;
+                  "page_title"?: string;
+                  "page_url"?: string;
+                  "request_body"?: string;
+                  "request_headers"?: Record<string, string>;
+                  "request_method": string;
+                  "request_url": string;
+                  "resources"?: Array<Record<string, unknown>>;
+                  "response_body"?: string;
+                  "response_body_state"?: string;
+                  "response_headers"?: Record<string, string>;
+                  "response_status": number;
+                  "screenshot_base64"?: string;
+                }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
                 "success": boolean;

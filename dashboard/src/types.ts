@@ -1327,7 +1327,44 @@ export interface IntervalTransactionMetrics {
   avg_ms: number
 }
 
+export interface GRPCDiagnostics {
+  method: string
+  mode: string
+  call_ms: number
+  first_message_ms?: number
+  deadline_budget_ms?: number
+  status_code?: number
+  messages_sent: number
+  messages_received: number
+  request_bytes: number
+  response_bytes: number
+  receive_limit_reached?: boolean
+}
+
+export interface DiagnosticDistribution {
+  count: number
+  sum: number
+  min: number
+  max: number
+  buckets: number[]
+}
+
+export interface GRPCSummary {
+  samples: number
+  call_ms: DiagnosticDistribution
+  first_message_ms: DiagnosticDistribution
+  deadline_budget_ms: DiagnosticDistribution
+  status_counts: number[]
+  unavailable_status: number
+  receive_limit_reached: number
+  messages_sent: number
+  messages_received: number
+  request_bytes: number
+  response_bytes: number
+}
+
 export interface ServerTelemetry {
+  grpc?: GRPCDiagnostics
   server_processing_ms?: number
   transfer_ms?: number
   serialization_ms?: number
@@ -1354,6 +1391,8 @@ export interface ServerTelemetry {
 }
 
 export interface ServerTelemetrySummary {
+  grpc?: GRPCSummary
+  first_event_samples?: number
   samples: number
   avg_server_processing_ms?: number
   avg_transfer_ms?: number

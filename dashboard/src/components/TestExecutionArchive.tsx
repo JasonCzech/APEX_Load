@@ -1,3 +1,4 @@
+import { grpcDiagnosticLines } from '../utils/grpcDiagnostics'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import TabList from './ux/TabList'
 import CaptureArchiveSummary from './CaptureArchiveSummary'
@@ -244,6 +245,7 @@ function formatClientMetricsBlock(metrics: NonNullable<TransactionEvent['client_
 }
 
 function formatServerTelemetryBlock(telemetry: NonNullable<TransactionEvent['server_telemetry']>): string {
+  if (telemetry.grpc) return grpcDiagnosticLines(telemetry.grpc).join("\n")
   const lines: string[] = []
   if (telemetry.server_processing_ms !== undefined) lines.push(`Server processing: ${formatBrowserMetric(telemetry.server_processing_ms, ' ms')}`)
   if (telemetry.transfer_ms !== undefined) lines.push(`Transfer: ${formatBrowserMetric(telemetry.transfer_ms, ' ms')}`)

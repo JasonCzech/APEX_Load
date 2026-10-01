@@ -1,4 +1,6 @@
 import { useMemo } from 'react'
+import { grpcSummaryLines } from '../utils/grpcDiagnostics'
+import GRPCDiagnosticsPanel from './GRPCDiagnosticsPanel'
 
 import { GoalConfig, LiveDependencyMap, LiveErrorPattern, MetricsHistoryPoint, RunComparisonBaseline, TransactionResponseTimeSLAResult, TxMetrics } from '../types'
 import TransactionResponseTimeSLATable from './TransactionResponseTimeSLATable'
@@ -28,7 +30,7 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
   const previousDependencyHealth = baseline?.dependency_health || {}
   const dependencyHealthValues = useMemo(() => Object.values(metrics?.dependency_health ?? {}), [metrics?.dependency_health])
   const topServerTelemetry = useMemo(() => transactions
-    .filter((tx) => tx.server_telemetry)
+    .filter((tx) => tx.server_telemetry && !tx.server_telemetry.grpc)
     .sort((left, right) => (right.server_telemetry?.avg_server_processing_ms || 0) - (left.server_telemetry?.avg_server_processing_ms || 0))
     .slice(0, 4), [transactions])
   const topHTTPDecomposition = useMemo(() => transactions
@@ -98,6 +100,7 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
 
   return (
     <>
+      <GRPCDiagnosticsPanel transactions={transactions} />
       {topServerTelemetry.length > 0 && (
         <div className="tx-section server-telemetry-section">
           <div className="server-telemetry-header">
@@ -1708,6 +1711,7 @@ function renderServerTelemetry(current: TxMetrics, previous?: TxMetrics) {
     return 'n/a'
   }
   const telemetry = current.server_telemetry
+  if (telemetry.grpc) return grpcSummaryLines(telemetry.grpc).join(" | ")
   const previousTelemetry = previous?.server_telemetry
   const parts = [
     `Server ${formatTelemetryValue(telemetry.avg_server_processing_ms, ' ms')}${formatTelemetryDelta(telemetry.avg_server_processing_ms, previousTelemetry?.avg_server_processing_ms, ' ms')}`,

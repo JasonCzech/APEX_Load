@@ -9,6 +9,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 // aggregateDistributedMetricsBatches merges per-generator batches into one
@@ -1055,6 +1056,8 @@ func cloneEngineServerTelemetrySummary(summary *engine.ServerTelemetrySummary) *
 		return nil
 	}
 	return &ServerTelemetrySummary{
+		FirstEventSamples:         summary.FirstEventSamples,
+		GRPC:                      summary.GRPC.Clone(),
 		Samples:                   summary.Samples,
 		AvgServerProcessingMs:     summary.AvgServerProcessingMs,
 		AvgTransferMs:             summary.AvgTransferMs,
@@ -1107,6 +1110,7 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 	if metrics.ServerTelemetry == nil {
 		metrics.ServerTelemetry = &ServerTelemetrySummary{}
 	}
+	protocol.MergeGRPCDiagnostic(&metrics.ServerTelemetry.GRPC, telemetry.GRPC)
 	// Reliability counters are run totals and accumulate for every record,
 	// including control-only ops (commit/rollback) that carry no measured sample.
 	metrics.ServerTelemetry.SendFailureCount += int64(telemetry.SendFailureCount)
@@ -1133,7 +1137,10 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 	metrics.ServerTelemetry.AvgResponsePayloadKB += telemetry.ResponsePayloadKB
 	incrementTelemetryHistogramCount(&metrics.ServerTelemetry.RequestPayloadHistogram, telemetry.RequestPayloadKB)
 	incrementTelemetryHistogramCount(&metrics.ServerTelemetry.ResponsePayloadHistogram, telemetry.ResponsePayloadKB)
-	metrics.ServerTelemetry.AvgFirstEventMs += telemetry.FirstEventMs
+	if telemetry.GRPC == nil || telemetry.GRPC.FirstMessageMs != nil {
+		metrics.ServerTelemetry.FirstEventSamples++
+		metrics.ServerTelemetry.AvgFirstEventMs += telemetry.FirstEventMs
+	}
 	if telemetry.FirstEventMs > metrics.ServerTelemetry.MaxFirstEventMs {
 		metrics.ServerTelemetry.MaxFirstEventMs = telemetry.FirstEventMs
 	}
@@ -1199,7 +1206,9 @@ func finalizeAPIServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	summary.AvgTransferMs /= divisor
 	summary.AvgRequestPayloadKB /= divisor
 	summary.AvgResponsePayloadKB /= divisor
-	summary.AvgFirstEventMs /= divisor
+	if summary.FirstEventSamples > 0 {
+		summary.AvgFirstEventMs /= float64(summary.FirstEventSamples)
+	}
 	summary.AvgMessageLatencyMs /= divisor
 	summary.AvgMessagesSentPerSec /= divisor
 	summary.AvgMessagesReceivedPerSec /= divisor
