@@ -15,7 +15,7 @@ export function nativePanelRows(panel: DashboardDefinitionPanel, history: Metric
   const metricName = query?.metric === 'throughput' ? 'tps' : query?.metric === 'transaction_duration' ? 'response_time' : query?.metric
   const metric = metricName && nativeMetrics[metricName]
   // Unsupported saved contracts must never silently show an unfiltered total.
-  if (!query || !metric || !metric.aggregations.includes(query.aggregation) || query.dimensions?.length || Object.keys(query.filters || {}).length || query.bucket_seconds || query.overlay) return null
+  if (query?.population || !query || !metric || !metric.aggregations.includes(query.aggregation) || query.dimensions?.length || Object.keys(query.filters || {}).length || query.bucket_seconds || query.overlay) return null
   const field = metricName === 'response_time' && query.aggregation !== 'avg' ? query.aggregation : metric.field
   return history.map(point => ({ time: point.time, value: point.isGapBoundary || point.resourceSampleOnly && !query.metric.startsWith('resource_') ? undefined : typeof point[field] === 'number' && Number.isFinite(point[field]) ? point[field] as number : undefined }))
 }

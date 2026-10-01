@@ -5,6 +5,7 @@ import "net/http"
 var runArchiveAPIRouteCatalog = preserveRawAccessRequirementsForMethod(apiRouteCatalog{
 	Domain: "run-archives",
 	Routes: []apiRouteSpec{
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/archive/native-series", "handleNativeArchiveSeries", analysisQueryAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleNativeArchiveSeries) }),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive", "handleDownloadRunArchive", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleDownloadRunArchive)
 		}),

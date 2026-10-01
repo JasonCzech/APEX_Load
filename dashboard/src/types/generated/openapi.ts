@@ -48851,6 +48851,7 @@ export interface operations {
       };
       "query"?: {
         "action"?: string;
+        "action_exact"?: string;
         "baseline_id"?: string;
         "correlation_id"?: string;
         "dependency_target"?: string;
@@ -48879,6 +48880,7 @@ export interface operations {
         "success"?: boolean;
         "time_from"?: string;
         "time_to"?: string;
+        "time_to_exclusive"?: string;
         "trace_id"?: string;
       };
     };
@@ -53678,6 +53680,7 @@ export interface operations {
       };
       "query"?: {
         "action"?: string;
+        "action_exact"?: string;
         "correlation_id"?: string;
         "dependency_target"?: string;
         "dependency_type"?: string;
@@ -53706,6 +53709,7 @@ export interface operations {
         "success"?: boolean;
         "time_from"?: string;
         "time_to"?: string;
+        "time_to_exclusive"?: string;
         "trace_id"?: string;
       };
     };
@@ -71240,6 +71244,101 @@ export interface operations {
       };
     };
   };
+  "handleNativeArchiveSeries": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "aggregation"?: string;
+          "bucket_seconds"?: number;
+          "comparison_run_id"?: string;
+          "dimensions"?: Array<string>;
+          "end_seconds"?: number;
+          "filters"?: Record<string, string>;
+          "max_series"?: number;
+          "metric"?: string;
+          "overlay"?: boolean;
+          "population"?: string;
+          "property_name"?: string;
+          "property_value"?: string;
+          "start_seconds"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "added": Array<string>;
+            "baseline"?: ({
+              "buckets": Array<{
+                "count": number;
+                "from": string;
+                "offset_seconds": number;
+                "to": string;
+                "value": (number) | null;
+              }>;
+              "identities": Array<string>;
+              "run_id": string;
+              "warnings": Array<string>;
+            }) | null;
+            "comparable": boolean;
+            "current": {
+              "buckets": Array<{
+                "count": number;
+                "from": string;
+                "offset_seconds": number;
+                "to": string;
+                "value": (number) | null;
+              }>;
+              "identities": Array<string>;
+              "run_id": string;
+              "warnings": Array<string>;
+            };
+            "removed": Array<string>;
+            "warnings": Array<string>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleNativeProtocolSupportMatrix": {
     parameters?: never;
     requestBody?: never;
@@ -71928,11 +72027,17 @@ export interface operations {
               "query"?: ({
                 "aggregation"?: string;
                 "bucket_seconds"?: number;
+                "comparison_run_id"?: string;
                 "dimensions"?: Array<string>;
+                "end_seconds"?: number;
                 "filters"?: Record<string, string>;
                 "max_series"?: number;
                 "metric"?: string;
                 "overlay"?: boolean;
+                "population"?: string;
+                "property_name"?: string;
+                "property_value"?: string;
+                "start_seconds"?: number;
               }) | null;
               "title"?: string;
               "w"?: number;
@@ -130454,6 +130559,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/manifest": {
     "get": operations["handleGetRunArchiveManifest"];
+  };
+  "/api/v1/tests/{id}/archive/native-series": {
+    "post": operations["handleNativeArchiveSeries"];
   };
   "/api/v1/tests/{id}/archive/report": {
     "get": operations["handleGetRunArchiveReport"];

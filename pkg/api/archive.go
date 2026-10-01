@@ -383,6 +383,8 @@ type archivePage struct {
 }
 
 type transactionEventFilter struct {
+	ActionExact       string
+	TimeToExclusive   bool
 	PropertyName      string
 	PropertyValue     string
 	Population        string

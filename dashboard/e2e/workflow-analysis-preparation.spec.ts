@@ -154,3 +154,50 @@ test('native project panel saves and reopens through the real dashboard API', as
   await expect(panels).toContainText('Response time (ms)')
   await panels.screenshot({ path: test.info().outputPath('native-project-panel.png') })
 })
+
+test('filtered archive panels save, reopen, compare, and inspect an exact time bucket', async ({ page, trackRun }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace)
+  const id = idOf(await json(await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, name: 'Filtered archive panel', duration: '1s', groups: [{ name: 'requests', script_id: scriptId, vusers: 1 }] } })))
+  trackRun(id)
+  const buckets = [{ from: '2026-10-01T00:00:00Z', to: '2026-10-01T00:00:10Z', offset_seconds: 0, count: 3, value: 30 }, { from: '2026-10-01T00:00:10Z', to: '2026-10-01T00:00:20Z', offset_seconds: 10, count: 0, value: null }]
+  await page.route(`**/api/v1/tests/${id}/archive/native-series`, route => {
+    expect(route.request().postDataJSON()).toMatchObject({ population: 'action', metric: 'response_time', aggregation: 'p95', filters: { action: 'Checkout' }, end_seconds: 20, bucket_seconds: 10, comparison_run_id: id })
+    const series = { run_id: id, buckets, warnings: [], identities: ['Checkout'] }
+    return route.fulfill({ json: { current: series, baseline: series, comparable: false, warnings: ['Workload/version compatibility is not established'], added: [], removed: [] } })
+  })
+  let inspected = false
+  await page.route(`**/api/v1/tests/${id}/archive/transactions?*`, route => {
+    const params = new URL(route.request().url()).searchParams
+    expect(params.get('population')).toBe('action'); expect(params.get('action_exact')).toBe('Checkout')
+    expect(params.get('time_to')).toBe(buckets[0].to); expect(params.get('time_to_exclusive')).toBe('true'); inspected = true
+    return route.fulfill({ json: { total: 3, transactions: [{ timestamp: buckets[0].from, action_name: 'Checkout', duration_ms: 30, success: true, snapshot: { response_body: '{"kind":"paid"}' } }] } })
+  })
+  await page.goto(`/#/test/${id}?${scopeQuery(workspace)}`); await page.reload()
+  await page.getByText('Create project analytics panel', { exact: true }).click()
+  await page.getByLabel('Panel title', { exact: true }).fill('Filtered checkout')
+  await page.getByLabel('Evidence population', { exact: true }).selectOption('action')
+  await page.getByLabel('Exact action or transaction name', { exact: true }).fill('Checkout')
+  await page.getByLabel('End elapsed seconds', { exact: true }).fill('20')
+  await page.getByLabel('Comparison run ID (optional)', { exact: true }).fill(id)
+  await page.getByLabel('Measurement', { exact: true }).selectOption('p95')
+  await page.getByLabel('Visualization', { exact: true }).selectOption('table')
+  await page.getByRole('button', { name: 'Save project panel', exact: true }).click()
+  const panels = page.getByRole('region', { name: 'Project analytics panels', exact: true })
+  await expect(panels).toContainText('Workload/version compatibility is not established')
+  await page.reload()
+  await expect(panels).toContainText('Filtered checkout')
+  await panels.getByText('Inspect time buckets (2)', { exact: true }).click()
+  await expect(panels).toContainText('Missing')
+  await panels.getByRole('button', { name: 'Inspect current bucket 0s (3)', exact: true }).click()
+  const inspector = panels.getByRole('region', { name: 'Filtered transaction inspector' })
+  await expect(inspector).toContainText('3 matching observations')
+  await inspector.getByText('Checkout · 30 ms · Success', { exact: true }).click()
+  await expect(inspector).toContainText('paid'); expect(inspected).toBe(true)
+  await inspector.getByRole('button', { name: 'Close inspector', exact: true }).click()
+  await page.setViewportSize({ width: 1280, height: 1400 })
+  await panels.evaluate(node => node.scrollIntoView({ block: 'start' }))
+  await panels.screenshot({ path: test.info().outputPath('filtered-native-panel.png') })
+})

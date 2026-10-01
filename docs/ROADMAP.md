@@ -8,13 +8,43 @@ Source note: consolidated 2026-09-24 from the former `RUNTIME_TELEMETRY_SLA_PLAN
 
 | Track | Status | Open work |
 | --- | --- | --- |
-| [Runtime telemetry SLA](#runtime-telemetry-sla) | Shared evidence, durable Linux/Prometheus jobs, run archives, overlays and bounded lag correlation implemented behind project flags | CloudWatch/Azure Monitor live acceptance and broader provider coverage; signed cloud query adapters, live dependency maps and qualified statistical findings implemented |
+| [Runtime telemetry SLA](#runtime-telemetry-sla) | Shared evidence, signed collector jobs, archives, overlays, lag correlation, live dependency maps and qualified findings implemented behind project flags; cloud adapters are previews | Live CloudWatch/Azure Monitor acceptance, broader provider coverage and cross-run/SLA reporting |
 | [Protocol telemetry parity](#protocol-telemetry-parity) | gRPC codec/call diagnostics and WebSocket transport diagnostics propagate through live/archive/report/baseline paths | Cross-protocol intelligence, Java HTTP object-vs-wire delta, JMS ack latency and broker-managed DLQ discovery |
-| [Script authoring consolidation](#script-authoring-consolidation) | Phases 1-2 done; 3-5 in progress | Scenario-assembly tightening, reopen-after-save consistency, parity pass and adapter removal |
+| [Script authoring consolidation](#script-authoring-consolidation) | Phases 1-2 done; 3-5 in progress | Scenario-assembly tightening, cross-entry-point lifecycle parity and adapter removal; canonical save/reopen and SLA reseeding fixes landed |
 | [PT Analysis Parquet import](#pt-analysis-native-parquet-import) | Native import, saved mappings, bounded queries and comparisons implemented behind a project flag | 10 GB acceptance skipped at user direction; cross-platform release and broader scale acceptance remain unverified |
-| [Messaging](#messaging) | Most of the program landed | IBM MQ native (P2.5), Solace SMF (P2.6), Event Hubs deployment env vars/HOWTO and consumer parity, depth gaps |
+| [Messaging](#messaging) | Most of the program landed | Partition/subscription rollups, Event Hubs consumer ownership, provider depth, IBM MQ native (P2.5) and Solace SMF (P2.6) |
 | [Browser and mobile](#browser-and-mobile) | Device emulation, client metrics, import MVP and UX health slice landed | Measured benchmark publication, WebKit process attribution, TrueClient fixtures, HAR V2, UX intelligence beyond thresholds |
-| [CloudTest outcome parity](#cloudtest-outcome-parity) | Active; initial vertical slices implemented | Fixture-proven import mappings, run-bound monitoring, media, chart export coverage |
+| [CloudTest outcome parity](#cloudtest-outcome-parity) | Active; initial vertical slices implemented | Fixture-proven import mappings, general analytics dimensions, filtered live timelines/overlays, live provider acceptance, media and remaining chart exports |
+
+## Completed implementation and remaining acceptance — 2026-10-01
+
+Reconciled against published commits `0a480cee`, `7bf711ea` and `10e9f08e`. These are completed implementation slices, not closure of every parent track. Workflow contracts and configuration are in [Analysis workflows](ANALYSIS_WORKFLOWS.md) and [Protocol diagnostics](PROTOCOL_DIAGNOSTICS.md); the latest [review and validation record](qa/reviews/authoring-analytics-cloud-2026-10-01/REVIEW.md) records exact test outcomes and limits.
+
+| Area | Completed implementation | Remaining backlog or acceptance |
+| --- | --- | --- |
+| Run monitoring | Shared metric evidence; revisioned bindings; signed jobs and sealed credentials; durable retry/acknowledgement; Linux/Prometheus, SSH, authenticated OTLP and restricted Java packs; archived evidence, overlays and lag correlation | Live acceptance for remote providers and broader customer-backed integrations |
+| Diagnostics | Typed gRPC/WebSocket measurements, codec timing, dependency/error cards, baseline comparisons and qualified advisory anomaly delivery; WebSocket evidence preserved through telemetry cloning | Broader protocol-specific depth and live acceptance; unavailable transport phases remain unavailable |
+| Preparation | Durable fenced lifecycle, immutable revisions, reservation/provisioning reuse, cancellation/expiry and capacity policies; ECS spot ceiling/on-demand floor; common zero-traffic regression coverage | Live zero-traffic, takeover and cleanup acceptance for every supported target/runtime combination |
+| Parquet analysis | Embedded DuckDB build profile; resumable multi-file/directory imports, nested scalar mappings, immutable originals, saved mapping revisions, normalization, rejection provenance, bounded queries/rates, saved comparisons and lag correlation | Cross-platform release outcomes and broader scale evidence; 10 GB benchmark explicitly skipped, not passed |
+| Authoring | Canonical stored-script reload after summary-only saves; scenario reseeding preserves group transaction SLA overrides | Shared scenario-assembly completion, lifecycle/validation parity and removal of remaining temporary adapters |
+| Native panels | Project editors save run-metric and filtered archive panels; viewers reopen them; bounded raw timelines, same-project comparisons, bucket inspection and CSV/SVG as applicable | General dimension grouping, filtered live timelines and monitor/imported overlays |
+| Response properties | Explicit finite extraction categories, redaction-first promotion, capability negotiation, action metrics, distributed merges, JSONL/Parquet retention, archive filters/reports, bounded archived timelines, saved comparisons and bucket drill-down | Filtered live property history and general dimension grouping |
+| Cloud collector previews | Identity-scoped CloudWatch/Azure Monitor queries, fixed approved destinations, bounded retries/responses, durable numeric-sample deduplication; delayed missing buckets can fill and equivalent timestamps are rejected | Approved live AWS/Azure acceptance before production-readiness claims |
+| Messaging | Observed-zero versus unavailable lag in Kafka/Event Hubs; terminal maximum age/offset gates require complete evidence; Event Hubs auth/probe-group defaults and HOWTO | Partition/subscription views, processor/checkpoint ownership and provider-wide acknowledgement/depth telemetry |
+
+The latest implementation passed full Go tests, affected race tests, dashboard typecheck/lint/unit tests and the repaired browser workflows in both auth profiles. The review record distinguishes the initial browser failures from successful post-fix reruns. Cloud readiness, release-platform coverage and scale results require their own evidence; local tests do not close those gates.
+
+## Current slice: filtered native analytics and archive drill-down
+
+Status: implemented and reviewed; no remaining actionable findings in this slice. The saved-panel workflow now lets a project user investigate a selected action, business transaction or approved response-property category instead of only run-wide totals. This builds directly on existing property capture, archive filters and versioned dashboard definitions without requiring new cloud infrastructure or proprietary fixtures.
+
+- Implemented explicit population selection (action or business transaction), stable identity filters and approved property-category selection. Property filtering applies only to action observations, matching the shipped property metrics/report contract.
+- Implemented bounded archived time-series queries for count, error rate and latency, reusing archive/query authorization and limits. Percentiles use raw observations, never averaged interval percentiles. Missing buckets remain gaps and unsupported query operations fail explicitly.
+- Implemented saved query settings and selected-bucket drill-down into the existing filtered transaction inspector, preserving old run-total panel definitions and project viewer/editor permissions.
+- Implemented a saved two-run comparison for the same population/filter, showing added/removed identities, missing evidence and workload/version compatibility warnings alongside separate series; automatic regression verdicts remain out of scope.
+- Acceptance coverage: real JSONL fixtures reconcile bucket and inspector counts without action/business double counting and verify raw percentiles, second-viewer access, cross-project denial and legacy/missing-property warnings. Browser fixtures verify saved definitions, comparison warnings and inspection in both auth profiles. A full live mixed-category run/report reconciliation is not claimed. See the [review and validation record](qa/reviews/filtered-native-analytics-2026-10-01/REVIEW.md).
+
+Keep monitor/imported overlays, arbitrary dimensions, cross-provider messaging dashboards and live cloud acceptance in their separate remaining slices. The implementation is archive-first; filtered live timelines remain unimplemented until the necessary retained interval evidence is available. See [workflow semantics and limits](ANALYSIS_WORKFLOWS.md#filtered-archive-panels-and-comparisons).
 
 ---
 
@@ -118,7 +148,7 @@ Other landed items: Enterprise Script Archive import exposes `preserve_transacti
 
 Additional fixes: scenario reseeding retains group SLA overrides, and summary-only script-save responses reload the canonical stored script instead of reopening stale draft content.
 
-Remaining high-value work: finish the scenario-assembly path around `TestExecution` and shared execution/result models; tighten remaining reopen-after-save inconsistencies; run the end-to-end parity pass and then delete remaining temporary adapters.
+Remaining high-value work: finish the scenario-assembly path around `TestExecution` and shared execution/result models; verify all remaining save/reopen entry points against the canonical behavior; run the end-to-end parity pass and then delete remaining temporary adapters.
 
 Verification checklist still open: validation matrix proving identical outcomes across parser, create, update, draft/stored validation, replay, browser replay and import save; snapshot of pre-standardization import payloads versus the shared envelope; same lifecycle (acquire, review, edit, save, reopen) on every authoring path; scenario editing from both new-test creation and execution-time editing; final check that no route or option references deleted files or adapters.
 
@@ -148,7 +178,7 @@ Import workflow: user selects Parquet files; dashboard inspects schema and previ
 
 Minimum viable scope: native reading, schema inspection, mapping configuration, required-timestamp validation, a normalized `metric_points` table (`id`, `run_id`, `scenario_id`, `timestamp_utc`, `relative_time_ms`, `source`, `host`, `service`, `transaction_name`, `metric_name`, `metric_value`, `unit`, `status`, `tags_json`), scenario and system metric import, and time-bucketed correlation queries.
 
-Follow-on: saved mappings per source/tool, automatic unit normalization, partition-aware and directory batch imports (partitioned by `run_id`, `scenario_id`, date or metric type), correlation scoring across series, lag analysis (do system metrics lead or trail degradation), and derived metrics (error rate, throughput, p95, saturation).
+Landed follow-ons: saved mapping revisions, unit normalization, directory uploads with validated partition paths, explicit counter-rate conversion, saved comparisons and lagged correlation. Remaining: broader derived-metric and dashboard overlay authoring, measured partition/scale performance, and verified release outcomes across supported native platforms. The skipped 10 GB benchmark remains an unverified acceptance item.
 
 ---
 
@@ -156,7 +186,7 @@ Follow-on: saved mappings per source/tool, automatic unit normalization, partiti
 
 Scope: importing, running and evaluating results for JMS, Apache Kafka, Solace PubSub+, IBM MQ, Azure Service Bus and Azure Event Hubs. Current behavior is authoritative in [Messaging support](PROTOCOL_SUPPORT.md#broker-and-messaging-support). Most of this program has landed; this section keeps the open work, a compact record of what landed, the coverage picture and the design decisions that still constrain new adapters. It was condensed from the former 1,551-line coverage plan and the Kafka/AsyncAPI plan; per-item baselines superseded by landed code were dropped (recover from git history).
 
-### Open work (rechecked 2026-09-24)
+### Open work (reconciled 2026-10-01)
 
 | Item | State | Notes |
 | --- | --- | --- |
@@ -166,11 +196,11 @@ Scope: importing, running and evaluating results for JMS, Apache Kafka, Solace P
 | Event Hubs consumer-side parity | Deferred past day-1 | Full Processor, Blob checkpoint store and epoch-exclusive consumer; only the read-only observer probe exists. `checkpoint` and request/reply are cataloged but secondary. |
 | Messaging depth gaps | Partial | Kafka transactions/EOS and complete `read_committed`, `kafka_seek` on the real adapter, unified offset/queue-depth lag across providers, not every adapter populates the reliability counters, no Event Hubs GA emulator so live coverage needs a namespace, many JMS/AMQP/Solace/MQ/MQTT AsyncAPI bindings still downgrade to review-only. |
 
-Recommended order: unbuilt env vars/HOWTO, then per-partition/subscription rollups and goal signals (P4.1 remainder), then P2.5 and P2.6 (off the critical path; schedule by business priority). Open decisions: which real adapters ship in the default generator image versus opt-in images (the default must keep failing closed on non-mock messaging); IBM MQ native MQI (cgo) versus a pure-Go REST/AMQP fallback; Solace SMF via a cgo SDK versus staying on AMQP.
+Recommended order: per-partition/subscription rollups and remaining goal signals (P4.1 remainder), then Event Hubs consumer ownership by customer need, then P2.5 and P2.6 (off the critical path; schedule by business priority). Open decisions: which real adapters ship in the default generator image versus opt-in images (the default must keep failing closed on non-mock messaging); IBM MQ native MQI (cgo) versus a pure-Go REST/AMQP fallback; Solace SMF via a cgo SDK versus staying on AMQP.
 
 ### Landed work record
 
-Items were checked against the tree on 2026-09-24.
+Original items were checked against the tree on 2026-09-24; Event Hubs defaults and observed-lag gates were reconciled on 2026-10-01.
 
 | Item | Scope | State |
 | --- | --- | --- |
@@ -188,9 +218,9 @@ Items were checked against the tree on 2026-09-24.
 | EH.3 | Native Event Hubs AMQP adapter (`pkg/protocol/eventhubs`, `eventhubs_real`) | Landed producer-first with observer probe and mock default |
 | EH.4 | Event Hubs results (per-partition skew, ServerBusy/throttle, batch fill, E2E latency) | Landed in telemetry fields and Prometheus; dashboard panels and goal signals uneven |
 | EH.5 | Event Hubs Capture (Avro) import and AsyncAPI EH binding | Landed (`POST /api/v1/scripts/import/eventhubs-capture`) |
-| EH.6 | Prometheus exposition, terraform, CI tag matrix | Landed except the env vars above; `deployments/azure/terraform/eventhubs.tf` exists |
+| EH.6 | Prometheus exposition, terraform, CI tag matrix | Landed, including optional auth/probe-group env defaults and the deployment HOWTO; `deployments/azure/terraform/eventhubs.tf` exists |
 | P3.1 | Messaging import breadth (AsyncAPI JMS/AMQP/Solace/MQ/MQTT bindings) | Partly landed: AMQP/JMS servers target `jms-solace`; other bindings review-only |
-| P4.1 | Messaging-aware goals and dashboard panels | Partly landed: redelivery/dead-letter rate thresholds and live breach flags; richer per-partition/subscription rollups open |
+| P4.1 | Messaging-aware goals and dashboard panels | Partly landed: redelivery/dead-letter thresholds and live breach flags; terminal maximum consumer age/offset rules require complete observed evidence, including zero; partition/subscription rollups remain open |
 | Kafka plugin + AsyncAPI converter | Direct Kafka protocol, AsyncAPI 2.x/3.x importer and wizard, franz-go real adapter | Landed (design record below) |
 
 ### Coverage assessment
@@ -421,7 +451,7 @@ Starting evidence: the [CloudTest product page](https://www.akamai.com/products/
 | Page resources | Existing HTTP resource loader and network entries are partial foundations. | Add page/hierarchy attribution; no duplicate page transport. |
 | Result evidence | Failure evidence and `snapshot_on_error` are separate concerns. | Add an optional bounded message-detail policy without changing legacy behavior. |
 | Streaming response pacing | Already implemented for HTTP responses. | Build media playback and metrics on it. |
-| Shared dashboards | Project-scoped Grafana imports exist; native workspaces are private local drafts. | Preserve both and add a versioned native definition. |
+| Shared dashboards | Project-scoped Grafana imports, private local drafts and saved versioned native run-metric panels exist. | Preserve existing definitions; extend native filtering, dimensions and overlays. |
 | Reporting | HTML, PDF, DOCX, CSV, JSON, JSONL and Parquet exist; report charts export CSV/SVG. | Extend the shared chart export wrapper to remaining quantitative charts; do not list PDF or DOCX as missing. |
 | Scale | Density numbers are design targets without published evidence. | Never present them as achieved. |
 | Native mobile | TouchTest remains in current terminology. | APEX native-mobile automation is a product-fit non-goal, not a competitor-discontinuation claim. |
@@ -465,7 +495,7 @@ Bounded `by_region` aggregation flows through engine snapshots, distributed prot
 
 - Active-time `start_offset` on scenario groups flows through storage, revisions, scheduling, capacity validation, snapshots, provenance, archives and reports; paused time does not consume an offset; launch admission evaluates overlap-aware group windows; the timeline and form/JSON editors share one scenario model (scripts referenced by groups already satisfy reusable Clip outcomes).
 - CEL-backed ordered first-match `control_switch` is cataloged, validated, authorable, replayed, redacted and executed. Project-gated `control_parallel` provides named branches, bounded concurrency, isolated variable/protocol instances, deterministic `var.parallel.<branch>` extraction merge, container metrics and runtime safety admission; nested parallel, rendezvous, loop control, database transactions, persistent WebSocket, browser and Java Vuser actions remain rejected until advertised safe. Count, foreach, while and scenario iteration models are implemented; fixture-proven parallel-repeat mapping is partial. Typed hierarchy/page attribution reaches execution and archives, reusing the HTTP document resource loader for Page semantics.
-- Project-scoped versioned `DashboardDefinition` with optimistic revision checks and a code-owned bounded query catalog; private localStorage drafts and Grafana imports keep their contracts; richer native panel authoring in progress. Bounded property analytics now require explicit promotion of non-sensitive extraction keys and finite approved categories; generators fold other values into `other` and absent values into `missing`. Versioned capability negotiation, live distributions and archive action-population reports are implemented. Native panel creation and saved-panel rendering support bounded run measurements; general dimensions, filters and monitor/imported overlays remain open.
+- Project-scoped versioned `DashboardDefinition` with optimistic revision checks and a code-owned bounded query catalog; private localStorage drafts and Grafana imports keep their contracts; richer native panel authoring in progress. Bounded property analytics now require explicit promotion of non-sensitive extraction keys and finite approved categories; generators fold other values into `other` and absent values into `missing`. Versioned capability negotiation, live distributions and archive action-population reports are implemented. Native panel creation and saved-panel rendering support bounded run measurements plus archived action/transaction and property filters, saved two-run comparisons and bucket drill-down. General dimension grouping, filtered live timelines and monitor/imported overlays remain open.
 - Exit gate: offset groups execute at active-time 0/60/120 through pause/resume; switch and permitted parallel replay match load execution; a second project user reads a shared dashboard while private drafts stay private.
 
 ### Phase 3: first-class CloudTest import
@@ -476,7 +506,7 @@ CloudTest is registered in the import registry: bounded XML or dependency-closur
 
 Implemented behind project flags: durable Linux/Prometheus source bindings and signed jobs, collector retry spooling, immutable run artifacts, common lagged correlation, and a fenced preparing/ready/consumed lifecycle with revision checks, renewal, expiry and cancellation. Existing Kubernetes, Azure Container Apps/Jobs and ECS asynchronous provisioning is reused; provisioning is not a new dependency. Local HTTP/TCP zero-traffic and generator preflight regression tests cover the common boundary. Preparation now accepts immutable existing/ephemeral capacity policies, with ECS spot ceilings and on-demand floors. Unsupported required policies fail explicitly. Live acceptance for every target/runtime/provider combination remains required; local deterministic tests do not establish cloud production readiness.
 
-Persist collector samples as run-bound resources, then add project monitor sources and scenario/run bindings. Extend the collector with signed, revisioned, assigned jobs; public-key-sealed expiring secrets; destination/CIDR and command-pack allowlists; identity pins; hard time/response bounds. The controller never opens connections into customer infrastructure. Ship Prometheus/OTel, SSH/Linux, JMX, JDBC, CloudWatch and Azure Monitor first; SNMP, WMI/PerfMon, New Relic, AppDynamics and GCP need customer-backed evidence; CA Introscope and unrestricted commands are non-goals. Add `existing|ephemeral` capacity and `off|preferred|required` spot policy on the durable provision, ready, execute, drain, deprovision state machine; `prepare` materializes dependencies and capacity without SUT traffic and returns an expiring revision; spot uses a percentage ceiling plus on-demand floor (no alpha generator); never fail over silently across regions or clouds. Exit gate: prepare emits no target traffic; loss and cleanup are visible and reconciled; capacity survives until archive terminality.
+Collector artifacts, project sources/bindings, signed assigned jobs, sealed expiring credentials, destination approvals, SSH host-key pins and restricted command/query packs are implemented. Prometheus, OTLP, SSH/Linux and restricted JMX/JDBC have deterministic/local coverage; CloudWatch and Azure Monitor are implemented previews pending approved live acceptance. SNMP, WMI/PerfMon, New Relic, AppDynamics and GCP remain customer-evidence-dependent work; CA Introscope and unrestricted commands remain non-goals. Existing/ephemeral capacity policies and capability-gated spot policies are implemented, including ECS percentage ceilings and an on-demand floor; unsupported required policies fail explicitly. Remaining exit gate: verify zero target traffic, takeover, reservation loss and cleanup for each target/runtime/provider combination, with capacity retained until archive terminality and no silent cross-region/cloud fallback.
 
 ### Phase 5: media, automation and reporting
 

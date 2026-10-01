@@ -79,3 +79,43 @@ func TestDashboardDefinitionRejectsUnknownPanelAndFilter(t *testing.T) {
 		})
 	}
 }
+
+func TestNativeArchiveQueryValidation(t *testing.T) {
+	q := AnalyticsQuery{Population: "action", Metric: "response_time", Aggregation: "p95", BucketSeconds: 10, EndSeconds: 60, PropertyName: "kind", PropertyValue: "paid"}
+	if err := ValidateNativeArchiveQuery(q); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*AnalyticsQuery){func(q *AnalyticsQuery) { q.Population = "transaction" }, func(q *AnalyticsQuery) { q.EndSeconds = 0 }, func(q *AnalyticsQuery) { q.BucketSeconds = 0 }, func(q *AnalyticsQuery) { q.EndSeconds = 86400; q.BucketSeconds = 1 }, func(q *AnalyticsQuery) { q.PropertyValue = "" }, func(q *AnalyticsQuery) { q.Filters = map[string]string{"sql": "select"} }, func(q *AnalyticsQuery) { q.Metric = "resource_cpu" }} {
+		bad := q
+		mutate(&bad)
+		if ValidateNativeArchiveQuery(bad) == nil {
+			t.Fatalf("accepted %+v", bad)
+		}
+	}
+	d := sampleDashboardDefinition("archive")
+	d.Tabs[0].Panels[0].Query = &q
+	if err := validateDashboardDefinition(d); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNativeArchiveDefinitionRoundTrip(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/panels.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	d := sampleDashboardDefinition("filtered")
+	d.Tabs[0].Panels[0].Query = &AnalyticsQuery{Population: "action", Metric: "observation_count", Aggregation: "count", BucketSeconds: 10, EndSeconds: 60, PropertyName: "kind", PropertyValue: "paid", ComparisonRunID: "baseline", Filters: map[string]string{"action": "Checkout"}}
+	if err := store.SaveDashboardDefinition(d); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetDashboardDefinition(d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := got.Tabs[0].Panels[0].Query
+	if q.Population != "action" || q.PropertyName != "kind" || q.PropertyValue != "paid" || q.ComparisonRunID != "baseline" || q.Filters["action"] != "Checkout" || q.EndSeconds != 60 || q.MaxSeries != 1 {
+		t.Fatalf("lost saved selection: %+v", q)
+	}
+}

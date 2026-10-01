@@ -68,8 +68,8 @@ latency. Missing/stale evidence is not plotted as zero.
 
 The collector supports fixed SSH/Linux, bounded OTLP/HTTP JSON, and restricted
 JMX/JDBC packs in addition to Linux/runtime/Prometheus. CloudWatch and Azure
-Monitor adapters remain separate follow-on work;
-selecting one cannot silently return host metrics.
+Monitor are opt-in preview adapters with bounded identity-scoped queries; see
+the cloud collector configuration below. Live cloud acceptance remains required; selecting a pack cannot silently return host metrics.
 
 ## Prepare before Start
 
@@ -290,4 +290,17 @@ Promotion occurs after result redaction. Unlisted values become `other`; absent 
 
 Live summaries expose `properties`; archive reports recompute `by_property` from action observations. JSONL and Parquet retain `property_dimensions`. Existing archive transaction queries accept paired `property_name` and `property_value` exact filters; use the action population when reconciling with live property counts. Old archives without promotion evidence remain unavailable. Property comparisons across script revisions must use the same promotion definitions.
 
-Run pages now offer native project panel creation with line, latest-value and table views, using the retained run time window. Supported run measurements include TPS, response-time means/interval percentiles, errors, VUsers and process resources. Project viewers can reopen saved panels. Missing intervals remain gaps, interval percentiles are never averaged, and unsupported stored query dimensions/filters/aggregations are explicitly unavailable. General dimension/filter/monitor/imported-dataset overlay authoring remains follow-on work; it is not implied by the initial panel editor.
+Run pages now offer native project panel creation with line, latest-value and table views, using the retained run time window. Supported run measurements include TPS, response-time means/interval percentiles, errors, VUsers and process resources. Project viewers can reopen saved panels. Missing intervals remain gaps, interval percentiles are never averaged, and unsupported stored query dimensions/filters/aggregations are explicitly unavailable. Archived action/transaction and property filtering is described below. General dimensions and monitor/imported-dataset overlay authoring remain follow-on work.
+
+
+## Filtered archive panels and comparisons
+
+In a run's **Create project analytics panel** form, choose **Archived actions** or **Archived business transactions**. Select a case-sensitive exact action/transaction name, an optional retained approved property category (actions only), elapsed start/end seconds and bucket width. An optional comparison run ID saves a two-run query with the same selection and elapsed wall-time window for both runs. Editors save project definitions; viewers can reopen and query them. Existing run-total definitions keep their previous semantics.
+
+The first slice supports raw observation counts, error percentages and response-time mean/min/max/P50/P90/P95/P99. Percentiles use nearest rank over raw observations within each bucket, never averages of stored percentiles. Empty buckets are missing, including count buckets; they do not assert that zero traffic occurred. Missing retained properties and legacy observations whose population cannot be established produce explicit warnings. Property selection matches the retained finite category, including `other` or `missing` when those were actually recorded.
+
+Queries require a completed archive and recorded execution start. They allow a window within the first 24 elapsed hours, at most 1,000 buckets and 100,000 selected raw observations. Existing archive scan record/byte limits also apply, with a 30-second query deadline and shared analytics admission. Oversized or busy queries fail explicitly; narrow the selection or retry. This slice reads the canonical JSONL transaction evidence and does not require DuckDB. Summary-only archives cannot supply raw percentiles.
+
+Click a chart bucket or open **Inspect time buckets** to inspect current/baseline observations. The paginated inspector reuses the authorized archive transaction endpoint and redacted snapshot preview components. Exact identity/property/population filters and inclusive-start/exclusive-end UTC bounds match the plotted bucket. Request and response bodies remain subject to existing capture and disclosure policies.
+
+Comparisons require both runs to belong to the same project. Results show added/removed identities and compatibility warnings when execution fingerprints are missing/different or evidence limitations exist. Values remain separate; no automatic regression verdict is inferred from an unqualified pair. Monitor/imported overlays, general dimension grouping, filtered live timelines and live SLA actions remain outside this slice.

@@ -49,6 +49,13 @@ type DashboardPanel struct {
 }
 
 type AnalyticsQuery struct {
+	Population      string `json:"population,omitempty"`
+	PropertyName    string `json:"property_name,omitempty"`
+	PropertyValue   string `json:"property_value,omitempty"`
+	ComparisonRunID string `json:"comparison_run_id,omitempty"`
+	StartSeconds    int    `json:"start_seconds,omitempty"`
+	EndSeconds      int    `json:"end_seconds,omitempty"`
+
 	Metric        string            `json:"metric"`
 	Aggregation   string            `json:"aggregation"`
 	Dimensions    []string          `json:"dimensions,omitempty"`
@@ -61,7 +68,7 @@ type AnalyticsQuery struct {
 var dashboardMetrics = map[string]struct{}{
 	"tps": {}, "response_time": {}, "error_rate": {}, "active_vusers": {},
 	"throughput": {}, "bytes_sent": {}, "bytes_received": {}, "regional_activity": {},
-	"transaction_duration": {}, "resource_cpu": {}, "resource_memory": {},
+	"observation_count": {}, "transaction_duration": {}, "resource_cpu": {}, "resource_memory": {},
 }
 var dashboardAggregations = map[string]struct{}{
 	"avg": {}, "sum": {}, "min": {}, "max": {}, "p50": {}, "p90": {}, "p95": {}, "p99": {}, "stddev": {}, "count": {}, "rate": {},
@@ -134,6 +141,16 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 				continue
 			}
 			q := panel.Query
+			if q.Population != "" {
+				if q.MaxSeries == 0 {
+					q.MaxSeries = 1
+				}
+				if err := ValidateNativeArchiveQuery(*q); err != nil {
+					return err
+				}
+			} else if q.PropertyName != "" || q.PropertyValue != "" || q.ComparisonRunID != "" || q.StartSeconds != 0 || q.EndSeconds != 0 {
+				return errors.New("archive query fields require an explicit population")
+			}
 			if _, ok := dashboardMetrics[q.Metric]; !ok {
 				return fmt.Errorf("dashboard panel %q uses unsupported metric %q", panel.ID, q.Metric)
 			}
@@ -292,4 +309,44 @@ func (s *SQLiteStore) DeleteDashboardDefinitionIfRevision(id, projectID string, 
 	}
 	affected, err := result.RowsAffected()
 	return affected == 1, err
+}
+
+// ValidateNativeArchiveQuery is shared by saved definitions and query execution.
+func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
+	if q.Population != "action" && q.Population != "transaction" {
+		return errors.New("select action or transaction population")
+	}
+	if len(q.Dimensions) != 0 || q.Overlay || len(q.Filters) > 1 || q.MaxSeries > 1 || q.MaxSeries < 0 {
+		return errors.New("archive panels support an action identity filter; dimensions and overlays are unavailable")
+	}
+	for k, v := range q.Filters {
+		if k != "action" || len(v) > 256 {
+			return errors.New("invalid archive action filter")
+		}
+	}
+	if (q.PropertyName == "") != (q.PropertyValue == "") || len(q.PropertyName) > 64 || len(q.PropertyValue) > 64 || q.PropertyName != "" && q.Population != "action" {
+		return errors.New("property filters require an action population and bounded name/value pair")
+	}
+	if len(q.ComparisonRunID) > 128 {
+		return errors.New("comparison run id exceeds limit")
+	}
+	if q.StartSeconds < 0 || q.EndSeconds <= q.StartSeconds || q.EndSeconds > 86400 || q.BucketSeconds < 1 || q.BucketSeconds > 3600 || (q.EndSeconds-q.StartSeconds+q.BucketSeconds-1)/q.BucketSeconds > 1000 {
+		return errors.New("select a window within 24 hours and at most 1000 buckets")
+	}
+	switch q.Metric {
+	case "observation_count":
+		if q.Aggregation == "count" {
+			return nil
+		}
+	case "error_rate":
+		if q.Aggregation == "avg" {
+			return nil
+		}
+	case "response_time":
+		switch q.Aggregation {
+		case "avg", "min", "max", "p50", "p90", "p95", "p99":
+			return nil
+		}
+	}
+	return errors.New("unsupported archive measurement or aggregation")
 }

@@ -15,6 +15,12 @@ export interface DashboardDefinitionPanel {
 }
 
 export interface DashboardAnalyticsQuery {
+  population?: 'action' | 'transaction'
+  property_name?: string
+  property_value?: string
+  comparison_run_id?: string
+  start_seconds?: number
+  end_seconds?: number
 	metric: string
 	aggregation: string
 	dimensions?: string[]

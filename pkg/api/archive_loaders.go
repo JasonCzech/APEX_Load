@@ -172,6 +172,12 @@ func readJSONLSortedTransactionPageFrom(ctx context.Context, reader io.Reader, p
 }
 
 func transactionMatchesArchiveFilter(item *TransactionEvent, filter transactionEventFilter) bool {
+	if filter.ActionExact != "" && item.ActionName != filter.ActionExact {
+		return false
+	}
+	if filter.TimeToExclusive && filter.TimeTo != nil && !item.Timestamp.Before(*filter.TimeTo) {
+		return false
+	}
 	if filter.Population != "" && archiveEventPopulation(*item) != filter.Population {
 		return false
 	}

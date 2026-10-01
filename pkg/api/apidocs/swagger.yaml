@@ -49337,10 +49337,15 @@ paths:
                                 bucket_seconds:
                                   type: integer
                                   format: int64
+                                comparison_run_id:
+                                  type: string
                                 dimensions:
                                   type: array
                                   items:
                                     type: string
+                                end_seconds:
+                                  type: integer
+                                  format: int64
                                 filters:
                                   type: object
                                   additionalProperties:
@@ -49352,6 +49357,15 @@ paths:
                                   type: string
                                 overlay:
                                   type: boolean
+                                population:
+                                  type: string
+                                property_name:
+                                  type: string
+                                property_value:
+                                  type: string
+                                start_seconds:
+                                  type: integer
+                                  format: int64
                               nullable: true
                             title:
                               type: string
@@ -271216,6 +271230,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: action_exact
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: baseline_id
           in: query
           description: Handler-defined query parameter.
@@ -271392,6 +271412,12 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: time_to_exclusive
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: trace_id
           in: query
           description: Handler-defined query parameter.
@@ -275844,6 +275870,219 @@ paths:
       tags:
         - Tests
       x-handler: handleGetRunArchiveManifest
+  /api/v1/tests/{id}/archive/native-series:
+    post:
+      summary: Native Archive Series
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleNativeArchiveSeries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                aggregation:
+                  type: string
+                bucket_seconds:
+                  type: integer
+                  format: int64
+                comparison_run_id:
+                  type: string
+                dimensions:
+                  type: array
+                  items:
+                    type: string
+                end_seconds:
+                  type: integer
+                  format: int64
+                filters:
+                  type: object
+                  additionalProperties:
+                    type: string
+                max_series:
+                  type: integer
+                  format: int64
+                metric:
+                  type: string
+                overlay:
+                  type: boolean
+                population:
+                  type: string
+                property_name:
+                  type: string
+                property_value:
+                  type: string
+                start_seconds:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  added:
+                    type: array
+                    items:
+                      type: string
+                  baseline:
+                    type: object
+                    properties:
+                      buckets:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            count:
+                              type: integer
+                              format: int64
+                            from:
+                              type: string
+                              format: date-time
+                            offset_seconds:
+                              type: integer
+                              format: int64
+                            to:
+                              type: string
+                              format: date-time
+                            value:
+                              type: number
+                              format: double
+                              nullable: true
+                          required:
+                            - count
+                            - from
+                            - offset_seconds
+                            - to
+                            - value
+                      identities:
+                        type: array
+                        items:
+                          type: string
+                      run_id:
+                        type: string
+                      warnings:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - buckets
+                      - identities
+                      - run_id
+                      - warnings
+                    nullable: true
+                  comparable:
+                    type: boolean
+                  current:
+                    type: object
+                    properties:
+                      buckets:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            count:
+                              type: integer
+                              format: int64
+                            from:
+                              type: string
+                              format: date-time
+                            offset_seconds:
+                              type: integer
+                              format: int64
+                            to:
+                              type: string
+                              format: date-time
+                            value:
+                              type: number
+                              format: double
+                              nullable: true
+                          required:
+                            - count
+                            - from
+                            - offset_seconds
+                            - to
+                            - value
+                      identities:
+                        type: array
+                        items:
+                          type: string
+                      run_id:
+                        type: string
+                      warnings:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - buckets
+                      - identities
+                      - run_id
+                      - warnings
+                  removed:
+                    type: array
+                    items:
+                      type: string
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - added
+                  - comparable
+                  - current
+                  - removed
+                  - warnings
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleNativeArchiveSeries
   /api/v1/tests/{id}/archive/report:
     get:
       summary: Get Run Archive Report
@@ -286676,6 +286915,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: action_exact
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: correlation_id
           in: query
           description: Handler-defined query parameter.
@@ -286852,6 +287097,12 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: time_to_exclusive
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: trace_id
           in: query
           description: Handler-defined query parameter.

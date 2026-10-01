@@ -1183,6 +1183,8 @@ func parseArchiveSampleLimit(w http.ResponseWriter, r *http.Request) (int, bool)
 func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transactionEventFilter, bool) {
 	query := r.URL.Query()
 	filter := transactionEventFilter{
+		ActionExact:       query.Get("action_exact"),
+		TimeToExclusive:   query.Get("time_to_exclusive") == "true",
 		PropertyName:      query.Get("property_name"),
 		PropertyValue:     query.Get("property_value"),
 		Population:        strings.TrimSpace(query.Get("population")),
@@ -1200,6 +1202,10 @@ func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transa
 		DependencyTarget:  strings.TrimSpace(query.Get("dependency_target")),
 		Status:            strings.TrimSpace(query.Get("status")),
 		ErrorContains:     strings.TrimSpace(query.Get("error_contains")),
+	}
+	if len(filter.ActionExact) > 256 {
+		writeError(w, http.StatusBadRequest, "action identity exceeds limit")
+		return transactionEventFilter{}, false
 	}
 	if (filter.PropertyName == "") != (filter.PropertyValue == "") || len(filter.PropertyName) > 64 || len(filter.PropertyValue) > 64 {
 		writeError(w, http.StatusBadRequest, "property filters require a bounded name and value")

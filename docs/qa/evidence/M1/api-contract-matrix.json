@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 645,
+    "routes": 646,
     "public": 24,
-    "protected": 621,
-    "rbac": 619,
+    "protected": 622,
+    "rbac": 620,
     "handler_authenticated": 2,
     "role_metadata_missing": 0,
-    "green": 645,
+    "green": 646,
     "partial": 0,
     "missing": 0
   },
@@ -13822,6 +13822,33 @@
       "state": "GREEN",
       "enforcement": "authentication middleware and access catalog",
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/archive/native-series",
+      "operation_id": "handleNativeArchiveSeries",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read",
       "anonymous_assertion": "HTTP 401 before handler",
       "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
       "allowed_roles": {
