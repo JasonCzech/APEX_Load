@@ -3,89 +3,53 @@ package browser
 import (
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/selector"
 )
 
 func ts(ms int64) time.Time { return time.UnixMilli(ms) }
 
 func TestInferSync(t *testing.T) {
-	steps := []Step{
-		{Seq: 1, Kind: StepClick, Timestamp: ts(1000), URL: "https://x/current"},
-		{Seq: 2, Kind: StepFill, Timestamp: ts(5000)},
-		{Seq: 3, Kind: StepClick, Timestamp: ts(9000)},
-	}
-	tests := []struct {
+	for _, tc := range []struct {
 		name    string
-		index   int
-		navs    []NavEvent
 		network []time.Time
-		want    string // sync type, "" = nil
+		navs    []NavEvent
+		mutate  func([]Step)
+		want    bool
 	}{
-		{
-			name:    "navigation inside window wins",
-			index:   0,
-			navs:    []NavEvent{{Timestamp: ts(1500), URL: "https://x/next"}},
-			network: []time.Time{ts(1200), ts(1300)},
-			want:    "load",
-		},
-		{
-			name:  "same document hash navigation does not force load",
-			index: 0,
-			navs:  []NavEvent{{Timestamp: ts(1500), URL: "https://x/current#details"}},
-			want:  "",
-		},
-		{
-			name:    "network burst without navigation",
-			index:   0,
-			network: []time.Time{ts(1200), ts(1400)},
-			want:    "network_idle",
-		},
-		{
-			name:    "single request is background noise",
-			index:   0,
-			network: []time.Time{ts(1200)},
-			want:    "",
-		},
-		{
-			name:    "activity after window ignored",
-			index:   0,
-			navs:    []NavEvent{{Timestamp: ts(4000), URL: "https://x/late"}},
-			network: []time.Time{ts(3500), ts(3600)},
-			want:    "",
-		},
-		{
-			name:    "window clamps at next step",
-			index:   1, // fill at 5000, next step at 9000 > 5000+2s so window is 7000
-			network: []time.Time{ts(6500), ts(6900)},
-			want:    "network_idle",
-		},
-		{
-			name:    "activity before step ignored",
-			index:   2,
-			network: []time.Time{ts(8500), ts(8900)},
-			want:    "",
-		},
-		{
-			name:  "fill is an interaction kind",
-			index: 1,
-			navs:  []NavEvent{{Timestamp: ts(5500), URL: "https://x/f"}},
-			want:  "load",
-		},
-		{
-			name:  "out of range index",
-			index: 7,
-			navs:  []NavEvent{{Timestamp: ts(1500), URL: "https://x"}},
-			want:  "",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := inferSync(steps, tt.index, tt.navs, tt.network)
-			gotType := ""
-			if got != nil {
-				gotType = got.Type
+		{name: "single delayed fetch", network: []time.Time{ts(4500)}, want: true},
+		{name: "polling burst", network: []time.Time{ts(1200), ts(1400)}, want: true},
+		{name: "SPA navigation", navs: []NavEvent{{Timestamp: ts(1500), URL: "https://x/next"}}, want: true},
+		{name: "quiet", want: false},
+		{name: "explicit later navigation", navs: []NavEvent{{Timestamp: ts(4000), URL: "https://x/manual"}}},
+		{name: "SPA navigation followed by explicit navigation", navs: []NavEvent{{Timestamp: ts(1500), URL: "https://x/spa"}, {Timestamp: ts(4000), URL: "https://x/manual"}}},
+		{name: "hidden file input", network: []time.Time{ts(1200)}, mutate: func(s []Step) { s[1].Kind = StepSetFiles }},
+		{name: "before action", network: []time.Time{ts(500)}},
+		{name: "after next action", network: []time.Time{ts(6000)}},
+		{name: "other frame", network: []time.Time{ts(1200)}, mutate: func(s []Step) { s[1].FrameSelector = "iframe" }},
+		{name: "other window", network: []time.Time{ts(1200)}, mutate: func(s []Step) { s[1].Kind = StepSwitchWindow }},
+		{name: "excluded", network: []time.Time{ts(1200)}, mutate: func(s []Step) { s[1].Excluded = true }},
+		{name: "same element", network: []time.Time{ts(1200)}, mutate: func(s []Step) { s[1].Candidates = s[0].Candidates }},
+		{name: "other section", network: []time.Time{ts(1200)}, mutate: func(s []Step) { s[1].Section = SectionTeardown }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			steps := []Step{
+				{Kind: StepClick, Timestamp: ts(1000), Candidates: []selector.Candidate{{Kind: "css", Value: "#go", Confidence: 90}}},
+				{Kind: StepClick, Timestamp: ts(5000), Candidates: []selector.Candidate{{Kind: "css", Value: "#result", Confidence: 90}}},
 			}
-			if gotType != tt.want {
-				t.Errorf("inferSync() = %q, want %q", gotType, tt.want)
+			if tc.mutate != nil {
+				tc.mutate(steps)
+			}
+			got := inferSync(steps, 0, tc.navs, tc.network)
+			if tc.want {
+				if got == nil || got.Type != "element_visible" || got.Value != "#result" {
+					t.Fatalf("sync = %+v", got)
+				}
+			} else if got != nil {
+				t.Fatalf("unexpected sync: %+v", got)
+			}
+			if got := inferSync(steps, 1, tc.navs, tc.network); got != nil {
+				t.Fatalf("final action sync = %+v", got)
 			}
 		})
 	}

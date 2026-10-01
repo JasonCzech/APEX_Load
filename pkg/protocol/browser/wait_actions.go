@@ -41,6 +41,37 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 				return b.waitElementCountForAction(waitCtx, action, waitValue, predicate)
 			}
 			return b.waitHiddenForAction(waitCtx, action, waitValue)
+		case "element_text":
+			text, ok := action.Params["text"].(string)
+			if waitValue == "" || !ok || text == "" {
+				return fmt.Errorf("browser_wait element_text requires a selector and params.text")
+			}
+			locator, framed := b.actionLocator(action, waitValue)
+			if !framed {
+				if b.currentPage() == nil {
+					return fmt.Errorf("browser page is not initialized")
+				}
+				locator = b.currentPage().Locator(waitValue)
+			}
+			ticker := time.NewTicker(50 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				if err := waitCtx.Err(); err != nil {
+					return fmt.Errorf("browser_wait stopped waiting for element text: %w", err)
+				}
+				value, err := locator.TextContent(playwright.LocatorTextContentOptions{Timeout: playwright.Float(b.timeoutMS(waitCtx, 200*time.Millisecond))})
+				if err == nil && strings.Contains(value, text) {
+					visible, err := locator.IsVisible()
+					if err == nil && visible && waitCtx.Err() == nil {
+						return nil
+					}
+				}
+				select {
+				case <-waitCtx.Done():
+					return fmt.Errorf("browser_wait timed out waiting for element text: %w", waitCtx.Err())
+				case <-ticker.C:
+				}
+			}
 		case "text":
 			if waitValue == "" {
 				return fmt.Errorf("browser_wait text requires wait_for value")

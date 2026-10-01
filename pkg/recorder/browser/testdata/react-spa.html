@@ -1,0 +1,32 @@
+<!doctype html><html><head><title>React recording regression</title></head>
+<body><div id="root"></div><script src="/react.js"></script><script src="/react-dom.js"></script>
+<script>
+const h = React.createElement;
+function App() {
+ const [query, setQuery] = React.useState('');
+ const [suggestion, setSuggestion] = React.useState('');
+ const [selected, setSelected] = React.useState(false);
+ const [saved, setSaved] = React.useState(false);
+ React.useEffect(() => {
+  if (!query) return;
+  let cancelled = false;
+  const timer = setTimeout(() => fetch('/suggest?q=' + encodeURIComponent(query)).then(r => r.json()).then(data => {
+   if (!cancelled) setSuggestion(data.name);
+  }), 120);
+  return () => { cancelled = true; clearTimeout(timer); };
+ }, [query]);
+ React.useEffect(() => { const timer = setInterval(() => fetch('/poll'), 100); return () => clearInterval(timer); }, []);
+ return h('main', null,
+  h('input', { 'data-testid': 'search', value: query, role: 'combobox',
+   onChange: e => { setQuery(e.target.value); setSelected(false); },
+   onKeyDown: e => { if (e.key === 'ArrowDown' && suggestion) setSelected(true); }
+  }),
+  h('div', {id:'suggestion'}, suggestion),
+  h('button', {id: Math.floor(Math.random()*100000)+':a', 'data-aura-class':'force:button', 'aria-label':'Save record',
+   disabled: !selected, onClick: () => { history.pushState({}, '', '/saved'); fetch('/save').then(() => setSaved(true)); }
+  }, 'Save'),
+  h('div', {id:'result', role:'status'}, saved ? 'Saved '+query : '')
+ );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script></body></html>

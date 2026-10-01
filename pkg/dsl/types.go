@@ -558,6 +558,10 @@ type BrowserCacheSimulationConfig struct {
 }
 
 type BrowserConfig struct {
+	// StorageState is a whole project-secret reference resolving to a Playwright
+	// cookies/localStorage JSON snapshot captured before the tested transaction.
+	StorageState string `json:"storage_state,omitempty"`
+
 	SystemLanguage        string `json:"system_language,omitempty"`
 	AvailableScreenWidth  int    `json:"available_screen_width,omitempty" jsonschema:"minimum=0,maximum=8192"`
 	AvailableScreenHeight int    `json:"available_screen_height,omitempty" jsonschema:"minimum=0,maximum=8192"`

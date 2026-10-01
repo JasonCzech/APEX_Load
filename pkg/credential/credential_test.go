@@ -222,3 +222,9 @@ func TestSensitiveRuntimeSetting(t *testing.T) {
 		})
 	}
 }
+
+func TestBrowserStorageStateIsCredentialMaterial(t *testing.T) {
+	if !SensitiveName("storage_state") {
+		t.Fatal("browser session snapshot must be treated as credentials")
+	}
+}

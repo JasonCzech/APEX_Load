@@ -143,10 +143,12 @@ func browserActionSpecs() []ActionSpec {
 		{
 			Type:         "browser_fill",
 			Protocols:    []string{"browser"},
-			Summary:      "Types a value into an input element.",
+			Summary:      "Fills an input, optionally issuing per-character keyboard events.",
 			RequireOneOf: [][]string{locatorRequireOneOf},
-			Fields:       locatorFields(FieldSpec{Name: "value", Kind: FieldKindString, Doc: "Text to enter; empty string clears the field and template variables are expanded."}),
-			Validate:     browserValidator(browserRequireElementLocator, nil),
+			Fields: locatorFields(FieldSpec{Name: "value", Kind: FieldKindString, Doc: "Text to enter; empty string clears the field and template variables are expanded."},
+				FieldSpec{Name: "params.input_mode", Kind: FieldKindEnum, Enum: []string{"fill", "type"}, SchemaEnum: true, Doc: "fill (default) sets the value; type clears the field and sends per-character keyboard events."},
+				FieldSpec{Name: "params.typing_delay_ms", Kind: FieldKindInt, Maximum: 1000, Doc: "Delay between keys in type mode, 0–1000 milliseconds."}),
+			Validate: browserValidator(browserRequireElementLocator, browserFillChecks),
 		},
 		{
 			Type:         "browser_select",
@@ -246,6 +248,7 @@ func browserActionSpecs() []ActionSpec {
 				fieldSelector,
 				{Name: "target", Kind: FieldKindString, Doc: "Element locator alternative to selector."},
 				{Name: "params.operator", Kind: FieldKindEnum, Enum: []string{"=", "==", "===", "!=", "!==", ">", ">=", "<", "<="}, SchemaEnum: true, Doc: "Element-count comparison operator used with params.count; defaults to >= when count is set."},
+				{Name: "params.text", Kind: FieldKindString, Doc: "Required text substring for wait_for.type=element_text; waits for visible matching text in the selected element/frame."},
 				{Name: "params.count", Kind: FieldKindInt, Doc: "Required element count for count-based waits; zero or greater."},
 			},
 			Validate: browserValidator(browserRequireWaitCondition, browserWaitChecks),
@@ -593,6 +596,12 @@ func browserWaitResponseChecks(label string, action Action) []string {
 
 func browserWaitChecks(label string, action Action) []string {
 	var issues []string
+	if action.WaitFor != nil && strings.EqualFold(action.WaitFor.Type, "element_text") {
+		text, ok := actionParamStringValue(action.Params, "text")
+		if !ok || text == "" {
+			issues = append(issues, label+": element_text requires params.text")
+		}
+	}
 	operator, hasOperator := actionParamStringValue(action.Params, "operator")
 	_, hasCount := actionParamIntValue(action.Params, "count")
 	if hasOperator && !isAllowedValue(operator, "=", "==", "===", "!=", "!==", ">", ">=", "<", "<=") {
@@ -812,6 +821,20 @@ func browserSwipeChecks(label string, action Action) []string {
 	}
 	if distance, ok := actionParamIntValue(action.Params, "distance"); ok && distance <= 0 {
 		issues = append(issues, fmt.Sprintf("%s: browser_swipe distance must be greater than zero", label))
+	}
+	return issues
+}
+
+func browserFillChecks(label string, action Action) []string {
+	var issues []string
+	if mode, ok := action.Params["input_mode"]; ok && mode != "fill" && mode != "type" {
+		issues = append(issues, label+": browser_fill input_mode must be fill or type")
+	}
+	if _, set := action.Params["typing_delay_ms"]; set {
+		delay, ok := actionParamIntValue(action.Params, "typing_delay_ms")
+		if !ok || delay < 0 || delay > 1000 {
+			issues = append(issues, label+": browser_fill typing_delay_ms must be between 0 and 1000")
+		}
 	}
 	return issues
 }

@@ -24,6 +24,9 @@ const (
 func (b *Browser) applyConfig(config map[string]any) error {
 	b.applyDefaultConfig()
 	b.applyConfigOverrides(config)
+	if err := b.configureStorageState(config); err != nil {
+		return err
+	}
 	b.systemLanguage = protocol.ConfigString(config, "browser_system_language")
 	b.availableScreenWidth = protocol.ConfigInt(config, "browser_available_screen_width")
 	b.availableScreenHeight = protocol.ConfigInt(config, "browser_available_screen_height")
@@ -53,6 +56,7 @@ func (b *Browser) applyConfig(config map[string]any) error {
 }
 
 func (b *Browser) applyDefaultConfig() {
+	b.storageState = nil
 	b.engine = "chromium"
 	b.baseURL = ""
 	b.currentURL = ""

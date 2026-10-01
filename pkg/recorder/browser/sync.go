@@ -2,6 +2,7 @@ package browser
 
 import (
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,17 +13,11 @@ import (
 // network burst is attributed to that interaction.
 const syncObservationWindow = 2 * time.Second
 
-// minNetworkBurst is the number of requests inside the observation window that
-// counts as action-triggered network activity rather than background noise
-// (analytics beacons, polling).
-const minNetworkBurst = 2
-
-// inferSync derives the post-action sync policy for the step at index i from
-// the recorded navigation and network event timeline. A main-frame navigation
-// inside the window means the action triggered a page load; a network burst
-// without navigation means SPA-style async work, which replay waits out with
-// network_idle. Quiet windows get no sync policy — the engine's per-action
-// auto-waits are enough.
+// inferSync uses the next recorded element as a readiness hint after async
+// activity. Global network-idle is unsuitable for polling SPAs, and a frame
+// navigation can be a same-document pushState rather than a document load.
+// This is a hint, not a business assertion: operators should record assertions
+// for the result of their transaction, particularly after the final action.
 func inferSync(steps []Step, i int, navs []NavEvent, network []time.Time) *dsl.BrowserSyncPolicy {
 	if i < 0 || i >= len(steps) {
 		return nil
@@ -30,33 +25,47 @@ func inferSync(steps []Step, i int, navs []NavEvent, network []time.Time) *dsl.B
 	step := steps[i]
 	switch step.Kind {
 	case StepClick, StepFill, StepPressKey, StepSelect, StepSetFiles:
-		// Interactions that can trigger loads or async work (fills drive
-		// autocomplete/search requests in SPAs).
 	default:
 		return nil
 	}
-	windowEnd := step.Timestamp.Add(syncObservationWindow)
-	if i+1 < len(steps) && steps[i+1].Timestamp.Before(windowEnd) {
-		windowEnd = steps[i+1].Timestamp
+	// Never cross an excluded step, window switch, section, or frame boundary:
+	// the sync policy executes in the triggering action's browsing context.
+	if i+1 >= len(steps) {
+		return nil
+	}
+	next := steps[i+1]
+	if next.skipForConvert() || next.Kind == StepSwitchWindow || next.Kind == StepSetFiles ||
+		normalizeSection(step.Section) != normalizeSection(next.Section) ||
+		step.FrameSelector != next.FrameSelector || !slices.Equal(step.FramePath, next.FramePath) {
+		return nil
+	}
+	selector := next.bestSelector()
+	if selector == "" || selector == step.bestSelector() {
+		return nil
+	}
+	// Bound attribution by the next interaction, not a two-second guess. A
+	// single delayed fetch is enough; background traffic only adds a visible wait.
+	active := false
+	for _, ts := range network {
+		if ts.After(step.Timestamp) && !ts.After(next.Timestamp) {
+			active = true
+			break
+		}
 	}
 	for _, nav := range navs {
-		if nav.Timestamp.After(step.Timestamp) && !nav.Timestamp.After(windowEnd) {
-			if sameDocumentURL(step.URL, nav.URL) {
-				continue
+		if nav.Timestamp.After(step.Timestamp) && !nav.Timestamp.After(next.Timestamp) {
+			// Such a navigation is emitted separately by explicitNavigations.
+			// Waiting for its destination before that action would deadlock.
+			if nav.Timestamp.Sub(step.Timestamp) > syncObservationWindow {
+				return nil
 			}
-			return &dsl.BrowserSyncPolicy{Type: "load"}
+			active = true
 		}
 	}
-	requests := 0
-	for _, ts := range network {
-		if ts.After(step.Timestamp) && !ts.After(windowEnd) {
-			requests++
-			if requests >= minNetworkBurst {
-				return &dsl.BrowserSyncPolicy{Type: "network_idle"}
-			}
-		}
+	if !active {
+		return nil
 	}
-	return nil
+	return &dsl.BrowserSyncPolicy{Type: "element_visible", Value: selector}
 }
 
 // explicitNavigations returns the indexes into navs that should become

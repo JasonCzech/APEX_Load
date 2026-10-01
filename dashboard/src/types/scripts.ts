@@ -329,6 +329,7 @@ export interface HTTPConfig {
 }
 
 export interface BrowserConfig {
+  storage_state?: string
   system_language?: string
   available_screen_width?: number
   available_screen_height?: number

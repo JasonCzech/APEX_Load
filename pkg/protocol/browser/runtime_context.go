@@ -108,6 +108,7 @@ func (b *Browser) browserContextOptions() playwright.BrowserNewContextOptions {
 		deviceScaleFactor = 1
 	}
 	contextOptions := playwright.BrowserNewContextOptions{
+		StorageState:      b.storageState,
 		AcceptDownloads:   playwright.Bool(true),
 		DeviceScaleFactor: playwright.Float(deviceScaleFactor),
 		HasTouch:          playwright.Bool(b.touchMode),

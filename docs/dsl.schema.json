@@ -936,7 +936,7 @@
                 ]
               }
             ],
-            "description": "Types a value into an input element.",
+            "description": "Fills an input, optionally issuing per-character keyboard events.",
             "properties": {
               "capture": {
                 "description": "Evidence capture: {screenshot, full_page, html}.",
@@ -945,6 +945,24 @@
               "object_ref": {
                 "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
                 "type": "string"
+              },
+              "params": {
+                "properties": {
+                  "input_mode": {
+                    "description": "fill (default) sets the value; type clears the field and sends per-character keyboard events.",
+                    "enum": [
+                      "fill",
+                      "type"
+                    ],
+                    "type": "string"
+                  },
+                  "typing_delay_ms": {
+                    "description": "Delay between keys in type mode, 0–1000 milliseconds.",
+                    "maximum": 1000,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
               },
               "selector": {
                 "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
@@ -2103,6 +2121,10 @@
                       "\u003c",
                       "\u003c="
                     ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "description": "Required text substring for wait_for.type=element_text; waits for visible matching text in the selected element/frame.",
                     "type": "string"
                   }
                 },
@@ -6831,6 +6853,9 @@
           "maximum": 3600000,
           "minimum": 0,
           "type": "integer"
+        },
+        "storage_state": {
+          "type": "string"
         },
         "system_language": {
           "type": "string"

@@ -439,6 +439,13 @@ func countScriptActions(scripts []*dsl.Script) int {
 }
 
 func finalizeConvertWarnings(session *Session, result *ConvertResult) {
+	if len(session.NetworkEvents) > 0 || len(session.NavEvents) > 0 {
+		result.Warnings = append(result.Warnings, "Recorded element readiness is a hint; add business-result assertions for asynchronous updates and the final action. Background traffic is not used as a network-idle gate.")
+	}
+	if len(session.StorageState) > 0 {
+		result.Warnings = append(result.Warnings, "Recorded browser state is not embedded in the script. Replay a login in init, or explicitly configure config.browser.storage_state with a project secret containing a pre-transaction session snapshot. End-of-recording state may already contain completed transaction state.")
+	}
+
 	if len(session.WebSockets) > 0 {
 		framesCaptured := 0
 		for _, ws := range session.WebSockets {
@@ -999,6 +1006,8 @@ func assertAction(step Step, best string, result *ConvertResult) (dsl.Action, bo
 		},
 	}
 	if text := strings.TrimSpace(step.Value); text != "" {
+		action.WaitFor.Type = "element_text"
+		action.Params = map[string]any{"text": text}
 		action.Assertions = append(action.Assertions, dsl.Assertion{
 			Type:     "element_text_contains",
 			Value:    best,

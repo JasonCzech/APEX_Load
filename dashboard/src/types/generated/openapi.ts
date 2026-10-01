@@ -677,6 +677,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -3445,6 +3446,7 @@ export interface operations {
                 "allow_reviewed_javascript"?: boolean;
               };
               "slow_mo_ms"?: number;
+              "storage_state"?: string;
               "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
@@ -3822,6 +3824,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -4137,6 +4140,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -4928,6 +4932,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -5621,6 +5626,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -9204,6 +9210,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -10049,6 +10056,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -10719,6 +10727,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -11358,6 +11367,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -11890,6 +11900,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -12495,6 +12506,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -13109,6 +13121,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -13854,6 +13867,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -14323,6 +14337,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -15704,6 +15719,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -17347,6 +17363,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -18005,6 +18022,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -18893,6 +18911,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -19798,6 +19817,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -20480,6 +20500,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -24120,6 +24141,7 @@ export interface operations {
               "proxy"?: Record<string, unknown>;
               "review_policy"?: Record<string, unknown>;
               "slow_mo_ms"?: number;
+              "storage_state"?: string;
               "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
@@ -24456,6 +24478,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -25767,6 +25790,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -26660,6 +26684,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -26876,6 +26901,7 @@ export interface operations {
                 "allow_reviewed_javascript"?: boolean;
               };
               "slow_mo_ms"?: number;
+              "storage_state"?: string;
               "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
@@ -27369,6 +27395,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -27735,6 +27762,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -28335,6 +28363,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -29181,6 +29210,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -30020,6 +30050,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -30241,6 +30272,7 @@ export interface operations {
                 "allow_reviewed_javascript"?: boolean;
               };
               "slow_mo_ms"?: number;
+              "storage_state"?: string;
               "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
@@ -31300,6 +31332,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -33244,6 +33277,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -35761,6 +35795,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -36393,6 +36428,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -36947,6 +36983,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -37579,6 +37616,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -39177,6 +39215,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -39398,6 +39437,7 @@ export interface operations {
                 "allow_reviewed_javascript"?: boolean;
               };
               "slow_mo_ms"?: number;
+              "storage_state"?: string;
               "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
@@ -39916,6 +39956,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -40677,6 +40718,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -42403,6 +42445,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -47722,6 +47765,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -48811,6 +48855,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -49475,6 +49520,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -53232,6 +53278,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -53598,6 +53645,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -54092,6 +54140,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -56927,6 +56976,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -58871,6 +58921,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -59470,6 +59521,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -59761,6 +59813,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -60038,6 +60091,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -60315,6 +60369,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -60850,6 +60905,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -61325,6 +61381,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -61844,6 +61901,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -64133,6 +64191,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -64807,6 +64866,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -73470,6 +73530,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -75414,6 +75475,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -76174,6 +76236,7 @@ export interface operations {
               "proxy"?: Record<string, unknown>;
               "review_policy"?: Record<string, unknown>;
               "slow_mo_ms"?: number;
+              "storage_state"?: string;
               "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
@@ -76992,6 +77055,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -77832,6 +77896,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -78515,6 +78580,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -79267,6 +79333,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -80228,6 +80295,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -80898,6 +80966,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -81537,6 +81606,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -82069,6 +82139,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -83590,6 +83661,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -85564,6 +85636,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -86962,6 +87035,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -88360,6 +88434,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -89758,6 +89833,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -91156,6 +91232,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -91691,6 +91768,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -92459,6 +92537,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -94929,6 +95008,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -96269,6 +96349,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -96529,6 +96610,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -97138,6 +97220,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -98989,6 +99072,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -99412,6 +99496,7 @@ export interface operations {
               "allow_reviewed_javascript"?: boolean;
             };
             "slow_mo_ms"?: number;
+            "storage_state"?: string;
             "system_language"?: string;
             "timezone"?: string;
             "touch_mode"?: (boolean) | null;
@@ -99540,6 +99625,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -100638,6 +100724,7 @@ export interface operations {
               "allow_reviewed_javascript"?: boolean;
             };
             "slow_mo_ms"?: number;
+            "storage_state"?: string;
             "system_language"?: string;
             "timezone"?: string;
             "touch_mode"?: (boolean) | null;
@@ -100766,6 +100853,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -101927,6 +102015,7 @@ export interface operations {
               "allow_reviewed_javascript"?: boolean;
             };
             "slow_mo_ms"?: number;
+            "storage_state"?: string;
             "system_language"?: string;
             "timezone"?: string;
             "touch_mode"?: (boolean) | null;
@@ -102069,6 +102158,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -103229,6 +103319,7 @@ export interface operations {
               "allow_reviewed_javascript"?: boolean;
             };
             "slow_mo_ms"?: number;
+            "storage_state"?: string;
             "system_language"?: string;
             "timezone"?: string;
             "touch_mode"?: (boolean) | null;
@@ -103371,6 +103462,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -104532,6 +104624,7 @@ export interface operations {
               "allow_reviewed_javascript"?: boolean;
             };
             "slow_mo_ms"?: number;
+            "storage_state"?: string;
             "system_language"?: string;
             "timezone"?: string;
             "touch_mode"?: (boolean) | null;
@@ -104674,6 +104767,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -105834,6 +105928,7 @@ export interface operations {
               "allow_reviewed_javascript"?: boolean;
             };
             "slow_mo_ms"?: number;
+            "storage_state"?: string;
             "system_language"?: string;
             "timezone"?: string;
             "touch_mode"?: (boolean) | null;
@@ -105976,6 +106071,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -111088,6 +111184,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -113032,6 +113129,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -113722,6 +113820,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -114403,6 +114502,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -117598,6 +117698,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -117814,6 +117915,7 @@ export interface operations {
                 "allow_reviewed_javascript"?: boolean;
               };
               "slow_mo_ms"?: number;
+              "storage_state"?: string;
               "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
@@ -118307,6 +118409,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -118673,6 +118776,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -119373,6 +119477,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -120218,6 +120323,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "storage_state"?: string;
                   "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
@@ -123531,6 +123637,7 @@ export interface operations {
                 "allow_reviewed_javascript"?: boolean;
               };
               "slow_mo_ms"?: number;
+              "storage_state"?: string;
               "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
@@ -123817,6 +123924,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -124527,6 +124635,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -125668,6 +125777,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "storage_state"?: string;
                 "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
@@ -125884,6 +125994,7 @@ export interface operations {
                 "allow_reviewed_javascript"?: boolean;
               };
               "slow_mo_ms"?: number;
+              "storage_state"?: string;
               "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;

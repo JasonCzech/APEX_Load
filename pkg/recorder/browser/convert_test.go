@@ -123,9 +123,9 @@ func TestConvertSyncThinkTimeAndMetadata(t *testing.T) {
 		t.Errorf("fill think time = after=%v %+v, want fixed 2000ms", fill.ThinkTimeAfter, fill.ThinkTime)
 	}
 	click := script.Actions[2]
-	// click at 3000 triggered nav at 3400 → load sync
-	if click.Sync == nil || click.Sync.Type != "load" {
-		t.Errorf("click sync = %+v, want load", click.Sync)
+	// A navigation waits for the next recorded element, including SPA routes.
+	if click.Sync == nil || click.Sync.Type != "element_visible" {
+		t.Errorf("click sync = %+v, want element_visible", click.Sync)
 	}
 	if click.Metadata == nil {
 		t.Fatal("click metadata missing")

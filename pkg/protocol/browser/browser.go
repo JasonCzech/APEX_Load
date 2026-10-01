@@ -18,6 +18,7 @@ func init() {
 }
 
 type Browser struct {
+	storageState          *playwright.OptionalStorageState
 	systemLanguage        string
 	availableScreenWidth  int
 	availableScreenHeight int

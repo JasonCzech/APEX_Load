@@ -2864,3 +2864,42 @@ func TestVerifyBrowserRecordingUsesSelectedConversion(t *testing.T) {
 		})
 	}
 }
+
+func TestRecordingStudioUsesSalesforceNativeHTTPDraft(t *testing.T) {
+	var payload struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(salesforceHARImportJSON(t), &payload); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{}
+	script, warnings, _, err := server.createHTTPScriptFromHAR(&recbrowser.Session{HAR: []byte(payload.Content)}, &BrowserRecordingSession{Name: "Aura recording", ProjectID: "project-aura"}, "Aura recording")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if script.GeneratedBy != "apexload-salesforce-builder" || script.ProjectID != "project-aura" {
+		t.Fatalf("native draft not selected: generatedBy=%s project=%s warnings=%v", script.GeneratedBy, script.ProjectID, warnings)
+	}
+	auraFound := false
+	for _, action := range script.Actions {
+		if !strings.Contains(action.Target, "/aura") {
+			continue
+		}
+		auraFound = true
+		if !strings.Contains(action.Body, "{{var.") || strings.Contains(action.Body, "tok%2B%2F%3D%3D") {
+			t.Fatalf("Aura token not correlated: %s", action.Body)
+		}
+		hasErrorCheck := false
+		for _, assertion := range action.Assertions {
+			if assertion.Type == "body_not_contains" && strings.Contains(assertion.Value, "ERROR") {
+				hasErrorCheck = true
+			}
+		}
+		if !hasErrorCheck {
+			t.Fatal("native Aura response assertion missing")
+		}
+	}
+	if !auraFound {
+		t.Fatal("Aura request missing")
+	}
+}

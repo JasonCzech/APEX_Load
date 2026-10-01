@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -210,14 +211,15 @@ func TestRecorderCapturesModernWebInteractions(t *testing.T) {
 	if len(result.Script.Actions) < 5 {
 		t.Errorf("converted actions = %v", actionTypes(result.Script.Actions))
 	}
-	syncSeen := false
+	// The SPA click is the final action: no next-element readiness can be
+	// inferred, and continuing background traffic must never be a global gate.
 	for _, action := range result.Script.Actions {
-		if action.Sync != nil {
-			syncSeen = true
+		if action.Sync != nil && action.Sync.Type == "network_idle" {
+			t.Error("inferred a global network-idle gate")
 		}
 	}
-	if !syncSeen {
-		t.Error("no sync policy inferred for SPA fetch burst")
+	if !strings.Contains(strings.Join(result.Warnings, " "), "business-result assertions") {
+		t.Error("missing async readiness review warning")
 	}
 }
 
@@ -564,5 +566,119 @@ func TestControlTransitionsFlushThePrecedingClick(t *testing.T) {
 				t.Fatal("transaction boundary precedes its flushed input")
 			}
 		})
+	}
+}
+
+func TestRecorderFlushesPendingInputOnStopAndPreservesModifiedKeys(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser integration")
+	}
+	server := keyboardFixtureServer()
+	defer server.Close()
+	recorder := New(Options{StartURL: server.URL, Headless: true})
+	if err := recorder.Start(); err != nil {
+		if os.Getenv("APEXLOAD_BROWSER_TESTS") == "require" {
+			t.Fatal(err)
+		}
+		t.Skipf("browser runtime unavailable: %v", err)
+	}
+	defer recorder.Stop()
+	page := recorder.context.Pages()[0]
+	if err := page.Fill("#second", "pending"); err != nil {
+		t.Fatal(err)
+	}
+	if err := page.Press("#second", "Shift+Tab"); err != nil {
+		t.Fatal(err)
+	}
+	if err := page.Fill("#first", "unblurred"); err != nil {
+		t.Fatal(err)
+	}
+	session, err := recorder.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := false
+	lastFill := false
+	for _, step := range session.Steps {
+		if step.Kind == StepPressKey && step.Value == "Shift+Tab" {
+			key = true
+		}
+		if step.Kind == StepFill && step.Value == "unblurred" {
+			lastFill = true
+		}
+	}
+	if !key || !lastFill {
+		t.Fatalf("modified key or final input lost: %+v", session.Steps)
+	}
+}
+
+func TestRecorderCapturesEditsWithoutInventingOrDroppingFills(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser integration")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<input id="password" type="password"><input id="search"><button id="reset" onmousedown="event.preventDefault()" onclick="document.querySelector('#search').value=''">Reset</button><input id="transient" oninput="this.value=''">`))
+	}))
+	defer server.Close()
+	recorder := New(Options{StartURL: server.URL, Headless: true})
+	if err := recorder.Start(); err != nil {
+		if os.Getenv("APEXLOAD_BROWSER_TESTS") == "require" {
+			t.Fatal(err)
+		}
+		t.Skipf("browser runtime unavailable: %v", err)
+	}
+	defer recorder.ForceStop()
+	page := recorder.context.Pages()[0]
+	// Merely focusing and leaving a password must not introduce an env binding.
+	if err := page.Focus("#password"); err != nil {
+		t.Fatal(err)
+	}
+	if err := page.Focus("#search"); err != nil {
+		t.Fatal(err)
+	}
+	if err := page.Fill("#search", "alice"); err != nil {
+		t.Fatal(err)
+	}
+	waitForSteps(t, recorder, 1, 5*time.Second)
+	// A delayed cursor key is not another fill (which would reset selection).
+	time.Sleep(1100 * time.Millisecond)
+	if err := page.Press("#search", "ArrowLeft"); err != nil {
+		t.Fatal(err)
+	}
+	if err := page.Click("#reset"); err != nil {
+		t.Fatal(err)
+	}
+	waitForSteps(t, recorder, 3, 5*time.Second)
+	if err := page.Fill("#search", "alice"); err != nil {
+		t.Fatal(err)
+	}
+	// The click handler clears without blur. Flush the edit before that handler.
+	if err := page.Click("#reset"); err != nil {
+		t.Fatal(err)
+	}
+	if err := page.Fill("#transient", "captured-before-clear"); err != nil {
+		t.Fatal(err)
+	}
+	// A settled second edit can have the same value, with no intervening click.
+	waitForSteps(t, recorder, 6, 5*time.Second)
+	if err := page.Fill("#transient", "captured-before-clear"); err != nil {
+		t.Fatal(err)
+	}
+	session, err := recorder.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fills []string
+	for _, step := range session.Steps {
+		if step.Kind == StepFill {
+			if step.Masked {
+				t.Fatal("untouched password recorded as a fill")
+			}
+			fills = append(fills, step.Value)
+		}
+	}
+	if strings.Join(fills, "|") != "alice|alice|captured-before-clear|captured-before-clear" {
+		t.Fatalf("captured fills = %q", fills)
 	}
 }

@@ -8,6 +8,7 @@ package browser
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -449,13 +450,14 @@ func normalizeKeyboardModifiers(values []string) []string {
 }
 
 // appendStep adds a step to the session, assigning the sequence number and
-// collapsing consecutive duplicate fills on the same element (the capture
-// script can report a fill on both Enter and the subsequent blur). It returns
-// the step as recorded so observers see the merged result.
+// collapsing duplicate delivery of the same fill event. Distinct edits can
+// enter the same value again after an application clears the control, so only
+// identical event timestamps may be merged. Change/blur deduplication belongs
+// to the capture script, which can distinguish those notifications from edits.
 func (s *Session) appendStep(step Step) Step {
 	if len(s.Steps) > 0 && step.Kind == StepFill {
 		last := &s.Steps[len(s.Steps)-1]
-		if last.Kind == StepFill && !last.Excluded && !last.Deleted && sameElement(last.Element, step.Element) {
+		if last.Kind == StepFill && !last.Excluded && !last.Deleted && last.Timestamp.Equal(step.Timestamp) && last.Value == step.Value && last.Masked == step.Masked && normalizeSection(last.Section) == normalizeSection(step.Section) && last.URL == step.URL && last.FrameSelector == step.FrameSelector && slices.Equal(last.FramePath, step.FramePath) && sameElement(last.Element, step.Element) {
 			last.Value = step.Value
 			last.Masked = step.Masked
 			last.Timestamp = step.Timestamp

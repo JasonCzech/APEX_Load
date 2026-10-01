@@ -57,6 +57,7 @@ func (b *Browser) close() {
 	b.runtimeTextRedactor = nil
 	b.runtimeSecretsActive = nil
 	b.mu.Unlock()
+	b.storageState = nil
 	b.currentURL = ""
 	b.slowMo = 0
 	b.userAgent = ""

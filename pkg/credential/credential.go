@@ -48,7 +48,7 @@ var sensitiveNames = map[string]struct{}{
 	"privatekey": {}, "proxyauthorization": {}, "pwd": {}, "receipthandle": {},
 	"refreshtoken": {}, "sas": {}, "saskey": {}, "sassignature": {}, "secret": {},
 	"secretaccesskey": {}, "sharedaccesskey": {}, "sharedaccesssignature": {},
-	"session": {}, "sessionid": {}, "sessiontoken": {}, "sid": {},
+	"session": {}, "sessionid": {}, "sessiontoken": {}, "sid": {}, "storagestate": {},
 	"settlementtoken": {}, "signature": {}, "token": {}, "xsrf": {}, "xsrftoken": {},
 }
 

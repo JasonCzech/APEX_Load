@@ -48,7 +48,8 @@ func excluded(reason string) credentialSurfaceDisposition {
 // until it is classified here, which is the point: the defect this mechanism
 // replaced was a fix applied to one of two sibling surfaces, twice.
 var credentialSurfaceDispositions = map[string]credentialSurfaceDisposition{
-	"config.http.proxy.pac_url": excluded("PAC fetch rejects URL userinfo and never exposes raw URL or download errors; no synthesized credential composite"),
+	"config.browser.storage_state": covered("config.browser.storage_state", "cookie/localStorage values extracted from a project secret"),
+	"config.http.proxy.pac_url":    excluded("PAC fetch rejects URL userinfo and never exposes raw URL or download errors; no synthesized credential composite"),
 	// --- covered: HTTP Basic composites -------------------------------------
 	"config.http.auth.username":  covered("config.http.auth", "basic only"),
 	"config.http.auth.password":  covered("config.http.auth", "basic only"),
@@ -358,6 +359,10 @@ func walkCredentialSurfaceFields(
 			fieldType = fieldType.Elem()
 		}
 		if fieldType.Kind() == reflect.String {
+			if name == "storage_state" {
+				found[path] = struct{}{}
+				continue
+			}
 			for _, token := range strings.Split(name, "_") {
 				if _, trigger := credentialSurfaceFieldTriggers[token]; trigger {
 					found[path] = struct{}{}
@@ -495,6 +500,7 @@ func TestScriptCredentialCompositeSurfacesCoversEveryConfigSurface(t *testing.T)
 		"config.browser.http_credentials",
 		"config.browser.proxy",
 		"config.browser.proxy.server",
+		"config.browser.storage_state",
 		"config.database.dsn",
 		"config.http.auth",
 		"config.http.proxy",

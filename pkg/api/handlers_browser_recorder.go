@@ -22,7 +22,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
-	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
@@ -1991,17 +1990,13 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 		result.Script.ProjectID = normalizeProjectID(info.ProjectID)
 		result.Script.GeneratedBy = "browser-recorder"
 		result.Script.GeneratedFrom = "browser_recording_har"
-		review, reviewErr := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{BuildNative: true, HARData: artifact.HAR})
-		if reviewErr != nil {
-			result.Warnings = append(result.Warnings, "Salesforce review failed: "+reviewErr.Error())
-		} else if review != nil && review.Detected {
-			preserved := ensureScriptImportPreserved(result.Script, "browser_recording_har")
-			preserved["salesforce_review"] = salesforceReviewForResponse(review)
-			if review.NativePreview != nil && review.NativePreview.Script != nil {
-				result.Warnings = append(result.Warnings, "Salesforce traffic detected; the HAR Traffic importer auto-generates the native HTTP draft.")
-			}
-		}
 	}
+	// Use the same native rewrite and review as a direct HAR import. Merely
+	// attaching its review leaves the executable script with recorded Aura state.
+	salesforceDraft := augmentHARImportWithSalesforce(result, artifact.HAR,
+		normalizeProjectID(info.ProjectID), httpName, "browser_recording_har", true, false, true)
+	result.Script = salesforceDraft.Script
+
 	// Run the shared augmentation over the generated HTTP draft and hand its
 	// sections back. Before this the detectors ran here with their return value
 	// discarded, so an Anypoint or Agentforce finding was preserved on the
@@ -2011,11 +2006,12 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 	// credential-preserving script whose recorded values must survive verbatim —
 	// the recorder already keeps the capture itself as the script's baseline.
 	draft := importDraft{
-		Source:           "browser_recording_har",
+		Source:           salesforceDraft.Source,
 		SourceScriptName: httpName,
 		ProjectID:        info.ProjectID,
 		Script:           result.Script,
 		Unsupported:      result.Unsupported,
+		Sections:         salesforceDraft.ReviewSections,
 		Warnings:         result.Warnings,
 	}
 	augmented := draft.augmentWithAgentforceTransform(false)

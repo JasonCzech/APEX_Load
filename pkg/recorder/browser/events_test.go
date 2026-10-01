@@ -190,8 +190,8 @@ func TestStepFromEventZeroTimestampDefaultsToNow(t *testing.T) {
 func TestAppendStepCollapsesDuplicateFills(t *testing.T) {
 	session := &Session{}
 	el := &selector.ElementMetadata{Tag: "input", Name: "q", CSSPath: "form > input"}
-	session.appendStep(Step{Kind: StepFill, Value: "lap", Timestamp: time.UnixMilli(1000), Element: el})
-	session.appendStep(Step{Kind: StepFill, Value: "laptop", Timestamp: time.UnixMilli(2000), Element: el})
+	session.appendStep(Step{Kind: StepFill, Value: "laptop", Timestamp: time.UnixMilli(1000), Element: el})
+	session.appendStep(Step{Kind: StepFill, Value: "laptop", Timestamp: time.UnixMilli(1000), Element: el})
 	if len(session.Steps) != 1 {
 		t.Fatalf("steps = %d, want 1 (duplicate fill collapsed)", len(session.Steps))
 	}
@@ -339,5 +339,27 @@ func TestFrameSelectorFromURL(t *testing.T) {
 				t.Errorf("frameSelectorFromURL(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestAppendStepPreservesIntermediateInputValues(t *testing.T) {
+	session := &Session{}
+	el := &selector.ElementMetadata{Tag: "input", ID: "search"}
+	for _, value := range []string{"al", "alice", ""} {
+		session.appendStep(Step{Kind: StepFill, Value: value, Element: el})
+	}
+	if len(session.Steps) != 3 {
+		t.Fatalf("intermediate fills lost: %+v", session.Steps)
+	}
+}
+
+func TestAppendStepPreservesRepeatedValueFromDistinctEdits(t *testing.T) {
+	session := &Session{}
+	el := &selector.ElementMetadata{Tag: "input", ID: "search"}
+	for _, ms := range []int64{1000, 1500} {
+		session.appendStep(Step{Kind: StepFill, Value: "alice", Timestamp: time.UnixMilli(ms), Element: el})
+	}
+	if len(session.Steps) != 2 {
+		t.Fatal("distinct edits with the same value were collapsed")
 	}
 }

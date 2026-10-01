@@ -96,6 +96,7 @@ describe('ScriptDefinition runtime contract', () => {
         base_url: '',
         run_logic: { workload_model: 'open', max_in_flight: 64 },
         browser: {
+          storage_state: '{{secret.BROWSER_SESSION}}',
           locale: 'en-US',
           timezone: 'America/New_York',
           experience_canary: true,

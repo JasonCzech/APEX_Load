@@ -359,7 +359,7 @@ Evaluates a reviewed JavaScript snippet in the page (subject to the browser revi
 
 ### `browser_fill`
 
-Types a value into an input element.
+Fills an input, optionally issuing per-character keyboard events.
 
 Requires one of: `target`, `selector`, `object_ref`
 
@@ -369,6 +369,8 @@ Requires one of: `target`, `selector`, `object_ref`
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `value` | string |  | Text to enter; empty string clears the field and template variables are expanded. |
+| `params.input_mode` | enum: fill\|type |  | fill (default) sets the value; type clears the field and sends per-character keyboard events. |
+| `params.typing_delay_ms` | int |  | Delay between keys in type mode, 0–1000 milliseconds. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -618,6 +620,7 @@ Requires one of: `wait_for`, `selector`, `target`
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `target` | string |  | Element locator alternative to selector. |
 | `params.operator` | enum: =\|==\|===\|!=\|!==\|>\|>=\|<\|<= |  | Element-count comparison operator used with params.count; defaults to >= when count is set. |
+| `params.text` | string |  | Required text substring for wait_for.type=element_text; waits for visible matching text in the selected element/frame. |
 | `params.count` | int |  | Required element count for count-based waits; zero or greater. |
 
 ### `browser_wait_response`

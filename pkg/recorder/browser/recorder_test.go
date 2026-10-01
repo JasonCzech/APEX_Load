@@ -374,7 +374,7 @@ func TestHandleRecordBindingEmitsCollapsedFill(t *testing.T) {
 	r := New(Options{StartURL: "https://app.example/", OnEvent: func(e Event) { events = append(events, e) }})
 
 	fill := `{"kind":"fill","value":"%s","ts":1700000000000,"element":{"tag":"input","name":"q","css_path":"form > input"}}`
-	r.handleRecordBinding(nil, strings.ReplaceAll(fill, "%s", "par"))
+	r.handleRecordBinding(nil, strings.ReplaceAll(fill, "%s", "partial"))
 	r.handleRecordBinding(nil, strings.ReplaceAll(fill, "%s", "partial"))
 
 	if len(events) != 2 {
@@ -1215,7 +1215,7 @@ func TestCaptureScriptRecordsP3InputParityEvents(t *testing.T) {
 		`window.addEventListener('contextmenu'`,
 		`window.addEventListener('auxclick'`,
 		`window.addEventListener('input'`,
-		`const editableFillStates = new WeakMap()`,
+		`const editableFillStates = new Map()`,
 		`function contentEditableHost`,
 		`scheduleEditableFill(el, 'input')`,
 		`flushEditableFill(el, 'focusout')`,

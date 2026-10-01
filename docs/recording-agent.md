@@ -189,3 +189,107 @@ set `VITE_APEXLOAD_RECORDING_AGENT_DOWNLOAD_URL` to the release portal URL.
 The controller serves this endpoint from `dist/recording-agent` by default.
 Set `APEXLOAD_RECORDING_AGENT_DIST_DIR` when release packages are staged
 somewhere else.
+
+## React and Salesforce Aura replay
+
+Browser capture runs the application's JavaScript in Chromium. Use browser
+scripts to validate frontend journeys; use reviewed HTTP drafts for bulk backend
+load. HTTP replay does not measure React rendering or reproduce Aura's client-side
+batching decisions. Size browser concurrency with a separate capacity measurement.
+
+The recorder preserves settled intermediate text values and navigation keys
+(including arrows and modified keys such as Shift+Tab). Ordinary fills use
+Playwright's value-setting behavior. For widgets that depend on per-character
+keyboard events, edit the fill action to use:
+
+```json
+{
+  "name": "Search",
+  "type": "browser_fill",
+  "selector": "[data-testid=search]",
+  "value": "Alice",
+  "params": { "input_mode": "type", "typing_delay_ms": 50 }
+}
+```
+
+`type` clears the input before typing. It does not reproduce the original cursor
+position, IME composition, or keystroke timings. The delay accepts 0–1000 ms and
+is bounded by the action timeout.
+
+After observed asynchronous activity, generated scripts can wait for the next
+recorded element in the same frame and section. They do not infer global
+network-idle waits, which can stall on polling applications. This visibility
+hint does not prove hydration or business success. Use the recorder's assertion
+picker on the loaded suggestion, saved record, or other transaction result.
+Text assertions now wait for the element to be visible with the expected text before
+checking the assertion. The equivalent editable DSL is:
+
+```json
+{
+  "name": "Wait for save confirmation",
+  "type": "browser_wait",
+  "wait_for": { "type": "element_text", "value": "#result", "timeout_ms": 10000 },
+  "params": { "text": "Saved Alice" }
+}
+```
+
+Use an application readiness element before interacting with controls that are
+visible before hydration. Closed shadow roots still require an accessible public
+interaction surface; ordinary locators cannot address their internals.
+
+### Authenticated sessions
+
+Prefer recording login into `init`, with project secrets for credentials and
+separate test identities for concurrent users. Alternatively, store a Playwright
+cookies/localStorage JSON snapshot in a project secret, then explicitly reference
+it in the script:
+
+```json
+{
+  "config": {
+    "browser": { "storage_state": "{{secret.BROWSER_SESSION}}" }
+  }
+}
+```
+
+The reference is resolved by the execution host and seeds each new browser
+context. Inline JSON and server file paths are not accepted in this DSL field.
+Snapshots are limited to 1 MiB, 1,024 cookies, 128 origins, and 256 localStorage
+entries per origin. Runtime target-host policy also applies to the snapshot's
+cookie domains and origins. Snapshot credential values are registered for runtime
+redaction.
+
+Use a snapshot from **before** the transaction. Recording Studio does not silently
+copy its end-of-recording session into a saved script. The downloadable export is
+scrubbed; do not use its redacted values as authentication credentials. This
+feature accepts cookies and localStorage, not sessionStorage or IndexedDB; an
+unsupported field is rejected rather than silently ignored. A snapshot can expire,
+and all VUsers using the same snapshot share its server-side identity. Use login
+flows or separate secret-backed groups when distinct identities are required.
+
+### Salesforce HTTP drafts
+
+Recording Studio's optional HTTP output uses the same Salesforce native builder
+as the HAR importer. It includes eligible dynamic correlations and Aura error
+assertions, plus the review findings. Review unresolved correlations and
+parameterize record IDs before increasing load. The generated response checks
+are a starting point; add assertions for the intended business outcome.
+
+### Qualification checks
+
+The Go recorder regression suite includes a real React fixture with controlled
+inputs, autocomplete navigation, continuous polling, asynchronous save results,
+and generated Aura-style IDs. It records the flow and replays it twice in fresh
+contexts. Install dashboard dependencies to provide its React runtime. CI runs
+this fixture with the browser runtime required.
+
+Qualify the actual React application and Salesforce sandbox separately:
+
+1. Record login, search/select, save, and a business-result assertion.
+2. Replay from fresh sessions repeatedly with distinct test users and record IDs.
+3. Repeat with delayed responses, changed generated IDs, and continuing polling.
+4. Confirm each backend result, not just successful clicks or HTTP status 200.
+5. Compare browser-generated requests with the HTTP draft before a staged load ramp.
+
+The local React fixture and synthetic Salesforce tests do not establish live
+Salesforce org compatibility or LoadRunner baseline parity.

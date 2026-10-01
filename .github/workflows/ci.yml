@@ -295,6 +295,20 @@ jobs:
       - name: Install Playwright browser runtimes for Go integration tests
         run: go run github.com/mxschmitt/playwright-go/cmd/playwright@v0.6100.0 install --with-deps chromium webkit
 
+      - name: Setup Node for React recording regression
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.22.0'
+
+      - name: Install React recording fixture dependencies
+        working-directory: dashboard
+        run: npm ci --ignore-scripts
+
+      - name: Require real React recording and replay
+        env:
+          APEXLOAD_BROWSER_TESTS: require
+        run: go test -count=1 -timeout=2m ./pkg/recorder/browser -run '^TestRecordAndReplayReactSPAWithPollingAndDynamicAuraSelectors$'
+
       - name: Run race tests
         run: |
           set -euo pipefail

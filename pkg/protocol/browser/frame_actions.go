@@ -52,6 +52,41 @@ func (b *Browser) checkAction(ctx context.Context, action *protocol.Action, sele
 }
 
 func (b *Browser) fillAction(ctx context.Context, action *protocol.Action, selector, value string) error {
+	mode := "fill"
+	if raw, set := action.Params["input_mode"]; set {
+		var ok bool
+		mode, ok = raw.(string)
+		if !ok || (mode != "fill" && mode != "type") {
+			return fmt.Errorf("browser_fill input_mode must be fill or type")
+		}
+	}
+	delay, ok := actionParamFloatValue(action.Params, "typing_delay_ms")
+	if _, set := action.Params["typing_delay_ms"]; set && (!ok || math.IsNaN(delay) || math.IsInf(delay, 0) || math.Trunc(delay) != delay || delay < 0 || delay > 1000) {
+		return fmt.Errorf("browser_fill typing_delay_ms must be an integer between 0 and 1000")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if mode == "type" {
+		ctx, cancel := context.WithTimeout(ctx, b.actionTimeout(action))
+		defer cancel()
+		locator, framed := b.actionLocator(action, selector)
+		if !framed {
+			if b.currentPage() == nil {
+				return fmt.Errorf("browser page is not initialized")
+			}
+			locator = b.currentPage().Locator(selector)
+		}
+		timeout := b.actionTimeout(action)
+		if err := locator.Fill("", playwright.LocatorFillOptions{Timeout: playwright.Float(b.timeoutMS(ctx, timeout))}); err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return locator.PressSequentially(value, playwright.LocatorPressSequentiallyOptions{Delay: playwright.Float(delay), Timeout: playwright.Float(b.timeoutMS(ctx, timeout))})
+	}
+
 	if locator, ok := b.actionLocator(action, selector); ok {
 		timeout := b.actionTimeout(action)
 		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {

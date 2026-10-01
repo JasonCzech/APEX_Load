@@ -7,6 +7,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
 
 // Platform-managed credential composites — the single origin gate.
@@ -80,6 +81,7 @@ type platformManagedCredentialSurface struct {
 	// spellings come from collectDSN, which understands DSN, JDBC and
 	// key=value forms that a user/password pair cannot express.
 	connectionString bool
+	storageState     bool
 
 	// dedicatedSecretField marks an authored field that NAMES a project secret
 	// (config.database.dsn_secret) instead of embedding a {{secret.NAME}}
@@ -127,6 +129,10 @@ func appendPlatformManagedCompositeValues(
 		secretUsername := surface.usernameFromSecretStore()
 		secretPassword := surface.passwordFromSecretStore()
 		if !secretUsername && !secretPassword {
+			continue
+		}
+		if surface.storageState {
+			values = append(values, browserprotocol.StorageStateSecretValues(surface.resolvedPassword)...)
 			continue
 		}
 		if surface.connectionString {
@@ -317,6 +323,10 @@ func scriptCredentialCompositeSurfaces(
 	}
 	httpAuth := script.Config.HTTP.Auth
 	httpProxy := script.Config.HTTP.Proxy
+	surfaces = append(surfaces, platformManagedCredentialSurface{
+		name: "config.browser.storage_state", authoredPassword: script.Config.Browser.StorageState,
+		resolvedPassword: protocol.ConfigString(config, "browser_storage_state"), storageState: true,
+	})
 	browserCredentials := script.Config.Browser.HTTPCredentials
 	browserProxy := script.Config.Browser.Proxy
 

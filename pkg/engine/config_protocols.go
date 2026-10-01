@@ -469,6 +469,9 @@ func appendNetworkConfig(cfg map[string]any, script *dsl.Script) {
 
 func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 	browserCfg := script.Config.Browser
+	if browserCfg.StorageState != "" {
+		cfg["browser_storage_state"] = browserCfg.StorageState
+	}
 	cfg["browser_system_language"] = browserCfg.SystemLanguage
 	cfg["browser_available_screen_width"] = browserCfg.AvailableScreenWidth
 	cfg["browser_available_screen_height"] = browserCfg.AvailableScreenHeight

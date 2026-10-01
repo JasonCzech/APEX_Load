@@ -4,11 +4,15 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/credential"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
+
+var browserStorageStateSecretPattern = regexp.MustCompile(`^\{\{secret\.` + credential.LogicalNameInputPattern + `\}\}$`)
 
 func validateBrowserConfigIssues(script *Script) []string {
 	if script == nil || strings.TrimSpace(script.Protocol) != "browser" {
@@ -17,6 +21,9 @@ func validateBrowserConfigIssues(script *Script) []string {
 
 	browser := script.Config.Browser
 	var issues []string
+	if browser.StorageState != "" && !browserStorageStateSecretPattern.MatchString(browser.StorageState) {
+		issues = append(issues, "config.browser.storage_state must be a whole {{secret.NAME}} reference; inline credentials and file paths are not supported")
+	}
 	trimmedEngine := strings.TrimSpace(browser.Engine)
 	trimmedDeviceProfile := strings.TrimSpace(browser.DeviceProfile)
 	if trimmedEngine != "" && !isAllowedValue(trimmedEngine, "chromium", "webkit") {

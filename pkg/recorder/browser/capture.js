@@ -27,8 +27,8 @@
   let pendingDrag = null;
   let windowScrollState = null;
   const elementScrollStates = new WeakMap();
-  const editableFillStates = new WeakMap();
-  let lastRecordedFill = null;
+  const editableFillStates = new Map();
+  const recordedFillSnapshots = new WeakMap();
   let lastRecordedHover = null;
   let lastEnterPressAt = 0;
 
@@ -46,6 +46,10 @@
   // The Go recorder owns the authoritative pause state (it also gates events
   // server-side); this setter keeps the local gate and toolbar in sync.
   window.__apexloadRecorderSetPaused = (value) => {
+    if (value) {
+      for (const state of editableFillStates.values()) clearTimeout(state.timer);
+      editableFillStates.clear();
+    }
     paused = !!value;
     if (paused) assertMode = false;
     refreshToolbar();
@@ -430,57 +434,45 @@
       [meta.tag, meta.type, meta.aria_label, meta.placeholder].join('|');
   }
 
-  function fillPayload(el, source) {
-    el = contentEditableHost(el) || el;
+  function fillPayload(el) {
     const snapshot = fillSnapshot(el);
-    const payload = capturePayload('fill', el, snapshot.value, snapshot.masked);
-    lastRecordedFill = {
-      key: elementFingerprint(el),
-      value: snapshot.value,
-      masked: snapshot.masked,
-      source: source || 'change',
-      ts: Date.now()
-    };
-    return payload;
-  }
-
-  function recordFill(el, source) {
-    send(fillPayload(el, source));
-  }
-
-  function shouldSkipDuplicateFill(el) {
-    if (!lastRecordedFill || lastRecordedFill.source !== 'keydown') return false;
-    const key = elementFingerprint(el);
-    if (!key || key !== lastRecordedFill.key) return false;
-    const snapshot = fillSnapshot(el);
-    const age = Date.now() - lastRecordedFill.ts;
-    return age >= 0 && age <= 1000 &&
-      snapshot.value === lastRecordedFill.value &&
-      snapshot.masked === lastRecordedFill.masked;
+    return capturePayload('fill', el, snapshot.value, snapshot.masked);
   }
 
   function scheduleEditableFill(el, source) {
-    const host = contentEditableHost(el);
-    if (!host) return;
+    const host = contentEditableHost(el) || el;
+    if (!isTextEntryControl(host)) return;
     const existing = editableFillStates.get(host);
-    if (existing && existing.timer) clearTimeout(existing.timer);
+    if (existing) clearTimeout(existing.timer);
+    // Snapshot at the trusted input event, before an application handler can
+    // clear, normalize, or replace the control. Retain that event's timestamp.
     editableFillStates.set(host, {
-      source: source || 'input',
-      timer: setTimeout(() => {
-        editableFillStates.delete(host);
-        if (!shouldSkipDuplicateFill(host)) recordFill(host, source || 'input');
-      }, 350)
+      payload: fillPayload(host),
+      timer: setTimeout(() => flushEditableFill(host, source || 'input'), 350)
     });
   }
 
   function takeEditableFill(el, source) {
-    const host = contentEditableHost(el);
-    if (!host) return null;
+    const host = contentEditableHost(el) || el;
+    if (!isTextEntryControl(host)) return null;
     const existing = editableFillStates.get(host);
-    if (existing && existing.timer) clearTimeout(existing.timer);
+    if (existing) clearTimeout(existing.timer);
     editableFillStates.delete(host);
-    if (shouldSkipDuplicateFill(host)) return null;
-    return fillPayload(host, source || (existing && existing.source) || 'focusout');
+    if (paused) return null;
+    // Focus and cursor navigation are not edits. A delayed keypress must not
+    // refill the control and reset the cursor, or invent a password placeholder.
+    if (!existing && source !== 'change') return null;
+    const payload = existing ? existing.payload : fillPayload(host);
+    const previous = recordedFillSnapshots.get(host);
+    // Deduplicate change/blur notifications only. A new trusted input event
+    // can intentionally enter the same value again after an app clears it.
+    if (!existing && previous && previous.value === payload.value && previous.masked === payload.masked) return null;
+    recordedFillSnapshots.set(host, { value: payload.value, masked: payload.masked });
+    return payload;
+  }
+
+  function flushPendingFills(source) {
+    for (const el of Array.from(editableFillStates.keys())) flushEditableFill(el, source);
   }
 
   function flushEditableFill(el, source) {
@@ -607,6 +599,7 @@
   // debounce window. The Go recorder awaits these already-dispatched bindings
   // before closing its capture gate. This never fabricates DOM events.
   window.__apexloadRecorderFlush = async function () {
+    flushPendingFills('stop');
     flushPendingClick();
     await Promise.all(Array.from(pendingBindings));
   };
@@ -636,6 +629,7 @@
     cancelPendingHover();
     const raw = targetOf(ev);
     if (!raw || isToolbar(raw)) return;
+    flushPendingFills('click');
     if (assertMode) {
       ev.preventDefault();
       ev.stopPropagation();
@@ -769,8 +763,8 @@
     scheduleScroll(el, state);
   }, true);
 
-  window.addEventListener('beforeunload', (ev) => { if (ev.isTrusted) flushPendingClick(); }, true);
-  window.addEventListener('pagehide', (ev) => { if (ev.isTrusted) flushPendingClick(); }, true);
+  window.addEventListener('beforeunload', (ev) => { if (ev.isTrusted) { flushPendingFills('unload'); flushPendingClick(); } }, true);
+  window.addEventListener('pagehide', (ev) => { if (ev.isTrusted) { flushPendingFills('unload'); flushPendingClick(); } }, true);
 
   window.addEventListener('change', (ev) => {
     if (!ev.isTrusted) return;
@@ -791,11 +785,11 @@
         record('set_files', el, names);
         return;
       }
-      if (!shouldSkipDuplicateFill(el)) recordFill(el, 'change');
+      flushEditableFill(el, 'change');
       return;
     }
     const editHost = contentEditableHost(el);
-    if (tag === 'textarea' && !shouldSkipDuplicateFill(el)) recordFill(el, 'change');
+    if (tag === 'textarea') flushEditableFill(el, 'change');
     if (editHost) flushEditableFill(editHost, 'change');
   }, true);
 
@@ -804,7 +798,7 @@
     if (paused) return;
     const el = targetOf(ev);
     if (!el || isToolbar(el)) return;
-    if (!contentEditableHost(el)) return;
+    if (!isTextEntryControl(el)) return;
     scheduleEditableFill(el, 'input');
   }, true);
 
@@ -813,7 +807,7 @@
     if (paused) return;
     const el = targetOf(ev);
     if (!el || isToolbar(el)) return;
-    if (!contentEditableHost(el)) return;
+    if (!isTextEntryControl(el)) return;
     flushEditableFill(el, 'focusout');
   }, true);
 
@@ -822,25 +816,18 @@
     if (paused) return;
     const el = targetOf(ev);
     if (!el || isToolbar(el)) return;
-    if (ev.key !== 'Enter' && ev.key !== 'Escape' && ev.key !== 'Tab') return;
-    const tag = el.tagName ? el.tagName.toLowerCase() : '';
+    if (!['Enter', 'Escape', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(ev.key)) return;
     const entryEl = contentEditableHost(el) || el;
     const events = [];
-    if ((ev.key === 'Enter' || ev.key === 'Tab') && isTextEntryControl(entryEl)) {
-      // The change event fires on blur, after navigation may have started —
-      // capture the pending value now so Enter-submits and Tab moves keep it.
-      // Send the fill and keypress in one binding call: Playwright may dispatch
-      // separate fire-and-forget binding callbacks concurrently, which can
-      // otherwise append the keypress before the fill despite this JS order.
-      if (contentEditableHost(entryEl)) {
-        const fill = takeEditableFill(entryEl, 'keydown');
-        if (fill) events.push(fill);
-      } else {
-        events.push(fillPayload(entryEl, 'keydown'));
-      }
+    if (isTextEntryControl(entryEl)) {
+      // Preserve the search term before a navigation key selects a suggestion.
+      // Batch the fill and key so asynchronous bindings cannot reorder them.
+      const fill = takeEditableFill(entryEl, 'keydown');
+      if (fill) events.push(fill);
     }
     if (ev.key === 'Enter') lastEnterPressAt = Date.now();
-    events.push(capturePayload('press_key', entryEl, ev.key));
+    const key = eventModifiers(ev).concat(ev.key).join('+');
+    events.push(capturePayload('press_key', entryEl, key));
     if (events.length === 1) {
       send(events[0]);
     } else {
