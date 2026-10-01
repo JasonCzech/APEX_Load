@@ -13,6 +13,7 @@ import (
 )
 
 type NativeEvidencePoint struct {
+	Coverage      *float64  `json:"coverage,omitempty"`
 	From          time.Time `json:"from"`
 	To            time.Time `json:"to"`
 	OffsetSeconds float64   `json:"offset_seconds"`
@@ -25,14 +26,15 @@ type NativeEvidenceSeries struct {
 	Points []NativeEvidencePoint `json:"points"`
 }
 type NativeEvidenceResponse struct {
-	Mode        string                                 `json:"mode"`
-	Series      []NativeEvidenceSeries                 `json:"series"`
-	Warnings    []string                               `json:"warnings"`
-	Overlay     []analysis.MetricPoint                 `json:"overlay,omitempty"`
-	Correlation map[string][]analysis.CorrelationScore `json:"correlation,omitempty"`
-	Start       time.Time                              `json:"start"`
-	From        time.Time                              `json:"from"`
-	To          time.Time                              `json:"to"`
+	LiveBucketMode string                                 `json:"live_bucket_mode,omitempty"`
+	Mode           string                                 `json:"mode"`
+	Series         []NativeEvidenceSeries                 `json:"series"`
+	Warnings       []string                               `json:"warnings"`
+	Overlay        []analysis.MetricPoint                 `json:"overlay,omitempty"`
+	Correlation    map[string][]analysis.CorrelationScore `json:"correlation,omitempty"`
+	Start          time.Time                              `json:"start"`
+	From           time.Time                              `json:"from"`
+	To             time.Time                              `json:"to"`
 }
 
 func nativeMetricUnit(q storage.AnalyticsQuery) string {
@@ -107,6 +109,9 @@ func nativeGroup(q storage.AnalyticsQuery) string {
 	return ""
 }
 func buildNativeLiveEvidence(ctx context.Context, start time.Time, history []*LiveMetrics, q storage.AnalyticsQuery) (NativeEvidenceResponse, error) {
+	if q.LiveBucketMode == "merged" {
+		return buildMergedNativeLiveEvidence(ctx, start, history, q)
+	}
 	out := nativeEvidenceEnvelope(start, q)
 	dimension := nativeGroup(q)
 	if dimension == "" || dimension == "action" {
@@ -136,7 +141,7 @@ func buildNativeLiveEvidence(ctx context.Context, start time.Time, history []*Li
 		}
 		intervals = append(intervals, h)
 		e := h.NativeEvidence
-		if e == nil || e.Version != 1 || e.WindowSeconds <= 0 || e.Incomplete {
+		if e == nil || (e.Version != 1 && e.Version != 2) || e.WindowSeconds <= 0 || e.Incomplete {
 			continue
 		}
 		if _, ok := e.Dimensions[dimension]; ok {
@@ -165,7 +170,7 @@ func buildNativeLiveEvidence(ctx context.Context, start time.Time, history []*Li
 		for _, h := range intervals {
 			p := NativeEvidencePoint{From: h.Timestamp, To: h.Timestamp, OffsetSeconds: h.Timestamp.Sub(start).Seconds()}
 			e := h.NativeEvidence
-			if e != nil && e.Version == 1 && e.WindowSeconds > 0 && !e.Incomplete {
+			if e != nil && (e.Version == 1 || e.Version == 2) && e.WindowSeconds > 0 && !e.Incomplete {
 				p.From = h.Timestamp.Add(-time.Duration(e.WindowSeconds * float64(time.Second)))
 				if m, ok := e.Dimensions[dimension][name]; ok && m.Count > 0 {
 					if m.Errors < 0 || m.Errors > m.Count {
@@ -396,7 +401,7 @@ func (s *Server) attachNativeOverlay(ctx context.Context, project, runID string,
 	}
 
 	out.Warnings = append(out.Warnings, "Overlay uses its own labelled unit axis. Correlation is association, not proof of causation; gaps and invalid quality are excluded.")
-	if q.EvidenceMode == "live" {
+	if q.EvidenceMode == "live" && q.LiveBucketMode != "merged" {
 		out.Warnings = append(out.Warnings, "Lag correlation requires aligned archive buckets; live source intervals are displayed without resampling.")
 		return nil
 	}

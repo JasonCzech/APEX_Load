@@ -1159,6 +1159,7 @@ type goalControllerUpdate struct {
 }
 
 type TxMetrics struct {
+	DurationDigest   *engine.TDigestSnapshot `json:"-"`
 	Name             string                  `json:"name"`
 	TPS              float64                 `json:"tps"`
 	DependencyType   string                  `json:"dependency_type,omitempty"`

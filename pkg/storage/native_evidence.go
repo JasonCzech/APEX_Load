@@ -1,23 +1,43 @@
 package storage
 
-import "errors"
+import (
+	"errors"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"time"
+)
 
-// NativeIntervalEvidence retains original collection-interval summaries. A
-// percentile is never merged with another interval or a different dimension.
+// NativeIntervalEvidence retains original collection-interval summaries. Version 2
+// also retains mergeable distributions; scalar percentiles are never averaged.
 type NativeIntervalEvidence struct {
+	Publication   *NativePublicationEvidence                 `json:"publication,omitempty"`
 	Version       int                                        `json:"version"`
 	WindowSeconds float64                                    `json:"window_seconds"`
 	Dimensions    map[string]map[string]NativeIntervalMetric `json:"dimensions"`
 	Incomplete    bool                                       `json:"incomplete,omitempty"`
 }
+
+// Publication preserves one accepted generator batch so retaining the latest
+// fleet summary cannot cause the same source window to be counted repeatedly.
+type NativePublicationEvidence struct {
+	SourceID            string                                     `json:"source_id"`
+	Sequence            uint64                                     `json:"sequence"`
+	ExecutionGeneration uint64                                     `json:"execution_generation"`
+	Timestamp           time.Time                                  `json:"timestamp"`
+	Version             int                                        `json:"version"`
+	WindowSeconds       float64                                    `json:"window_seconds"`
+	Dimensions          map[string]map[string]NativeIntervalMetric `json:"dimensions"`
+	Incomplete          bool                                       `json:"incomplete,omitempty"`
+	ExpectedSources     []string                                   `json:"expected_sources"`
+}
 type NativeIntervalMetric struct {
-	Count  int64   `json:"count"`
-	Errors int64   `json:"errors"`
-	Avg    float64 `json:"avg"`
-	P50    float64 `json:"p50"`
-	P90    float64 `json:"p90"`
-	P95    float64 `json:"p95"`
-	P99    float64 `json:"p99"`
+	DurationDigest *engine.TDigestSnapshot `json:"duration_digest,omitempty"`
+	Count          int64                   `json:"count"`
+	Errors         int64                   `json:"errors"`
+	Avg            float64                 `json:"avg"`
+	P50            float64                 `json:"p50"`
+	P90            float64                 `json:"p90"`
+	P95            float64                 `json:"p95"`
+	P99            float64                 `json:"p99"`
 }
 
 func CloneNativeIntervalEvidence(in *NativeIntervalEvidence) *NativeIntervalEvidence {
@@ -25,10 +45,17 @@ func CloneNativeIntervalEvidence(in *NativeIntervalEvidence) *NativeIntervalEvid
 		return nil
 	}
 	out := *in
+	if in.Publication != nil {
+		p := *in.Publication
+		p.ExpectedSources = append([]string(nil), p.ExpectedSources...)
+		p.Dimensions = CloneNativeIntervalEvidence(&NativeIntervalEvidence{Dimensions: p.Dimensions}).Dimensions
+		out.Publication = &p
+	}
 	out.Dimensions = make(map[string]map[string]NativeIntervalMetric, len(in.Dimensions))
 	for dimension, series := range in.Dimensions {
 		values := make(map[string]NativeIntervalMetric, len(series))
 		for name, value := range series {
+			value.DurationDigest = engine.CloneTDigestSnapshot(value.DurationDigest)
 			values[name] = value
 		}
 		out.Dimensions[dimension] = values
@@ -62,6 +89,7 @@ func ValidateNativeEvidenceQuery(q AnalyticsQuery) error {
 	}
 	plain := q
 	plain.EvidenceMode = ""
+	plain.LiveBucketMode = ""
 	plain.OverlaySelection = nil
 	plain.Dimensions = nil
 	plain.MaxSeries = 1
@@ -71,14 +99,17 @@ func ValidateNativeEvidenceQuery(q AnalyticsQuery) error {
 	if err := ValidateNativeArchiveQuery(plain); err != nil {
 		return err
 	}
+	if q.LiveBucketMode != "" && (q.EvidenceMode != "live" || q.LiveBucketMode != "source" && q.LiveBucketMode != "merged") {
+		return errors.New("invalid live bucket mode")
+	}
 	if q.EvidenceMode == "live" {
-		if q.Aggregation == "min" || q.Aggregation == "max" {
+		if q.LiveBucketMode != "merged" && (q.Aggregation == "min" || q.Aggregation == "max") {
 			return errors.New("live evidence does not retain min/max")
 		}
 		if group == "region" && q.Population != "transaction" || group == "dependency" && q.Population != "action" {
 			return errors.New("live regions describe business transactions; dependencies describe actions")
 		}
-		if (group == "region" || group == "dependency") && (q.Filters["action"] != "" || q.PropertyName != "") || q.PropertyName != "" && q.Filters["action"] != "" || group == "action" && q.PropertyName != "" {
+		if (group == "region" || group == "dependency") && (q.Filters["action"] != "" || q.PropertyName != "") || q.LiveBucketMode != "merged" && (q.PropertyName != "" && q.Filters["action"] != "" || group == "action" && q.PropertyName != "") {
 			return errors.New("live evidence does not retain intersections of independent dimensions")
 		}
 		if group == "" && q.Filters["action"] == "" && q.PropertyName == "" {

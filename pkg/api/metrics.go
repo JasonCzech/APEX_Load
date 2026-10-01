@@ -170,6 +170,14 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		actions[name] = buildTxMetricsFromAction(name, am, snap.Window)
 	}
 	live.NativeEvidence = nativeIntervalEvidence(live, actions, true, snap.Window.Seconds())
+	if snap.ByActionProperty != nil {
+		live.NativeEvidence.Version = 2
+		joint := map[string]*TxMetrics{}
+		for key, metric := range snap.ByActionProperty {
+			joint[key] = buildTxMetricsFromAction(key, metric, snap.Window)
+		}
+		addNativeJointEvidence(live.NativeEvidence, joint)
+	}
 	return live
 }
 
@@ -272,6 +280,7 @@ func buildTxMetricsFromAction(name string, am *engine.ActionMetrics, window time
 		tps = float64(successes) / window.Seconds()
 	}
 	return &TxMetrics{
+		DurationDigest:   engine.CloneTDigestSnapshot(am.DurationDigest),
 		Name:             name,
 		TPS:              tps,
 		DependencyType:   am.DependencyType,

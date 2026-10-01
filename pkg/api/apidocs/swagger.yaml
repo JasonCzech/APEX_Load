@@ -49352,6 +49352,8 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                live_bucket_mode:
+                                  type: string
                                 max_series:
                                   type: integer
                                   format: int64
@@ -62239,6 +62241,11 @@ paths:
                                       additionalProperties: true
                                 incomplete:
                                   type: boolean
+                                publication:
+                                  type: object
+                                  description: 'Go type: NativePublicationEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 version:
                                   type: integer
                                   format: int64
@@ -63275,6 +63282,10 @@ paths:
                                     additionalProperties: true
                               incomplete:
                                 type: boolean
+                              publication:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               version:
                                 type: integer
                                 format: int64
@@ -66642,6 +66653,11 @@ paths:
                                       additionalProperties: true
                                 incomplete:
                                   type: boolean
+                                publication:
+                                  type: object
+                                  description: 'Go type: NativePublicationEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 version:
                                   type: integer
                                   format: int64
@@ -67678,6 +67694,10 @@ paths:
                                     additionalProperties: true
                               incomplete:
                                 type: boolean
+                              publication:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               version:
                                 type: integer
                                 format: int64
@@ -71046,6 +71066,11 @@ paths:
                                       additionalProperties: true
                                 incomplete:
                                   type: boolean
+                                publication:
+                                  type: object
+                                  description: 'Go type: NativePublicationEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 version:
                                   type: integer
                                   format: int64
@@ -72082,6 +72107,10 @@ paths:
                                     additionalProperties: true
                               incomplete:
                                 type: boolean
+                              publication:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               version:
                                 type: integer
                                 format: int64
@@ -75462,6 +75491,11 @@ paths:
                                       additionalProperties: true
                                 incomplete:
                                   type: boolean
+                                publication:
+                                  type: object
+                                  description: 'Go type: NativePublicationEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 version:
                                   type: integer
                                   format: int64
@@ -76498,6 +76532,10 @@ paths:
                                     additionalProperties: true
                               incomplete:
                                 type: boolean
+                              publication:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               version:
                                 type: integer
                                 format: int64
@@ -79878,6 +79916,11 @@ paths:
                                       additionalProperties: true
                                 incomplete:
                                   type: boolean
+                                publication:
+                                  type: object
+                                  description: 'Go type: NativePublicationEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 version:
                                   type: integer
                                   format: int64
@@ -80914,6 +80957,10 @@ paths:
                                     additionalProperties: true
                               incomplete:
                                 type: boolean
+                              publication:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               version:
                                 type: integer
                                 format: int64
@@ -84294,6 +84341,11 @@ paths:
                                       additionalProperties: true
                                 incomplete:
                                   type: boolean
+                                publication:
+                                  type: object
+                                  description: 'Go type: NativePublicationEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 version:
                                   type: integer
                                   format: int64
@@ -85330,6 +85382,10 @@ paths:
                                     additionalProperties: true
                               incomplete:
                                 type: boolean
+                              publication:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               version:
                                 type: integer
                                 format: int64
@@ -88710,6 +88766,11 @@ paths:
                                       additionalProperties: true
                                 incomplete:
                                   type: boolean
+                                publication:
+                                  type: object
+                                  description: 'Go type: NativePublicationEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 version:
                                   type: integer
                                   format: int64
@@ -89746,6 +89807,10 @@ paths:
                                     additionalProperties: true
                               incomplete:
                                 type: boolean
+                              publication:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               version:
                                 type: integer
                                 format: int64
@@ -252843,6 +252908,50 @@ paths:
                                   additionalProperties: true
                             incomplete:
                               type: boolean
+                            publication:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                execution_generation:
+                                  type: integer
+                                  format: int64
+                                expected_sources:
+                                  type: array
+                                  items:
+                                    type: string
+                                incomplete:
+                                  type: boolean
+                                sequence:
+                                  type: integer
+                                  format: int64
+                                source_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - execution_generation
+                                - expected_sources
+                                - sequence
+                                - source_id
+                                - timestamp
+                                - version
+                                - window_seconds
+                              nullable: true
                             version:
                               type: integer
                               format: int64
@@ -255760,6 +255869,50 @@ paths:
                                 additionalProperties: true
                           incomplete:
                             type: boolean
+                          publication:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: NativeIntervalMetric'
+                                    additionalProperties: true
+                              execution_generation:
+                                type: integer
+                                format: int64
+                              expected_sources:
+                                type: array
+                                items:
+                                  type: string
+                              incomplete:
+                                type: boolean
+                              sequence:
+                                type: integer
+                                format: int64
+                              source_id:
+                                type: string
+                              timestamp:
+                                type: string
+                                format: date-time
+                              version:
+                                type: integer
+                                format: int64
+                              window_seconds:
+                                type: number
+                                format: double
+                            required:
+                              - dimensions
+                              - execution_generation
+                              - expected_sources
+                              - sequence
+                              - source_id
+                              - timestamp
+                              - version
+                              - window_seconds
+                            nullable: true
                           version:
                             type: integer
                             format: int64
@@ -263833,6 +263986,50 @@ paths:
                                   additionalProperties: true
                             incomplete:
                               type: boolean
+                            publication:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                execution_generation:
+                                  type: integer
+                                  format: int64
+                                expected_sources:
+                                  type: array
+                                  items:
+                                    type: string
+                                incomplete:
+                                  type: boolean
+                                sequence:
+                                  type: integer
+                                  format: int64
+                                source_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - execution_generation
+                                - expected_sources
+                                - sequence
+                                - source_id
+                                - timestamp
+                                - version
+                                - window_seconds
+                              nullable: true
                             version:
                               type: integer
                               format: int64
@@ -266750,6 +266947,50 @@ paths:
                                 additionalProperties: true
                           incomplete:
                             type: boolean
+                          publication:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: NativeIntervalMetric'
+                                    additionalProperties: true
+                              execution_generation:
+                                type: integer
+                                format: int64
+                              expected_sources:
+                                type: array
+                                items:
+                                  type: string
+                              incomplete:
+                                type: boolean
+                              sequence:
+                                type: integer
+                                format: int64
+                              source_id:
+                                type: string
+                              timestamp:
+                                type: string
+                                format: date-time
+                              version:
+                                type: integer
+                                format: int64
+                              window_seconds:
+                                type: number
+                                format: double
+                            required:
+                              - dimensions
+                              - execution_generation
+                              - expected_sources
+                              - sequence
+                              - source_id
+                              - timestamp
+                              - version
+                              - window_seconds
+                            nullable: true
                           version:
                             type: integer
                             format: int64
@@ -276339,6 +276580,8 @@ paths:
                   type: object
                   additionalProperties:
                     type: string
+                live_bucket_mode:
+                  type: string
                 max_series:
                   type: integer
                   format: int64
@@ -294648,6 +294891,50 @@ paths:
                                   additionalProperties: true
                             incomplete:
                               type: boolean
+                            publication:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                execution_generation:
+                                  type: integer
+                                  format: int64
+                                expected_sources:
+                                  type: array
+                                  items:
+                                    type: string
+                                incomplete:
+                                  type: boolean
+                                sequence:
+                                  type: integer
+                                  format: int64
+                                source_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - execution_generation
+                                - expected_sources
+                                - sequence
+                                - source_id
+                                - timestamp
+                                - version
+                                - window_seconds
+                              nullable: true
                             version:
                               type: integer
                               format: int64
@@ -297565,6 +297852,50 @@ paths:
                                 additionalProperties: true
                           incomplete:
                             type: boolean
+                          publication:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: NativeIntervalMetric'
+                                    additionalProperties: true
+                              execution_generation:
+                                type: integer
+                                format: int64
+                              expected_sources:
+                                type: array
+                                items:
+                                  type: string
+                              incomplete:
+                                type: boolean
+                              sequence:
+                                type: integer
+                                format: int64
+                              source_id:
+                                type: string
+                              timestamp:
+                                type: string
+                                format: date-time
+                              version:
+                                type: integer
+                                format: int64
+                              window_seconds:
+                                type: number
+                                format: double
+                            required:
+                              - dimensions
+                              - execution_generation
+                              - expected_sources
+                              - sequence
+                              - source_id
+                              - timestamp
+                              - version
+                              - window_seconds
+                            nullable: true
                           version:
                             type: integer
                             format: int64
@@ -305582,6 +305913,50 @@ paths:
                                   additionalProperties: true
                             incomplete:
                               type: boolean
+                            publication:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                execution_generation:
+                                  type: integer
+                                  format: int64
+                                expected_sources:
+                                  type: array
+                                  items:
+                                    type: string
+                                incomplete:
+                                  type: boolean
+                                sequence:
+                                  type: integer
+                                  format: int64
+                                source_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - execution_generation
+                                - expected_sources
+                                - sequence
+                                - source_id
+                                - timestamp
+                                - version
+                                - window_seconds
+                              nullable: true
                             version:
                               type: integer
                               format: int64
@@ -308499,6 +308874,50 @@ paths:
                                 additionalProperties: true
                           incomplete:
                             type: boolean
+                          publication:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: NativeIntervalMetric'
+                                    additionalProperties: true
+                              execution_generation:
+                                type: integer
+                                format: int64
+                              expected_sources:
+                                type: array
+                                items:
+                                  type: string
+                              incomplete:
+                                type: boolean
+                              sequence:
+                                type: integer
+                                format: int64
+                              source_id:
+                                type: string
+                              timestamp:
+                                type: string
+                                format: date-time
+                              version:
+                                type: integer
+                                format: int64
+                              window_seconds:
+                                type: number
+                                format: double
+                            required:
+                              - dimensions
+                              - execution_generation
+                              - expected_sources
+                              - sequence
+                              - source_id
+                              - timestamp
+                              - version
+                              - window_seconds
+                            nullable: true
                           version:
                             type: integer
                             format: int64
@@ -322845,6 +323264,8 @@ paths:
                   type: object
                   additionalProperties:
                     type: string
+                live_bucket_mode:
+                  type: string
                 max_series:
                   type: integer
                   format: int64
@@ -322921,6 +323342,8 @@ paths:
                   from:
                     type: string
                     format: date-time
+                  live_bucket_mode:
+                    type: string
                   mode:
                     type: string
                   overlay:
@@ -322999,6 +323422,10 @@ paths:
                               count:
                                 type: integer
                                 format: int64
+                              coverage:
+                                type: number
+                                format: double
+                                nullable: true
                               from:
                                 type: string
                                 format: date-time

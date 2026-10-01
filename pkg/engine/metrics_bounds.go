@@ -137,6 +137,9 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 			if value == nil {
 				continue
 			}
+			if value.DurationDigest != nil {
+				bytes += 80 + len(value.DurationDigest.Centroids)*16
+			}
 			bytes += len(value.Name) + len(value.DependencyType) + len(value.DependencyTarget) + len(value.LastErrorMessage)
 			for _, id := range value.CorrelationIDs {
 				bytes += len(id) + 16
@@ -158,6 +161,8 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 		}
 	}
 	estimateActions(snapshot.ByAction)
+	estimateActions(snapshot.ByActionProperty)
+	estimateActions(snapshot.ByProperty)
 	estimateActions(snapshot.ByTransaction)
 	estimateActions(snapshot.ByDependencyTarget)
 	estimateActions(snapshot.BySOAPOperation)

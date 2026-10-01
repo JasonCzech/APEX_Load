@@ -1,0 +1,234 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/storage"
+	"math"
+	"sort"
+	"time"
+)
+
+// Merged buckets contain whole publications whose end falls in (from,to].
+// Distributions cannot be split by time; this completion-cohort convention is
+// explicit in the response and never claims exact transaction event-time bins.
+func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history []*LiveMetrics, q storage.AnalyticsQuery) (NativeEvidenceResponse, error) {
+	out := nativeEvidenceEnvelope(start, q)
+	out.LiveBucketMode = "merged"
+	n := (q.EndSeconds - q.StartSeconds + q.BucketSeconds - 1) / q.BucketSeconds
+	type aggregate struct {
+		count, errors int64
+		sum           float64
+		digest        *engine.TDigest
+		invalid       bool
+	}
+	groups := map[string][]aggregate{}
+	invalid := make([]bool, n)
+	windows := make([]map[string]float64, n)
+	expected := make([]map[string]bool, n)
+	for i := range windows {
+		windows[i] = map[string]float64{}
+		expected[i] = map[string]bool{}
+	}
+	dimension := nativeGroup(q)
+	if dimension == "" || dimension == "action" {
+		dimension = q.Population
+	}
+	joint := q.PropertyName != "" && (q.Filters["action"] != "" || nativeGroup(q) == "action")
+	if joint {
+		dimension = "action_property"
+	} else if q.PropertyName != "" {
+		dimension = "property"
+	}
+	nameFor := func(key string) (string, bool, error) {
+		name := key
+		if joint {
+			var labels []string
+			if json.Unmarshal([]byte(key), &labels) != nil || len(labels) != 3 {
+				return "", false, errors.New("invalid joint identity")
+			}
+			if labels[1] != q.PropertyName || q.PropertyValue != "" && labels[2] != q.PropertyValue || q.Filters["action"] != "" && labels[0] != q.Filters["action"] {
+				return "", false, nil
+			}
+			if nativeGroup(q) == "property" {
+				name = labels[1] + "=" + labels[2]
+			} else {
+				name = labels[0]
+			}
+		} else if dimension == "property" {
+			prefix := q.PropertyName + "="
+			if len(key) < len(prefix) || key[:len(prefix)] != prefix || q.PropertyValue != "" && key != prefix+q.PropertyValue {
+				return "", false, nil
+			}
+		} else if q.Filters["action"] != "" && key != q.Filters["action"] {
+			return "", false, nil
+		}
+		if nativeGroup(q) == "" {
+			name = "Selection"
+		}
+		return name, true, nil
+	}
+	seen := map[string]bool{}
+	supported := false
+	publications := 0
+	for _, h := range history {
+		if err := ctx.Err(); err != nil {
+			return out, err
+		}
+		if h == nil {
+			continue
+		}
+		timestamp := h.Timestamp
+		e := h.NativeEvidence
+		source := "local"
+		stamp := fmt.Sprintf("local/%d", timestamp.UnixNano())
+		sources := []string{"local"}
+		distributed := false
+		if e != nil && e.Publication != nil {
+			p := e.Publication
+			timestamp = p.Timestamp
+			source = p.SourceID
+			if source == "" || len(source) > 512 || p.Sequence == 0 || len(p.ExpectedSources) > 128 {
+				return out, errors.New("invalid source publication identity")
+			}
+			stamp = fmt.Sprintf("%s/%d/%d", source, p.ExecutionGeneration, p.Sequence)
+			sources = p.ExpectedSources
+			distributed = true
+			e = &storage.NativeIntervalEvidence{Version: p.Version, WindowSeconds: p.WindowSeconds, Dimensions: p.Dimensions, Incomplete: p.Incomplete}
+		}
+		if !timestamp.After(out.From) || timestamp.After(out.To) {
+			continue
+		}
+		if seen[stamp] {
+			if distributed {
+				continue
+			}
+			return out, errors.New("duplicate publication timestamp")
+		}
+		seen[stamp] = true
+		i := int((timestamp.Sub(out.From) - time.Nanosecond) / (time.Duration(q.BucketSeconds) * time.Second))
+		if i < 0 || i >= n {
+			continue
+		}
+		publications++
+		expected[i][source] = true
+		for _, id := range sources {
+			if id == "" || len(id) > 512 {
+				return out, errors.New("invalid expected source identity")
+			}
+			expected[i][id] = true
+		}
+		if e == nil || e.Version != 2 || e.Incomplete || math.IsNaN(e.WindowSeconds) || math.IsInf(e.WindowSeconds, 0) || e.WindowSeconds <= 0 || e.WindowSeconds > 3600 {
+			invalid[i] = true
+			continue
+		}
+		metrics, ok := e.Dimensions[dimension]
+		if !ok {
+			invalid[i] = true
+			continue
+		}
+		supported = true
+		windows[i][source] += e.WindowSeconds
+		for key, m := range metrics {
+			name, selected, err := nameFor(key)
+			if err != nil {
+				return out, err
+			}
+			if !selected {
+				continue
+			}
+			if _, ok := groups[name]; !ok {
+				if len(groups) >= q.MaxSeries {
+					return out, errors.New("series limit exceeded; narrow the selection")
+				}
+				groups[name] = make([]aggregate, n)
+			}
+			b := &groups[name][i]
+			if m.Count == 0 {
+				continue
+			}
+			if m.Count < 0 || m.Errors < 0 || m.Errors > m.Count || math.IsNaN(m.Avg) || math.IsInf(m.Avg, 0) || m.Avg < 0 || engine.ValidateDurationDigest(m.DurationDigest, m.Count) != nil {
+				b.invalid = true
+				continue
+			}
+			if b.count > 1e12-m.Count {
+				return out, errors.New("bucket observation limit exceeded")
+			}
+			b.count += m.Count
+			b.errors += m.Errors
+			b.sum += m.Avg * float64(m.Count)
+			if b.digest == nil {
+				b.digest = engine.NewTDigest(200)
+			}
+			b.digest.Merge(engine.NewTDigestFromSnapshot(*m.DurationDigest))
+		}
+	}
+	if publications > 0 && !supported {
+		return out, errors.New("merged live queries require native evidence v2 from every contributing runtime")
+	}
+	names := make([]string, 0, len(groups))
+	for name := range groups {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	partial := false
+	for _, name := range names {
+		series := NativeEvidenceSeries{Name: name, Unit: nativeMetricUnit(q)}
+		for i, b := range groups[name] {
+			from := out.From.Add(time.Duration(i*q.BucketSeconds) * time.Second)
+			to := from.Add(time.Duration(q.BucketSeconds) * time.Second)
+			if to.After(out.To) {
+				to = out.To
+			}
+			coverage := 0.0
+			if len(expected[i]) > 0 {
+				coverage = 1
+				for source := range expected[i] {
+					seconds := windows[i][source]
+					if seconds == 0 {
+						invalid[i] = true
+					}
+					coverage = math.Min(coverage, math.Min(1, seconds/to.Sub(from).Seconds()))
+				}
+			}
+			p := NativeEvidencePoint{From: from, To: to, OffsetSeconds: from.Sub(start).Seconds(), Coverage: &coverage}
+			if b.count > 0 && !invalid[i] && !b.invalid {
+				value := b.sum / float64(b.count)
+				switch q.Metric {
+				case "observation_count":
+					value = float64(b.count)
+				case "error_rate":
+					value = 100 * float64(b.errors) / float64(b.count)
+				default:
+					switch q.Aggregation {
+					case "min":
+						value = b.digest.Quantile(0) / float64(time.Millisecond)
+					case "max":
+						value = b.digest.Quantile(1) / float64(time.Millisecond)
+					case "p50", "p90", "p95", "p99":
+						pct := map[string]float64{"p50": .5, "p90": .9, "p95": .95, "p99": .99}[q.Aggregation]
+						value = b.digest.Quantile(pct) / float64(time.Millisecond)
+					}
+				}
+				if math.IsNaN(value) || math.IsInf(value, 0) {
+					return out, errors.New("invalid merged value")
+				}
+				p.Value = &value
+				p.Count = b.count
+			}
+			if coverage < 1 || invalid[i] || b.invalid {
+				partial = true
+			}
+			series.Points = append(series.Points, p)
+		}
+		out.Series = append(out.Series, series)
+	}
+	if partial {
+		out.Warnings = append(out.Warnings, "Collection coverage is partial in some buckets; unsupported, dropped or invalid evidence remains missing. Correlation pair coverage does not establish within-bucket completeness.")
+	}
+	out.Warnings = append(out.Warnings, "Completion-cohort buckets merge whole source distributions by publication end time. Source intervals are not split, and boundary attribution is approximate at source-window resolution. Percentiles are estimated from merged distributions, never averaged. History is limited to 1,000 retained publications.")
+	return out, nil
+}

@@ -27,8 +27,8 @@ Reconciled against published commits `0a480cee`, `7bf711ea` and `10e9f08e`. Thes
 | Preparation | Durable fenced lifecycle, immutable revisions, reservation/provisioning reuse, cancellation/expiry and capacity policies; ECS spot ceiling/on-demand floor; common zero-traffic regression coverage | Live zero-traffic, takeover and cleanup acceptance for every supported target/runtime combination |
 | Parquet analysis | Embedded DuckDB build profile; resumable multi-file/directory imports, nested scalar mappings, immutable originals, saved mapping revisions, normalization, rejection provenance, bounded queries/rates, saved comparisons and lag correlation | Cross-platform release outcomes and broader scale evidence; 10 GB benchmark explicitly skipped, not passed |
 | Authoring | Canonical stored-script reload after summary-only saves; scenario reseeding preserves group transaction SLA overrides | Shared scenario-assembly completion, lifecycle/validation parity and removal of remaining temporary adapters |
-| Native panels | Project editors save run-metric and filtered archive panels; viewers reopen them; bounded raw timelines, same-project comparisons, bucket inspection and CSV/SVG as applicable | Live/archive grouping and overlays implemented in the current slice; acceptance and review in progress |
-| Response properties | Explicit finite extraction categories, redaction-first promotion, capability negotiation, action metrics, distributed merges, JSONL/Parquet retention, archive filters/reports, bounded archived timelines, saved comparisons and bucket drill-down | Bounded live property history and single-dimension grouping implemented; live dimension intersections remain unavailable |
+| Native panels | Project editors save run-metric and filtered archive panels; viewers reopen them; bounded raw timelines, same-project comparisons, bucket inspection and CSV/SVG as applicable | Live/archive grouping and overlays reviewed; merged live distribution buckets, bounded action/property intersections and live lag correlation implemented |
+| Response properties | Explicit finite extraction categories, redaction-first promotion, capability negotiation, action metrics, distributed merges, JSONL/Parquet retention, archive filters/reports, bounded archived timelines, saved comparisons and bucket drill-down | Bounded live property history and single-dimension grouping implemented; bounded action/property intersections implemented in merged live mode; other intersections remain unavailable |
 | Cloud collector previews | Identity-scoped CloudWatch/Azure Monitor queries, fixed approved destinations, bounded retries/responses, durable numeric-sample deduplication; delayed missing buckets can fill and equivalent timestamps are rejected | Approved live AWS/Azure acceptance before production-readiness claims |
 | Messaging | Observed-zero versus unavailable lag in Kafka/Event Hubs; terminal maximum age/offset gates require complete evidence; Event Hubs auth/probe-group defaults and HOWTO | Partition/subscription views, processor/checkpoint ownership and provider-wide acknowledgement/depth telemetry |
 
@@ -50,7 +50,7 @@ This completed slice is archive-first. The follow-on below adds bounded live sel
 
 Status: implemented and reviewed; affected checks and failure reruns passed (see the review record for broad-run limitations). Items 1–3 add durable bounded live interval evidence, 1–20 series grouped by supported identities, and project-authorized monitor/imported overlays with labelled unit axes and archive lag-correlation coverage. Independent live summaries reject intersections they cannot answer; live percentiles are never averaged. Old peers and source-plan runtimes without summaries report unavailable evidence. Fixed elapsed windows and bounded retained history remain explicit.
 
-Remaining analytics breadth: live cross-dimension intersections, live percentile re-bucketing from mergeable distributions, additional dimensions, and live lag correlation. The existing saved two-run archive comparison remains available. See [workflow semantics](ANALYSIS_WORKFLOWS.md#live-and-grouped-evidence-panels) and the [review record](qa/reviews/live-grouped-overlays-2026-10-01/REVIEW.md).
+Merged live distribution buckets, action/property intersections and aligned live lag correlation are implemented in the next priority pass. Remaining analytics breadth: additional dimensions and intersections beyond the bounded action/property contract. The existing saved two-run archive comparison remains available. See [workflow semantics](ANALYSIS_WORKFLOWS.md#live-and-grouped-evidence-panels) and the [review record](qa/reviews/live-grouped-overlays-2026-10-01/REVIEW.md).
 
 ---
 
@@ -523,3 +523,15 @@ Add a bounded HTTP `media_stream` action for HLS or DASH (live/VOD refresh, adap
 ### Cross-phase compatibility and rollout
 
 New fields are optional: offsets default to zero, local dashboard drafts and Grafana imports remain usable, absent capture policy keeps legacy evidence behavior, archive and protobuf schemas keep old readers, and admission fails closed if a generator lacks required capabilities. Each phase requires Go unit/distributed tests, SQLite and PostgreSQL migrations, API authorization/bounds/pagination checks, dashboard tests and browser verification, generated DSL/API freshness, `go test ./...` and `python3 scripts/check-docs.py`. Risky features start disabled, then progress internal/local, single-project preview, enterprise opt-in, and default-on only after compatibility, security and browser acceptance gates pass.
+
+## Priority pass — 2026-10-01
+
+Five items are delivered and reviewed independently, with one commit per item. The [review record](qa/reviews/priority-pass-2026-10-01/REVIEW.md) records completed checks and remaining acceptance.
+
+1. Live distribution buckets, bounded action/property intersections and aligned correlation: implemented and reviewed; affected browser/focused checks passed.
+2. Additional analytics dimensions, timestamped run annotations and waterfall investigation: pending.
+3. Messaging partition/subscription diagnostics and qualified goals: pending.
+4. Shared scenario assembly and authoring lifecycle parity: pending.
+5. Preparation recovery and zero-traffic acceptance: pending. Live provider acceptance requires its own evidence.
+
+IBM MQ remains very low priority. The 10 GB import benchmark remains waived, not passed.

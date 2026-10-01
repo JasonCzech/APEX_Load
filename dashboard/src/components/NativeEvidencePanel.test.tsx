@@ -72,3 +72,17 @@ it('breaks live lines across uncovered publication time without inventing zeros'
   expect(plotted[1].offset_seconds).toBe(2.5)
   expect(nativeEvidencePlotPoints(points, result.start, false)).toBe(points)
 })
+
+it('saves merged live buckets explicitly and renders their semantics', async () => {
+  const { NativePanelAuthoring } = await import('./NativeAnalyticsPanel')
+  const save = vi.fn().mockResolvedValue(undefined)
+  await act(async () => root.render(<NativePanelAuthoring onSave={save} />))
+  const select = container.querySelector<HTMLSelectElement>('select[aria-label="Evidence workflow"]')!
+  await act(async () => { select.value = 'live'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+  await act(async () => container.querySelector<HTMLInputElement>('input[type=checkbox]')!.click())
+  await act(async () => { container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+  expect(save.mock.calls[0][0].tabs[0].panels[0].query.live_bucket_mode).toBe('merged')
+  request.mockResolvedValue({ ...result, mode: 'live', live_bucket_mode: 'merged' })
+  await act(async () => root.render(<NativeEvidencePanel panel={{ ...panel, query: { ...panel.query!, evidence_mode: 'live', live_bucket_mode: 'merged' } }} testId="run" />))
+  expect(container.textContent).toContain('Live merged publication buckets')
+})

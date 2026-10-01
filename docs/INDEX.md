@@ -95,3 +95,5 @@ Historical material is preserved for audit context, is excluded from current-doc
 | --- | --- |
 | [archive/README.md](archive/README.md) | Archive map: consolidated September 2026 QA/UX audits (`archive/qa-reviews/AUDITS_2026-09.md`), the retired DSL guide, and the list of removed plans and reviews with `git show` restore commands |
 | [qa/reviews/README.md](qa/reviews/README.md) | Single index of point-in-time reviews and evaluations (open vs complete), including the Data Pools and LoadRunner runtime-settings evaluations, with captured evidence; points to `archive/README.md` for completed reviews |
+
+- [Priority implementation pass review](qa/reviews/priority-pass-2026-10-01/REVIEW.md)

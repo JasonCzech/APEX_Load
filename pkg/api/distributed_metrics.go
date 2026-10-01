@@ -35,7 +35,11 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	soapMetrics := make([]generatorrpc.MetricAggregate, 0)
 	networkProfileMetrics := make([]generatorrpc.MetricAggregate, 0)
 	actionMetrics := make([]generatorrpc.MetricAggregate, 0)
-	actionsSupported := len(batches) > 0
+	actionsVersion := uint32(2)
+	if len(batches) == 0 {
+		actionsVersion = 0
+	}
+	jointMetrics := make([]generatorrpc.MetricAggregate, 0)
 	propertyMetrics := make([]generatorrpc.MetricAggregate, 0)
 	regionMetrics := make([]generatorrpc.MetricAggregate, 0)
 	browserMetrics := make([]*generatorrpc.BrowserMetrics, 0)
@@ -114,7 +118,12 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		dependencyMetrics = append(dependencyMetrics, batch.DependencyMetrics...)
 		soapMetrics = append(soapMetrics, batch.SOAPMetrics...)
 		networkProfileMetrics = append(networkProfileMetrics, batch.NetworkProfileMetrics...)
-		actionsSupported = actionsSupported && batch.ActionMetricsVersion == 1
+		if batch.ActionMetricsVersion > 2 {
+			actionsVersion = 0
+		} else {
+			actionsVersion = min(actionsVersion, batch.ActionMetricsVersion)
+		}
+		jointMetrics = append(jointMetrics, batch.ActionPropertyMetrics...)
 		actionMetrics = append(actionMetrics, batch.ActionMetrics...)
 		propertyMetrics = append(propertyMetrics, batch.PropertyMetrics...)
 		regionMetrics = append(regionMetrics, batch.RegionMetrics...)
@@ -220,8 +229,11 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		}
 	}
 	combined.FleetMetrics = mergeGeneratorMetricAggregates(fleetMetrics)
-	if actionsSupported {
-		combined.ActionMetricsVersion = 1
+	if actionsVersion > 0 {
+		combined.ActionMetricsVersion = actionsVersion
+		if actionsVersion == 2 {
+			combined.ActionPropertyMetrics = mergeGeneratorMetricAggregateSeries(jointMetrics)
+		}
 		combined.ActionMetrics = mergeGeneratorMetricAggregateSeries(actionMetrics)
 	}
 	combined.TransactionMetrics = mergeGeneratorMetricAggregateSeries(transactionMetrics)
@@ -566,15 +578,25 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 	defer func() {
 		actions := map[string]*TxMetrics{}
-		if batch.ActionMetricsVersion == 1 {
+		if batch.ActionMetricsVersion >= 1 && batch.ActionMetricsVersion <= 2 {
 			for _, a := range batch.ActionMetrics {
 				if m := txMetricsFromAggregate(a); m != nil {
 					actions[m.Name] = m
 				}
 			}
 		}
-		if batch.ActionMetricsVersion == 1 {
+		if batch.ActionMetricsVersion >= 1 && batch.ActionMetricsVersion <= 2 {
 			live.NativeEvidence = nativeIntervalEvidence(live, actions, true, batchWindowSeconds(batch.WindowMs))
+			if batch.ActionMetricsVersion == 2 {
+				live.NativeEvidence.Version = 2
+				joint := map[string]*TxMetrics{}
+				for _, a := range batch.ActionPropertyMetrics {
+					if m := txMetricsFromAggregate(a); m != nil {
+						joint[m.Name] = m
+					}
+				}
+				addNativeJointEvidence(live.NativeEvidence, joint)
+			}
 		}
 	}()
 	if applyDistributedAggregateMetrics(test, live, batch, fleetTPS, groupTPS) {
@@ -965,6 +987,7 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 		return nil
 	}
 	return &TxMetrics{
+		DurationDigest:   engine.CloneTDigestSnapshot(aggregate.DurationDigest),
 		Name:             aggregate.Name,
 		TPS:              aggregate.TPS,
 		DependencyType:   aggregate.DependencyType,
@@ -1431,7 +1454,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		out.BytesSent += value.BytesSent
 		out.BytesReceived += value.BytesReceived
 		out.TPS += value.TPS
-		if value.DurationDigest != nil && value.DurationDigest.Count == value.Count {
+		if engine.ValidateDurationDigest(value.DurationDigest, value.Count) == nil {
 			if durationDigest == nil {
 				durationDigest = engine.NewTDigest(value.DurationDigest.Compression)
 			}

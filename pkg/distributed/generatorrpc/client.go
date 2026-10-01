@@ -169,6 +169,7 @@ type MetricsBatch struct {
 	SOAPMetrics                []MetricAggregate
 	NetworkProfileMetrics      []MetricAggregate
 	ActionMetrics              []MetricAggregate
+	ActionPropertyMetrics      []MetricAggregate
 	ActionMetricsVersion       uint32
 	PropertyMetrics            []MetricAggregate
 	RegionMetrics              []MetricAggregate
@@ -1517,6 +1518,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		SOAPMetrics:                metricAggregatesFromProto(batch.GetSoapMetrics()),
 		NetworkProfileMetrics:      metricAggregatesFromProto(batch.GetNetworkProfileMetrics()),
 		ActionMetrics:              metricAggregatesFromProto(batch.GetActionMetrics()),
+		ActionPropertyMetrics:      metricAggregatesFromProto(batch.GetActionPropertyMetrics()),
 		ActionMetricsVersion:       batch.GetActionMetricsVersion(),
 		PropertyMetrics:            metricAggregatesFromProto(batch.GetPropertyMetrics()),
 		RegionMetrics:              metricAggregatesFromProto(batch.GetRegionMetrics()),

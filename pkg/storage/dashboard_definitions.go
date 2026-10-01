@@ -59,6 +59,7 @@ type NativeOverlaySelection struct {
 }
 
 type AnalyticsQuery struct {
+	LiveBucketMode   string                  `json:"live_bucket_mode,omitempty"`
 	EvidenceMode     string                  `json:"evidence_mode,omitempty"`
 	OverlaySelection *NativeOverlaySelection `json:"overlay_selection,omitempty"`
 
@@ -158,7 +159,7 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 				if err := ValidateNativeEvidenceQuery(*q); err != nil {
 					return err
 				}
-			} else if q.OverlaySelection != nil {
+			} else if q.OverlaySelection != nil || q.LiveBucketMode != "" {
 				return errors.New("overlay selection requires evidence mode")
 			} else if q.Population != "" {
 				if q.MaxSeries == 0 {
@@ -332,7 +333,7 @@ func (s *SQLiteStore) DeleteDashboardDefinitionIfRevision(id, projectID string, 
 
 // ValidateNativeArchiveQuery is shared by saved definitions and query execution.
 func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
-	if q.EvidenceMode != "" || q.OverlaySelection != nil {
+	if q.EvidenceMode != "" || q.OverlaySelection != nil || q.LiveBucketMode != "" {
 		return errors.New("use the native evidence query for live/grouped overlays")
 	}
 	if q.Population != "action" && q.Population != "transaction" {

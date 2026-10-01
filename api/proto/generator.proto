@@ -452,6 +452,7 @@ message MetricsBatch {
   repeated MetricAggregate property_metrics = 22;
   repeated MetricAggregate action_metrics = 23;
   uint32 action_metrics_version = 24;
+  repeated MetricAggregate action_property_metrics = 25;
   repeated TransactionResponseTimeSLACompliance transaction_response_time_sla = 21;
 }
 

@@ -1,4 +1,4 @@
-export interface NativeEvidencePoint { from: string; to: string; offset_seconds: number; count: number; value: number | null }
+export interface NativeEvidencePoint { from: string; to: string; offset_seconds: number; count: number; coverage?: number; value: number | null }
 
 // Keep uncovered time visible when publications stop entirely (for example,
 // during a collector interruption). Small publication jitter is not a gap.

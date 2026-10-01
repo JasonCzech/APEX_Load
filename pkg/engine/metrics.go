@@ -96,6 +96,7 @@ type MetricsSnapshot struct {
 	ByDependencyTarget         map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
 	BySOAPOperation            map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
 	ByNetworkProfile           map[string]*ActionMetrics `json:"by_network_profile,omitempty"`
+	ByActionProperty           map[string]*ActionMetrics `json:"by_action_property,omitempty"`
 	ByProperty                 map[string]*ActionMetrics `json:"by_property,omitempty"`
 	ByRegion                   map[string]*ActionMetrics `json:"by_region,omitempty"`
 	ByGroup                    map[string]*GroupMetrics
@@ -273,6 +274,7 @@ type GroupMetrics struct {
 }
 
 type ActionMetrics struct {
+	DurationDigest   *TDigestSnapshot `json:"-"`
 	Name             string
 	DependencyType   string
 	DependencyTarget string
@@ -627,6 +629,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		BySOAPOperation:     make(map[string]*ActionMetrics),
 		ByNetworkProfile:    make(map[string]*ActionMetrics),
 		ByProperty:          make(map[string]*ActionMetrics),
+		ByActionProperty:    make(map[string]*ActionMetrics),
 		ByRegion:            make(map[string]*ActionMetrics),
 		ByGroup:             make(map[string]*GroupMetrics),
 		ErrorsByClass:       make(map[string]int64),
@@ -662,6 +665,8 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	soapDurationSum := make(map[string]time.Duration)
 	propertyDigests := make(map[string]*TDigest)
 	propertyDurationSum := make(map[string]time.Duration)
+	jointDigests := make(map[string]*TDigest)
+	jointDurationSum := make(map[string]time.Duration)
 	networkProfileDigests := make(map[string]*TDigest)
 	networkProfileDurationSum := make(map[string]time.Duration)
 	regionDigests := make(map[string]*TDigest)
@@ -826,6 +831,14 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				}
 				mergeActionResult(pm, r)
 				recordDurationSample(propertyDigests, propertyDurationSum, profile, r.Duration)
+				joint := boundedJointPropertyKey(ActionPropertyKey(actionName, property, value), snap.ByActionProperty)
+				jm := snap.ByActionProperty[joint]
+				if jm == nil {
+					jm = &ActionMetrics{Name: joint, MinDuration: r.Duration, MaxDuration: r.Duration}
+					snap.ByActionProperty[joint] = jm
+				}
+				mergeActionResult(jm, r)
+				recordDurationSample(jointDigests, jointDurationSum, joint, r.Duration)
 			}
 
 			if r.ClientMetrics != nil {
@@ -956,6 +969,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	if len(snap.ByNetworkProfile) == 0 {
 		snap.ByNetworkProfile = nil
 	}
+	for name, am := range snap.ByActionProperty {
+		finalizeActionMetrics(am, jointDurationSum[name], jointDigests[name])
+	}
 	for name, am := range snap.ByProperty {
 		finalizeActionMetrics(am, propertyDurationSum[name], propertyDigests[name])
 	}
@@ -1055,6 +1071,8 @@ func finalizeActionMetrics(metrics *ActionMetrics, totalDuration time.Duration, 
 		metrics.P90 = time.Duration(td.Quantile(0.90))
 		metrics.P95 = time.Duration(td.Quantile(0.95))
 		metrics.P99 = time.Duration(td.Quantile(0.99))
+		snapshot := td.Snapshot()
+		metrics.DurationDigest = &snapshot
 	}
 	divisor := float64(metrics.Count)
 	metrics.AvgDNSMs /= divisor

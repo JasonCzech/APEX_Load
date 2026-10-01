@@ -25446,6 +25446,7 @@ export interface operations {
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
+                  "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
                 }) | null;
@@ -25761,6 +25762,7 @@ export interface operations {
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
+                  "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
                 }) | null;
@@ -31947,6 +31949,17 @@ export interface operations {
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
+                "publication"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "sequence": number;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "version": number;
                 "window_seconds": number;
               }) | null;
@@ -32825,6 +32838,17 @@ export interface operations {
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
+                "publication"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "sequence": number;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "version": number;
                 "window_seconds": number;
               }) | null;
@@ -47837,6 +47861,7 @@ export interface operations {
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
+                  "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
                 }) | null;
@@ -48152,6 +48177,7 @@ export interface operations {
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
+                  "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
                 }) | null;
@@ -58159,6 +58185,17 @@ export interface operations {
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
+                "publication"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "sequence": number;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "version": number;
                 "window_seconds": number;
               }) | null;
@@ -59037,6 +59074,17 @@ export interface operations {
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
+                "publication"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "sequence": number;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "version": number;
                 "window_seconds": number;
               }) | null;
@@ -71308,6 +71356,7 @@ export interface operations {
           "end_seconds"?: number;
           "evidence_mode"?: string;
           "filters"?: Record<string, string>;
+          "live_bucket_mode"?: string;
           "max_series"?: number;
           "metric"?: string;
           "overlay"?: boolean;
@@ -71413,6 +71462,7 @@ export interface operations {
           "end_seconds"?: number;
           "evidence_mode"?: string;
           "filters"?: Record<string, string>;
+          "live_bucket_mode"?: string;
           "max_series"?: number;
           "metric"?: string;
           "overlay"?: boolean;
@@ -71444,6 +71494,7 @@ export interface operations {
               "pairs": number;
             }>>;
             "from": string;
+            "live_bucket_mode"?: string;
             "mode": string;
             "overlay"?: Array<{
               "active_runtime_ms"?: (number) | null;
@@ -71470,6 +71521,7 @@ export interface operations {
               "name": string;
               "points": Array<{
                 "count": number;
+                "coverage"?: (number) | null;
                 "from": string;
                 "offset_seconds": number;
                 "to": string;
@@ -72216,6 +72268,7 @@ export interface operations {
                 "end_seconds"?: number;
                 "evidence_mode"?: string;
                 "filters"?: Record<string, string>;
+                "live_bucket_mode"?: string;
                 "max_series"?: number;
                 "metric"?: string;
                 "overlay"?: boolean;
@@ -75234,6 +75287,17 @@ export interface operations {
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
+                "publication"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "sequence": number;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "version": number;
                 "window_seconds": number;
               }) | null;
@@ -76112,6 +76176,17 @@ export interface operations {
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
+                "publication"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "sequence": number;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "version": number;
                 "window_seconds": number;
               }) | null;
@@ -86705,6 +86780,7 @@ export interface operations {
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
+                  "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
                 }) | null;
@@ -87020,6 +87096,7 @@ export interface operations {
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
+                  "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
                 }) | null;
@@ -88148,6 +88225,7 @@ export interface operations {
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
+                  "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
                 }) | null;
@@ -88463,6 +88541,7 @@ export interface operations {
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
+                  "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
                 }) | null;
@@ -89591,6 +89670,7 @@ export interface operations {
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
+                  "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
                 }) | null;
@@ -89906,6 +89986,7 @@ export interface operations {
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
+                  "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
                 }) | null;
@@ -91034,6 +91115,7 @@ export interface operations {
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
+                  "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
                 }) | null;
@@ -91349,6 +91431,7 @@ export interface operations {
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
+                  "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
                 }) | null;
@@ -92477,6 +92560,7 @@ export interface operations {
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
+                  "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
                 }) | null;
@@ -92792,6 +92876,7 @@ export interface operations {
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
+                  "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
                 }) | null;
@@ -113381,6 +113466,17 @@ export interface operations {
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
+                "publication"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "sequence": number;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "version": number;
                 "window_seconds": number;
               }) | null;
@@ -114259,6 +114355,17 @@ export interface operations {
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
+                "publication"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "sequence": number;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "version": number;
                 "window_seconds": number;
               }) | null;

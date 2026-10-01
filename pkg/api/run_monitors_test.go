@@ -94,6 +94,15 @@ func TestRunMonitoringAPIArtifactsAndRetry(t *testing.T) {
 	if len(out.Overlay) != 2 || len(out.Correlation["Checkout"]) != 1 || out.Correlation["Checkout"][0].Pairs != 1 {
 		t.Fatalf("overlay coverage: %+v", out)
 	}
+	q.EvidenceMode = "live"
+	q.LiveBucketMode = "merged"
+	out.Correlation = nil
+	if err := server.attachNativeOverlay(context.Background(), "proj-a", "monitor-run", q, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Correlation["Checkout"]) != 1 || out.Correlation["Checkout"][0].Pairs != 1 {
+		t.Fatalf("merged live correlation: %+v", out)
+	}
 	if err := server.attachNativeOverlay(context.Background(), "proj-b", "monitor-run", q, &out); err == nil {
 		t.Fatal("cross-project overlay accepted")
 	}

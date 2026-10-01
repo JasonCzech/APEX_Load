@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"github.com/jasonczech/apexload/pkg/engine"
 	"testing"
 	"time"
 )
@@ -11,7 +12,12 @@ func TestNativeEvidencePersistenceAndClone(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	evidence := &NativeIntervalEvidence{Version: 1, WindowSeconds: 2, Dimensions: map[string]map[string]NativeIntervalMetric{"action": {"Checkout": {Count: 7, Errors: 1, P95: 90}}}}
+	digest := engine.NewTDigest(200)
+	for i := 0; i < 7; i++ {
+		digest.Add(float64(90 * time.Millisecond))
+	}
+	snapshot := digest.Snapshot()
+	evidence := &NativeIntervalEvidence{Version: 2, WindowSeconds: 2, Dimensions: map[string]map[string]NativeIntervalMetric{"action": {"Checkout": {Count: 7, Errors: 1, P95: 90, DurationDigest: &snapshot}}}}
 	at := time.Now().UTC()
 	if err := store.SaveTest(&TestRecord{ID: "run", Name: "native", Status: "RUNNING", StartTime: at}); err != nil {
 		t.Fatal(err)
@@ -24,7 +30,7 @@ func TestNativeEvidencePersistenceAndClone(t *testing.T) {
 		t.Fatal(err)
 	}
 	record := history[0].(IntervalSummaryRecord)
-	if record.NativeEvidence == nil || record.NativeEvidence.Dimensions["action"]["Checkout"].P95 != 90 {
+	if record.NativeEvidence == nil || record.NativeEvidence.Dimensions["action"]["Checkout"].Errors != 1 || record.NativeEvidence.Dimensions["action"]["Checkout"].P95 != 90 || record.NativeEvidence.Dimensions["action"]["Checkout"].DurationDigest.Count != 7 {
 		t.Fatalf("lost evidence: %+v", record)
 	}
 	clone := CloneNativeIntervalEvidence(evidence)
@@ -41,6 +47,13 @@ func TestNativeEvidenceQueryValidation(t *testing.T) {
 		valid  bool
 	}{
 		{"live grouped", func(q *AnalyticsQuery) {}, true},
+		{"merged intersection", func(q *AnalyticsQuery) {
+			q.LiveBucketMode = "merged"
+			q.PropertyName = "kind"
+			q.PropertyValue = "paid"
+		}, true},
+		{"unknown bucket mode", func(q *AnalyticsQuery) { q.LiveBucketMode = "other" }, false},
+		{"archive rejects live bucket mode", func(q *AnalyticsQuery) { q.EvidenceMode = "archive"; q.LiveBucketMode = "merged" }, false},
 		{"live intersection", func(q *AnalyticsQuery) { q.PropertyName = "kind"; q.PropertyValue = "paid" }, false},
 		{"archive intersection", func(q *AnalyticsQuery) { q.EvidenceMode = "archive"; q.PropertyName = "kind"; q.PropertyValue = "paid" }, true},
 		{"series bound", func(q *AnalyticsQuery) { q.MaxSeries = 21 }, false},

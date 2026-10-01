@@ -1728,6 +1728,21 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 	aggregated, fleetTPS, groupTPS := aggregateDistributedMetricsBatches(test.ID, batches)
 	tr.mu.Lock()
 	live := buildLiveMetricsFromDistributedBatch(test, aggregated, fleetTPS, groupTPS)
+	if live.NativeEvidence != nil {
+		live.NativeEvidence.Publication = nativePublicationEvidence(target, batch, batches)
+		// Include assigned peers before their first metric batch, so cold or lost
+		// sources cannot make a partial fleet appear completely covered.
+		expected := make([]string, 0, len(test.remoteClientsByTarget))
+		for peer := range test.remoteClientsByTarget {
+			if !remoteTargetStateIntentionallyRemoved(test.remoteTargetStates[peer]) {
+				expected = append(expected, peer)
+			}
+		}
+		if len(expected) > 0 {
+			sort.Strings(expected)
+			live.NativeEvidence.Publication.ExpectedSources = expected
+		}
+	}
 	live.ObservationValidUntil = &observationValidUntil
 	applyRuntimeGoalTargetsToLiveMetrics(test, live)
 	tr.mu.Unlock()
