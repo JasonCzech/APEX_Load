@@ -899,8 +899,8 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			Audience:         "Performance engineers, SREs, developers, and test analysts.",
 			BestFor:          "Bottleneck isolation, regression diagnosis, resource saturation, and remediation planning.",
 			ExportFormats:    []string{"html", "json", "csv", "analysis_zip", "pdf", "docx", "jsonl", "parquet"},
-			IncludedSections: []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "browser", "soap", "network_phases", "web2_migration"},
-			SectionOrder:     []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "browser", "soap", "network_phases", "web2_migration"},
+			IncludedSections: []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "protocol_diagnostics", "browser", "soap", "network_phases", "web2_migration"},
+			SectionOrder:     []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "protocol_diagnostics", "browser", "soap", "network_phases", "web2_migration"},
 		},
 		{
 			ID:               "audit",

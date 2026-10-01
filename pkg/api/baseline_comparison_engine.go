@@ -10,10 +10,13 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/engine"
+	protocolmetrics "github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type baselineTransactionKey struct{ group, protocol, name string }
 type baselineTransactionAccumulator struct {
+	grpc            *protocolmetrics.GRPCSummary
+	websocket       *protocolmetrics.WebSocketSummary
 	count, errors   int64
 	total, min, max float64
 	digest          *engine.TDigest
@@ -139,6 +142,10 @@ func (s *Server) readBaselineComparisonRun(ctx context.Context, t *ManagedTest, 
 		}
 		group := tx.Group
 		protocol := groups[group]
+		if request.Population != "transaction" && tx.ServerTelemetry != nil && tx.ServerTelemetry.GRPC.Valid() {
+			protocol = "grpc"
+			name += " [" + tx.ServerTelemetry.GRPC.Method + " / " + tx.ServerTelemetry.GRPC.Mode + "]"
+		}
 		if mapped := p.GroupMappings[t.ID+"/"+group]; mapped != "" {
 			group = mapped
 		}
@@ -164,6 +171,10 @@ func (s *Server) readBaselineComparisonRun(ctx context.Context, t *ManagedTest, 
 				r.transactions[key][i] = a
 			}
 			a.count++
+			if tx.ServerTelemetry != nil {
+				protocolmetrics.MergeGRPCDiagnostic(&a.grpc, tx.ServerTelemetry.GRPC)
+				protocolmetrics.MergeWebSocketDiagnostic(&a.websocket, tx.ServerTelemetry.WebSocket)
+			}
 			if !tx.Success {
 				a.errors++
 				continue
@@ -207,6 +218,8 @@ func baselineTransactionMeasurement(r *baselineComparisonRun, k baselineTransact
 	w := r.windows[index]
 	seconds := w.EndSeconds - w.StartSeconds
 	m := &BaselineMeasurement{Samples: a.count, Successes: a.count - a.errors, Errors: a.errors, Throughput: float64(a.count) / seconds, SuccessfulThroughput: float64(a.count-a.errors) / seconds, ErrorPct: 100 * float64(a.errors) / float64(a.count), CoveragePct: 100, Instances: 1}
+	m.GRPC = a.grpc.Clone()
+	m.WebSocket = a.websocket.Clone()
 	if a.digest.Count() > 0 {
 		m.Mean = a.total / float64(m.Successes)
 		m.Min = a.min
@@ -463,7 +476,7 @@ func buildBaselineFindings(out *BaselineComparisonSnapshot) {
 						status = "unverified"
 					}
 					unit := row.Unit
-					if metric == "throughput" {
+					if metric == "throughput" || metric == "WebSocket message throughput" {
 						unit = "/s"
 					}
 					if metric == "error percentage points" {
@@ -495,6 +508,33 @@ func buildBaselineFindings(out *BaselineComparisonSnapshot) {
 					add("time-weighted mean", a.Mean, v.Mean, out.Policy.ResourcePct, absolute, a.Samples >= 10 && v.Samples >= 10 && a.CoveragePct >= 80 && v.CoveragePct >= 80)
 				} else {
 					enough := a.Successes >= 100 && v.Successes >= 100
+					compareDistribution := func(metric string, current, baseline protocolmetrics.DiagnosticDistribution) {
+						x, okX := current.Quantile(.95)
+						y, okY := baseline.Quantile(.95)
+						if okX && okY {
+							add(metric, x, y, out.Policy.LatencyPct, out.Policy.LatencyMs, current.Count >= 100 && baseline.Count >= 100)
+						}
+					}
+					if a.GRPC != nil && v.GRPC != nil && !a.GRPC.MixedMethods && !v.GRPC.MixedMethods && a.GRPC.Method == v.GRPC.Method && a.GRPC.Mode == v.GRPC.Mode {
+						compareDistribution("gRPC call P95", a.GRPC.Call, v.GRPC.Call)
+						compareDistribution("gRPC first-message P95", a.GRPC.FirstMessage, v.GRPC.FirstMessage)
+						compareDistribution("gRPC protobuf encode P95", a.GRPC.Encode, v.GRPC.Encode)
+						compareDistribution("gRPC protobuf decode P95", a.GRPC.Decode, v.GRPC.Decode)
+					}
+					if a.WebSocket != nil && v.WebSocket != nil {
+						compareDistribution("WebSocket handshake P95", a.WebSocket.Handshake, v.WebSocket.Handshake)
+						compareDistribution("WebSocket write-wait P95", a.WebSocket.WriteWait, v.WebSocket.WriteWait)
+						compareDistribution("WebSocket matched ping RTT P95", a.WebSocket.PingRTT, v.WebSocket.PingRTT)
+						compareDistribution("WebSocket text receive-wait P95", a.WebSocket.TextReceive, v.WebSocket.TextReceive)
+						compareDistribution("WebSocket binary receive-wait P95", a.WebSocket.BinaryReceive, v.WebSocket.BinaryReceive)
+						if row.Window != nil && cell.Window != nil {
+							currentSeconds := row.Window.EndSeconds - row.Window.StartSeconds
+							baselineSeconds := cell.Window.EndSeconds - cell.Window.StartSeconds
+							if currentSeconds > 0 && baselineSeconds > 0 {
+								add("WebSocket message throughput", float64(a.WebSocket.MessagesReceived)/currentSeconds, float64(v.WebSocket.MessagesReceived)/baselineSeconds, out.Policy.ThroughputPct, 0, a.WebSocket.MessagesReceived >= 100 && v.WebSocket.MessagesReceived >= 100 && a.WebSocket.Samples == a.Samples && v.WebSocket.Samples == v.Samples)
+							}
+						}
+					}
 					if a.Successes > 0 && v.Successes > 0 {
 						add("successful P95", a.P95, v.P95, out.Policy.LatencyPct, out.Policy.LatencyMs, enough)
 						add("successful mean", a.Mean, v.Mean, out.Policy.LatencyPct, out.Policy.LatencyMs, enough)
@@ -523,5 +563,5 @@ func buildBaselineFindings(out *BaselineComparisonSnapshot) {
 	if len(out.Findings) == 0 {
 		out.Warnings = append(out.Warnings, "No configured change threshold was exceeded; this is not an acceptance verdict")
 	}
-	out.Warnings = append(out.Warnings, "Latency uses successful samples. Transaction chart points show interval maxima. SLA results describe the whole recorded run. Resource changes are contemporaneous evidence, not causal attribution.")
+	out.Warnings = append(out.Warnings, "Transaction latency uses successful samples. Protocol timing includes every measured call, including failed calls; message throughput requires diagnostics for every retained action. Transaction chart points show interval maxima. SLA results describe the whole recorded run. Resource changes are contemporaneous evidence, not causal attribution.")
 }

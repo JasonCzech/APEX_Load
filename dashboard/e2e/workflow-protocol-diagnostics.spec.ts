@@ -54,3 +54,24 @@ test('gRPC diagnostics distinguishes unavailable and measured-zero responses in 
   await panel.getByRole('heading', { name: 'gRPC diagnostics', exact: true }).hover()
   await panel.screenshot({ path: test.info().outputPath('grpc-diagnostics.png') })
 })
+
+test('WebSocket diagnostics preserves unavailable ping RTT and matched zero RTT', async ({ page, trackRun }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request; const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace)
+  const id = idOf(await json(await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, name: 'WebSocket evidence', duration: '2m', groups: [{ name: 'socket', script_id: scriptId, vusers: 1 }] } })))
+  trackRun(id)
+  const empty = { count: 0, sum: 0, min: 0, max: 0, buckets: [] }; let matched = false
+  await page.route(`**/api/v1/tests/${id}`, async route => {
+    const response = await route.fetch(); const record = await response.json()
+    await route.fulfill({ response, json: { ...record, status: 'RUNNING', live_metrics: { total_transactions: 1, total_errors: 0, active_vusers: 1, transactions: { socket: { name: 'Socket messages', count: 1, errors: 0, avg_ms: 10, dependency_type: 'websocket', server_telemetry: { samples: 1, websocket: { samples: 1, handshake_ms: empty, reconnect_ms: empty, send_ms: empty, receive_ms: { ...empty, count: 1, sum: 12, max: 12 }, write_wait_ms: empty, ping_rtt_ms: { ...empty, count: matched ? 1 : 0 }, text_receive_ms: empty, binary_receive_ms: empty, reconnects: 0, messages_sent: 0, messages_received: 1, bytes_sent: 0, bytes_received: 8, max_pending_writes: 0, normal_closes: 0, abnormal_closes: 0, timeouts: 0, cancellations: 0 } } } } } } })
+  })
+  await page.goto(`/#/test/${id}?tab=diagnostics&${scopeQuery(workspace)}`); await page.reload()
+  const panel = page.getByRole('region', { name: 'WebSocket diagnostics', exact: true })
+  await expect(panel).toContainText('Receive wait: 12.0 ms mean (1 measured)')
+  await expect(panel).toContainText('Matched ping RTT: unavailable mean (0 measured)')
+  matched = true
+  await expect(panel).toContainText('Matched ping RTT: 0.0 ms mean (1 measured)')
+  await page.setViewportSize({ width: 760, height: 900 })
+  await panel.screenshot({ path: test.info().outputPath('websocket-diagnostics.png') })
+})

@@ -1459,7 +1459,7 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 	names := protocol.List()
 	sort.Strings(names)
 	available := make([]string, 0, len(names))
-	features := []string{dsl.FeatureLRFidelityV1, FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1, FeatureRunSupervisionV1, FeatureMessageDetailCaptureV1, FeatureControlParallelV1, FeatureMessageDetailControlParallelV1}
+	features := []string{FeaturePreparationV1, dsl.FeatureLRFidelityV1, FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1, FeatureRunSupervisionV1, FeatureMessageDetailCaptureV1, FeatureControlParallelV1, FeatureMessageDetailControlParallelV1}
 	runtimeCapacities := make([]*pb.ProtocolRuntimeCapacity, 0)
 	for _, name := range names {
 		normalized := strings.ToLower(strings.TrimSpace(name))
@@ -1520,6 +1520,9 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 		}
 		available = append(available, normalized)
 		features = append(features, normalized)
+		if normalized == "websocket" {
+			features = append(features, FeatureWebSocketDiagnosticsV1)
+		}
 		if normalized == "grpc" {
 			features = append(features, FeatureGRPCDiagnosticsV1)
 		}
@@ -2233,6 +2236,7 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		if tx.ServerTelemetry != nil {
 			protoServerTelemetry = &pb.ServerTelemetry{
 				Grpc:                   grpcDiagnosticsToProto(tx.ServerTelemetry.GRPC),
+				Websocket:              websocketDiagnosticsToProto(tx.ServerTelemetry.WebSocket),
 				ServerProcessingMs:     tx.ServerTelemetry.ServerProcessingMs,
 				TransferMs:             tx.ServerTelemetry.TransferMs,
 				RequestPayloadKb:       tx.ServerTelemetry.RequestPayloadKB,

@@ -17,9 +17,13 @@ import (
 // only enumerate auth()-wrapped routes (a route registered with no auth() is invisible to
 // them, as the recording-agent download was).
 var intentionallyPublicAPIRoutes = map[string]bool{
-	"GET /api/v1/auth/login":    true,
-	"POST /api/v1/auth/login":   true,
-	"GET /api/v1/auth/callback": true,
+	// Collector jobs use the same in-handler constant-time token validation as
+	// heartbeat; tokens identify the collector and project, never a browser user.
+	"GET /api/v1/monitoring/collectors/{id}/jobs":                   true,
+	"POST /api/v1/monitoring/collectors/{id}/jobs/{job_id}/samples": true,
+	"GET /api/v1/auth/login":                                        true,
+	"POST /api/v1/auth/login":                                       true,
+	"GET /api/v1/auth/callback":                                     true,
 	// Desktop callback finalization is anonymous at the HTTP auth layer but is
 	// protected by the per-tab capability and one-time server-side OAuth state.
 	"POST /api/v1/auth/callback":        true,

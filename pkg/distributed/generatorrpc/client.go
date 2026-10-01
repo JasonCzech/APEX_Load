@@ -31,7 +31,8 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
-	JavaHost *pb.JavaHostSelection
+	PrepareOnly bool
+	JavaHost    *pb.JavaHostSelection
 	// AdoptionGrace > 0 opts the run into HA continuity (WorkAssignment.adoption_grace).
 	AdoptionGrace                time.Duration
 	ArchiveSourceTarget          string
@@ -258,6 +259,7 @@ type BrowserDeviceMetrics struct {
 
 type ServerTelemetry struct {
 	GRPC                   *protocol.GRPCDiagnostics
+	WebSocket              *protocol.WebSocketDiagnostics
 	ServerProcessingMs     float64
 	TransferMs             float64
 	RequestPayloadKB       float64
@@ -1401,6 +1403,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		if tx.GetServerTelemetry() != nil {
 			serverTelemetry = &ServerTelemetry{
 				GRPC:                   grpcDiagnosticsFromProto(tx.GetServerTelemetry().GetGrpc()),
+				WebSocket:              websocketDiagnosticsFromProto(tx.GetServerTelemetry().GetWebsocket()),
 				ServerProcessingMs:     tx.GetServerTelemetry().GetServerProcessingMs(),
 				TransferMs:             tx.GetServerTelemetry().GetTransferMs(),
 				RequestPayloadKB:       tx.GetServerTelemetry().GetRequestPayloadKb(),
@@ -1541,7 +1544,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 
 	targetDuration := resolvedPreciseDuration(assignment.TargetDuration, assignment.TargetDurationSeconds)
 	rampUp := resolvedPreciseDuration(assignment.RampUp, int64(assignment.RampUpSeconds))
-	return &pb.WorkAssignment{
+	return &pb.WorkAssignment{PrepareOnly: assignment.PrepareOnly,
 		SourcePlan:                assignment.SourcePlan,
 		JavaHost:                  cloneJavaHostSelection(assignment.JavaHost),
 		TestId:                    assignment.TestID,

@@ -1,0 +1,413 @@
+package api
+
+import (
+	"crypto/ed25519"
+	"crypto/subtle"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/collectoragent"
+	"github.com/jasonczech/apexload/pkg/storage"
+)
+
+func runMonitoringEnabled(project string) bool {
+	for _, p := range strings.Split(os.Getenv("APEXLOAD_RUN_MONITOR_PROJECTS"), ",") {
+		if strings.TrimSpace(p) == project && project != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func monitorSigningKey() (ed25519.PrivateKey, error) {
+	seed, err := base64.StdEncoding.DecodeString(strings.TrimSpace(os.Getenv("APEXLOAD_MONITOR_SIGNING_SEED")))
+	if err != nil || len(seed) != ed25519.SeedSize {
+		return nil, errors.New("run monitoring requires a persistent base64 Ed25519 signing seed")
+	}
+	return ed25519.NewKeyFromSeed(seed), nil
+}
+
+func (s *Server) runMonitorStore(w http.ResponseWriter, project string) storage.RunMonitorStore {
+	if !runMonitoringEnabled(project) {
+		writeError(w, http.StatusConflict, "run monitoring is not enabled for this project")
+		return nil
+	}
+	store, ok := s.store.(storage.RunMonitorStore)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "run monitoring storage unavailable")
+		return nil
+	}
+	return store
+}
+
+func (s *Server) handleMonitorSources(w http.ResponseWriter, r *http.Request) {
+	project := r.PathValue("id")
+	store := s.runMonitorStore(w, project)
+	if store == nil {
+		return
+	}
+	if r.Method == http.MethodGet {
+		sources, err := store.ListMonitorSources(project)
+		if err != nil {
+			writeError(w, 500, "cannot load monitor sources")
+			return
+		}
+		writeJSON(w, 200, sources)
+		return
+	}
+	if r.Method == http.MethodDelete {
+		expected, err := strconv.ParseInt(r.URL.Query().Get("revision"), 10, 64)
+		if err != nil {
+			writeError(w, 400, "revision is required")
+			return
+		}
+		if err = store.DeleteMonitorSource(project, r.PathValue("source_id"), expected); err != nil {
+			writeError(w, 409, err.Error())
+			return
+		}
+		s.recordAuditEvent(r, "monitor.source.delete", "success", "monitor_source", r.PathValue("source_id"), project, nil)
+		w.WriteHeader(204)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	var source storage.MonitorSource
+	if !decodeJSONBody(w, r, &source) {
+		return
+	}
+	if source.ProjectID != "" && source.ProjectID != project {
+		writeError(w, 400, "monitor source project mismatch")
+		return
+	}
+	source.ProjectID = project
+	if r.Method == http.MethodPost {
+		if source.ID != "" || source.Revision != 0 {
+			writeError(w, 400, "new monitor source must omit id and revision")
+			return
+		}
+		source.ID = uuid.NewString()
+	} else {
+		if source.ID != "" && source.ID != r.PathValue("source_id") {
+			writeError(w, 400, "monitor source identity mismatch")
+			return
+		}
+		source.ID = r.PathValue("source_id")
+		if source.Revision < 1 {
+			writeError(w, 400, "revision is required")
+			return
+		}
+	}
+	saved, err := store.SaveMonitorSource(source, source.Revision)
+	if err != nil {
+		status := 400
+		if errors.Is(err, storage.ErrMonitorRevision) {
+			status = 409
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	s.recordAuditEvent(r, "monitor.source.save", "success", "monitor_source", saved.ID, project, map[string]any{"revision": saved.Revision})
+	writeJSON(w, 200, saved)
+}
+
+func (s *Server) handleMonitorBindings(w http.ResponseWriter, r *http.Request) {
+	project, status, message := resolveScenarioProjectID(r, s.store)
+	if status != 0 {
+		writeError(w, status, message)
+		return
+	}
+	store := s.runMonitorStore(w, project)
+	if store == nil {
+		return
+	}
+	if r.Method == http.MethodGet {
+		b, err := store.GetMonitorBindings(project, r.PathValue("id"))
+		if err != nil {
+			writeError(w, 500, "cannot load monitor bindings")
+			return
+		}
+		writeJSON(w, 200, b)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	var b storage.MonitorBindings
+	if !decodeJSONBody(w, r, &b) {
+		return
+	}
+	if b.ProjectID != "" && b.ProjectID != project || b.ScenarioID != "" && b.ScenarioID != r.PathValue("id") {
+		writeError(w, 400, "monitor binding ownership mismatch")
+		return
+	}
+	b.ProjectID, b.ScenarioID = project, r.PathValue("id")
+	saved, err := store.SaveMonitorBindings(b, b.Revision)
+	if err != nil {
+		status := 400
+		if errors.Is(err, storage.ErrMonitorRevision) {
+			status = 409
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	s.recordAuditEvent(r, "monitor.bindings.save", "success", "scenario", b.ScenarioID, project, map[string]any{"revision": saved.Revision})
+	writeJSON(w, 200, saved)
+}
+
+func (s *Server) authorizeMonitorCollector(w http.ResponseWriter, r *http.Request) *storage.MonitoringCollector {
+	if s.store == nil {
+		writeError(w, 503, "storage unavailable")
+		return nil
+	}
+	c, ok := s.loadMonitoringCollector(w, r)
+	if !ok {
+		return nil
+	}
+	token := extractAPIKey(r)
+	if token == "" || subtle.ConstantTimeCompare([]byte(hashAPIKey(token)), []byte(c.TokenHash)) != 1 {
+		writeError(w, 401, "invalid collector token")
+		return nil
+	}
+	return c
+}
+
+func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request) {
+	c := s.authorizeMonitorCollector(w, r)
+	if c == nil {
+		return
+	}
+	store := s.runMonitorStore(w, c.ProjectID)
+	if store == nil {
+		return
+	}
+	key, err := monitorSigningKey()
+	if err != nil {
+		writeError(w, 503, err.Error())
+		return
+	}
+	now := time.Now().UTC()
+	if advertisement := r.Header.Get("X-APEX-Monitor-Readiness"); advertisement != "" {
+		var ad collectoragent.RunJobReadiness
+		if len(advertisement) > 8192 || json.Unmarshal([]byte(advertisement), &ad) != nil || ad.SigningKey != base64.StdEncoding.EncodeToString(key.Public().(ed25519.PublicKey)) {
+			writeError(w, 403, "collector signing-key readiness rejected")
+			return
+		}
+		if err := store.SaveCollectorRunReadiness(c.ProjectID, c.ID, ad.Packs, ad.Destinations, now); err != nil {
+			writeError(w, 400, "invalid collector readiness")
+			return
+		}
+	}
+	jobs, err := store.PollRunMonitorJobs(c.ProjectID, c.ID, now)
+	if err != nil {
+		writeError(w, 503, "cannot poll monitor jobs")
+		return
+	}
+	signed := []collectoragent.SignedRunJob{}
+	for _, j := range jobs {
+		lease := now.Add(time.Minute)
+		if j.ExpiresAt.Before(lease) {
+			lease = j.ExpiresAt
+		}
+		envelope, err := collectoragent.SignRunJob(collectoragent.RunJob{ID: j.ID, ProjectID: j.ProjectID, RunID: j.RunID, ScenarioID: j.ScenarioID, CollectorID: j.Source.CollectorID, SourceID: j.Source.ID, SourceRevision: j.Source.Revision, Pack: j.Source.Pack, Destination: j.Source.Destination, IntervalSeconds: j.Source.IntervalSeconds, StartedAt: j.StartedAt, ExpiresAt: j.ExpiresAt, LeaseExpiresAt: lease, NextSequence: j.NextSequence}, key)
+		if err != nil {
+			writeError(w, 503, "cannot sign monitor job")
+			return
+		}
+		signed = append(signed, envelope)
+	}
+	writeJSON(w, 200, signed)
+}
+
+func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request) {
+	c := s.authorizeMonitorCollector(w, r)
+	if c == nil {
+		return
+	}
+	store := s.runMonitorStore(w, c.ProjectID)
+	if store == nil {
+		return
+	}
+	if !s.requireAnalysisBackend(w) {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var batch collectoragent.RunSampleBatch
+	if !decodeJSONBody(w, r, &batch) {
+		return
+	}
+	key, err := monitorSigningKey()
+	if err != nil {
+		writeError(w, 503, err.Error())
+		return
+	}
+	now := time.Now().UTC()
+	grant, err := collectoragent.VerifyRunJob(batch.Job, key.Public().(ed25519.PublicKey), c.ID, now)
+	if err != nil || grant.ProjectID != c.ProjectID || grant.ID != r.PathValue("job_id") {
+		writeError(w, 403, "invalid monitor collection grant")
+		return
+	}
+	job, err := store.GetRunMonitorJob(c.ProjectID, grant.ID)
+	if err != nil {
+		writeError(w, 404, "monitor job unavailable")
+		return
+	}
+	if job.Source.CollectorID != c.ID || job.Source.ID != grant.SourceID || job.Source.Revision != grant.SourceRevision || job.RunID != grant.RunID || job.ScenarioID != grant.ScenarioID || len(batch.Points) < 1 || len(batch.Points) > 512 || batch.Sequence < 0 || batch.Sequence > grant.NextSequence {
+		writeError(w, 400, "monitor batch does not match job")
+		return
+	}
+	// Hash source observations before adding receive-time fields so retry
+	// identity does not depend on which replica accepted the request.
+	for i, p := range batch.Points {
+		if err := p.Validate(); err != nil || p.ProjectID != job.ProjectID || p.RunID != job.RunID || p.ScenarioID != job.ScenarioID || p.Source != job.Source.ID || p.DatasetID != "" || p.Host != c.ID || !p.ReceivedAt.IsZero() || p.ActiveRuntimeMS != nil {
+			writeError(w, 400, "invalid or misattributed monitor point")
+			return
+		}
+		canonical, err := analysis.NormalizeRunClock(p, job.StartedAt)
+		if err != nil {
+			writeError(w, 400, "invalid monitor run timestamp")
+			return
+		}
+		batch.Points[i] = canonical
+	}
+	body, err := json.Marshal(batch.Points)
+	if err != nil {
+		writeError(w, 400, "invalid monitor batch")
+		return
+	}
+	artifact, digest := monitorArtifactKey(job.ProjectID, job.RunID, body)
+	if batch.Sequence != job.NextSequence || job.State != "collecting" {
+		receipts, readErr := store.ListMonitorBatchReceipts(job.ProjectID, job.RunID, job.ID, batch.Sequence-1, 1)
+		if readErr == nil && len(receipts) == 1 && receipts[0].JobID == job.ID && receipts[0].Sequence == batch.Sequence && receipts[0].Digest == digest {
+			writeJSON(w, 200, map[string]any{"accepted": true, "sequence": batch.Sequence})
+			return
+		}
+		writeError(w, 409, "monitor sequence changed or collection has stopped")
+		return
+	}
+	if err = writeMonitorArtifact(r.Context(), artifact, body); err != nil {
+		writeError(w, 503, "monitor artifact persistence failed")
+		return
+	}
+	receipt := storage.MonitorBatchReceipt{JobID: job.ID, Sequence: batch.Sequence, Digest: digest, ArtifactKey: artifact, SampleCount: len(batch.Points), ReceivedAt: now}
+	if err = store.AcceptMonitorBatch(c.ProjectID, c.ID, receipt); err != nil {
+		writeError(w, 409, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"accepted": true, "sequence": batch.Sequence})
+}
+
+func (s *Server) handleRunMonitors(w http.ResponseWriter, r *http.Request) {
+	project, status, message := resolveTestProjectID(r, s.store)
+	if status != 0 {
+		writeError(w, status, message)
+		return
+	}
+	store := s.runMonitorStore(w, project)
+	if store == nil {
+		return
+	}
+	jobs, err := store.ListRunMonitorJobs(project, r.PathValue("id"))
+	if err != nil {
+		writeError(w, 500, "cannot load monitor jobs")
+		return
+	}
+	writeJSON(w, 200, jobs)
+}
+
+func (s *Server) handleRunMonitorSeries(w http.ResponseWriter, r *http.Request) {
+	project, status, message := resolveTestProjectID(r, s.store)
+	if status != 0 {
+		writeError(w, status, message)
+		return
+	}
+	store := s.runMonitorStore(w, project)
+	if store == nil {
+		return
+	}
+	if !s.requireAnalysisBackend(w) {
+		return
+	}
+	metric, source := r.URL.Query().Get("metric"), r.URL.Query().Get("source_id")
+	if metric == "" || source == "" {
+		writeError(w, 400, "metric and source_id are required")
+		return
+	}
+	selection := AnalysisSeriesSelection{Host: r.URL.Query().Get("host")}
+	if raw := r.URL.Query().Get("dimensions"); raw != "" {
+		if len(raw) > 8192 || json.Unmarshal([]byte(raw), &selection.Dimensions) != nil || len(selection.Dimensions) > 16 {
+			writeError(w, 400, "invalid bounded dimensions")
+			return
+		}
+		for k, v := range selection.Dimensions {
+			if k == "" || len(k) > 128 || len(v) > 128 {
+				writeError(w, 400, "invalid bounded dimensions")
+				return
+			}
+		}
+	}
+	receipts, err := store.ListMonitorBatchReceipts(project, r.PathValue("id"), r.URL.Query().Get("after_job"), parseMonitorSequence(r.URL.Query().Get("after_sequence")), 101)
+	if err != nil {
+		writeError(w, 500, "cannot load monitor evidence")
+		return
+	}
+	more := len(receipts) > 100
+	if more {
+		receipts = receipts[:100]
+	}
+	points := []analysis.MetricPoint{}
+	for _, receipt := range receipts {
+		body, err := readMonitorArtifact(r.Context(), receipt.ArtifactKey, receipt.Digest)
+		if err != nil {
+			writeError(w, 503, "monitor evidence unavailable or corrupt")
+			return
+		}
+		var batch []analysis.MetricPoint
+		if json.Unmarshal(body, &batch) != nil {
+			writeError(w, 503, "invalid monitor evidence")
+			return
+		}
+		for _, p := range batch {
+			if p.MetricName != metric || p.Source != source || !matchesAnalysisDimensions(p, selection) {
+				continue
+			}
+			p.ReceivedAt = receipt.ReceivedAt
+			p.Quality = monitorPointQuality(p, receipt.ReceivedAt)
+			if len(points) >= analysis.MaxSeriesPoints {
+				writeError(w, 422, "series page exceeds analysis limit")
+				return
+			}
+			points = append(points, p)
+		}
+	}
+	response := map[string]any{"points": points, "has_more": more}
+	if len(receipts) > 0 {
+		last := receipts[len(receipts)-1]
+		response["after_job"], response["after_sequence"] = last.JobID, last.Sequence
+	}
+	writeJSON(w, 200, response)
+}
+
+func parseMonitorSequence(raw string) int64 {
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return -1
+	}
+	return n
+}
+func monitorPointQuality(p analysis.MetricPoint, received time.Time) string {
+	if p.Quality == analysis.QualityMissing || p.Quality == analysis.QualityDropped {
+		return p.Quality
+	}
+	if p.TimestampUTC.After(received.Add(30 * time.Second)) {
+		return analysis.QualityClockSkewed
+	}
+	if p.TimestampUTC.Before(received.Add(-90 * time.Second)) {
+		return analysis.QualityStale
+	}
+	return p.Quality
+}

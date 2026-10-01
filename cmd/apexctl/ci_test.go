@@ -1169,20 +1169,24 @@ func TestEnforceRequiredCICheckRejectsMissingURL(t *testing.T) {
 }
 
 func TestExecuteControllerCIAbortsOnCancellation(t *testing.T) {
-	withCIRetryPolicy(t, 4, time.Millisecond, 2*time.Millisecond, 20*time.Millisecond, 20*time.Millisecond)
+	withCIRetryPolicy(t, 4, time.Millisecond, 2*time.Millisecond, time.Second, time.Second)
 	oldPoll := ciPollInterval
 	ciPollInterval = time.Hour
 	t.Cleanup(func() { ciPollInterval = oldPoll })
 	aborted := make(chan struct{}, 1)
+	created := make(chan struct{}, 1)
+	const idempotencyKey = "cancellation-test"
+	testID := deterministicCITestID("project-1", idempotencyKey)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs":
 			w.WriteHeader(http.StatusAccepted)
-			_, _ = io.WriteString(w, `{"schema_version":1,"test_id":"test-1","status":"RUNNING"}`)
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs/test-1/abort":
+			_ = json.NewEncoder(w).Encode(CIRunResponse{SchemaVersion: 1, TestID: testID, Status: "RUNNING"})
+			created <- struct{}{}
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs/"+testID+"/abort":
 			aborted <- struct{}{}
-			_, _ = io.WriteString(w, `{"schema_version":1,"test_id":"test-1","status":"ABORTED"}`)
+			_ = json.NewEncoder(w).Encode(CIRunResponse{SchemaVersion: 1, TestID: testID, Status: "ABORTED"})
 		default:
 			http.NotFound(w, r)
 		}
@@ -1193,6 +1197,7 @@ func TestExecuteControllerCIAbortsOnCancellation(t *testing.T) {
 	args := defaultCIArgs()
 	args.controllerURL, args.projectID, args.scriptPath = server.URL, "project-1", script
 	args.authMode, args.apiKey = "api-key", "key-1"
+	args.idempotencyKey = idempotencyKey
 	args.jsonPath = filepath.Join(filepath.Dir(script), "cancel-result.json")
 	args.junitPath = filepath.Join(filepath.Dir(script), "cancel-result.xml")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1201,14 +1206,26 @@ func TestExecuteControllerCIAbortsOnCancellation(t *testing.T) {
 	if err == nil || result.TestID == "" || result.Outcome != ciOutcomeCancelled || result.Status != "CANCELLED" {
 		t.Fatalf("pre-cancelled result=%#v err=%v", result, err)
 	}
+	select {
+	case <-aborted:
+	case <-time.After(time.Second):
+		t.Fatal("pre-cancelled run did not send its abort intent")
+	}
 
-	ctx, cancel = context.WithCancel(context.Background())
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	go func() {
-		time.Sleep(5 * time.Millisecond)
-		cancel()
+		// Cancel after the server accepted creation. The client may still be
+		// receiving the response, so use the controller's deterministic ID in
+		// both cases rather than relying on a five-millisecond scheduling race.
+		select {
+		case <-created:
+			cancel()
+		case <-ctx.Done():
+		}
 	}()
 	result, err = executeControllerCI(ctx, args, nil)
-	if err == nil || result.TestID != "test-1" {
+	if err == nil || result.TestID != testID || result.Outcome != ciOutcomeCancelled {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
 	select {

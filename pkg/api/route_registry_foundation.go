@@ -45,6 +45,8 @@ var systemFoundationAPIRouteCatalog = apiRouteCatalog{
 }
 
 var modularAPIRouteCatalogs = []apiRouteCatalog{
+	analysisAPIRouteCatalog,
+	runMonitoringAPIRouteCatalog,
 	documentationAPIRouteCatalog,
 	systemFoundationAPIRouteCatalog,
 	systemEntitlementsAPIRouteCatalog,

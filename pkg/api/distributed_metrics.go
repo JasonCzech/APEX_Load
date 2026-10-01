@@ -1056,8 +1056,10 @@ func cloneEngineServerTelemetrySummary(summary *engine.ServerTelemetrySummary) *
 		return nil
 	}
 	return &ServerTelemetrySummary{
+		DiagnosticFindings:        protocol.ProtocolDiagnosticFindings(summary.GRPC, summary.WebSocket),
 		FirstEventSamples:         summary.FirstEventSamples,
 		GRPC:                      summary.GRPC.Clone(),
+		WebSocket:                 summary.WebSocket.Clone(),
 		Samples:                   summary.Samples,
 		AvgServerProcessingMs:     summary.AvgServerProcessingMs,
 		AvgTransferMs:             summary.AvgTransferMs,
@@ -1111,6 +1113,7 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 		metrics.ServerTelemetry = &ServerTelemetrySummary{}
 	}
 	protocol.MergeGRPCDiagnostic(&metrics.ServerTelemetry.GRPC, telemetry.GRPC)
+	protocol.MergeWebSocketDiagnostic(&metrics.ServerTelemetry.WebSocket, telemetry.WebSocket)
 	// Reliability counters are run totals and accumulate for every record,
 	// including control-only ops (commit/rollback) that carry no measured sample.
 	metrics.ServerTelemetry.SendFailureCount += int64(telemetry.SendFailureCount)
@@ -1137,7 +1140,7 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 	metrics.ServerTelemetry.AvgResponsePayloadKB += telemetry.ResponsePayloadKB
 	incrementTelemetryHistogramCount(&metrics.ServerTelemetry.RequestPayloadHistogram, telemetry.RequestPayloadKB)
 	incrementTelemetryHistogramCount(&metrics.ServerTelemetry.ResponsePayloadHistogram, telemetry.ResponsePayloadKB)
-	if telemetry.GRPC == nil || telemetry.GRPC.FirstMessageMs != nil {
+	if (telemetry.GRPC == nil || telemetry.GRPC.FirstMessageMs != nil) && telemetry.WebSocket == nil {
 		metrics.ServerTelemetry.FirstEventSamples++
 		metrics.ServerTelemetry.AvgFirstEventMs += telemetry.FirstEventMs
 	}

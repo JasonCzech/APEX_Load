@@ -21,6 +21,7 @@ import (
 //
 // Keys are "<function>/<StoreMethod>".
 var testStoreWriteCallSitesOffLock = map[string]string{
+	"saveManagedTestRecordSnapshot/SaveTestWithRunMonitors":                                             "same snapshot path: callers wrap the whole projection and atomic monitor write in trackDurableWrite",
 	"saveManagedTestStartSnapshot/SaveTest":                                                             "persistManagedTestStartOutsideLockLocked releases tr.mu around this call (testexecution.go)",
 	"saveManagedTestStartSnapshot/SaveTestStartIfExecutionLeaseHeldAndNoDeploymentLease":                "same start path: tr.mu is released across the durable start transition",
 	"saveManagedTestStartSnapshot/SaveTestStartIfNoDeploymentLease":                                     "same start path: tr.mu is released across the durable start transition",

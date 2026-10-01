@@ -77,6 +77,9 @@ type RunArchiveManifest struct {
 	TestNotesFile                     string                             `json:"test_notes_file,omitempty"`
 	ELKEvidenceFile                   string                             `json:"elk_evidence_file,omitempty"`
 	DynatraceEvidenceFile             string                             `json:"dynatrace_evidence_file,omitempty"`
+	MonitorEvidenceFile               string                             `json:"monitor_evidence_file,omitempty"`
+	MonitorEvidenceCount              int64                              `json:"monitor_evidence_count,omitempty"`
+	MonitorCoverage                   []RunMonitorCoverage               `json:"monitor_coverage,omitempty"`
 	Artifacts                         []RunArchiveArtifact               `json:"artifacts,omitempty"`
 	TransactionCount                  int64                              `json:"transaction_count"`
 	ResourceSampleCount               int64                              `json:"resource_sample_count"`
@@ -777,18 +780,21 @@ type RunArchiveTelemetrySummary struct {
 }
 
 type RunArchiveActionStats struct {
-	Transactions  int64   `json:"transactions"`
-	Errors        int64   `json:"errors"`
-	ErrorPct      float64 `json:"error_pct"`
-	AvgResponseMs float64 `json:"avg_response_ms"`
-	MinResponseMs float64 `json:"min_response_ms"`
-	MaxResponseMs float64 `json:"max_response_ms"`
-	PeakTPS       float64 `json:"peak_tps,omitempty"`
-	P50Ms         float64 `json:"p50_ms,omitempty"`
-	P90Ms         float64 `json:"p90_ms,omitempty"`
-	P95Ms         float64 `json:"p95_ms,omitempty"`
-	P99Ms         float64 `json:"p99_ms,omitempty"`
-	durations     []float64
+	GRPC               *protocol.GRPCSummary        `json:"grpc,omitempty"`
+	WebSocket          *protocol.WebSocketSummary   `json:"websocket,omitempty"`
+	DiagnosticFindings []protocol.DiagnosticFinding `json:"diagnostic_findings,omitempty"`
+	Transactions       int64                        `json:"transactions"`
+	Errors             int64                        `json:"errors"`
+	ErrorPct           float64                      `json:"error_pct"`
+	AvgResponseMs      float64                      `json:"avg_response_ms"`
+	MinResponseMs      float64                      `json:"min_response_ms"`
+	MaxResponseMs      float64                      `json:"max_response_ms"`
+	PeakTPS            float64                      `json:"peak_tps,omitempty"`
+	P50Ms              float64                      `json:"p50_ms,omitempty"`
+	P90Ms              float64                      `json:"p90_ms,omitempty"`
+	P95Ms              float64                      `json:"p95_ms,omitempty"`
+	P99Ms              float64                      `json:"p99_ms,omitempty"`
+	durations          []float64
 }
 
 type RunArchiveResourcePeaks struct {

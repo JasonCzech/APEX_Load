@@ -13,13 +13,16 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+var stagingPreflightFixtureID atomic.Int32
+
 type stagingRejectingPreflightProtocol struct {
+	name           string
 	preflightCalls *atomic.Int32
 	initCalls      *atomic.Int32
 	expectedConfig string
 }
 
-func (*stagingRejectingPreflightProtocol) Name() string { return "staging_preflight_rejection_test" }
+func (p *stagingRejectingPreflightProtocol) Name() string { return p.name }
 func (p *stagingRejectingPreflightProtocol) Init(context.Context, map[string]any) error {
 	p.initCalls.Add(1)
 	return nil
@@ -45,15 +48,16 @@ func TestAssignmentRuntimePreflightRejectsBeforeAtomicCommitOrVUserInit(t *testi
 	var preflightCalls atomic.Int32
 	var initCalls atomic.Int32
 	const resolvedSecret = "https://runtime-secret.example.test/sensitive"
-	protocol.Register("staging_preflight_rejection_test", func() protocol.Protocol {
-		return &stagingRejectingPreflightProtocol{preflightCalls: &preflightCalls, initCalls: &initCalls, expectedConfig: resolvedSecret}
+	name := fmt.Sprintf("staging_preflight_rejection_test_%d", stagingPreflightFixtureID.Add(1))
+	protocol.Register(name, func() protocol.Protocol {
+		return &stagingRejectingPreflightProtocol{name: name, preflightCalls: &preflightCalls, initCalls: &initCalls, expectedConfig: resolvedSecret}
 	})
 	service := newIsolatedService(t, 10, WithExecution())
 	ack, err := service.AssignWork(context.Background(), &pb.WorkAssignment{
 		TestId:         "runtime-preflight-reject",
 		GroupName:      "default",
 		ScriptId:       "runtime-preflight-script",
-		ScriptContent:  []byte(`{"name":"preflight","protocol":"staging_preflight_rejection_test","config":{"base_url":"{{secret.RUNTIME_URL}}"},"actions":[{"name":"request","type":"request","method":"GET","target":"/"}]}`),
+		ScriptContent:  []byte(fmt.Sprintf(`{"name":"preflight","protocol":"%s","config":{"base_url":"{{secret.RUNTIME_URL}}"},"actions":[{"name":"request","type":"request","method":"GET","target":"/"}]}`, name)),
 		VuserCount:     2,
 		SecretBundle:   map[string]string{"RUNTIME_URL": resolvedSecret},
 		SecretBundleId: "runtime-preflight-secrets",
@@ -79,5 +83,29 @@ func TestAssignmentRuntimePreflightRejectsBeforeAtomicCommitOrVUserInit(t *testi
 	service.mu.RUnlock()
 	if committed || pending {
 		t.Fatalf("rejected assignment committed=%v pending=%v", committed, pending)
+	}
+}
+
+func TestPreparationAssignmentDefersRuntimePreflight(t *testing.T) {
+	clearTransportEnv(t)
+	var preflightCalls, initCalls atomic.Int32
+	name := fmt.Sprintf("staging_preflight_rejection_test_%d", stagingPreflightFixtureID.Add(1))
+	protocol.Register(name, func() protocol.Protocol {
+		return &stagingRejectingPreflightProtocol{name: name, preflightCalls: &preflightCalls, initCalls: &initCalls, expectedConfig: "https://example.test"}
+	})
+	service := newIsolatedService(t, 10, WithExecution())
+	assignment := &pb.WorkAssignment{TestId: "prepared", GroupName: "default", ScriptId: "script", VuserCount: 1, PrepareOnly: true,
+		ScriptContent: []byte(fmt.Sprintf(`{"name":"preflight","protocol":"%s","config":{"base_url":"https://example.test"},"actions":[{"name":"request","type":"request","method":"GET","target":"/"}]}`, name))}
+	fingerprint := workAssignmentFingerprint(assignment)
+	ack, err := service.AssignWork(context.Background(), assignment)
+	if err != nil || !ack.GetAccepted() {
+		t.Fatalf("prepare: %v %v", ack, err)
+	}
+	if preflightCalls.Load() != 0 || initCalls.Load() != 0 {
+		t.Fatal("preparation invoked runtime")
+	}
+	assignment.PrepareOnly = false
+	if workAssignmentFingerprint(assignment) == fingerprint {
+		t.Fatal("prepare and execute have identical retry identities")
 	}
 }

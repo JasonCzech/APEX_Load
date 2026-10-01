@@ -51,7 +51,9 @@ func (w *WebSocket) registerCallback(ctx context.Context) error {
 }
 func (w *WebSocket) readCallbacks(ctx context.Context, conn *gorilla.Conn, state *callbackState) {
 	for {
+		readStart := time.Now()
 		kind, body, err := conn.ReadMessage()
+		receivedAt := time.Now()
 		w.mu.Lock()
 		if ctx.Err() != nil || w.callbacks != state || w.connectionEpoch != state.epoch {
 			w.mu.Unlock()
@@ -69,7 +71,7 @@ func (w *WebSocket) readCallbacks(ctx context.Context, conn *gorilla.Conn, state
 			_ = conn.Close()
 			return
 		}
-		state.queue = append(state.queue, protocol.CallbackMessage{Generation: state.epoch, Body: text, MessageType: kind, BytesReceived: int64(len(body))})
+		state.queue = append(state.queue, protocol.CallbackMessage{ReceivedAt: receivedAt, Diagnostics: &protocol.WebSocketDiagnostics{Operation: "ws_callback", MessageType: wsMessageType(kind), ReceiveMs: wsElapsed(readStart), MessagesReceived: 1, BytesReceived: int64(len(body)), CallbackMode: true}, Generation: state.epoch, Body: text, MessageType: kind, BytesReceived: int64(len(body))})
 		state.bytes += len(text)
 		w.mu.Unlock()
 	}

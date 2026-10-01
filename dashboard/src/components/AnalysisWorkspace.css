@@ -1,0 +1,13 @@
+.analysis-workspace { width: 100%; min-width: 0; }
+.analysis-columns { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(0, 4fr); gap: 24px; }
+.analysis-workspace fieldset { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; padding: 16px; border: 1px solid var(--border-color, #666); border-radius: 8px; }
+.analysis-workspace label { display: flex; gap: 6px; flex-direction: column; font-size: 13px; }
+.analysis-measure { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; width: 100%; }
+.analysis-table { overflow: auto; max-height: 220px; }
+.analysis-table table { border-collapse: collapse; width: 100%; }
+.analysis-table th, .analysis-table td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border-color, #666); white-space: nowrap; }
+.analysis-table small { display: block; font-weight: normal; }
+.analysis-chart { min-width: 0; margin: 18px 0; }
+@media (max-width: 760px) { .analysis-columns { grid-template-columns: 1fr; } }
+
+.monitor-card-full { grid-column: 1 / -1; }

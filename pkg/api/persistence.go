@@ -2056,6 +2056,34 @@ func (tr *TestRunner) saveManagedTestRecordSnapshot(record *storage.TestRecord, 
 	if record == nil {
 		return fmt.Errorf("test record is required")
 	}
+	if runMonitoringEnabled(record.ProjectID) {
+		store, ok := tr.testStore.(interface {
+			SaveTestWithRunMonitors(*storage.TestRecord, string, string, bool) (bool, error)
+		})
+		if !ok {
+			return fmt.Errorf("run monitoring requires atomic execution persistence")
+		}
+		leaseName := ""
+		if tr.durableExecutionFence {
+			if strings.TrimSpace(executionFence) == "" {
+				return errNotExecutionLeader
+			}
+			leaseName = executionLeaseName
+		}
+		if record.Status == "RUNNING" {
+			if _, err := monitorSigningKey(); err != nil {
+				return err
+			}
+		}
+		saved, err := store.SaveTestWithRunMonitors(record, leaseName, executionFence, isTerminalTestStatus(record.Status))
+		if err != nil {
+			return err
+		}
+		if !saved {
+			return errNotExecutionLeader
+		}
+		return nil
+	}
 	if tr.durableExecutionFence {
 		if strings.TrimSpace(executionFence) == "" {
 			return fmt.Errorf("%w: test %s has no claimed execution epoch", errNotExecutionLeader, record.ID)

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -611,6 +612,8 @@ func cloneTxMetricsMap(in map[string]*TxMetrics) map[string]*TxMetrics {
 		if tx.ServerTelemetry != nil {
 			telemetry := *tx.ServerTelemetry
 			telemetry.GRPC = telemetry.GRPC.Clone()
+			telemetry.WebSocket = telemetry.WebSocket.Clone()
+			telemetry.DiagnosticFindings = protocol.ProtocolDiagnosticFindings(telemetry.GRPC, telemetry.WebSocket)
 			telemetry.RequestSizeClasses = cloneTelemetryClassCounts(tx.ServerTelemetry.RequestSizeClasses)
 			telemetry.ResponseSizeClasses = cloneTelemetryClassCounts(tx.ServerTelemetry.ResponseSizeClasses)
 			telemetry.RequestPayloadHistogram = cloneTelemetryClassCounts(tx.ServerTelemetry.RequestPayloadHistogram)

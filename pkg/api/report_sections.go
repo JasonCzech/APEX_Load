@@ -340,7 +340,7 @@ func firstNonEmptyReportText(values ...string) string {
 // markup/lines from the previously-bespoke per-profile renderers into a single
 // shared, profile-agnostic fragment.
 func buildReportSectionRegistry() map[string]reportSectionRenderer {
-	reg := map[string]reportSectionRenderer{}
+	reg := map[string]reportSectionRenderer{"protocol_diagnostics": protocolDiagnosticReportSection()}
 	add := func(r reportSectionRenderer) {
 		r.HTML = htmlSectionRenderer(r.ID)
 		reg[r.ID] = r

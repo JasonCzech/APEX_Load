@@ -9,8 +9,12 @@ package collectoragent
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/analysis"
 	"io"
 	"log/slog"
 	"math"
@@ -27,12 +31,17 @@ import (
 
 // Config configures a collector agent.
 type Config struct {
-	ControllerURL string
-	CollectorID   string
-	Token         string
-	Interval      time.Duration
-	Packs         []string
-	HTTPClient    *http.Client
+	// ControllerPublicKey enables signed run-bound collection. In this mode
+	// heartbeats report availability only and never poll monitor sources.
+	ControllerPublicKey ed25519.PublicKey
+	// SpoolDirectory durably retains at most one unacknowledged batch per job.
+	SpoolDirectory string
+	ControllerURL  string
+	CollectorID    string
+	Token          string
+	Interval       time.Duration
+	Packs          []string
+	HTTPClient     *http.Client
 	// PrometheusURL is an explicitly configured scrape endpoint. It is required
 	// when the prometheus pack is enabled; credentials must not be put in the URL.
 	PrometheusURL string
@@ -45,8 +54,10 @@ type Config struct {
 
 // Agent pushes heartbeats to the controller on an interval.
 type Agent struct {
-	cfg    Config
-	client *http.Client
+	cfg            Config
+	client         *http.Client
+	pendingBatches map[string]*RunSampleBatch
+	nextCollection map[string]time.Time
 }
 
 type metricPack struct {
@@ -58,8 +69,12 @@ type metricPack struct {
 }
 
 type sampleMetadata struct {
-	Kind      string     `json:"kind"`
-	Timestamp *time.Time `json:"timestamp,omitempty"`
+	Name       string            `json:"name,omitempty"`
+	Dimensions map[string]string `json:"dimensions,omitempty"`
+	Unit       string            `json:"unit,omitempty"`
+	Quality    string            `json:"quality,omitempty"`
+	Kind       string            `json:"kind"`
+	Timestamp  *time.Time        `json:"timestamp,omitempty"`
 }
 
 type heartbeat struct {
@@ -123,7 +138,11 @@ func New(cfg Config) (*Agent, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &Agent{cfg: cfg, client: client}, nil
+	if len(cfg.ControllerPublicKey) != 0 && len(cfg.ControllerPublicKey) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("invalid controller monitor public key")
+	}
+	cfg.ControllerPublicKey = append(ed25519.PublicKey(nil), cfg.ControllerPublicKey...)
+	return &Agent{cfg: cfg, client: client, pendingBatches: map[string]*RunSampleBatch{}, nextCollection: map[string]time.Time{}}, nil
 }
 
 // validateControllerURL rejects a controller URL that would leak the collector
@@ -166,7 +185,19 @@ func isLoopbackHost(host string) bool {
 
 // Run pushes a heartbeat immediately, then on every tick until ctx is cancelled.
 func (a *Agent) Run(ctx context.Context) error {
-	ticker := time.NewTicker(a.cfg.Interval)
+	unlock, err := a.lockSpool(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err = a.loadSpool(); err != nil {
+		return err
+	}
+	interval := a.cfg.Interval
+	if len(a.cfg.ControllerPublicKey) > 0 {
+		interval = min(interval, time.Second)
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	a.tick(ctx)
 	for {
@@ -180,6 +211,17 @@ func (a *Agent) Run(ctx context.Context) error {
 }
 
 func (a *Agent) tick(ctx context.Context) {
+	if len(a.cfg.ControllerPublicKey) > 0 {
+		if err := a.pushHeartbeat(ctx, heartbeat{Health: "healthy"}); err != nil {
+			slog.Warn("collector heartbeat failed", "err", err)
+			return
+		}
+		if err := a.runJobTick(ctx); err != nil {
+			slog.Warn("collector run monitoring degraded", "err", err)
+			_ = a.pushHeartbeat(ctx, heartbeat{Health: "degraded"})
+		}
+		return
+	}
 	hb, collectErr := a.collect(ctx)
 	if collectErr != nil {
 		slog.Warn("collector metric collection degraded", "collector_id", a.cfg.CollectorID, "err", collectErr)
@@ -334,12 +376,16 @@ func (a *Agent) prometheusSamples(ctx context.Context) (metricPack, error) {
 	if len(body) > maxPrometheusBodyBytes {
 		return metricPack{}, fmt.Errorf("scrape exceeds %d bytes", maxPrometheusBodyBytes)
 	}
-	return parsePrometheusScalars(string(body))
+	return parsePrometheusScalarSet(string(body), len(a.cfg.ControllerPublicKey) > 0)
 }
 
 // parsePrometheusScalars accepts only unlabeled finite samples. Labeled
 // measurements need bounded dimension handling before they can be admitted.
 func parsePrometheusScalars(body string) (metricPack, error) {
+	return parsePrometheusScalarSet(body, false)
+}
+
+func parsePrometheusScalarSet(body string, labeled bool) (metricPack, error) {
 	pack := metricPack{Samples: make(map[string]float64), SampleMetadata: make(map[string]sampleMetadata)}
 	if len(body) > maxPrometheusBodyBytes {
 		return metricPack{}, fmt.Errorf("scrape exceeds %d bytes", maxPrometheusBodyBytes)
@@ -372,26 +418,45 @@ func parsePrometheusScalars(body string) (metricPack, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		var dimensions map[string]string
+		if labeled && strings.Contains(line, "{") {
+			var err error
+			line, dimensions, err = parsePrometheusLabels(line)
+			if err != nil {
+				return metricPack{}, err
+			}
+		}
 		fields := strings.Fields(line)
 		if len(fields) < 2 || strings.ContainsAny(fields[0], "{}") {
 			pack.SkippedSamples++
 			continue
 		}
 		name := fields[0]
+		key := name
+		if len(dimensions) > 0 {
+			data, _ := json.Marshal(dimensions)
+			hash := sha256.Sum256(data)
+			key = name + "_" + hex.EncodeToString(hash[:])
+		}
 		if len(fields) > 3 || len(name) > 128 || !validPrometheusMetricName(name) {
 			return metricPack{}, fmt.Errorf("invalid Prometheus sample syntax")
 		}
-		if _, exists := pack.Samples[name]; exists {
+		if _, exists := pack.Samples[key]; exists {
 			return metricPack{}, fmt.Errorf("duplicate Prometheus sample")
 		}
 		value, err := strconv.ParseFloat(fields[1], 64)
 		if err != nil {
 			return metricPack{}, fmt.Errorf("invalid Prometheus sample value")
 		}
-		if math.IsInf(value, 0) || math.IsNaN(value) {
+		missing := math.IsInf(value, 0) || math.IsNaN(value)
+		if missing && !labeled {
 			pack.SkippedSamples++
 			continue
 		}
+		if missing {
+			value = 0
+		} // The metric-point adapter omits this placeholder.
+
 		if len(pack.Samples) >= maxPrometheusSamples {
 			return metricPack{}, fmt.Errorf("scrape exceeds %d accepted samples", maxPrometheusSamples)
 		}
@@ -411,6 +476,14 @@ func parsePrometheusScalars(body string) (metricPack, error) {
 			kind = "unknown"
 		}
 		metadata := sampleMetadata{Kind: kind}
+		if labeled {
+			metadata.Name = name
+			metadata.Dimensions = dimensions
+			metadata.Unit = prometheusUnit(name)
+			if missing {
+				metadata.Quality = analysis.QualityMissing
+			}
+		}
 		if len(fields) == 3 {
 			millis, err := strconv.ParseInt(fields[2], 10, 64)
 			if err != nil {
@@ -422,7 +495,7 @@ func parsePrometheusScalars(body string) (metricPack, error) {
 			}
 			metadata.Timestamp = &at
 		}
-		pack.Samples[name], pack.SampleMetadata[name] = value, metadata
+		pack.Samples[key], pack.SampleMetadata[key] = value, metadata
 	}
 	if len(pack.Samples) == 0 {
 		return metricPack{}, fmt.Errorf("scrape contained no supported unlabeled finite samples")

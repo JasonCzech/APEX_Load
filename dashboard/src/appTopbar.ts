@@ -44,6 +44,7 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
     case 'results':
       return 'Results Library'
     case 'monitoring':
+      if (view.category === 'analysis') return 'Analysis'
       return view.category === 'telemetry' ? 'Telemetry' : 'Monitoring'
     case 'fleet':
       return 'Fleet'

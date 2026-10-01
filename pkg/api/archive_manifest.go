@@ -45,6 +45,7 @@ func archiveManifestArtifactNames(manifest *RunArchiveManifest) (map[string]stru
 		manifest.TestNotesFile,
 		manifest.ELKEvidenceFile,
 		manifest.DynatraceEvidenceFile,
+		manifest.MonitorEvidenceFile,
 		"manifest.json",
 	} {
 		if strings.TrimSpace(name) == "" {
@@ -96,6 +97,9 @@ func validateRunArchiveManifestArtifacts(manifest *RunArchiveManifest) error {
 		return err
 	}
 	if manifest.DynatraceEvidenceFile, err = optionalArchiveArtifactName("dynatrace_evidence_file", manifest.DynatraceEvidenceFile); err != nil {
+		return err
+	}
+	if manifest.MonitorEvidenceFile, err = optionalArchiveArtifactName("monitor_evidence_file", manifest.MonitorEvidenceFile); err != nil {
 		return err
 	}
 	return nil

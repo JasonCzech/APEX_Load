@@ -1,4 +1,6 @@
 import MonitoringEvidenceCard from './MonitoringEvidenceCard'
+import AnalysisWorkspace from './AnalysisWorkspace'
+import { RunMonitorSources } from './RunMonitoring'
 import ThresholdIncidentPanel from './ThresholdIncidentPanel'
 import type { IncidentHealth } from './thresholdIncidentModel'
 import { readCalendarPreferences, saveCalendarPreferences, requestMonitoringTabFocus } from './monitoringWorkspaceModel'
@@ -40,6 +42,7 @@ interface Props {
   onSelectTest?: (id: string) => void
   canManageSystem?: boolean
   canManageProjects?: boolean
+  canManageTests?: boolean
   initialCategoryId?: MonitorCategoryId
   activeCategoryId?: MonitorCategoryId
   onCategoryChange?: (categoryId: MonitorCategoryId) => void
@@ -56,8 +59,9 @@ const MONITOR_CATEGORIES = [
   // Cloud connections and execution targets are the normalized path; the
   // cluster registry remains available unchanged for Kubernetes deployments.
   { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts', 'fleet-audit'] },
-  { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections'] },
+  { id: 'telemetry', label: 'Telemetry', cardIds: ['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections'] },
   { id: 'alerts', label: 'Alerts', cardIds: ['production-readiness', 'threshold-alerts', 'fleet-alerts', 'telemetry-diagnostics'] },
+  { id: 'analysis', label: 'Analysis', cardIds: ['parquet-analysis'] },
   { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar'] },
 ] as const
 
@@ -426,7 +430,7 @@ function restartErrorMessage(error: unknown): string {
   return 'Restart request failed.'
 }
 
-export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, canManageProjects = false, initialCategoryId = 'overview', activeCategoryId: controlledCategoryId, onCategoryChange, onScheduleForDate, fleetEventSignal = 0 }: Props) {
+export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, canManageProjects = false, canManageTests = false, initialCategoryId = 'overview', activeCategoryId: controlledCategoryId, onCategoryChange, onScheduleForDate, fleetEventSignal = 0 }: Props) {
   const api = useApi()
   const { runGuarded } = useNavigationGuardRunner()
   const { activeProject } = useProject()
@@ -1059,6 +1063,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   }, [api, refresh, restartAction])
 
   const cards = useMemo<MonitorCard[]>(() => [
+    { id: 'run-monitor-sources', title: 'Run monitor sources', icon: <span aria-hidden="true">M</span>, content: <RunMonitorSources key={activeProjectId} projectId={activeProjectId} canManage={canManageProjects} /> },
+    { id: 'parquet-analysis', title: 'Analysis workspace', icon: <span aria-hidden="true">PT</span>, content: <AnalysisWorkspace key={activeProjectId} projectId={activeProjectId} canEdit={canManageTests} /> },
     {
       id: 'system-health',
       title: 'Control Plane',
@@ -1670,7 +1676,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       content: <DynatraceConnectionsCard summaryOnly projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} />,
     },
 
-  ], [activeProjectId, activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, showQueuedRuns, canManageProjects, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, toggleFleetAlertAck, websocketLabel, websocketValueClass])
+  ], [activeProjectId, activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, showQueuedRuns, canManageTests, canManageProjects, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, toggleFleetAlertAck, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => {
@@ -1885,7 +1891,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           <div
             key={card.id}
             data-card-id={card.id}
-            className={`monitor-card${staleCardIds.includes(card.id) ? ' stale' : ''}`}
+            className={`monitor-card${card.id === 'parquet-analysis' ? ' monitor-card-full' : ''}${staleCardIds.includes(card.id) ? ' stale' : ''}`}
           >
             <div className="monitor-header">
               {card.icon}

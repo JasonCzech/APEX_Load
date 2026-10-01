@@ -33,6 +33,9 @@ var apexctlCommandHandlers = map[string]func(){
 	"github":       githubCmd,
 	"import":       importCmd,
 	"library":      libraryCmd,
+	"prepare":      prepareCmd,
+	"monitor":      monitorCmd,
+	"analysis":     analysisCmd,
 }
 
 func main() {
@@ -417,6 +420,9 @@ Commands:
   github    Inspect and run GitHub Enterprise sync/check workflows
   import    Import Bruno collections or Grafana dashboards
   library   Export or import portable project library bundles
+  prepare   Prepare, inspect, renew, cancel, or start a prepared run
+  monitor   Configure run-bound monitoring sources and scenario bindings
+  analysis  Import Parquet datasets and query, compare, or save analysis definitions
   version   Print version information
   help      Show this help
 

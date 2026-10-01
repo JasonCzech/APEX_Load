@@ -228,6 +228,13 @@ VERSION="${VERSION:-$("${ROOT_DIR}/scripts/resolve-version.sh" 2>/dev/null || ec
 COMMIT="${COMMIT:-$(git -C "${ROOT_DIR}" rev-parse HEAD 2>/dev/null || echo unknown)}"
 BUILD_TIME="${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 WAILS_BUILD_TAGS="${WAILS_BUILD_TAGS:-}"
+# Published desktop clients include embedded analytical operations. The generic
+# controller retains a separate CGO-free profile with unavailable capability.
+case ",${WAILS_BUILD_TAGS}," in
+  *,analytics_duckdb,*) ;;
+  *) WAILS_BUILD_TAGS="${WAILS_BUILD_TAGS:+${WAILS_BUILD_TAGS},}analytics_duckdb" ;;
+esac
+export CGO_ENABLED=1
 if [[ "${TARGET_GOOS}" == "linux" ]]; then
   # webkit2_41 is part of the Linux package ABI contract, not an optional
   # default. Canonicalize caller whitespace/comma separators, then ensure the

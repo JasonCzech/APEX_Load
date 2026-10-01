@@ -128,11 +128,13 @@ func TestInterruptedEvacuationRecoveryRequiresEveryProcessFence(t *testing.T) {
 				t.Fatal(err)
 			}
 			tr.resumeAdoptedRuns()
+			sourceMustBeFenced := phase == runEvacuationPhasePrepared || phase == runEvacuationPhaseStaged
 			deadline := time.Now().Add(3 * time.Second)
-			for replacement.claims.Load() == 0 && time.Now().Before(deadline) {
+			// Process fences run concurrently; observing the replacement call
+			// does not establish that the source goroutine has been scheduled.
+			for (replacement.claims.Load() == 0 || sourceMustBeFenced && source.claims.Load() == 0) && time.Now().Before(deadline) {
 				time.Sleep(5 * time.Millisecond)
 			}
-			sourceMustBeFenced := phase == runEvacuationPhasePrepared || phase == runEvacuationPhaseStaged
 			if (source.claims.Load() > 0) != sourceMustBeFenced || replacement.claims.Load() == 0 {
 				t.Fatalf("process fences did not match durable phase proof: source=%d replacement=%d phase=%s", source.claims.Load(), replacement.claims.Load(), phase)
 			}

@@ -441,6 +441,10 @@ func finalizeArchiveSOAPPayloadTimelineBucket(bucket RunArchiveSOAPPayloadTimeli
 }
 
 func mergeRunArchiveActionStats(stats RunArchiveActionStats, quantiles *archiveQuantileAccumulator, tx TransactionEvent) RunArchiveActionStats {
+	if tx.ServerTelemetry != nil {
+		protocol.MergeGRPCDiagnostic(&stats.GRPC, tx.ServerTelemetry.GRPC)
+		protocol.MergeWebSocketDiagnostic(&stats.WebSocket, tx.ServerTelemetry.WebSocket)
+	}
 	stats.Transactions++
 	stats.AvgResponseMs += tx.DurationMs
 	quantiles.Add(tx.DurationMs)
@@ -457,6 +461,7 @@ func mergeRunArchiveActionStats(stats RunArchiveActionStats, quantiles *archiveQ
 }
 
 func finalizeRunArchiveActionStats(stats RunArchiveActionStats, quantiles *archiveQuantileAccumulator) RunArchiveActionStats {
+	stats.DiagnosticFindings = protocol.ProtocolDiagnosticFindings(stats.GRPC, stats.WebSocket)
 	if stats.Transactions > 0 {
 		stats.ErrorPct = float64(stats.Errors) / float64(stats.Transactions) * 100
 		stats.AvgResponseMs = stats.AvgResponseMs / float64(stats.Transactions)

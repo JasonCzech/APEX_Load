@@ -81,6 +81,7 @@ import { ScenarioCompositionTimeline, type CompositionTimelineGroup } from './Sc
 import TrafficProfileSourcePanel from './TrafficProfileSourcePanel'
 import CSVDrivenSourcePanel from './CSVDrivenSourcePanel'
 import ScenarioDataBindings from './ScenarioDataBindings'
+import { ScenarioMonitorBindings } from './RunMonitoring'
 import { dataBindingErrors } from './scenarioDataBindingModel'
 import NewTestReadiness from './NewTestReadiness'
 import { formatTrafficProfileAxisTime } from './trafficProfilePreviewModel'
@@ -4526,6 +4527,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             }}>{poolCreating ? 'Creating…' : createdPoolId ? 'Retry adding first row' : 'Create and attach data pool'}</button>
           </details>
 
+          {editingId && activeProjectId && <ScenarioMonitorBindings key={editingId} projectId={activeProjectId} scenarioId={editingId} canEdit={canManageTests} />}
           <ScenarioDataBindings bindings={scenarioBindings} pools={dataPools} scripts={scripts.filter(script => form.groups.some(group => group.script_id === script.id))} canManage={canManageScripts} onChange={updateDataBindings} />
         </section>
       )

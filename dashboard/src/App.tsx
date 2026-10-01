@@ -3483,6 +3483,7 @@ function AppShell({
               )}
               {view.page === "test" && !routeAssetScopeBlocked && (
                 <TestExecution
+                  canManageTests={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false)}
                   testId={view.testId}
                   history={metricsHistory[view.testId] || []}
                   initialWorkspaceTabId={view.tab}
@@ -3554,6 +3555,7 @@ function AppShell({
                   view.page === "fleet" ||
                   view.page === "schedules") && (
                 <MonitoringPage
+                  canManageTests={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false)}
                   connectionState={connectionState}
                   telemetryDiagnostics={telemetryDiagnostics}
                   thresholdAlerts={thresholdAlerts}

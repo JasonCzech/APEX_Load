@@ -53,6 +53,7 @@ type MetricPoint struct {
 	ActiveRuntimeMS *int64            `json:"active_runtime_ms,omitempty"`
 	MetricName      string            `json:"metric_name"`
 	Kind            string            `json:"kind"`
+	InputKind       string            `json:"input_kind,omitempty"` // Original semantics for derived bucket gauges.
 	Value           *float64          `json:"value,omitempty"`
 	Unit            string            `json:"unit,omitempty"`
 	Dimensions      map[string]string `json:"dimensions,omitempty"`
@@ -96,6 +97,11 @@ func (p MetricPoint) Validate() error {
 	case KindUnknown, KindGauge, KindCounter, KindObservation, KindHistogram, KindSummary:
 	default:
 		return fmt.Errorf("unsupported metric kind %q", p.Kind)
+	}
+	if p.InputKind != "" {
+		if p.Kind != KindGauge || (p.InputKind != KindCounter && p.InputKind != KindGauge && p.InputKind != KindObservation) {
+			return errors.New("invalid derived measurement semantics")
+		}
 	}
 	switch p.Quality {
 	case QualityValid, QualityStale, QualityClockSkewed:
@@ -149,7 +155,7 @@ type AlignedPair struct {
 func sameMetric(a, b MetricPoint) bool {
 	return a.ProjectID == b.ProjectID && a.Source == b.Source &&
 		a.ScenarioID == b.ScenarioID && a.Host == b.Host && a.Service == b.Service &&
-		a.MetricName == b.MetricName && a.Kind == b.Kind && a.Unit == b.Unit &&
+		a.MetricName == b.MetricName && a.Kind == b.Kind && a.InputKind == b.InputKind && a.Unit == b.Unit &&
 		maps.Equal(a.Dimensions, b.Dimensions)
 }
 

@@ -14,6 +14,7 @@ require (
 	github.com/antchfx/xpath v1.3.6
 	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/dop251/goja v0.0.0-20260917113740-793a2a65c13b
+	github.com/duckdb/duckdb-go/v2 v2.10506.0
 	github.com/go-jose/go-jose/v3 v3.0.5
 	github.com/go-ldap/ldap/v3 v3.4.13
 	github.com/google/cel-go v0.29.2
@@ -47,16 +48,26 @@ require (
 
 require (
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
+	github.com/apache/arrow-go/v18 v18.5.1 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.2.3 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/dlclark/regexp2/v2 v2.5.2 // indirect
+	github.com/duckdb/duckdb-go-bindings v0.10506.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.10506.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.10506.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.10506.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.10506.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.10506.0 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
-	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
+	github.com/goccy/go-json v0.10.5 // indirect
+	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
@@ -65,11 +76,14 @@ require (
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/xuri/efp v0.0.1 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
+	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.43.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
-	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect
+	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
+	golang.org/x/telemetry v0.0.0-20260625142307-59b4966ccb57 // indirect
+	golang.org/x/tools v0.47.0 // indirect
 	modernc.org/opt v0.2.0 // indirect
 	modernc.org/sortutil v1.2.1 // indirect
 	modernc.org/strutil v1.2.1 // indirect
@@ -110,7 +124,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.18 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.25 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.25 // indirect
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.102.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.102.2
 	github.com/aws/aws-sdk-go-v2/service/signin v1.1.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.19 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.36.2 // indirect

@@ -200,6 +200,8 @@ message WorkAssignment {
   // Explicit negotiated dedicated execution-pod placement. Omission preserves
   // the local dedicated path; send only to java_host_broker_v1 peers.
   JavaHostSelection java_host = 41;
+  // Defer runtime preflight and all target interaction until CommitWork.
+  bool prepare_only = 42;
 }
 
 // Operator approval binds immutable source and the complete placement profile.
@@ -570,6 +572,27 @@ message ServerTelemetry {
   double end_to_end_latency_ms = 28;
   string partition_id = 29;
   GRPCDiagnostics grpc = 30;
+  WebSocketDiagnostics websocket = 31;
+}
+
+message WebSocketDiagnostics {
+  string operation = 1;
+  string message_type = 2;
+  optional double handshake_ms = 3;
+  optional double reconnect_ms = 4;
+  optional double send_ms = 5;
+  optional double receive_ms = 6;
+  optional double write_wait_ms = 7;
+  int64 pending_writes = 8;
+  int64 reconnects = 9;
+  int64 messages_sent = 10;
+  int64 messages_received = 11;
+  int64 bytes_sent = 12;
+  int64 bytes_received = 13;
+  repeated double ping_rtt_ms = 14;
+  optional int32 close_code = 15;
+  string disconnect_reason = 16;
+  bool callback_mode = 17;
 }
 
 // Optional client-observed diagnostics. Missing status/first-message fields
@@ -586,6 +609,8 @@ message GRPCDiagnostics {
   int64 request_bytes = 9;
   int64 response_bytes = 10;
   bool receive_limit_reached = 11;
+  optional double encode_ms = 12;
+  optional double decode_ms = 13;
 }
 
 message TransactionMetric {

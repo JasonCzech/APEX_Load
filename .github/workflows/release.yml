@@ -859,11 +859,11 @@ jobs:
         include:
           - component: controller
             profile: standard
-            dockerfile: Dockerfile
+            dockerfile: Dockerfile.controller
             binary: controller
           - component: controller
             profile: enterprise
-            dockerfile: Dockerfile
+            dockerfile: Dockerfile.controller
             binary: controller
           - component: generator
             profile: standard

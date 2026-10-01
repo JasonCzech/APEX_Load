@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 607,
-    "public": 22,
-    "protected": 585,
-    "rbac": 583,
+    "routes": 644,
+    "public": 24,
+    "protected": 620,
+    "rbac": 618,
     "handler_authenticated": 2,
     "role_metadata_missing": 0,
-    "green": 607,
+    "green": 644,
     "partial": 0,
     "missing": 0
   },
@@ -185,6 +185,630 @@
       "conditions": [
         "project_id supplied"
       ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/capabilities",
+      "operation_id": "handleAnalysisCapabilities",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/analysis/compare",
+      "operation_id": "handleAnalysisComparison",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/comparisons",
+      "operation_id": "handleAnalysisDefinitions",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/analysis/comparisons",
+      "operation_id": "handleAnalysisDefinitions_2",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/analysis/comparisons/{id}",
+      "operation_id": "handleAnalysisDefinitions_3",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/comparisons/{id}",
+      "operation_id": "handleAnalysisDefinitions_4",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/analysis/comparisons/{id}",
+      "operation_id": "handleAnalysisDefinitions_5",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/datasets/{id}",
+      "operation_id": "handleAnalysisImport",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/analysis/datasets/{id}/association",
+      "operation_id": "handleAnalysisAssociation",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/datasets/{id}/rejections/{index}",
+      "operation_id": "handleAnalysisRejections",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/analysis/datasets/{id}/series",
+      "operation_id": "handleAnalysisDatasetSeries",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/imports",
+      "operation_id": "handleAnalysisImports",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/analysis/imports",
+      "operation_id": "handleAnalysisImports_2",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/analysis/imports/{id}",
+      "operation_id": "handleAnalysisImport_2",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/imports/{id}",
+      "operation_id": "handleAnalysisImport_3",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/analysis/imports/{id}/commit",
+      "operation_id": "handleAnalysisCommit",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/analysis/imports/{id}/files/{file_id}",
+      "operation_id": "handleAnalysisUpload",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/imports/{id}/files/{file_id}/preview",
+      "operation_id": "handleAnalysisPreview",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/analysis/imports/{id}/mapping",
+      "operation_id": "handleAnalysisMapping",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/mappings",
+      "operation_id": "handleAnalysisDefinitions_6",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/analysis/mappings",
+      "operation_id": "handleAnalysisDefinitions_7",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/analysis/mappings/{id}",
+      "operation_id": "handleAnalysisDefinitions_8",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/mappings/{id}",
+      "operation_id": "handleAnalysisDefinitions_9",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/analysis/mappings/{id}",
+      "operation_id": "handleAnalysisDefinitions_10",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "DELETE",
@@ -5118,6 +5742,32 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/monitoring/collectors/{id}/jobs",
+      "operation_id": "handlePollRunMonitorJobs",
+      "public": true,
+      "authenticated": false,
+      "state": "GREEN",
+      "enforcement": "public",
+      "access": "Public (no authentication required)",
+      "anonymous_assertion": "route is registered without HTTP auth middleware",
+      "role_assertion": "not applicable to public route",
+      "allowed_roles": {}
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/samples",
+      "operation_id": "handleRunMonitorSamples",
+      "public": true,
+      "authenticated": false,
+      "state": "GREEN",
+      "enforcement": "public",
+      "access": "Public (no authentication required)",
+      "anonymous_assertion": "route is registered without HTTP auth middleware",
+      "role_assertion": "not applicable to public route",
+      "allowed_roles": {}
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/monitoring/collectors/{id}/metrics",
       "operation_id": "handleGetCollectorMetrics",
       "public": false,
@@ -6144,6 +6794,102 @@
       "method": "POST",
       "path": "/api/v1/projects/{id}/integrations/confluence-connections/{connection_id}/test",
       "operation_id": "handleTestConfluenceConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitor-sources",
+      "operation_id": "handleMonitorSources",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitor-sources",
+      "operation_id": "handleMonitorSources_2",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{id}/monitor-sources/{source_id}",
+      "operation_id": "handleMonitorSources_3",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/monitor-sources/{source_id}",
+      "operation_id": "handleMonitorSources_4",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -8262,6 +9008,58 @@
       "state": "GREEN",
       "enforcement": "authentication middleware and access catalog",
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "tests:run"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scenarios/{id}/monitor-bindings",
+      "operation_id": "handleMonitorBindings",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/scenarios/{id}/monitor-bindings",
+      "operation_id": "handleMonitorBindings_2",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run",
       "anonymous_assertion": "HTTP 401 before handler",
       "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
       "allowed_roles": {
@@ -13596,6 +14394,60 @@
       "service_account_scope": "results:read"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/monitor-series",
+      "operation_id": "handleRunMonitorSeries",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/monitors",
+      "operation_id": "handleRunMonitors",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
       "method": "PATCH",
       "path": "/api/v1/tests/{id}/move",
       "operation_id": "handleMoveTest",
@@ -13731,6 +14583,83 @@
       "state": "GREEN",
       "enforcement": "authentication middleware and access catalog",
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "tests:run"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/tests/{id}/preparation",
+      "operation_id": "handlePreparation",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "tests:run"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/preparation",
+      "operation_id": "handlePreparation_2",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/preparation",
+      "operation_id": "handlePreparation_3",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run",
       "anonymous_assertion": "HTTP 401 before handler",
       "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
       "allowed_roles": {

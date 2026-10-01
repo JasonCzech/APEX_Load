@@ -94,6 +94,9 @@ func boundResultMetadata(result *protocol.Result) {
 		result.ClientMetrics.BrowserEngine = cloneBoundedResultString(result.ClientMetrics.BrowserEngine, maxResultMetadataBytes)
 	}
 	if result.ServerTelemetry != nil {
+		if !result.ServerTelemetry.WebSocket.Valid() {
+			result.ServerTelemetry.WebSocket = nil
+		}
 		if !result.ServerTelemetry.GRPC.Valid() {
 			result.ServerTelemetry.GRPC = nil
 		}

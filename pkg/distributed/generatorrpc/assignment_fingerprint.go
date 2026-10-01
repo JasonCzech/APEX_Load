@@ -26,6 +26,7 @@ func workAssignmentFingerprint(assignment *pb.WorkAssignment) [sha256.Size]byte 
 		return fingerprintDigest(h)
 	}
 	fingerprintWriteBool(h, true)
+	fingerprintWriteBool(h, assignment.GetPrepareOnly())
 	placement := assignment.GetJavaHost()
 	fingerprintWriteBool(h, placement != nil)
 	if placement != nil {

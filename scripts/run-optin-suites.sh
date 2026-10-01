@@ -74,6 +74,10 @@ run_suite() {
   rm -f "${output_file}"
 }
 
+run_suite "analytics_duckdb (embedded native analytics)" \
+  "CGO-enabled Go toolchain on a supported native platform" '[[ "$(go env CGO_ENABLED)" == "1" ]]' \
+  go test -tags analytics_duckdb -count=1 ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Parquet|Container|Lagged|Bucket)'
+
 # --- Category 3: real client libraries compiled in. No external infrastructure. ---
 run_suite "apexload_fault_probe (evacuation guard pause)" \
   "nothing (tests a tagged disposable-cluster fault hook)" "true" \
@@ -135,7 +139,7 @@ run_suite "live PostgreSQL migration and concurrent startup" \
   "--all and APEXLOAD_TEST_POSTGRES_URL (dedicated test database)" \
   "[[ ${run_all} == 1 && -n \"\${APEXLOAD_TEST_POSTGRES_URL:-}\" ]]" \
   go test -tags postgres_integration -count=1 \
-    -run '^TestPostgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle)$' ./pkg/storage
+    -run '^TestPostgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle|AnalysisWorkflows)$' ./pkg/storage
 
 run_suite "live Kafka integration" \
   "--all and KAFKA_BROKERS" "[[ ${run_all} == 1 && -n \"\${KAFKA_BROKERS:-}\" ]]" \

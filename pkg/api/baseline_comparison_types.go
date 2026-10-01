@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"math"
 	"strings"
 	"time"
@@ -81,6 +82,8 @@ type BaselineComparisonSnapshot struct {
 }
 
 type BaselineMeasurement struct {
+	GRPC                 *protocol.GRPCSummary              `json:"grpc,omitempty"`
+	WebSocket            *protocol.WebSocketSummary         `json:"websocket,omitempty"`
 	Samples              int64                              `json:"samples"`
 	Successes            int64                              `json:"successes"`
 	Errors               int64                              `json:"errors"`

@@ -129,6 +129,21 @@ jobs:
           cd dashboard
           npm test -- --run src/importLogicalPath.test.ts src/App.brunoImportDetection.test.ts src/hooks/api/useScriptApi.test.tsx
 
+      - name: Native analytics contracts and controller build
+        shell: bash
+        env:
+          CGO_ENABLED: '1'
+        run: |
+          set -euo pipefail
+          go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Parquet|Lagged|BucketSeries)'
+          go build -tags analytics_duckdb -o native-controller ./cmd/controller
+          CGO_ENABLED=0 go test ./pkg/analysis/duckdb
+          dependencies=$(go list -tags analytics_duckdb -deps ./cmd/generator ./cmd/apexload-collector-agent)
+          if grep -q 'github.com/duckdb/' <<<"${dependencies}"; then
+            echo 'Generator/collector must not depend on native DuckDB' >&2
+            exit 1
+          fi
+
       - name: Resolve friendly build version
         id: version
         shell: bash
@@ -565,6 +580,21 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+
+      - name: Native analytics contracts and controller build
+        shell: bash
+        env:
+          CGO_ENABLED: '1'
+        run: |
+          set -euo pipefail
+          go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Parquet|Lagged|BucketSeries)'
+          go build -tags analytics_duckdb -o native-controller ./cmd/controller
+          CGO_ENABLED=0 go test ./pkg/analysis/duckdb
+          dependencies=$(go list -tags analytics_duckdb -deps ./cmd/generator ./cmd/apexload-collector-agent)
+          if grep -q 'github.com/duckdb/' <<<"${dependencies}"; then
+            echo 'Generator/collector must not depend on native DuckDB' >&2
+            exit 1
+          fi
 
       - name: Resolve friendly build version
         id: version

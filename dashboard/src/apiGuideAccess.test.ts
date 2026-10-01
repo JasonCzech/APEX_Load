@@ -20,6 +20,11 @@ describe('apiGuideAccess docs visibility classification', () => {
       apiEndpointRoutes.map(route => [endpointCatalogKey(route.method, route.path), classifyEndpointForDocs(route).operations]),
     )
 
+    expect(examples.get('GET /api/v1/analysis/imports')).toEqual(['view_tests'])
+    expect(examples.get('POST /api/v1/analysis/imports')).toEqual(['manage_tests'])
+    expect(examples.get('POST /api/v1/analysis/compare')).toEqual(['view_tests'])
+    expect(examples.get('POST /api/v1/analysis/datasets/{id}/series')).toEqual(['view_tests'])
+    expect(examples.get('DELETE /api/v1/analysis/imports/{id}')).toEqual(['manage_tests'])
     expect(examples.get('GET /api/v1/system/health')).toEqual([])
     expect(examples.get('POST /api/v1/bridge/pair')).toEqual([])
     expect(examples.get('GET /api/v1/bridge/status')).toEqual(['view_replay'])

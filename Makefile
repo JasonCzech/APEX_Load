@@ -26,6 +26,10 @@ endif
 generator:
 	go build $(GOFLAGS) $(LDFLAGS) -o bin/generator ./cmd/generator
 
+.PHONY: controller-analytics
+controller-analytics:
+	CGO_ENABLED=1 go build $(GOFLAGS) -tags analytics_duckdb $(LDFLAGS) -o bin/controller ./cmd/controller
+
 controller:
 	go build $(GOFLAGS) $(LDFLAGS) -o bin/controller ./cmd/controller
 
@@ -150,7 +154,7 @@ docker-generator:
 	docker build --build-arg BINARY=generator --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) -t apexload-generator:$(VERSION) -f Dockerfile .
 
 docker-controller:
-	docker build --build-arg BINARY=controller --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) -t apexload-controller:$(VERSION) -f Dockerfile .
+	docker build --build-arg BINARY=controller --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) -t apexload-controller:$(VERSION) -f Dockerfile.controller .
 
 docker-local-up:
 	docker compose up --build -d
@@ -199,7 +203,7 @@ k8s-onprem-delete:
 # Build in ACR and tag for AKS. Usage: make docker-push-acr ACR_NAME=myregistry
 docker-push-acr:
 	test -n "$(ACR_NAME)" || (echo "ACR_NAME is required, e.g. make docker-push-acr ACR_NAME=myregistry" && exit 1)
-	az acr build --registry $(ACR_NAME) --image apexload-controller:$(VERSION) --build-arg BINARY=controller --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) --file Dockerfile .
+	az acr build --registry $(ACR_NAME) --image apexload-controller:$(VERSION) --build-arg BINARY=controller --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) --file Dockerfile.controller .
 	az acr build --registry $(ACR_NAME) --image apexload-generator:$(VERSION) --build-arg BINARY=generator --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) --file Dockerfile .
 
 k8s-aks-render:

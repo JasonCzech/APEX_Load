@@ -1,6 +1,6 @@
 # Protocol diagnostics
 
-The first gRPC diagnostics slice adds optional `server_telemetry.grpc` evidence
+gRPC diagnostics add optional `server_telemetry.grpc` evidence
 to transaction records and live summaries. Generators advertise
 `grpc_diagnostics_v1` when the gRPC runtime is registered. Older peers and
 archives can omit this field; omission means unavailable.
@@ -28,8 +28,7 @@ archives can omit this field; omission means unavailable.
 - Bidirectional calls send and receive concurrently. Hitting a receive limit
   cancels outstanding I/O and joins the sender. If requests remain unsent, the
   action fails explicitly rather than claiming all authored messages were sent.
-- Codec CPU time, server processing, connection phases, and HTTP2 stream timing
-  are not inferred from total duration and are not exposed by this slice.
+- `encode_ms` and `decode_ms` measure protobuf codec wall time accumulated per call. They exclude DSL JSON conversion, compression and transport framing; an unavailable codec measurement is omitted. Server processing, connection phases and HTTP/2 stream timings are not inferred from total duration.
 
 ## Analysis and compatibility
 
@@ -48,6 +47,23 @@ they must not be interpreted as complete traffic counts when raw telemetry has
 been sampled or dropped. Existing authoritative transaction counters remain the
 source for throughput and total error rates.
 
-Per-method hotspot views, qualified baseline comparison, codec instrumentation,
-deadline findings, and WebSocket diagnostic parity remain roadmap work. This
-slice does not complete the protocol diagnostics milestone.
+Method hotspot and deadline/status findings are advisory and appear in live cards,
+archives, reports and root-cause evidence. Qualified baseline comparisons match
+protocol and stable transaction/method identity, retain workload qualification,
+and compare mergeable timing distributions. Explicit SLA policies remain responsible
+for stopping tests and failing CI.
+
+## WebSocket diagnostics
+
+Optional `server_telemetry.websocket` evidence records handshake/reconnect,
+application send and receive wait, write-lock wait, pending application writes,
+message counts and payload sizes, and bounded disconnect classifications. Authored
+local closes are distinguished from abnormal peer closes. The callback loop retains
+read ownership. Receive wait is not round-trip latency; only matched authored
+ping/pong messages produce RTT samples. No health-probe traffic is added.
+
+Distributions merge through generator RPC, live summaries, JSONL/Parquet archives,
+HTML/PDF/CSV reports and qualified baseline comparisons. Text and binary receive
+waits retain separate distributions. Findings identify observed disconnects,
+timeouts and write pressure without asserting that an idle connection is dead.
+Statistical anomaly delivery and complete dependency intelligence remain open.

@@ -205,11 +205,13 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
   expect(bounds).not.toBeNull()
   expect(bounds!.x).toBeGreaterThanOrEqual(0)
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(600)
-  const chartBounds = await page.locator('.scenario-model-chart .recharts-responsive-container').boundingBox()
-  const legendBounds = await page.locator('.scenario-model-legend').boundingBox()
-  expect(chartBounds).not.toBeNull()
-  expect(legendBounds).not.toBeNull()
-  expect(chartBounds!.y + chartBounds!.height).toBeLessThanOrEqual(legendBounds!.y)
+  // ResponsiveContainer settles through ResizeObserver after viewport changes.
+  // Measure both rectangles in one browser frame, then wait for that layout.
+  await expect.poll(() => page.locator('.scenario-model-preview-panel').evaluate(panel => {
+    const chart = panel.querySelector('.scenario-model-chart .recharts-responsive-container')!.getBoundingClientRect()
+    const legend = panel.querySelector('.scenario-model-legend')!.getBoundingClientRect()
+    return legend.y - chart.bottom
+  })).toBeGreaterThanOrEqual(0)
   await page.screenshot({ path: 'test-results/scenario-builder-review.png', fullPage: true })
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Scenario Library', level: 1 })).toBeVisible()

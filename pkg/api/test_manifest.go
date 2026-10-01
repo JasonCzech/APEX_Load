@@ -810,6 +810,9 @@ func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTe
 	if err := validateImmutableArchiveArtifactIntegrity(record.ArchivePath, archiveManifest); err != nil {
 		return err
 	}
+	if err := tr.persistRunMonitorArchive(test.ProjectID, test.ID, record, archiveManifest, budget); err != nil {
+		return err
+	}
 	manifest, err := tr.buildTestManifestForManagedTest(test, test.ID, record, false)
 	if err != nil {
 		return err

@@ -13,7 +13,7 @@ func TestGRPCDiagnosticsWireRoundTrip(t *testing.T) {
 	zero, status := 0.0, int32(0)
 	for _, d := range []*protocol.GRPCDiagnostics{
 		nil,
-		{Method: "/example.Service/Call", Mode: "unary", CallMs: 1, FirstMessageMs: &zero, StatusCode: &status, MessagesReceived: 1},
+		{Method: "/example.Service/Call", Mode: "unary", CallMs: 1, FirstMessageMs: &zero, StatusCode: &status, EncodeMs: &zero, DecodeMs: &zero, MessagesReceived: 1},
 		{Method: "/example.Service/Watch", Mode: "server_stream", CallMs: 1, ReceiveLimitReached: true},
 	} {
 		message := &pb.ServerTelemetry{Grpc: grpcDiagnosticsToProto(d)}
@@ -43,7 +43,7 @@ func TestGRPCDiagnosticsWireRoundTrip(t *testing.T) {
 
 func TestGRPCDiagnosticsSurviveTransactionBufferAndMetricsStream(t *testing.T) {
 	zero, status := 0.0, int32(0)
-	d := &protocol.GRPCDiagnostics{Method: "/example.Service/Call", Mode: "unary", CallMs: 1, FirstMessageMs: &zero, StatusCode: &status, MessagesReceived: 1}
+	d := &protocol.GRPCDiagnostics{Method: "/example.Service/Call", Mode: "unary", CallMs: 1, FirstMessageMs: &zero, StatusCode: &status, EncodeMs: &zero, DecodeMs: &zero, MessagesReceived: 1}
 	buffer := &transactionBuffer{}
 	if err := buffer.RecordTransaction(&protocol.Result{ActionName: "call", ServerTelemetry: &protocol.ServerTelemetry{GRPC: d}}); err != nil {
 		t.Fatal(err)

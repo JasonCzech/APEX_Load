@@ -67,7 +67,11 @@ func compactMetricsResult(input *protocol.Result) *protocol.Result {
 	}
 	if input.ServerTelemetry != nil {
 		server := *input.ServerTelemetry
+		if !server.WebSocket.Valid() {
+			server.WebSocket = nil
+		}
 		server.GRPC = server.GRPC.Clone()
+		server.WebSocket = server.WebSocket.Clone()
 		if !server.GRPC.Valid() {
 			server.GRPC = nil
 		}
@@ -139,6 +143,9 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 			}
 			if telemetry := value.ServerTelemetry; telemetry != nil {
 				bytes += 512
+				if telemetry.WebSocket != nil {
+					bytes += int(unsafe.Sizeof(*telemetry.WebSocket))
+				}
 				if telemetry.GRPC != nil {
 					// The distributions and status buckets are inline arrays, so
 					// the pointed-to struct size accounts for the full allocation.

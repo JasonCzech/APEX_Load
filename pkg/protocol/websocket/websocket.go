@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -42,6 +43,10 @@ func init() {
 }
 
 type WebSocket struct {
+	writeMu            sync.Mutex
+	pendingWrites      atomic.Int64
+	authoredPings      map[string]authoredPing
+	pongRTTs           []float64
 	callbacks          *callbackState
 	callbackInterval   time.Duration
 	baseURL            string
@@ -136,6 +141,7 @@ func (w *WebSocket) Execute(ctx context.Context, action *protocol.Action) (*prot
 		err = fmt.Errorf("unsupported websocket action type: %s", action.Type)
 	}
 
+	w.finishDiagnostics(ctx, action, result, err)
 	result.Duration = time.Since(result.StartTime)
 	if err != nil {
 		result.Success = false
@@ -220,7 +226,9 @@ func (w *WebSocket) connect(ctx context.Context, action *protocol.Action, result
 		_ = oldConn.Close()
 	}
 
+	dialStart := time.Now()
 	conn, resp, err := w.dialer.DialContext(ctx, target, headers)
+	wsDiagnostics(result).HandshakeMs = wsElapsed(dialStart)
 	if resp != nil {
 		result.StatusCode = resp.StatusCode
 	}
@@ -241,13 +249,17 @@ func (w *WebSocket) connect(ctx context.Context, action *protocol.Action, result
 		_ = w.conn.Close()
 	}
 	w.conn = conn
+	w.authoredPings = nil
+	w.pongRTTs = nil
+	w.instrumentPongs(conn, connectionEpoch)
 	w.lastTarget = target
 	w.lastHeaders = cloneHeader(headers)
 	w.closedByAction = false
 	w.mu.Unlock()
 
 	result.StatusCode = http.StatusSwitchingProtocols
-	result.ServerTelemetry = &protocol.ServerTelemetry{ConnectionReused: false}
+	wsDiagnostics(result)
+	result.ServerTelemetry.ConnectionReused = false
 	return nil
 }
 
@@ -263,7 +275,7 @@ func (w *WebSocket) send(ctx context.Context, action *protocol.Action, result *p
 	if err != nil {
 		return err
 	}
-	if err := w.writeMessage(conn, messageType, action.Body); err != nil {
+	if err := w.measuredWrite(conn, messageType, action.Body, result); err != nil {
 		if !w.reconnect {
 			return err
 		}
@@ -271,12 +283,13 @@ func (w *WebSocket) send(ctx context.Context, action *protocol.Action, result *p
 		if reconnectErr != nil {
 			return fmt.Errorf("%w; reconnect failed: %v", err, reconnectErr)
 		}
-		if retryErr := w.writeMessage(conn, messageType, action.Body); retryErr != nil {
+		if retryErr := w.measuredWrite(conn, messageType, action.Body, result); retryErr != nil {
 			return retryErr
 		}
 	}
 	result.BytesSent = int64(len(action.Body))
-	result.ServerTelemetry = &protocol.ServerTelemetry{MessagesSent: 1}
+	wsDiagnostics(result).MessagesSent = 1
+	result.ServerTelemetry.MessagesSent = 1
 	return nil
 }
 
@@ -315,14 +328,19 @@ func (w *WebSocket) receive(ctx context.Context, action *protocol.Action, result
 		_ = conn.SetReadDeadline(time.Now())
 	})
 	defer stopCancellationWakeup()
+	readStart := time.Now()
 	messageType, message, err := conn.ReadMessage()
+	wsDiagnostics(result).ReceiveMs = wsElapsed(readStart)
 	if err != nil {
 		w.discardConn(conn)
 		return err
 	}
 	result.BytesReceived = int64(len(message))
 	result.ResponseBody = responseBody(messageType, message)
-	result.ServerTelemetry = &protocol.ServerTelemetry{MessagesReceived: 1}
+	d := wsDiagnostics(result)
+	d.MessagesReceived = 1
+	d.MessageType = wsMessageType(messageType)
+	result.ServerTelemetry.MessagesReceived = 1
 
 	if expected, ok := stringParam(action.Params, "match"); ok && !strings.Contains(result.ResponseBody, expected) {
 		return fmt.Errorf("websocket message does not contain %q", expected)
@@ -351,7 +369,10 @@ func (w *WebSocket) ping(ctx context.Context, action *protocol.Action, result *p
 		return err
 	}
 	deadline := time.Now().Add(w.writeTimeout)
+	wsDiagnostics(result).MessageType = "ping"
+	w.noteAuthoredPing(action.Body)
 	if err := conn.WriteControl(gorillawebsocket.PingMessage, action.Body, deadline); err != nil {
+		w.discardAuthoredPing(action.Body)
 		if !w.reconnect {
 			return err
 		}
@@ -360,12 +381,15 @@ func (w *WebSocket) ping(ctx context.Context, action *protocol.Action, result *p
 			return fmt.Errorf("%w; reconnect failed: %v", err, reconnectErr)
 		}
 		deadline = time.Now().Add(w.writeTimeout)
+		w.noteAuthoredPing(action.Body)
 		if retryErr := conn.WriteControl(gorillawebsocket.PingMessage, action.Body, deadline); retryErr != nil {
+			w.discardAuthoredPing(action.Body)
 			return retryErr
 		}
 	}
 	result.BytesSent = int64(len(action.Body))
-	result.ServerTelemetry = &protocol.ServerTelemetry{MessagesSent: 1}
+	wsDiagnostics(result).MessagesSent = 1
+	result.ServerTelemetry.MessagesSent = 1
 	return nil
 }
 
@@ -386,6 +410,14 @@ func (w *WebSocket) close(action *protocol.Action, result *protocol.Result) erro
 		return fmt.Errorf("websocket close reason exceeds %d byte limit", maxWebSocketCloseReasonBytes)
 	}
 	msg := gorillawebsocket.FormatCloseMessage(code, reason)
+	d := wsDiagnostics(result)
+	d.MessageType = "close"
+	c := int32(code)
+	d.CloseCode = &c
+	d.DisconnectReason = "normal"
+	if code != gorillawebsocket.CloseNormalClosure {
+		d.DisconnectReason = "local_close"
+	}
 
 	w.mu.Lock()
 	conn := w.conn
@@ -508,7 +540,11 @@ func (w *WebSocket) reconnectConn(ctx context.Context, result *protocol.Result) 
 		return nil, fmt.Errorf("no previous websocket connection target")
 	}
 
+	dialStart := time.Now()
 	conn, resp, err := w.dialer.DialContext(ctx, target, headers)
+	d := wsDiagnostics(result)
+	d.ReconnectMs = wsElapsed(dialStart)
+	d.Reconnects++
 	if resp != nil {
 		result.StatusCode = resp.StatusCode
 	}
@@ -529,11 +565,15 @@ func (w *WebSocket) reconnectConn(ctx context.Context, result *protocol.Result) 
 		_ = w.conn.Close()
 	}
 	w.conn = conn
+	w.authoredPings = nil
+	w.pongRTTs = nil
+	w.instrumentPongs(conn, connectionEpoch)
 	w.closedByAction = false
 	w.mu.Unlock()
 
 	result.DependencyTarget = dependencyTarget(target)
-	result.ServerTelemetry = &protocol.ServerTelemetry{ConnectionReused: false}
+	wsDiagnostics(result)
+	result.ServerTelemetry.ConnectionReused = false
 	return conn, nil
 }
 

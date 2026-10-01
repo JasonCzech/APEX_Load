@@ -133,12 +133,15 @@ func (tr *TestRunner) StartTest(id string) error {
 }
 
 func (tr *TestRunner) StartTestWithOptions(id string, opts StartTestOptions) error {
+	if opts.PreparationID != "" {
+		return tr.consumePreparation(id, opts)
+	}
 	return tr.startTestWithOptionsAndExpectedTerm(id, opts, nil)
 }
 
 func (tr *TestRunner) StartTestWithActor(id string, opts StartTestOptions, actor testCreationActor) error {
 	opts.actor = actor
-	return tr.startTestWithOptionsAndExpectedTerm(id, opts, nil)
+	return tr.StartTestWithOptions(id, opts)
 }
 
 type testActorAttributionSnapshot struct {
@@ -1844,6 +1847,9 @@ func (tr *TestRunner) beginScriptShakeoutIfNeeded(id string, opts StartTestOptio
 }
 
 func (tr *TestRunner) scriptShakeoutRequiredForStart(id string, opts StartTestOptions) bool {
+	if opts.prepareOnly {
+		return false
+	}
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	test := tr.tests[id]
@@ -5656,6 +5662,10 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 		return ctx, nil, nil, false, nil
 	}
 	tr.mu.Unlock()
+
+	if err := tr.awaitPreparedStart(test); err != nil {
+		return ctx, nil, nil, false, err
+	}
 
 	// Local runtime preflight must complete while the durable state is still
 	// INITIALIZING. MultiGroupEngine caches the successful result, so its

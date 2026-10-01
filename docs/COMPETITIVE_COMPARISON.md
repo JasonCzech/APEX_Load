@@ -168,10 +168,10 @@ also documents HTTP/2; APEX must not claim CloudTest lacks it.
 | Regional live analytics | Location dimensions and live dashboards | Bounded `by_region` is carried through local/distributed live metrics, archives, and the regional activity view; geographic polish remains | **Partial** |
 | Message drill-down and waterfall | Request/response and waterfall analysis | The transaction archive supports bounded success/detail capture, regional/hierarchy filters, redacted inspection, and network waterfalls; formal annotation phases remain | **Partial** |
 | Shared dashboards | Composable dashboards and slideshows | Versioned project dashboards support optimistic revisions, bounded analytics definitions, save/import from private workspace drafts, and viewer-visible shared reopening; Grafana imports remain intact | **Supported** |
-| Private infrastructure monitoring | CloudTest monitors | Authenticated collector agent and host metric packs exist; run-bound durable jobs/connectors remain | **Partial** |
-| Elastic cloud grid | Automated multi-cloud Grid | Kubernetes/KEDA, Azure and AWS capacity backends exist; test-scoped prepare/ephemeral policy remains | **Partial** |
+| Private infrastructure monitoring | CloudTest monitors | Signed run-bound Linux/Prometheus collector jobs, retry spooling, durable samples and archive overlays exist; additional connectors remain | **Partial** |
+| Elastic cloud grid | Automated multi-cloud Grid | Kubernetes/KEDA, Azure and AWS capacity backends exist; fenced prepare mode reuses these backends; all-target acceptance and capacity/spot policy remain | **Partial** |
 | HTTP media streaming | HLS/HDS/CMAF and multi-CDN marketing claims | Streaming-response pacing exists; bounded HLS/DASH playback metrics remain | **Partial** |
-| CLI and transaction thresholds | SCommand repository/run/monitor/report workflows | Run/wait/status, JSON/JUnit, global and exact archived transaction rules, and library export/import exist; run-bound monitor verbs remain | **Partial** |
+| CLI and transaction thresholds | SCommand repository/run/monitor/report workflows | Run/wait/status, JSON/JUnit, global and exact archived transaction rules, and library export/import exist; run-bound monitor, preparation and analysis verbs are implemented | **Partial** |
 | Report output | Word/HTML and widget image/CSV export | HTML/PDF/DOCX/CSV/JSON/JSONL/Parquet exist; report charts export accessible CSV/SVG, while remaining operational charts still need the shared export wrapper | **Partial** |
 | Native mobile automation | TouchTest remains in current terminology | Browser device emulation and observer canaries only | **Non-goal by product fit** |
 

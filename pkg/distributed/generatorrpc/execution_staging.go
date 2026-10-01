@@ -888,6 +888,10 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		return nil, status.Error(codes.Internal, "assignment stage plan is unavailable")
 	}
 	request := plan.validated.request
+	// Reject before any runtime capacity provider or helper can be invoked.
+	if request.GetPrepareOnly() && (request.GetJavaHost() != nil || plan.protocol == "java_vuser" || plan.protocol == "bruno") {
+		return nil, status.Error(codes.FailedPrecondition, "runtime cannot guarantee traffic-free preparation")
+	}
 	if ctx != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, status.FromContextError(ctxErr).Err()
@@ -1082,10 +1086,13 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			redactionConfig = scriptSourcedRedaction
 		}
 	}
+	if request.GetPrepareOnly() && (javaHost != nil || script.Protocol == "java_vuser" || script.Protocol == "bruno") {
+		return nil, status.Error(codes.FailedPrecondition, "runtime does not support traffic-free preparation")
+	}
 	runtimeSecrets := secretBundleResolver(request.GetSecretBundle())
 	var preflight protocol.RuntimePreflightResult
 	var preflightErr error
-	if javaHost == nil {
+	if javaHost == nil && !request.GetPrepareOnly() {
 		preflight, preflightErr = engine.PreflightScriptRuntime(ctx, &script, runtimeSecrets)
 	}
 	if preflightErr != nil {

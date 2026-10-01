@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import { grpcSummaryLines } from '../utils/grpcDiagnostics'
 import GRPCDiagnosticsPanel from './GRPCDiagnosticsPanel'
+import WebSocketDiagnosticsPanel from './WebSocketDiagnosticsPanel'
+import { websocketSummaryLines } from '../utils/websocketDiagnostics'
 
 import { GoalConfig, LiveDependencyMap, LiveErrorPattern, MetricsHistoryPoint, RunComparisonBaseline, TransactionResponseTimeSLAResult, TxMetrics } from '../types'
 import TransactionResponseTimeSLATable from './TransactionResponseTimeSLATable'
@@ -101,6 +103,7 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
   return (
     <>
       <GRPCDiagnosticsPanel transactions={transactions} />
+      <WebSocketDiagnosticsPanel transactions={transactions} />
       {topServerTelemetry.length > 0 && (
         <div className="tx-section server-telemetry-section">
           <div className="server-telemetry-header">
@@ -1712,6 +1715,7 @@ function renderServerTelemetry(current: TxMetrics, previous?: TxMetrics) {
   }
   const telemetry = current.server_telemetry
   if (telemetry.grpc) return grpcSummaryLines(telemetry.grpc).join(" | ")
+  if (telemetry.websocket) return websocketSummaryLines(telemetry.websocket).join(' | ')
   const previousTelemetry = previous?.server_telemetry
   const parts = [
     `Server ${formatTelemetryValue(telemetry.avg_server_processing_ms, ' ms')}${formatTelemetryDelta(telemetry.avg_server_processing_ms, previousTelemetry?.avg_server_processing_ms, ' ms')}`,

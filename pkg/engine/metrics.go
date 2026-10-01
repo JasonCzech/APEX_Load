@@ -150,35 +150,36 @@ type BrowserDeviceMetrics struct {
 }
 
 type ServerTelemetrySummary struct {
-	FirstEventSamples         int64                 `json:"first_event_samples,omitempty"`
-	GRPC                      *protocol.GRPCSummary `json:"grpc,omitempty"`
-	Samples                   int64                 `json:"samples"`
-	AvgServerProcessingMs     float64               `json:"avg_server_processing_ms,omitempty"`
-	AvgTransferMs             float64               `json:"avg_transfer_ms,omitempty"`
-	AvgRequestPayloadKB       float64               `json:"avg_request_payload_kb,omitempty"`
-	AvgResponsePayloadKB      float64               `json:"avg_response_payload_kb,omitempty"`
-	RequestPayloadHistogram   map[string]int64      `json:"request_payload_histogram,omitempty"`
-	ResponsePayloadHistogram  map[string]int64      `json:"response_payload_histogram,omitempty"`
-	AvgFirstEventMs           float64               `json:"avg_first_event_ms,omitempty"`
-	MaxFirstEventMs           float64               `json:"max_first_event_ms,omitempty"`
-	EventCount                int64                 `json:"event_count,omitempty"`
-	AvgMessageLatencyMs       float64               `json:"avg_message_latency_ms,omitempty"`
-	MaxMessageLatencyMs       float64               `json:"max_message_latency_ms,omitempty"`
-	MessagesSent              int64                 `json:"messages_sent,omitempty"`
-	MessagesReceived          int64                 `json:"messages_received,omitempty"`
-	AvgMessagesSentPerSec     float64               `json:"avg_messages_sent_per_sec,omitempty"`
-	AvgMessagesReceivedPerSec float64               `json:"avg_messages_received_per_sec,omitempty"`
-	AvgConsumerLagMs          float64               `json:"avg_consumer_lag_ms,omitempty"`
-	MaxConsumerLagMs          float64               `json:"max_consumer_lag_ms,omitempty"`
-	AvgConsumerOffsetLag      float64               `json:"avg_consumer_offset_lag,omitempty"`
-	MaxConsumerOffsetLag      int64                 `json:"max_consumer_offset_lag,omitempty"`
-	SendFailureCount          int64                 `json:"send_failure_count,omitempty"`
-	RedeliveryCount           int64                 `json:"redelivery_count,omitempty"`
-	DeadLetteredCount         int64                 `json:"dead_lettered_count,omitempty"`
-	DuplicateCount            int64                 `json:"duplicate_count,omitempty"`
-	OutOfOrderCount           int64                 `json:"out_of_order_count,omitempty"`
-	CommitCount               int64                 `json:"commit_count,omitempty"`
-	AbortCount                int64                 `json:"abort_count,omitempty"`
+	FirstEventSamples         int64                      `json:"first_event_samples,omitempty"`
+	WebSocket                 *protocol.WebSocketSummary `json:"websocket,omitempty"`
+	GRPC                      *protocol.GRPCSummary      `json:"grpc,omitempty"`
+	Samples                   int64                      `json:"samples"`
+	AvgServerProcessingMs     float64                    `json:"avg_server_processing_ms,omitempty"`
+	AvgTransferMs             float64                    `json:"avg_transfer_ms,omitempty"`
+	AvgRequestPayloadKB       float64                    `json:"avg_request_payload_kb,omitempty"`
+	AvgResponsePayloadKB      float64                    `json:"avg_response_payload_kb,omitempty"`
+	RequestPayloadHistogram   map[string]int64           `json:"request_payload_histogram,omitempty"`
+	ResponsePayloadHistogram  map[string]int64           `json:"response_payload_histogram,omitempty"`
+	AvgFirstEventMs           float64                    `json:"avg_first_event_ms,omitempty"`
+	MaxFirstEventMs           float64                    `json:"max_first_event_ms,omitempty"`
+	EventCount                int64                      `json:"event_count,omitempty"`
+	AvgMessageLatencyMs       float64                    `json:"avg_message_latency_ms,omitempty"`
+	MaxMessageLatencyMs       float64                    `json:"max_message_latency_ms,omitempty"`
+	MessagesSent              int64                      `json:"messages_sent,omitempty"`
+	MessagesReceived          int64                      `json:"messages_received,omitempty"`
+	AvgMessagesSentPerSec     float64                    `json:"avg_messages_sent_per_sec,omitempty"`
+	AvgMessagesReceivedPerSec float64                    `json:"avg_messages_received_per_sec,omitempty"`
+	AvgConsumerLagMs          float64                    `json:"avg_consumer_lag_ms,omitempty"`
+	MaxConsumerLagMs          float64                    `json:"max_consumer_lag_ms,omitempty"`
+	AvgConsumerOffsetLag      float64                    `json:"avg_consumer_offset_lag,omitempty"`
+	MaxConsumerOffsetLag      int64                      `json:"max_consumer_offset_lag,omitempty"`
+	SendFailureCount          int64                      `json:"send_failure_count,omitempty"`
+	RedeliveryCount           int64                      `json:"redelivery_count,omitempty"`
+	DeadLetteredCount         int64                      `json:"dead_lettered_count,omitempty"`
+	DuplicateCount            int64                      `json:"duplicate_count,omitempty"`
+	OutOfOrderCount           int64                      `json:"out_of_order_count,omitempty"`
+	CommitCount               int64                      `json:"commit_count,omitempty"`
+	AbortCount                int64                      `json:"abort_count,omitempty"`
 	// Derived reliability rates (P4.1): percent of received messages that were
 	// redelivered / dead-lettered / duplicate. Computed at finalize from the
 	// counts above ÷ MessagesReceived (post-merge, so distributed runs are pooled).
@@ -1095,6 +1096,7 @@ func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *pro
 		return
 	}
 	protocol.MergeGRPCDiagnostic(&summary.GRPC, telemetry.GRPC)
+	protocol.MergeWebSocketDiagnostic(&summary.WebSocket, telemetry.WebSocket)
 	// Reliability counters are run totals and accumulate for every record,
 	// including control-only ops (commit/rollback) that carry no measured sample.
 	summary.SendFailureCount += int64(telemetry.SendFailureCount)
@@ -1121,7 +1123,7 @@ func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *pro
 	summary.AvgResponsePayloadKB += telemetry.ResponsePayloadKB
 	incrementTelemetryHistogramCount(&summary.RequestPayloadHistogram, telemetry.RequestPayloadKB)
 	incrementTelemetryHistogramCount(&summary.ResponsePayloadHistogram, telemetry.ResponsePayloadKB)
-	if telemetry.GRPC == nil || telemetry.GRPC.FirstMessageMs != nil {
+	if (telemetry.GRPC == nil || telemetry.GRPC.FirstMessageMs != nil) && telemetry.WebSocket == nil {
 		summary.FirstEventSamples++
 		summary.AvgFirstEventMs += telemetry.FirstEventMs
 	}

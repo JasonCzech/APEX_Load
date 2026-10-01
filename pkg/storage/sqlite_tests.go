@@ -1667,6 +1667,9 @@ func lockCapacityReservationsForTestMutation(tx *storeTx, testID string, timeslo
 }
 
 func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
+	if err := queueAnalysisCleanupTx(tx, "monitor", projectID, id); err != nil {
+		return err
+	}
 	if err := reconcileQueuedScenarioScheduleOccurrenceForTestDeletion(tx, id); err != nil {
 		return err
 	}

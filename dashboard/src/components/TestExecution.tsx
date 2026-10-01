@@ -35,6 +35,9 @@ import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
 import GRPCDiagnosticsPanel from './GRPCDiagnosticsPanel'
+import WebSocketDiagnosticsPanel from './WebSocketDiagnosticsPanel'
+import PreparationControls from './PreparationControls'
+import { RunMonitorTimeline } from './RunMonitoring'
 import TestExecutionRunState from './TestExecutionRunState'
 import TestExecutionInfrastructure from './TestExecutionInfrastructure'
 import ErrorDiagnostic from './ErrorDiagnostic'
@@ -172,6 +175,7 @@ function computeRunRemainingSeconds(test: TestSummary) {
 }
 
 interface Props {
+  canManageTests?: boolean
   testId: string
   history: MetricsHistoryPoint[]
   initialWorkspaceTabId?: string
@@ -183,6 +187,7 @@ interface Props {
 }
 
 export default function TestExecution({
+  canManageTests = false,
   testId,
   history,
   initialWorkspaceTabId,
@@ -1002,6 +1007,7 @@ export default function TestExecution({
           groupColors={GROUP_COLORS}
         />
         <GRPCDiagnosticsPanel transactions={summaryTransactions} />
+        <WebSocketDiagnosticsPanel transactions={summaryTransactions} />
         </>
       ),
     },
@@ -1081,6 +1087,8 @@ export default function TestExecution({
   return (
     <div className="execution">
       <OrchestrationReturn testId={testId} />
+      <RunMonitorTimeline key={`monitor-${testId}`} projectId={test.project_id} testId={testId} history={filteredData} />
+      <PreparationControls canEdit={canManageTests} key={testId} testId={testId} projectId={test.project_id} status={test.status} />
       <TestExecutionScenarioEditor
         open={showScenarioEditor}
         test={test}

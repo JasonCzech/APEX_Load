@@ -15,6 +15,8 @@ type GRPCDiagnostics struct {
 	CallMs              float64  `json:"call_ms"`
 	FirstMessageMs      *float64 `json:"first_message_ms,omitempty"`
 	DeadlineBudgetMs    *float64 `json:"deadline_budget_ms,omitempty"`
+	EncodeMs            *float64 `json:"encode_ms,omitempty"`
+	DecodeMs            *float64 `json:"decode_ms,omitempty"`
 	StatusCode          *int32   `json:"status_code,omitempty"`
 	MessagesSent        int64    `json:"messages_sent"`
 	MessagesReceived    int64    `json:"messages_received"`
@@ -37,6 +39,7 @@ func (d *GRPCDiagnostics) Valid() bool {
 	}
 	validMs := func(v float64) bool { return v >= 0 && v <= 24*60*60*1000 && !math.IsNaN(v) && !math.IsInf(v, 0) }
 	if !validMs(d.CallMs) || d.FirstMessageMs != nil && (!validMs(*d.FirstMessageMs) || *d.FirstMessageMs > d.CallMs) ||
+		d.EncodeMs != nil && !validMs(*d.EncodeMs) || d.DecodeMs != nil && !validMs(*d.DecodeMs) ||
 		d.DeadlineBudgetMs != nil && !validMs(*d.DeadlineBudgetMs) || d.StatusCode != nil && (*d.StatusCode < 0 || *d.StatusCode > 16) {
 		return false
 	}
@@ -51,6 +54,14 @@ func (d *GRPCDiagnostics) Clone() *GRPCDiagnostics {
 		return nil
 	}
 	c := *d
+	if d.EncodeMs != nil {
+		v := *d.EncodeMs
+		c.EncodeMs = &v
+	}
+	if d.DecodeMs != nil {
+		v := *d.DecodeMs
+		c.DecodeMs = &v
+	}
 	if d.FirstMessageMs != nil {
 		v := *d.FirstMessageMs
 		c.FirstMessageMs = &v
@@ -118,10 +129,17 @@ func (d DiagnosticDistribution) Quantile(q float64) (float64, bool) {
 // GRPCSummary has independent denominators for optional measurements. It can
 // describe retained diagnostic samples, not necessarily every run transaction.
 type GRPCSummary struct {
+	Method              string                 `json:"method,omitempty"`
+	Mode                string                 `json:"mode,omitempty"`
+	MixedMethods        bool                   `json:"mixed_methods,omitempty"`
+	DeadlineObserved    int64                  `json:"deadline_observed,omitempty"`
+	NearDeadline        int64                  `json:"near_deadline,omitempty"`
 	Samples             int64                  `json:"samples"`
 	Call                DiagnosticDistribution `json:"call_ms"`
 	FirstMessage        DiagnosticDistribution `json:"first_message_ms"`
 	DeadlineBudget      DiagnosticDistribution `json:"deadline_budget_ms"`
+	Encode              DiagnosticDistribution `json:"encode_ms"`
+	Decode              DiagnosticDistribution `json:"decode_ms"`
 	StatusCounts        [17]int64              `json:"status_counts"`
 	UnavailableStatus   int64                  `json:"unavailable_status"`
 	ReceiveLimitReached int64                  `json:"receive_limit_reached"`
@@ -139,13 +157,32 @@ func MergeGRPCDiagnostic(summary **GRPCSummary, d *GRPCDiagnostics) {
 		*summary = &GRPCSummary{}
 	}
 	s := *summary
+	if s.Samples == 0 {
+		s.Method, s.Mode = d.Method, d.Mode
+	} else if s.Method != d.Method || s.Mode != d.Mode {
+		s.MixedMethods = true
+		s.Method = ""
+		s.Mode = ""
+	}
 	s.Samples++
 	s.Call.Add(d.CallMs)
+	if d.EncodeMs != nil {
+		s.Encode.Add(*d.EncodeMs)
+	}
+	if d.DecodeMs != nil {
+		s.Decode.Add(*d.DecodeMs)
+	}
 	if d.FirstMessageMs != nil {
 		s.FirstMessage.Add(*d.FirstMessageMs)
 	}
 	if d.DeadlineBudgetMs != nil {
 		s.DeadlineBudget.Add(*d.DeadlineBudgetMs)
+		if *d.DeadlineBudgetMs > 0 {
+			s.DeadlineObserved++
+			if d.CallMs / *d.DeadlineBudgetMs >= .8 {
+				s.NearDeadline++
+			}
+		}
 	}
 	if d.StatusCode != nil {
 		s.StatusCounts[*d.StatusCode]++

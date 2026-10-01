@@ -15,6 +15,7 @@ export default function GRPCDiagnosticsPanel({ transactions }: { transactions: T
           <div className="server-telemetry-card" key={tx.name}>
             <div className="server-telemetry-card-header"><span className="server-telemetry-name">{tx.name}</span></div>
             {grpcSummaryLines(tx.server_telemetry!.grpc!).map(line => <p key={line}>{line}</p>)}
+            {tx.server_telemetry?.diagnostic_findings?.filter(f => f.protocol === 'grpc').map(f => <p key={f.rule}><strong>Advisory: </strong>{f.message}</p>)}
           </div>
         ))}
       </div>

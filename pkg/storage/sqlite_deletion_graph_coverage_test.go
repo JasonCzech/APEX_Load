@@ -43,6 +43,7 @@ var manuallyDeletedProjectTables = stringSet(
 // evidence. A declaration here is therefore a reviewed retention decision, not
 // an omission from deleteProjectGraphTx.
 var retainedAfterProjectDeletionTables = stringSet(
+	"analysis_cleanup_jobs", // Physical analytics cleanup must outlive project metadata.
 	"pod_capacity_reservations", // Only generator-confirmed drainage or incarnation fencing releases capacity.
 	"archive_cleanup_jobs", "archive_version_cleanup_jobs", "audit_events", "capacity_instance_intents", "replay_session_leases",
 )

@@ -20,6 +20,65 @@ import (
 func schemaCreateTableStatements() []string {
 	return []string{
 		schemaMigrationLedgerDDL,
+		`CREATE TABLE IF NOT EXISTS analysis_cleanup_jobs (
+            kind TEXT NOT NULL, project_id TEXT NOT NULL, resource_id TEXT NOT NULL,
+            not_before DATETIME NOT NULL, PRIMARY KEY(kind,resource_id)
+        )`,
+		`CREATE TABLE IF NOT EXISTS analysis_definitions (
+            id TEXT NOT NULL,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL, revision BIGINT NOT NULL, payload TEXT NOT NULL,
+            PRIMARY KEY(id,revision)
+        )`,
+		`CREATE TABLE IF NOT EXISTS run_monitor_collector_readiness (
+            collector_id TEXT PRIMARY KEY REFERENCES monitoring_collectors(id) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            seen_at DATETIME NOT NULL,
+            packs TEXT NOT NULL,
+            destinations TEXT NOT NULL
+        )`,
+		`CREATE TABLE IF NOT EXISTS preparations (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            test_id TEXT NOT NULL REFERENCES tests(id) ON DELETE CASCADE, revision BIGINT NOT NULL,
+            execution_revision TEXT NOT NULL, state TEXT NOT NULL, idempotency_key TEXT NOT NULL,
+            owner_fence TEXT NOT NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, payload TEXT NOT NULL,
+            UNIQUE(test_id, idempotency_key)
+        )`,
+		`CREATE TABLE IF NOT EXISTS analysis_imports (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            revision BIGINT NOT NULL, state TEXT NOT NULL, payload TEXT NOT NULL,
+            owner TEXT NOT NULL, lease_expires_at DATETIME NOT NULL
+        )`,
+		`CREATE TABLE IF NOT EXISTS monitor_sources (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            revision BIGINT NOT NULL, payload TEXT NOT NULL
+        )`,
+		`CREATE TABLE IF NOT EXISTS monitor_bindings (
+            scenario_id TEXT PRIMARY KEY REFERENCES scenarios(id) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            revision BIGINT NOT NULL, payload TEXT NOT NULL
+        )`,
+		`CREATE TABLE IF NOT EXISTS run_monitor_sessions (
+            test_id TEXT PRIMARY KEY REFERENCES tests(id) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            started_at DATETIME NOT NULL, stopped_at DATETIME, binding_revision BIGINT NOT NULL
+        )`,
+		`CREATE TABLE IF NOT EXISTS run_monitor_jobs (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            test_id TEXT NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
+            collector_id TEXT NOT NULL, state TEXT NOT NULL, next_sequence BIGINT NOT NULL DEFAULT 0,
+            expires_at DATETIME NOT NULL, payload TEXT NOT NULL
+        )`,
+		`CREATE TABLE IF NOT EXISTS run_monitor_batches (
+            job_id TEXT NOT NULL REFERENCES run_monitor_jobs(id) ON DELETE CASCADE,
+            sequence BIGINT NOT NULL, digest TEXT NOT NULL, artifact_key TEXT NOT NULL,
+            sample_count INTEGER NOT NULL, received_at DATETIME NOT NULL,
+            PRIMARY KEY(job_id, sequence)
+        )`,
 		`CREATE TABLE IF NOT EXISTS baseline_comparison_snapshots (
             id TEXT PRIMARY KEY, project_id TEXT NOT NULL, test_id TEXT NOT NULL,
             payload TEXT NOT NULL, created_at DATETIME NOT NULL,
@@ -1865,6 +1924,11 @@ var dataPoolRowsPageIndex = schemaIndex{
 // migrations. Unique indexes guard against duplicate reference keys; partial
 // indexes skip NULL/empty values so legacy rows awaiting backfill do not collide.
 var schemaIndexes = []schemaIndex{
+	{`CREATE INDEX IF NOT EXISTS idx_preparations_test ON preparations(test_id, expires_at)`, "idx_preparations_test"},
+	{`CREATE INDEX IF NOT EXISTS idx_analysis_imports_project ON analysis_imports(project_id, state)`, "idx_analysis_imports_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_monitor_sources_project ON monitor_sources(project_id)`, "idx_monitor_sources_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_run_monitor_jobs_poll ON run_monitor_jobs(collector_id, state, expires_at)`, "idx_run_monitor_jobs_poll"},
+	{`CREATE INDEX IF NOT EXISTS idx_run_monitor_jobs_test ON run_monitor_jobs(test_id)`, "idx_run_monitor_jobs_test"},
 	{`CREATE INDEX IF NOT EXISTS idx_elk_connections_project ON elk_connections(project_id)`, "idx_elk_connections_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_dynatrace_connections_project ON dynatrace_connections(project_id)`, "idx_dynatrace_connections_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_local_auth_sessions_user ON local_auth_sessions(user_id)`, "idx_local_auth_sessions_user"},

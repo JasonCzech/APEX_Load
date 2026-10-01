@@ -168,13 +168,16 @@ func applyGenericImportBatchContract(route discoveredRoute, contract *inferredRo
 // variants; these packages cover the public storage, DSL, execution, recorder,
 // protocol, and converter models that handlers decode or return directly.
 var openAPICrossPackageDirectories = map[string]string{
-	"dsl":      "dsl",
-	"engine":   "engine",
-	"k6":       "convert/k6",
-	"protocol": "protocol",
-	"recorder": "recorder",
-	"sample":   "convert/sample",
-	"storage":  "storage",
+	"analysis":       "analysis",
+	"analytics":      "analysis/duckdb",
+	"collectoragent": "collectoragent",
+	"dsl":            "dsl",
+	"engine":         "engine",
+	"k6":             "convert/k6",
+	"protocol":       "protocol",
+	"recorder":       "recorder",
+	"sample":         "convert/sample",
+	"storage":        "storage",
 }
 
 func addOpenAPICrossPackageTypeDefinitions(apiDir string, typeDefinitions map[string]ast.Expr) error {
@@ -192,7 +195,11 @@ func addOpenAPICrossPackageTypeDefinitions(apiDir string, typeDefinitions map[st
 		if err != nil {
 			return fmt.Errorf("parse OpenAPI model package %s in %s: %w", packageName, dir, err)
 		}
-		parsedPackage, ok := packages[packageName]
+		declaredName := packageName
+		if packageName == "analytics" {
+			declaredName = "duckdb"
+		}
+		parsedPackage, ok := packages[declaredName]
 		if !ok {
 			return fmt.Errorf("parse OpenAPI model package %s in %s: package not found", packageName, dir)
 		}
@@ -1113,6 +1120,11 @@ func requiredQueryParameter(method, path, name string) bool {
 }
 
 func inferredRequestBody(route discoveredRoute, analysis *handlerContractAnalysis) *oasRequestBody {
+	// Shared handlers may decode mutation bodies in another method branch.
+	// GET and HEAD contracts must not inherit those bodies.
+	if route.Method == http.MethodGet || route.Method == http.MethodHead {
+		return nil
+	}
 	if analysis.multipartRequest {
 		properties := map[string]oasSchema{}
 		for name := range analysis.formValues {
@@ -1497,7 +1509,7 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 				// These bounded evidence records sit inside deeply nested run
 				// responses. Resolve their complete contract with a fresh depth
 				// budget; retain the cycle guard and the general model limit.
-				if pkg.Name == "protocol" && (value.Sel.Name == "GRPCDiagnostics" || value.Sel.Name == "GRPCSummary" || value.Sel.Name == "ServerTelemetry") {
+				if pkg.Name == "protocol" && (value.Sel.Name == "GRPCDiagnostics" || value.Sel.Name == "GRPCSummary" || value.Sel.Name == "WebSocketDiagnostics" || value.Sel.Name == "WebSocketSummary" || value.Sel.Name == "ServerTelemetry") {
 					modelDepth = 0
 				}
 				schema := openAPISchemaForASTTypeInPackage(definition, typeDefinitions, visiting, modelDepth, pkg.Name)

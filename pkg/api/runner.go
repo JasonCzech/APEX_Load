@@ -468,6 +468,7 @@ func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
 }
 
 type ManagedTest struct {
+	preparationID string
 	// Protected by tr.mu; retained through terminal persistence retries.
 	localArchiveFinalizationFailed bool
 
@@ -943,35 +944,37 @@ type BrowserDeviceLiveMetrics struct {
 }
 
 type ServerTelemetrySummary struct {
-	FirstEventSamples         int64                 `json:"first_event_samples,omitempty"`
-	GRPC                      *protocol.GRPCSummary `json:"grpc,omitempty"`
-	Samples                   int64                 `json:"samples"`
-	AvgServerProcessingMs     float64               `json:"avg_server_processing_ms,omitempty"`
-	AvgTransferMs             float64               `json:"avg_transfer_ms,omitempty"`
-	AvgRequestPayloadKB       float64               `json:"avg_request_payload_kb,omitempty"`
-	AvgResponsePayloadKB      float64               `json:"avg_response_payload_kb,omitempty"`
-	RequestPayloadHistogram   map[string]int64      `json:"request_payload_histogram,omitempty"`
-	ResponsePayloadHistogram  map[string]int64      `json:"response_payload_histogram,omitempty"`
-	AvgFirstEventMs           float64               `json:"avg_first_event_ms,omitempty"`
-	MaxFirstEventMs           float64               `json:"max_first_event_ms,omitempty"`
-	EventCount                int64                 `json:"event_count,omitempty"`
-	AvgMessageLatencyMs       float64               `json:"avg_message_latency_ms,omitempty"`
-	MaxMessageLatencyMs       float64               `json:"max_message_latency_ms,omitempty"`
-	MessagesSent              int64                 `json:"messages_sent,omitempty"`
-	MessagesReceived          int64                 `json:"messages_received,omitempty"`
-	AvgMessagesSentPerSec     float64               `json:"avg_messages_sent_per_sec,omitempty"`
-	AvgMessagesReceivedPerSec float64               `json:"avg_messages_received_per_sec,omitempty"`
-	AvgConsumerLagMs          float64               `json:"avg_consumer_lag_ms,omitempty"`
-	MaxConsumerLagMs          float64               `json:"max_consumer_lag_ms,omitempty"`
-	AvgConsumerOffsetLag      float64               `json:"avg_consumer_offset_lag,omitempty"`
-	MaxConsumerOffsetLag      int64                 `json:"max_consumer_offset_lag,omitempty"`
-	SendFailureCount          int64                 `json:"send_failure_count,omitempty"`
-	RedeliveryCount           int64                 `json:"redelivery_count,omitempty"`
-	DeadLetteredCount         int64                 `json:"dead_lettered_count,omitempty"`
-	DuplicateCount            int64                 `json:"duplicate_count,omitempty"`
-	OutOfOrderCount           int64                 `json:"out_of_order_count,omitempty"`
-	CommitCount               int64                 `json:"commit_count,omitempty"`
-	AbortCount                int64                 `json:"abort_count,omitempty"`
+	DiagnosticFindings        []protocol.DiagnosticFinding `json:"diagnostic_findings,omitempty"`
+	FirstEventSamples         int64                        `json:"first_event_samples,omitempty"`
+	WebSocket                 *protocol.WebSocketSummary   `json:"websocket,omitempty"`
+	GRPC                      *protocol.GRPCSummary        `json:"grpc,omitempty"`
+	Samples                   int64                        `json:"samples"`
+	AvgServerProcessingMs     float64                      `json:"avg_server_processing_ms,omitempty"`
+	AvgTransferMs             float64                      `json:"avg_transfer_ms,omitempty"`
+	AvgRequestPayloadKB       float64                      `json:"avg_request_payload_kb,omitempty"`
+	AvgResponsePayloadKB      float64                      `json:"avg_response_payload_kb,omitempty"`
+	RequestPayloadHistogram   map[string]int64             `json:"request_payload_histogram,omitempty"`
+	ResponsePayloadHistogram  map[string]int64             `json:"response_payload_histogram,omitempty"`
+	AvgFirstEventMs           float64                      `json:"avg_first_event_ms,omitempty"`
+	MaxFirstEventMs           float64                      `json:"max_first_event_ms,omitempty"`
+	EventCount                int64                        `json:"event_count,omitempty"`
+	AvgMessageLatencyMs       float64                      `json:"avg_message_latency_ms,omitempty"`
+	MaxMessageLatencyMs       float64                      `json:"max_message_latency_ms,omitempty"`
+	MessagesSent              int64                        `json:"messages_sent,omitempty"`
+	MessagesReceived          int64                        `json:"messages_received,omitempty"`
+	AvgMessagesSentPerSec     float64                      `json:"avg_messages_sent_per_sec,omitempty"`
+	AvgMessagesReceivedPerSec float64                      `json:"avg_messages_received_per_sec,omitempty"`
+	AvgConsumerLagMs          float64                      `json:"avg_consumer_lag_ms,omitempty"`
+	MaxConsumerLagMs          float64                      `json:"max_consumer_lag_ms,omitempty"`
+	AvgConsumerOffsetLag      float64                      `json:"avg_consumer_offset_lag,omitempty"`
+	MaxConsumerOffsetLag      int64                        `json:"max_consumer_offset_lag,omitempty"`
+	SendFailureCount          int64                        `json:"send_failure_count,omitempty"`
+	RedeliveryCount           int64                        `json:"redelivery_count,omitempty"`
+	DeadLetteredCount         int64                        `json:"dead_lettered_count,omitempty"`
+	DuplicateCount            int64                        `json:"duplicate_count,omitempty"`
+	OutOfOrderCount           int64                        `json:"out_of_order_count,omitempty"`
+	CommitCount               int64                        `json:"commit_count,omitempty"`
+	AbortCount                int64                        `json:"abort_count,omitempty"`
 	// Derived reliability rates (P4.1), percent of received messages.
 	RedeliveryRatePct float64 `json:"redelivery_rate_pct,omitempty"`
 	DeadLetterRatePct float64 `json:"dead_letter_rate_pct,omitempty"`
@@ -2146,6 +2149,9 @@ type CreateGroupEntry struct {
 }
 
 type StartTestOptions struct {
+	PreparationID               string `json:"preparation_id,omitempty"`
+	ExpectedPreparationRevision string `json:"expected_preparation_revision,omitempty"`
+	prepareOnly                 bool
 	OverrideCapacityShortfall   bool `json:"override_capacity_shortfall,omitempty"`
 	OverrideScriptShakeoutError bool `json:"override_script_shakeout_failure,omitempty"`
 	SkipLaunchWindowPreflight   bool `json:"-"`

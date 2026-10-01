@@ -73,6 +73,246 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/analysis/capabilities",
+      "operationId": "handleAnalysisCapabilities",
+      "summary": "Analysis Capabilities",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/analysis/compare",
+      "operationId": "handleAnalysisComparison",
+      "summary": "Analysis Comparison",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/comparisons",
+      "operationId": "handleAnalysisDefinitions",
+      "summary": "Analysis Definitions",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/analysis/comparisons",
+      "operationId": "handleAnalysisDefinitions_2",
+      "summary": "Analysis Definitions",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/analysis/comparisons/{id}",
+      "operationId": "handleAnalysisDefinitions_3",
+      "summary": "Analysis Definitions",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/comparisons/{id}",
+      "operationId": "handleAnalysisDefinitions_4",
+      "summary": "Analysis Definitions",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/analysis/comparisons/{id}",
+      "operationId": "handleAnalysisDefinitions_5",
+      "summary": "Analysis Definitions",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/datasets/{id}",
+      "operationId": "handleAnalysisImport",
+      "summary": "Analysis Import",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/analysis/datasets/{id}/association",
+      "operationId": "handleAnalysisAssociation",
+      "summary": "Analysis Association",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/datasets/{id}/rejections/{index}",
+      "operationId": "handleAnalysisRejections",
+      "summary": "Analysis Rejections",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/analysis/datasets/{id}/series",
+      "operationId": "handleAnalysisDatasetSeries",
+      "summary": "Analysis Dataset Series",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/imports",
+      "operationId": "handleAnalysisImports",
+      "summary": "Analysis Imports",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/analysis/imports",
+      "operationId": "handleAnalysisImports_2",
+      "summary": "Analysis Imports",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/analysis/imports/{id}",
+      "operationId": "handleAnalysisImport_2",
+      "summary": "Analysis Import",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/imports/{id}",
+      "operationId": "handleAnalysisImport_3",
+      "summary": "Analysis Import",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/analysis/imports/{id}/commit",
+      "operationId": "handleAnalysisCommit",
+      "summary": "Analysis Commit",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/analysis/imports/{id}/files/{file_id}",
+      "operationId": "handleAnalysisUpload",
+      "summary": "Analysis Upload",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/imports/{id}/files/{file_id}/preview",
+      "operationId": "handleAnalysisPreview",
+      "summary": "Analysis Preview",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/analysis/imports/{id}/mapping",
+      "operationId": "handleAnalysisMapping",
+      "summary": "Analysis Mapping",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/mappings",
+      "operationId": "handleAnalysisDefinitions_6",
+      "summary": "Analysis Definitions",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/analysis/mappings",
+      "operationId": "handleAnalysisDefinitions_7",
+      "summary": "Analysis Definitions",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/analysis/mappings/{id}",
+      "operationId": "handleAnalysisDefinitions_8",
+      "summary": "Analysis Definitions",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/mappings/{id}",
+      "operationId": "handleAnalysisDefinitions_9",
+      "summary": "Analysis Definitions",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/analysis/mappings/{id}",
+      "operationId": "handleAnalysisDefinitions_10",
+      "summary": "Analysis Definitions",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
       "method": "DELETE",
       "path": "/api/v1/application-repository/categories/{id}",
       "operationId": "handleDeleteRepositoryCategory",
@@ -2337,6 +2577,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/monitoring/collectors/{id}/jobs",
+      "operationId": "handlePollRunMonitorJobs",
+      "summary": "Poll Run Monitor Jobs",
+      "category": "Operations \u0026 Observability",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/samples",
+      "operationId": "handleRunMonitorSamples",
+      "summary": "Run Monitor Samples",
+      "category": "Operations \u0026 Observability",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/monitoring/collectors/{id}/metrics",
       "operationId": "handleGetCollectorMetrics",
       "summary": "Get Collector Metrics",
@@ -2750,6 +3010,46 @@
       "path": "/api/v1/projects/{id}/integrations/confluence-connections/{connection_id}/test",
       "operationId": "handleTestConfluenceConnection",
       "summary": "Test Confluence Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitor-sources",
+      "operationId": "handleMonitorSources",
+      "summary": "Monitor Sources",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitor-sources",
+      "operationId": "handleMonitorSources_2",
+      "summary": "Monitor Sources",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{id}/monitor-sources/{source_id}",
+      "operationId": "handleMonitorSources_3",
+      "summary": "Monitor Sources",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/monitor-sources/{source_id}",
+      "operationId": "handleMonitorSources_4",
+      "summary": "Monitor Sources",
       "category": "Workspace \u0026 Assets",
       "public": false,
       "authenticated": true,
@@ -3584,6 +3884,26 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scenarios/{id}/monitor-bindings",
+      "operationId": "handleMonitorBindings",
+      "summary": "Monitor Bindings",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/scenarios/{id}/monitor-bindings",
+      "operationId": "handleMonitorBindings_2",
+      "summary": "Monitor Bindings",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
     },
     {
       "method": "GET",
@@ -5816,6 +6136,26 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/monitor-series",
+      "operationId": "handleRunMonitorSeries",
+      "summary": "Run Monitor Series",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/monitors",
+      "operationId": "handleRunMonitors",
+      "summary": "Run Monitors",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
       "method": "PATCH",
       "path": "/api/v1/tests/{id}/move",
       "operationId": "handleMoveTest",
@@ -5874,6 +6214,36 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/tests/{id}/preparation",
+      "operationId": "handlePreparation",
+      "summary": "Preparation",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/preparation",
+      "operationId": "handlePreparation_2",
+      "summary": "Preparation",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/preparation",
+      "operationId": "handlePreparation_3",
+      "summary": "Preparation",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
     },
     {
       "method": "GET",

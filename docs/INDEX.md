@@ -77,7 +77,8 @@ not the source of truth for current API or DSL contracts.
 | [NODE_FAILURE_READINESS_PLAN.md](NODE_FAILURE_READINESS_PLAN.md) | Proposed implementation and qualification plan for worker recovery, KEDA capacity, liveness, storage, and archive issues found in September 2026 fault tests |
 | [NODE_STORAGE_RECOVERY.md](NODE_STORAGE_RECOVERY.md) | Worker state inventory, fencing, storage recovery, and qualification limits |
 | [ARCHIVE_SOURCE_RETENTION.md](ARCHIVE_SOURCE_RETENTION.md) | Opt-in confirmed-source retention, publication fences and recoverability limits |
-| [ROADMAP.md](ROADMAP.md) | Roadmap: runtime telemetry SLA, protocol telemetry parity, script authoring consolidation, proposed PT Analysis Parquet import, messaging open work and design record, browser/mobile roadmap, CloudTest outcome-parity ledger and phases |
+| [ANALYSIS_WORKFLOWS.md](ANALYSIS_WORKFLOWS.md) | Project-gated run monitoring, traffic-free preparation, native Parquet imports, saved mappings and correlation; validation limits |
+| [ROADMAP.md](ROADMAP.md) | Roadmap: runtime telemetry SLA, protocol telemetry parity, script authoring consolidation, PT Analysis Parquet import, messaging open work and design record, browser/mobile roadmap, CloudTest outcome-parity ledger and phases |
 | [qa/TEST_PROGRAM.md](qa/TEST_PROGRAM.md) | Nine-month progressive test and infrastructure-readiness program; scope of record, live risk register, and release test checklist |
 | [qa/DASHBOARD.md](qa/DASHBOARD.md) | Generated current QA status, headline metrics, Tier-0/API coverage, and gate tiers |
 | [qa/STATUS.md](qa/STATUS.md) | Milestone state and current program narrative (tracker-enforced) |

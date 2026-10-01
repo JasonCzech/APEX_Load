@@ -254,7 +254,7 @@ func (g *GRPC) invokeUnary(ctx context.Context, action *protocol.Action, result 
 
 	result.BytesSent = int64(len(action.Body))
 	callCtx = beginRPC(callCtx, method)
-	err = g.conn.Invoke(callCtx, fullMethod, request, response)
+	err = g.conn.Invoke(callCtx, fullMethod, request, response, rpcCodecOption(callCtx))
 	recordTransportEnd(callCtx, err)
 	if err != nil {
 		return err
@@ -284,7 +284,7 @@ func (g *GRPC) invokeServerStream(ctx context.Context, action *protocol.Action, 
 	callCtx := metadata.NewOutgoingContext(ctx, g.callMetadata(action))
 
 	callCtx = beginRPC(callCtx, method)
-	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method))
+	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method), rpcCodecOption(callCtx))
 	if err != nil {
 		recordTransportEnd(callCtx, err)
 		return err
@@ -333,7 +333,7 @@ func (g *GRPC) invokeClientStream(ctx context.Context, action *protocol.Action, 
 	}
 
 	callCtx = beginRPC(callCtx, method)
-	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method))
+	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method), rpcCodecOption(callCtx))
 	if err != nil {
 		recordTransportEnd(callCtx, err)
 		return err
@@ -396,7 +396,7 @@ func (g *GRPC) invokeBidiStream(ctx context.Context, action *protocol.Action, re
 		return fmt.Errorf("grpc max_messages exceeds limit %d", dsl.MaxGRPCStreamMessages)
 	}
 	callCtx = beginRPC(callCtx, method)
-	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method))
+	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method), rpcCodecOption(callCtx))
 	if err != nil {
 		recordTransportEnd(callCtx, err)
 		return err

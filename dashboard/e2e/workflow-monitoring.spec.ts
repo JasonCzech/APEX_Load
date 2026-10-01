@@ -78,7 +78,7 @@ test('Monitoring preserves repeated keyboard navigation and calendar context', a
   await expect(controlPlane).not.toContainText('0.0.0.0:8080')
   const tabs = page.getByRole('tablist', { name: 'Monitor categories' })
   await tabs.getByRole('tab', { name: 'Overview', exact: true }).focus()
-  for (const name of ['Fleet', 'Telemetry', 'Alerts', 'Schedules']) {
+  for (const name of ['Fleet', 'Telemetry', 'Alerts', 'Analysis', 'Schedules']) {
     await page.keyboard.press('ArrowRight')
     await expect(tabs.getByRole('tab', { name, exact: true })).toBeFocused()
   }

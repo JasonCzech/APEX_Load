@@ -4,6 +4,7 @@
 import type { ScriptActionDefinition, ScriptDefinition, ScriptParameterDefinition } from './types/scripts'
 import type { LibraryImportResultItem, LibraryRemote } from './types/library'
 import type { DashboardAuditEvent } from './types/auth'
+import type { DiagnosticDistribution, WebSocketDiagnostics, WebSocketSummary, ProtocolDiagnosticFinding } from './types/protocolDiagnostics'
 import type {
   SystemInventoryGenerator,
 } from './types/system'
@@ -1328,6 +1329,8 @@ export interface IntervalTransactionMetrics {
 }
 
 export interface GRPCDiagnostics {
+  encode_ms?: number
+  decode_ms?: number
   method: string
   mode: string
   call_ms: number
@@ -1341,15 +1344,14 @@ export interface GRPCDiagnostics {
   receive_limit_reached?: boolean
 }
 
-export interface DiagnosticDistribution {
-  count: number
-  sum: number
-  min: number
-  max: number
-  buckets: number[]
-}
-
 export interface GRPCSummary {
+  encode_ms?: DiagnosticDistribution
+  decode_ms?: DiagnosticDistribution
+  method?: string
+  mode?: string
+  mixed_methods?: boolean
+  deadline_observed?: number
+  near_deadline?: number
   samples: number
   call_ms: DiagnosticDistribution
   first_message_ms: DiagnosticDistribution
@@ -1364,6 +1366,7 @@ export interface GRPCSummary {
 }
 
 export interface ServerTelemetry {
+  websocket?: WebSocketDiagnostics
   grpc?: GRPCDiagnostics
   server_processing_ms?: number
   transfer_ms?: number
@@ -1391,6 +1394,8 @@ export interface ServerTelemetry {
 }
 
 export interface ServerTelemetrySummary {
+  websocket?: WebSocketSummary
+  diagnostic_findings?: ProtocolDiagnosticFinding[]
   grpc?: GRPCSummary
   first_event_samples?: number
   samples: number
@@ -3024,3 +3029,5 @@ export interface ImportedDashboardImportReview {
 // shapes. CapacityTimeslot is intentionally distinct from the settings-embedded
 // CapacityReservation type above (forward-booking reservation vs static pool).
 // ---------------------------------------------------------------------------
+
+export type { DiagnosticDistribution } from './types/protocolDiagnostics'

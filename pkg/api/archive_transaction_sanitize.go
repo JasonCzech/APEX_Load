@@ -138,7 +138,11 @@ func sanitizeArchivedTransaction(item *TransactionEvent) {
 	item.SourceProfile = scrub.ValueLabel(item.SourceProfile, policy)
 	if item.ServerTelemetry != nil {
 		cloned := *item.ServerTelemetry
+		if !cloned.WebSocket.Valid() {
+			cloned.WebSocket = nil
+		}
 		cloned.GRPC = cloned.GRPC.Clone()
+		cloned.WebSocket = cloned.WebSocket.Clone()
 		if !cloned.GRPC.Valid() {
 			cloned.GRPC = nil
 		} else {

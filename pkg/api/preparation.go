@@ -1,0 +1,446 @@
+package api
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/storage"
+)
+
+func preparationProjectEnabled(project string) bool {
+	for _, p := range strings.Split(os.Getenv("APEXLOAD_PREPARATION_PROJECTS"), ",") {
+		if strings.TrimSpace(p) == project && project != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func (tr *TestRunner) preparationRevision(id string) (string, error) {
+	fingerprint, err := tr.scriptShakeoutExecutableFingerprint(id)
+	if err != nil {
+		return "", err
+	}
+	tr.mu.RLock()
+	test := tr.tests[id]
+	if test == nil {
+		tr.mu.RUnlock()
+		return "", errors.New("test not found")
+	}
+	project, scenario := test.ProjectID, test.ScenarioID
+	snapshot := struct {
+		Script     string
+		Duration   string
+		VUsers     int
+		Assignment *GeneratorAssignmentSettings
+		Bindings   *storage.MonitorBindings
+		Sources    []storage.MonitorSource
+	}{Script: fingerprint.EvidenceSHA256, Duration: test.DurationStr, VUsers: test.TotalVUsers, Assignment: cloneGeneratorAssignmentSettings(test.Assignment)}
+	tr.mu.RUnlock()
+	if store, ok := tr.testStore.(storage.RunMonitorStore); ok && scenario != "" {
+		snapshot.Bindings, err = store.GetMonitorBindings(project, scenario)
+		if err != nil {
+			return "", err
+		}
+		sources, err := store.ListMonitorSources(project)
+		if err != nil {
+			return "", err
+		}
+		for _, source := range sources {
+			for _, binding := range snapshot.Bindings.Sources {
+				if binding.SourceID == source.ID {
+					snapshot.Sources = append(snapshot.Sources, source)
+					break
+				}
+			}
+		}
+	}
+	body, err := json.Marshal(snapshot)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func (s *Server) handlePreparation(w http.ResponseWriter, r *http.Request) {
+	project, status, message := resolveTestProjectID(r, s.store)
+	if status != 0 {
+		writeError(w, status, message)
+		return
+	}
+	// Disabling new preparations must not strand an existing reservation or
+	// hide its audit history. Read and cancellation keep their ordinary RBAC.
+	if r.Method == http.MethodPost && !preparationProjectEnabled(project) {
+		writeError(w, 409, "preparation is not enabled for this project")
+		return
+	}
+	store, ok := s.store.(storage.PreparationStore)
+	if !ok {
+		writeError(w, 501, "durable preparation unavailable")
+		return
+	}
+	id := r.PathValue("id")
+	if r.Method == http.MethodGet {
+		p, err := store.LatestPreparation(id)
+		if errors.Is(err, sql.ErrNoRows) {
+			writeJSON(w, 200, map[string]any{"state": "none"})
+			return
+		}
+		if err != nil {
+			writeError(w, 503, "cannot read preparation")
+			return
+		}
+		writeJSON(w, 200, p)
+		return
+	}
+	if !s.requireExecutionLeader(w) {
+		return
+	}
+	if r.Method == http.MethodDelete {
+		p, err := store.LatestPreparation(id)
+		if err != nil {
+			writeError(w, 404, "preparation not found")
+			return
+		}
+		if p.State == "cancelled" || p.State == "expired" || p.State == "failed" {
+			writeJSON(w, 200, p)
+			return
+		}
+		next, err := store.TransitionPreparation(p.ID, p.State, "cancelled", p.Revision, p.OwnerFence, nil)
+		if err != nil {
+			writeError(w, 409, err.Error())
+			return
+		}
+		s.runner.cancelPreparationExecution(id, p.ID)
+		s.recordAuditEvent(r, "test.preparation.cancel", "success", "test", id, project, nil)
+		writeJSON(w, 200, next)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	var req struct {
+		TTLSeconds       int    `json:"ttl_seconds"`
+		ExpectedRevision string `json:"expected_revision"`
+		PreparationID    string `json:"preparation_id"`
+		Revision         int64  `json:"revision"`
+	}
+	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
+		return
+	}
+	if req.TTLSeconds == 0 {
+		req.TTLSeconds = 1800
+	}
+	if req.TTLSeconds < 300 || req.TTLSeconds > 14400 {
+		writeError(w, 400, "preparation TTL must be 300-14400 seconds")
+		return
+	}
+	s.runner.mu.RLock()
+	test := s.runner.tests[id]
+	if test == nil {
+		s.runner.mu.RUnlock()
+		writeError(w, 404, "test not found")
+		return
+	}
+	unsupported := test.ScriptShakeout
+	for _, group := range test.groupSpecs {
+		if group.Script != nil && (group.Script.Protocol == "java_vuser" || group.Script.Protocol == "bruno") {
+			unsupported = true
+		}
+	}
+	s.runner.mu.RUnlock()
+	if unsupported {
+		writeError(w, 422, "this runtime or shakeout policy cannot currently guarantee traffic-free preparation")
+		return
+	}
+	if err := s.runner.validateStartSecretRequirements(id); err != nil {
+		writeError(w, 409, err.Error())
+		return
+	}
+	revision, err := s.runner.preparationRevision(id)
+	if err != nil {
+		writeError(w, 409, err.Error())
+		return
+	}
+	if req.ExpectedRevision != "" && req.ExpectedRevision != revision {
+		writeError(w, 409, "execution revision changed")
+		return
+	}
+	term, err := s.runner.captureExecutionLeaseTerm()
+	if err != nil {
+		writeError(w, 409, err.Error())
+		return
+	}
+	if req.PreparationID != "" {
+		p, err := store.GetPreparation(req.PreparationID)
+		if err != nil || p.TestID != id || p.ExecutionRevision != revision || p.OwnerFence != term.ownerID || p.State != "ready" || req.Revision != p.Revision || !s.runner.preparationReservationValid(id, p) {
+			writeError(w, 409, "preparation changed or lost its reservation")
+			return
+		}
+		if err = s.runner.validatePreparedMonitorReadiness(id); err != nil {
+			writeError(w, 409, err.Error())
+			return
+		}
+		next, err := store.RenewPreparation(p.ID, p.Revision, p.OwnerFence, time.Duration(req.TTLSeconds)*time.Second)
+		if err != nil {
+			writeError(w, 409, err.Error())
+			return
+		}
+		s.recordAuditEvent(r, "test.preparation.renew", "success", "test", id, project, nil)
+		writeJSON(w, 200, next)
+		return
+	}
+	now := time.Now().UTC()
+	key := r.Header.Get("Idempotency-Key")
+	if key == "" {
+		key = uuid.NewString()
+	}
+	p, err := store.CreatePreparation(storage.Preparation{ID: uuid.NewString(), TestID: id, ProjectID: project, ExecutionRevision: revision, IdempotencyKey: key, OwnerFence: term.ownerID, CreatedAt: now, ExpiresAt: now.Add(time.Duration(req.TTLSeconds) * time.Second)})
+	if err != nil {
+		writeError(w, 409, err.Error())
+		return
+	}
+	s.runner.mu.Lock()
+	test = s.runner.tests[id]
+	already := test != nil && test.preparationID == p.ID
+	if test != nil && !already && p.State == "preparing" {
+		test.preparationID = p.ID
+	}
+	s.runner.mu.Unlock()
+	if !already && p.State == "preparing" {
+		actorType, actorSubject, actorName := s.resolveAuditActor(r)
+		opts := StartTestOptions{prepareOnly: true, actor: testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorName}}
+		if err = s.runner.startTestWithOptionsAndExpectedTerm(id, opts, &term); err != nil {
+			_, _ = store.TransitionPreparation(p.ID, "preparing", "failed", p.Revision, p.OwnerFence, nil)
+			s.runner.mu.Lock()
+			if test != nil && test.preparationID == p.ID && (test.Status == "QUEUED" || test.Status == "PENDING") {
+				test.preparationID = ""
+			}
+			s.runner.mu.Unlock()
+			writeError(w, 409, err.Error())
+			return
+		}
+		go s.runner.watchPreparation(p.ID, id)
+	}
+	s.recordAuditEvent(r, "test.preparation.create", "started", "test", id, project, map[string]any{"preparation_id": p.ID, "execution_revision": revision})
+	writeJSON(w, 202, p)
+}
+
+// awaitPreparedStart is placed after immutable staging/reservation but before
+// any runtime preflight, protocol initialization, probe, or execution commit.
+func (tr *TestRunner) awaitPreparedStart(test *ManagedTest) error {
+	if test.preparationID == "" {
+		return nil
+	}
+	store, ok := tr.testStore.(storage.PreparationStore)
+	if !ok {
+		return errors.New("preparation storage unavailable")
+	}
+	p, err := store.GetPreparation(test.preparationID)
+	if err != nil {
+		return err
+	}
+	if p.State != "preparing" {
+		return storage.ErrPreparationConflict
+	}
+	tr.mu.RLock()
+	ctx := test.executionCtx
+	allocation, err := json.Marshal(test.GeneratorShards)
+	tr.mu.RUnlock()
+	if err != nil {
+		return err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if current, err := tr.preparationRevision(test.ID); err != nil || current != p.ExecutionRevision {
+		_, _ = tr.transitionPreparation(p.ID, "preparing", "failed", p.Revision, p.OwnerFence, nil)
+		return errors.New("execution revision changed while preparing")
+	}
+	if err := tr.validatePreparedMonitorReadiness(test.ID); err != nil {
+		return err
+	}
+	p, err = tr.transitionPreparation(p.ID, "preparing", "ready", p.Revision, p.OwnerFence, allocation)
+	if err != nil {
+		return err
+	}
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			current, err := store.GetPreparation(p.ID)
+			if err != nil {
+				return err
+			}
+			if !tr.isExecutionLeader() {
+				return errNotExecutionLeader
+			}
+			if current.State == "consumed" {
+				return nil
+			}
+			if current.State != "ready" {
+				return fmt.Errorf("preparation %s", current.State)
+			}
+			if !current.ExpiresAt.After(time.Now()) {
+				_, _ = tr.transitionPreparation(current.ID, "ready", "expired", current.Revision, current.OwnerFence, nil)
+				return errors.New("preparation expired")
+			}
+		}
+	}
+}
+
+func (tr *TestRunner) consumePreparation(id string, opts StartTestOptions) error {
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
+	store, ok := tr.testStore.(storage.PreparationStore)
+	if !ok {
+		return errors.New("preparation storage unavailable")
+	}
+	p, err := store.GetPreparation(opts.PreparationID)
+	if err != nil {
+		return err
+	}
+	if p.TestID != id || !preparationProjectEnabled(p.ProjectID) || p.State != "ready" || opts.ExpectedPreparationRevision == "" || opts.ExpectedPreparationRevision != p.ExecutionRevision {
+		return storage.ErrPreparationConflict
+	}
+	if !tr.preparationReservationValid(id, p) {
+		return errors.New("preparation lost its execution reservation or controller ownership")
+	}
+	if err = tr.validateStartSecretRequirements(id); err != nil {
+		return err
+	}
+	if err = tr.validatePreparedMonitorReadiness(id); err != nil {
+		return err
+	}
+	revision, err := tr.preparationRevision(id)
+	if err != nil {
+		return err
+	}
+	if revision != p.ExecutionRevision {
+		_, _ = tr.transitionPreparation(p.ID, "ready", "failed", p.Revision, p.OwnerFence, nil)
+		return errors.New("prepared execution revision changed")
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	test := tr.tests[id]
+	if test == nil || test.Status != "INITIALIZING" || test.preparationID != p.ID || test.executionCtx == nil || test.executionCtx.Err() != nil {
+		return storage.ErrPreparationConflict
+	}
+	snapshot, _ := applyTestStartedByActor(test, opts.actor)
+	err = tr.trackDurableWrite(func() error {
+		_, err := store.ConsumePreparation(p.ID, p.Revision, p.OwnerFence, test.StartedBySubject, test.StartedByDisplayName)
+		return err
+	})
+	if err != nil {
+		restoreTestStartedByActor(test, snapshot)
+	}
+	return err
+}
+
+func (tr *TestRunner) preparationReservationValid(id string, p *storage.Preparation) bool {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	test := tr.tests[id]
+	return test != nil && test.Status == "INITIALIZING" && test.preparationID == p.ID && test.executionFence == p.OwnerFence && test.executionCtx != nil && test.executionCtx.Err() == nil
+}
+
+func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
+	tr.mu.RLock()
+	test := tr.tests[id]
+	if test == nil {
+		tr.mu.RUnlock()
+		return errors.New("test not found")
+	}
+	project, scenario := test.ProjectID, test.ScenarioID
+	tr.mu.RUnlock()
+	if !runMonitoringEnabled(project) {
+		return nil
+	}
+	store, ok := tr.testStore.(interface {
+		ValidateRunMonitorReadiness(string, string, string, time.Time) error
+	})
+	if !ok {
+		return errors.New("collector readiness storage unavailable")
+	}
+	return tr.trackDurableWrite(func() error { return store.ValidateRunMonitorReadiness(project, id, scenario, time.Now().UTC()) })
+}
+
+func (tr *TestRunner) cancelPreparationExecution(id, preparation string) {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	if test := tr.tests[id]; test != nil && test.preparationID == preparation && test.Status == "INITIALIZING" && test.cancel != nil {
+		test.cancel()
+	}
+}
+
+// Cancellation/expiry also interrupts provider provisioning, before the ready
+// gate has been reached. A successfully consumed preparation is never cancelled.
+func (tr *TestRunner) watchPreparation(preparation, id string) {
+	store, ok := tr.testStore.(storage.PreparationStore)
+	if !ok {
+		return
+	}
+	tr.mu.RLock()
+	test := tr.tests[id]
+	var ctx context.Context
+	if test != nil {
+		ctx = test.executionCtx
+	}
+	tr.mu.RUnlock()
+	if ctx == nil {
+		return
+	}
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			p, err := store.GetPreparation(preparation)
+			if err != nil {
+				continue
+			}
+			if p.State == "consumed" {
+				return
+			}
+			if p.State == "cancelled" || p.State == "failed" || p.State == "expired" {
+				tr.cancelPreparationExecution(id, preparation)
+				return
+			}
+			if !p.ExpiresAt.After(time.Now()) {
+				if _, err = tr.transitionPreparation(p.ID, p.State, "expired", p.Revision, p.OwnerFence, nil); err == nil {
+					tr.cancelPreparationExecution(id, preparation)
+					return
+				}
+			}
+		}
+	}
+}
+
+func (tr *TestRunner) transitionPreparation(id, from, to string, revision int64, owner string, allocation json.RawMessage) (*storage.Preparation, error) {
+	store, ok := tr.testStore.(storage.PreparationStore)
+	if !ok {
+		return nil, errors.New("preparation storage unavailable")
+	}
+	var next *storage.Preparation
+	err := tr.trackDurableWrite(func() error {
+		var err error
+		next, err = store.TransitionPreparation(id, from, to, revision, owner, allocation)
+		return err
+	})
+	return next, err
+}

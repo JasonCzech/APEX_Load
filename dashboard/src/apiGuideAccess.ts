@@ -182,6 +182,9 @@ export function classifyEndpointForDocs(route: ApiEndpointCatalogRoute): DocsVis
   if (route.public) return classification([])
 
   switch (segment) {
+    case 'analysis':
+      if (route.path.endsWith('/series') || route.path === '/api/v1/analysis/compare') return classification(['view_tests'])
+      return readWrite(route.method, ['view_tests'], ['manage_tests'])
     case 'ai':
       return route.method === 'GET' ? classification(['view_system', 'view_tests']) : classification(['manage_scripts'])
     case 'application-repository':

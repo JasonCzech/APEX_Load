@@ -1148,6 +1148,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			continue
 		}
 		if result.client != nil {
+			if test.preparationID != "" && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeaturePreparationV1) {
+				_ = result.client.Close()
+				discoveryFatal = fmt.Errorf("generator %s lacks prepare_v1", result.target)
+				continue
+			}
 			if test.TerminationMode == "iterations" && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeatureIterationTerminationV1) {
 				_ = result.client.Close()
 				discoveryFatal = fmt.Errorf("generator %s lacks iteration_termination_v1; no traffic was started", result.target)
@@ -1380,7 +1385,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				Content:             scriptContent,
 				ContentHash:         contentHash,
 			},
-			generatorrpc.Assignment{
+			generatorrpc.Assignment{PrepareOnly: test.preparationID != "",
 				SourcePlan:                 sourcePlan,
 				TerminationMode:            test.TerminationMode,
 				TestID:                     test.ID,
@@ -1506,6 +1511,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			return
 		}
 		streamsByTarget[target] = stream
+	}
+
+	if err := tr.awaitPreparedStart(test); err != nil {
+		failStartup(err.Error())
+		return
 	}
 
 	started, activate, startErr := b.prepareDistributedTestRunWithLifecycle(tr, test, activeGroupShards, assignedClients, streamsByTarget, remoteLifecycleCtx, remoteLifecycleCancel, time.Now())

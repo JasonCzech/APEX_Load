@@ -1566,6 +1566,9 @@ func (s *SQLiteStore) DeleteProjectIfLeaseHeld(id, leaseName, leaseOwnerID strin
 }
 
 func deleteProjectGraphTx(tx *storeTx, id string) error {
+	if err := queueProjectAnalysisCleanupTx(tx, id); err != nil {
+		return err
+	}
 	if err := rejectActiveGitHubProjectSyncClaimsTx(tx, id); err != nil {
 		return err
 	}

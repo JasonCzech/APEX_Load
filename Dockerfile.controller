@@ -1,0 +1,97 @@
+ARG PLAYWRIGHT_DRIVER_VERSION=1.61.1
+
+FROM node:22.22.0-bookworm-slim@sha256:dd9d21971ec4395903fa6143c2b9267d048ae01ca6d3ea96f16cb30df6187d94 AS dashboard-builder
+
+ARG PLAYWRIGHT_DRIVER_VERSION
+ARG VERSION=dev
+ARG BUILD_TIME=
+
+WORKDIR /src
+COPY dashboard/package.json dashboard/package-lock.json ./dashboard/
+COPY dashboard/scripts/check-node-version.mjs ./dashboard/scripts/check-node-version.mjs
+# check-node-version.mjs resolves the pin from ../../.nvmrc, i.e. /src/.nvmrc.
+# It must be copied alongside the script: without it the preinstall gate below
+# throws ENOENT and the image build fails before npm ci ever runs.
+COPY .nvmrc ./.nvmrc
+RUN npm --prefix dashboard run check:node
+RUN npm --prefix dashboard ci --ignore-scripts
+RUN actual="$(node -p "require('./dashboard/node_modules/playwright-core-go/package.json').version")" \
+	&& test "${actual}" = "${PLAYWRIGHT_DRIVER_VERSION}" \
+	|| { echo "locked playwright-core driver ${actual} does not match ${PLAYWRIGHT_DRIVER_VERSION}" >&2; exit 1; }
+# Help & documentation articles are bundled into the dashboard by
+# dashboard/src/helpContent.ts's import.meta.glob() at build time, resolved
+# against whatever exists on disk in THIS stage — not the full repo checkout.
+# Copy every doc path the help catalog can reference (docs/help-content-catalog.json),
+# not just a hand-picked few, or articles silently go missing from the built bundle
+# while still working in `npm run dev` (which sees the whole repo).
+COPY docs/*.md ./docs/
+COPY docs/help-content-catalog.json docs/dsl.schema.json ./docs/
+COPY pkg/api/import_settings_fields.json ./pkg/api/import_settings_fields.json
+COPY mcp/README.md ./mcp/README.md
+COPY deployments/README.md ./deployments/README.md
+COPY deployments/docker/ ./deployments/docker/
+COPY deployments/helm/ ./deployments/helm/
+COPY deployments/k8s/ ./deployments/k8s/
+COPY dashboard/ ./dashboard/
+# The dashboard build deliberately writes to /src/pkg/api/static, matching the
+# go:embed path used by the controller. Building it here makes image contents
+# independent from any locally generated or committed frontend bundle.
+RUN APEXLOAD_UX_VERSION="${VERSION}" APEXLOAD_UX_BUILD_TIME="${BUILD_TIME}" \
+	npm --prefix dashboard run build
+
+FROM golang:1.26.5-bookworm@sha256:53eeac89074db483fdf0ab3be1df32bf6e47562263d2d0d6baa7f26acb4957dd AS builder
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+COPY --from=dashboard-builder /src/pkg/api/static/ ./pkg/api/static/
+
+ARG BINARY=controller
+ARG GO_BUILD_TAGS=standard
+ARG VERSION=dev
+ARG COMMIT=
+ARG BUILD_TIME=
+ARG BI=github.com/jasonczech/apexload/pkg/buildinfo
+RUN case "${GO_BUILD_TAGS}" in \
+		standard) build_tags="analytics_duckdb" ;; \
+		enterprise) build_tags="analytics_duckdb,jms_solace_real,jms_servicebus_real,kafka_real,eventhubs_real" ;; \
+		*) echo "unsupported GO_BUILD_TAGS profile: ${GO_BUILD_TAGS} (expected standard or enterprise)" >&2; exit 2 ;; \
+	esac \
+	&& if [ -n "${build_tags}" ]; then set -- -tags "${build_tags}"; else set --; fi \
+	&& test "${BINARY}" = controller \
+	&& CGO_ENABLED=1 GOOS=linux go build -trimpath "$@" \
+		-ldflags "-s -w -X ${BI}.Version=${VERSION} -X ${BI}.Commit=${COMMIT} -X ${BI}.BuildTime=${BUILD_TIME}" \
+		-o /app ./cmd/${BINARY}
+
+FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+ARG BINARY=controller
+ARG PLAYWRIGHT_DRIVER_VERSION
+# DuckDB's pinned Linux libraries require glibc and libstdc++; generators
+# retain the independent CGO-free Alpine build in Dockerfile.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libstdc++6 chromium fonts-liberation \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/bin/chromium /usr/bin/google-chrome
+# Reuse the pinned glibc Node runtime; Debian's nodejs package is older.
+COPY --from=dashboard-builder /usr/local/bin/node /usr/bin/node
+COPY --from=dashboard-builder /src/dashboard/node_modules/playwright-core-go/ /opt/playwright-driver/package/
+RUN if [ "$BINARY" = "generator" ] || [ "$BINARY" = "controller" ]; then \
+		actual="$(node /opt/playwright-driver/package/cli.js --version)"; \
+		test "${actual}" = "Version ${PLAYWRIGHT_DRIVER_VERSION}" \
+		|| { echo "runtime Playwright driver ${actual} does not match Version ${PLAYWRIGHT_DRIVER_VERSION}" >&2; exit 1; }; \
+	fi
+COPY --from=builder /app /usr/local/bin/app
+# Browser runtime wiring (controller and generator images; inert elsewhere):
+# - the driver lives at a fixed path readable by any uid (readOnlyRootFilesystem-safe)
+# - Playwright drives the image's installed Chromium (APEXLOAD_BROWSER_EXECUTABLE override)
+# - HOME gives uid 65532 (no passwd entry) a writable scratch root under /tmp
+ENV PLAYWRIGHT_DRIVER_PATH=/opt/playwright-driver \
+	PLAYWRIGHT_NODEJS_PATH=/usr/bin/node \
+	APEXLOAD_BROWSER_EXECUTABLE=/usr/bin/google-chrome \
+	APEXLOAD_ADDR=0.0.0.0:8080 \
+	HOME=/tmp
+RUN mkdir -p /data /tmp /opt/playwright-driver /var/lib/apexload-bruno \
+	&& chown -R 65532:65532 /data /tmp /var/lib/apexload-bruno
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/app"]

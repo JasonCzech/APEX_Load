@@ -88,6 +88,16 @@ func buildRunRootCauseSummary(testID string, report *RunArchiveReport) RunRootCa
 		})
 	}
 
+	for _, name := range sortedArchiveReportStatKeys(report.ByAction) {
+		for _, finding := range report.ByAction[name].DiagnosticFindings {
+			addFinding("protocol", "warning", "Advisory: "+finding.Rule, name+": "+finding.Message, []string{"by_action." + name + ".diagnostic_findings"}, 50)
+		}
+	}
+	for _, coverage := range report.Manifest.MonitorCoverage {
+		if coverage.Reason != "" {
+			addFinding("monitoring", "warning", "Incomplete monitor coverage", coverage.SourceID+": "+coverage.Reason, []string{"manifest.monitor_coverage"}, 35)
+		}
+	}
 	if report.Manifest.SLABreached {
 		addSignal("SLA", "breached", strings.Join(report.Manifest.SLADetails, "; "), "critical", 95)
 		addFinding("sla", "critical", "Release SLA breached", firstNonEmpty(strings.Join(report.Manifest.SLADetails, "; "), "The run archive marked one or more SLA checks as breached."), []string{"manifest.sla_breached", "manifest.sla_details"}, 95)

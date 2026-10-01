@@ -135,6 +135,9 @@ func TestGRPCDiagnosticsAllModesAndFailures(t *testing.T) {
 			if d.Method != "/grpc.testing.TestService/"+tc.method || d.Mode != tc.kind || d.MessagesSent != tc.sent || d.MessagesReceived != tc.received || d.CallMs <= 0 || d.DeadlineBudgetMs == nil {
 				t.Fatalf("diagnostics=%+v", d)
 			}
+			if tc.sent > 0 && d.EncodeMs == nil || tc.received > 0 && d.DecodeMs == nil {
+				t.Fatalf("missing measured codec timing: %+v", d)
+			}
 			if (d.FirstMessageMs != nil) != (tc.received > 0) || d.ReceiveLimitReached != tc.limited {
 				t.Fatalf("availability=%+v", d)
 			}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -36,18 +37,27 @@ func main() {
 	}
 	packs := fs.String("packs", envOr("APEXLOAD_COLLECTOR_PACKS", defaultPacks), "Comma-separated metric pack names (must be in the collector's allow-list)")
 	prometheusURL := fs.String("prometheus-url", os.Getenv("APEXLOAD_COLLECTOR_PROMETHEUS_URL"), "Prometheus text-exposition endpoint for the prometheus pack")
+	monitorKey := fs.String("monitor-public-key", os.Getenv("APEXLOAD_MONITOR_PUBLIC_KEY"), "Base64 Ed25519 controller key; enables signed run jobs and traffic-free availability heartbeats")
+	spool := fs.String("spool-directory", envOr("APEXLOAD_COLLECTOR_SPOOL_DIRECTORY", "collector-state"), "Protected persistent directory for unacknowledged monitor evidence")
 	insecure := fs.Bool("insecure", strings.EqualFold(strings.TrimSpace(os.Getenv("APEXLOAD_COLLECTOR_ALLOW_INSECURE")), "true"),
 		"Permit a non-loopback plain-http controller URL (sends the token in cleartext; use only on a trusted network)")
 	_ = fs.Parse(os.Args[1:])
+	publicKey, decodeErr := base64.StdEncoding.DecodeString(strings.TrimSpace(*monitorKey))
+	if decodeErr != nil {
+		fmt.Fprintln(os.Stderr, "error: invalid monitor public key")
+		os.Exit(1)
+	}
 
 	agent, err := collectoragent.New(collectoragent.Config{
-		ControllerURL: *controller,
-		CollectorID:   *collectorID,
-		Token:         *token,
-		Interval:      *interval,
-		Packs:         splitPacks(*packs),
-		PrometheusURL: *prometheusURL,
-		AllowInsecure: *insecure,
+		ControllerURL:       *controller,
+		CollectorID:         *collectorID,
+		Token:               *token,
+		Interval:            *interval,
+		Packs:               splitPacks(*packs),
+		PrometheusURL:       *prometheusURL,
+		ControllerPublicKey: publicKey,
+		SpoolDirectory:      *spool,
+		AllowInsecure:       *insecure,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

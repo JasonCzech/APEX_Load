@@ -19,6 +19,7 @@ export function grpcSummaryLines(summary: GRPCSummary): string[] {
     `First response: ${ms(diagnosticMean(summary.first_message_ms))} (${summary.first_message_ms.count} measured)`,
     `Status · ${statuses.join(' / ') || 'unavailable'}`,
   ]
+  if (summary.encode_ms || summary.decode_ms) lines.push(`Client protobuf codec per call: ${ms(summary.encode_ms ? diagnosticMean(summary.encode_ms) : undefined)} encode / ${ms(summary.decode_ms ? diagnosticMean(summary.decode_ms) : undefined)} decode`)
   if (summary.receive_limit_reached > 0) lines.push(`Receive limit reached: ${summary.receive_limit_reached}`)
   return lines
 }
@@ -28,6 +29,7 @@ export function grpcDiagnosticLines(d: GRPCDiagnostics): string[] {
     `gRPC ${d.method} (${d.mode})`,
     `Client call: ${ms(d.call_ms)}`,
     `First response: ${ms(d.first_message_ms)}`,
+    `Client protobuf codec: ${ms(d.encode_ms)} encode / ${ms(d.decode_ms)} decode`,
     `Deadline budget at call start: ${ms(d.deadline_budget_ms)}`,
     `Final RPC status: ${d.status_code === undefined ? 'unavailable' : (statusNames[d.status_code] ?? d.status_code)}`,
     `Messages: ${d.messages_sent} sent / ${d.messages_received} received`,

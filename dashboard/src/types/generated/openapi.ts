@@ -1551,8 +1551,59 @@ export interface operations {
             }>;
             "by_action"?: Record<string, {
               "avg_response_ms"?: number;
+              "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
               "errors"?: number;
+              "grpc"?: ({
+                "call_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_budget_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "first_message_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached"?: number;
+                "request_bytes"?: number;
+                "response_bytes"?: number;
+                "samples"?: number;
+                "status_counts"?: Array<number>;
+                "unavailable_status"?: number;
+              }) | null;
               "max_response_ms"?: number;
               "min_response_ms"?: number;
               "p50_ms"?: number;
@@ -1561,11 +1612,131 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions"?: number;
+              "websocket"?: ({
+                "abnormal_closes"?: number;
+                "binary_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
+                "cancellations"?: number;
+                "handshake_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "max_pending_writes"?: number;
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "normal_closes"?: number;
+                "ping_rtt_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnect_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnects"?: number;
+                "samples"?: number;
+                "send_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "text_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "timeouts"?: number;
+                "write_wait_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+              }) | null;
             }>;
             "by_group"?: Record<string, {
               "avg_response_ms"?: number;
+              "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
               "errors"?: number;
+              "grpc"?: ({
+                "call_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_budget_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "first_message_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached"?: number;
+                "request_bytes"?: number;
+                "response_bytes"?: number;
+                "samples"?: number;
+                "status_counts"?: Array<number>;
+                "unavailable_status"?: number;
+              }) | null;
               "max_response_ms"?: number;
               "min_response_ms"?: number;
               "p50_ms"?: number;
@@ -1574,11 +1745,131 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions"?: number;
+              "websocket"?: ({
+                "abnormal_closes"?: number;
+                "binary_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
+                "cancellations"?: number;
+                "handshake_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "max_pending_writes"?: number;
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "normal_closes"?: number;
+                "ping_rtt_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnect_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnects"?: number;
+                "samples"?: number;
+                "send_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "text_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "timeouts"?: number;
+                "write_wait_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+              }) | null;
             }>;
             "by_network_profile"?: Record<string, {
               "avg_response_ms"?: number;
+              "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
               "errors"?: number;
+              "grpc"?: ({
+                "call_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_budget_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "first_message_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached"?: number;
+                "request_bytes"?: number;
+                "response_bytes"?: number;
+                "samples"?: number;
+                "status_counts"?: Array<number>;
+                "unavailable_status"?: number;
+              }) | null;
               "max_response_ms"?: number;
               "min_response_ms"?: number;
               "p50_ms"?: number;
@@ -1587,11 +1878,131 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions"?: number;
+              "websocket"?: ({
+                "abnormal_closes"?: number;
+                "binary_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
+                "cancellations"?: number;
+                "handshake_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "max_pending_writes"?: number;
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "normal_closes"?: number;
+                "ping_rtt_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnect_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnects"?: number;
+                "samples"?: number;
+                "send_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "text_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "timeouts"?: number;
+                "write_wait_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+              }) | null;
             }>;
             "by_region"?: Record<string, {
               "avg_response_ms"?: number;
+              "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
               "errors"?: number;
+              "grpc"?: ({
+                "call_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_budget_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "first_message_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached"?: number;
+                "request_bytes"?: number;
+                "response_bytes"?: number;
+                "samples"?: number;
+                "status_counts"?: Array<number>;
+                "unavailable_status"?: number;
+              }) | null;
               "max_response_ms"?: number;
               "min_response_ms"?: number;
               "p50_ms"?: number;
@@ -1600,11 +2011,131 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions"?: number;
+              "websocket"?: ({
+                "abnormal_closes"?: number;
+                "binary_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
+                "cancellations"?: number;
+                "handshake_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "max_pending_writes"?: number;
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "normal_closes"?: number;
+                "ping_rtt_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnect_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnects"?: number;
+                "samples"?: number;
+                "send_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "text_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "timeouts"?: number;
+                "write_wait_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+              }) | null;
             }>;
             "by_request"?: Record<string, {
               "avg_response_ms"?: number;
+              "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
               "errors"?: number;
+              "grpc"?: ({
+                "call_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_budget_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "first_message_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached"?: number;
+                "request_bytes"?: number;
+                "response_bytes"?: number;
+                "samples"?: number;
+                "status_counts"?: Array<number>;
+                "unavailable_status"?: number;
+              }) | null;
               "max_response_ms"?: number;
               "min_response_ms"?: number;
               "p50_ms"?: number;
@@ -1613,13 +2144,133 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions"?: number;
+              "websocket"?: ({
+                "abnormal_closes"?: number;
+                "binary_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
+                "cancellations"?: number;
+                "handshake_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "max_pending_writes"?: number;
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "normal_closes"?: number;
+                "ping_rtt_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnect_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnects"?: number;
+                "samples"?: number;
+                "send_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "text_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "timeouts"?: number;
+                "write_wait_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+              }) | null;
             }>;
             "by_soap_fault_category"?: Record<string, number>;
             "by_soap_fault_code"?: Record<string, number>;
             "by_soap_operation"?: Record<string, {
               "avg_response_ms"?: number;
+              "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
               "errors"?: number;
+              "grpc"?: ({
+                "call_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_budget_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "first_message_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached"?: number;
+                "request_bytes"?: number;
+                "response_bytes"?: number;
+                "samples"?: number;
+                "status_counts"?: Array<number>;
+                "unavailable_status"?: number;
+              }) | null;
               "max_response_ms"?: number;
               "min_response_ms"?: number;
               "p50_ms"?: number;
@@ -1628,11 +2279,131 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions"?: number;
+              "websocket"?: ({
+                "abnormal_closes"?: number;
+                "binary_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
+                "cancellations"?: number;
+                "handshake_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "max_pending_writes"?: number;
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "normal_closes"?: number;
+                "ping_rtt_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnect_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnects"?: number;
+                "samples"?: number;
+                "send_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "text_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "timeouts"?: number;
+                "write_wait_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+              }) | null;
             }>;
             "by_transaction"?: Record<string, {
               "avg_response_ms"?: number;
+              "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
               "errors"?: number;
+              "grpc"?: ({
+                "call_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_budget_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "first_message_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached"?: number;
+                "request_bytes"?: number;
+                "response_bytes"?: number;
+                "samples"?: number;
+                "status_counts"?: Array<number>;
+                "unavailable_status"?: number;
+              }) | null;
               "max_response_ms"?: number;
               "min_response_ms"?: number;
               "p50_ms"?: number;
@@ -1641,11 +2412,131 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions"?: number;
+              "websocket"?: ({
+                "abnormal_closes"?: number;
+                "binary_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
+                "cancellations"?: number;
+                "handshake_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "max_pending_writes"?: number;
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "normal_closes"?: number;
+                "ping_rtt_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnect_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnects"?: number;
+                "samples"?: number;
+                "send_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "text_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "timeouts"?: number;
+                "write_wait_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+              }) | null;
             }>;
             "by_unknown"?: Record<string, {
               "avg_response_ms"?: number;
+              "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
               "errors"?: number;
+              "grpc"?: ({
+                "call_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_budget_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "first_message_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached"?: number;
+                "request_bytes"?: number;
+                "response_bytes"?: number;
+                "samples"?: number;
+                "status_counts"?: Array<number>;
+                "unavailable_status"?: number;
+              }) | null;
               "max_response_ms"?: number;
               "min_response_ms"?: number;
               "p50_ms"?: number;
@@ -1654,6 +2545,75 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions"?: number;
+              "websocket"?: ({
+                "abnormal_closes"?: number;
+                "binary_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
+                "cancellations"?: number;
+                "handshake_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "max_pending_writes"?: number;
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "normal_closes"?: number;
+                "ping_rtt_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnect_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnects"?: number;
+                "samples"?: number;
+                "send_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "text_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "timeouts"?: number;
+                "write_wait_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+              }) | null;
             }>;
             "change_attribution"?: {
               "data_revision"?: string;
@@ -1887,6 +2847,17 @@ export interface operations {
                 "retained_items"?: number;
                 "truncated_items"?: number;
               }) | null;
+              "monitor_coverage"?: Array<{
+                "batches"?: number;
+                "binding_revision"?: number;
+                "job_id"?: string;
+                "reason"?: string;
+                "source_id"?: string;
+                "source_revision"?: number;
+                "state"?: string;
+              }>;
+              "monitor_evidence_count"?: number;
+              "monitor_evidence_file"?: string;
               "provenance"?: {
                 "application_id"?: string;
                 "assignment"?: (Record<string, unknown>) | null;
@@ -1971,8 +2942,59 @@ export interface operations {
             "metric_populations"?: Record<string, {
               "average_rate_per_second"?: (number) | null;
               "avg_response_ms"?: number;
+              "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
               "errors"?: number;
+              "grpc"?: ({
+                "call_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_budget_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "first_message_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached"?: number;
+                "request_bytes"?: number;
+                "response_bytes"?: number;
+                "samples"?: number;
+                "status_counts"?: Array<number>;
+                "unavailable_status"?: number;
+              }) | null;
               "max_response_ms"?: number;
               "min_response_ms"?: number;
               "p50_ms"?: number;
@@ -1981,6 +3003,75 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions"?: number;
+              "websocket"?: ({
+                "abnormal_closes"?: number;
+                "binary_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
+                "cancellations"?: number;
+                "handshake_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "max_pending_writes"?: number;
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "normal_closes"?: number;
+                "ping_rtt_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnect_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnects"?: number;
+                "samples"?: number;
+                "send_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "text_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "timeouts"?: number;
+                "write_wait_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+              }) | null;
             }>;
             "network_phases"?: {
               "by_action"?: Record<string, {
@@ -5650,6 +6741,1803 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisAssociation": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "revision"?: number;
+          "run_id"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisCapabilities": {
+    parameters: {
+      "query"?: {
+        "project_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisCommit": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "accepted": number;
+            "allow_rejected": boolean;
+            "created_at": string;
+            "error"?: string;
+            "files": Array<{
+              "chunks"?: Array<{
+                "offset": number;
+                "sha256": string;
+                "size": number;
+              }>;
+              "id": string;
+              "relative_path": string;
+              "sha256"?: string;
+              "size": number;
+              "uploaded": number;
+            }>;
+            "id": string;
+            "mapping"?: ({
+              "measures": Array<{
+                "kind": string;
+                "name"?: string;
+                "name_column"?: Array<string>;
+                "unit": string;
+                "value": Array<string>;
+              }>;
+              "timestamp": Array<string>;
+              "timestamp_encoding": string;
+              "timezone": string;
+              "version": number;
+            }) | null;
+            "mapping_id"?: string;
+            "mapping_revision"?: number;
+            "name": string;
+            "normalized"?: Array<string>;
+            "normalized_sha256"?: Record<string, string>;
+            "obsolete_objects"?: Array<string>;
+            "project_id": string;
+            "rejected": number;
+            "rejection_artifacts"?: Array<string>;
+            "rejection_sha256"?: Record<string, string>;
+            "rejections"?: Array<{
+              "count": number;
+              "file": number;
+              "measure": number;
+              "rows": Array<number>;
+            }>;
+            "revision": number;
+            "run_id"?: string;
+            "state": string;
+            "updated_at": string;
+          }) | null;
+        };
+      };
+      "202": {
+        content: {
+          "application/json": ({
+            "accepted": number;
+            "allow_rejected": boolean;
+            "created_at": string;
+            "error"?: string;
+            "files": Array<{
+              "chunks"?: Array<{
+                "offset": number;
+                "sha256": string;
+                "size": number;
+              }>;
+              "id": string;
+              "relative_path": string;
+              "sha256"?: string;
+              "size": number;
+              "uploaded": number;
+            }>;
+            "id": string;
+            "mapping"?: ({
+              "measures": Array<{
+                "kind": string;
+                "name"?: string;
+                "name_column"?: Array<string>;
+                "unit": string;
+                "value": Array<string>;
+              }>;
+              "timestamp": Array<string>;
+              "timestamp_encoding": string;
+              "timezone": string;
+              "version": number;
+            }) | null;
+            "mapping_id"?: string;
+            "mapping_revision"?: number;
+            "name": string;
+            "normalized"?: Array<string>;
+            "normalized_sha256"?: Record<string, string>;
+            "obsolete_objects"?: Array<string>;
+            "project_id": string;
+            "rejected": number;
+            "rejection_artifacts"?: Array<string>;
+            "rejection_sha256"?: Record<string, string>;
+            "rejections"?: Array<{
+              "count": number;
+              "file": number;
+              "measure": number;
+              "rows": Array<number>;
+            }>;
+            "revision": number;
+            "run_id"?: string;
+            "state": string;
+            "updated_at": string;
+          }) | null;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisComparison": {
+    parameters: {
+      "query"?: {
+        "project_id"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "bucket_seconds"?: number;
+          "from"?: string;
+          "left"?: {
+            "aggregation"?: string;
+            "dataset_id"?: string;
+            "dimensions"?: Record<string, string>;
+            "group"?: string;
+            "host"?: string;
+            "metric"?: string;
+            "protocol"?: string;
+            "run_id"?: string;
+            "source_id"?: string;
+            "transaction"?: string;
+          };
+          "max_lag_seconds"?: number;
+          "mode"?: string;
+          "right"?: {
+            "aggregation"?: string;
+            "dataset_id"?: string;
+            "dimensions"?: Record<string, string>;
+            "group"?: string;
+            "host"?: string;
+            "metric"?: string;
+            "protocol"?: string;
+            "run_id"?: string;
+            "source_id"?: string;
+            "transaction"?: string;
+          };
+          "to"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDatasetSeries": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "aggregation"?: string;
+          "bucket_seconds"?: number;
+          "dataset_id"?: string;
+          "from"?: string;
+          "metric"?: string;
+          "project_id"?: string;
+          "to"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDefinitions": {
+    parameters: {
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDefinitions_10": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "created_at"?: string;
+          "definition"?: unknown;
+          "deleted"?: boolean;
+          "id"?: string;
+          "kind"?: string;
+          "name"?: string;
+          "project_id"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDefinitions_2": {
+    parameters: {
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "created_at"?: string;
+          "definition"?: unknown;
+          "deleted"?: boolean;
+          "id"?: string;
+          "kind"?: string;
+          "name"?: string;
+          "project_id"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDefinitions_3": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "created_at"?: string;
+          "definition"?: unknown;
+          "deleted"?: boolean;
+          "id"?: string;
+          "kind"?: string;
+          "name"?: string;
+          "project_id"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDefinitions_4": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDefinitions_5": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "created_at"?: string;
+          "definition"?: unknown;
+          "deleted"?: boolean;
+          "id"?: string;
+          "kind"?: string;
+          "name"?: string;
+          "project_id"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDefinitions_6": {
+    parameters: {
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDefinitions_7": {
+    parameters: {
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "created_at"?: string;
+          "definition"?: unknown;
+          "deleted"?: boolean;
+          "id"?: string;
+          "kind"?: string;
+          "name"?: string;
+          "project_id"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDefinitions_8": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "created_at"?: string;
+          "definition"?: unknown;
+          "deleted"?: boolean;
+          "id"?: string;
+          "kind"?: string;
+          "name"?: string;
+          "project_id"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDefinitions_9": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisImport": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "accepted": number;
+            "allow_rejected": boolean;
+            "created_at": string;
+            "error"?: string;
+            "files": Array<{
+              "chunks"?: Array<{
+                "offset": number;
+                "sha256": string;
+                "size": number;
+              }>;
+              "id": string;
+              "relative_path": string;
+              "sha256"?: string;
+              "size": number;
+              "uploaded": number;
+            }>;
+            "id": string;
+            "mapping"?: ({
+              "measures": Array<{
+                "kind": string;
+                "name"?: string;
+                "name_column"?: Array<string>;
+                "unit": string;
+                "value": Array<string>;
+              }>;
+              "timestamp": Array<string>;
+              "timestamp_encoding": string;
+              "timezone": string;
+              "version": number;
+            }) | null;
+            "mapping_id"?: string;
+            "mapping_revision"?: number;
+            "name": string;
+            "normalized"?: Array<string>;
+            "normalized_sha256"?: Record<string, string>;
+            "obsolete_objects"?: Array<string>;
+            "project_id": string;
+            "rejected": number;
+            "rejection_artifacts"?: Array<string>;
+            "rejection_sha256"?: Record<string, string>;
+            "rejections"?: Array<{
+              "count": number;
+              "file": number;
+              "measure": number;
+              "rows": Array<number>;
+            }>;
+            "revision": number;
+            "run_id"?: string;
+            "state": string;
+            "updated_at": string;
+          }) | null;
+        };
+      };
+      "204": {
+        content?: never;
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisImport_2": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "accepted": number;
+            "allow_rejected": boolean;
+            "created_at": string;
+            "error"?: string;
+            "files": Array<{
+              "chunks"?: Array<{
+                "offset": number;
+                "sha256": string;
+                "size": number;
+              }>;
+              "id": string;
+              "relative_path": string;
+              "sha256"?: string;
+              "size": number;
+              "uploaded": number;
+            }>;
+            "id": string;
+            "mapping"?: ({
+              "measures": Array<{
+                "kind": string;
+                "name"?: string;
+                "name_column"?: Array<string>;
+                "unit": string;
+                "value": Array<string>;
+              }>;
+              "timestamp": Array<string>;
+              "timestamp_encoding": string;
+              "timezone": string;
+              "version": number;
+            }) | null;
+            "mapping_id"?: string;
+            "mapping_revision"?: number;
+            "name": string;
+            "normalized"?: Array<string>;
+            "normalized_sha256"?: Record<string, string>;
+            "obsolete_objects"?: Array<string>;
+            "project_id": string;
+            "rejected": number;
+            "rejection_artifacts"?: Array<string>;
+            "rejection_sha256"?: Record<string, string>;
+            "rejections"?: Array<{
+              "count": number;
+              "file": number;
+              "measure": number;
+              "rows": Array<number>;
+            }>;
+            "revision": number;
+            "run_id"?: string;
+            "state": string;
+            "updated_at": string;
+          }) | null;
+        };
+      };
+      "204": {
+        content?: never;
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisImport_3": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "accepted": number;
+            "allow_rejected": boolean;
+            "created_at": string;
+            "error"?: string;
+            "files": Array<{
+              "chunks"?: Array<{
+                "offset": number;
+                "sha256": string;
+                "size": number;
+              }>;
+              "id": string;
+              "relative_path": string;
+              "sha256"?: string;
+              "size": number;
+              "uploaded": number;
+            }>;
+            "id": string;
+            "mapping"?: ({
+              "measures": Array<{
+                "kind": string;
+                "name"?: string;
+                "name_column"?: Array<string>;
+                "unit": string;
+                "value": Array<string>;
+              }>;
+              "timestamp": Array<string>;
+              "timestamp_encoding": string;
+              "timezone": string;
+              "version": number;
+            }) | null;
+            "mapping_id"?: string;
+            "mapping_revision"?: number;
+            "name": string;
+            "normalized"?: Array<string>;
+            "normalized_sha256"?: Record<string, string>;
+            "obsolete_objects"?: Array<string>;
+            "project_id": string;
+            "rejected": number;
+            "rejection_artifacts"?: Array<string>;
+            "rejection_sha256"?: Record<string, string>;
+            "rejections"?: Array<{
+              "count": number;
+              "file": number;
+              "measure": number;
+              "rows": Array<number>;
+            }>;
+            "revision": number;
+            "run_id"?: string;
+            "state": string;
+            "updated_at": string;
+          }) | null;
+        };
+      };
+      "204": {
+        content?: never;
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisImports": {
+    parameters: {
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "201": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisImports_2": {
+    parameters: {
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "files"?: Array<{
+            "relative_path"?: string;
+            "size"?: number;
+          }>;
+          "name"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "201": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisMapping": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "allow_rejected"?: boolean;
+          "mapping"?: {
+            "measures"?: Array<{
+              "kind"?: string;
+              "name"?: string;
+              "name_column"?: Array<string>;
+              "unit"?: string;
+              "value"?: Array<string>;
+            }>;
+            "timestamp"?: Array<string>;
+            "timestamp_encoding"?: string;
+            "timezone"?: string;
+            "version"?: number;
+          };
+          "mapping_id"?: string;
+          "mapping_revision"?: number;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisPreview": {
+    parameters: {
+      "path": {
+        "file_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisRejections": {
+    parameters: {
+      "path": {
+        "id": string;
+        "index": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "2XX": {
+        content: {
+          "application/json": unknown;
+          "application/vnd.apache.parquet": string;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "408": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisUpload": {
+    parameters: {
+      "path": {
+        "file_id": string;
+        "id": string;
+      };
+      "query"?: {
+        "offset"?: number;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/octet-stream": string;
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -18338,6 +21226,56 @@ export interface operations {
                 "coverage_pct": number;
                 "error_pct": number;
                 "errors": number;
+                "grpc"?: ({
+                  "call_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "deadline_budget_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "deadline_observed"?: number;
+                  "decode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "encode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "first_message_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "messages_received": number;
+                  "messages_sent": number;
+                  "method"?: string;
+                  "mixed_methods"?: boolean;
+                  "mode"?: string;
+                  "near_deadline"?: number;
+                  "receive_limit_reached": number;
+                  "request_bytes": number;
+                  "response_bytes": number;
+                  "samples": number;
+                  "status_counts": Array<number>;
+                  "unavailable_status": number;
+                }) | null;
                 "instances": number;
                 "max": number;
                 "mean": number;
@@ -18352,6 +21290,75 @@ export interface operations {
                 "successes": number;
                 "successful_throughput": number;
                 "throughput": number;
+                "websocket"?: ({
+                  "abnormal_closes": number;
+                  "binary_receive_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "bytes_received": number;
+                  "bytes_sent": number;
+                  "cancellations": number;
+                  "handshake_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "max_pending_writes": number;
+                  "messages_received": number;
+                  "messages_sent": number;
+                  "normal_closes": number;
+                  "ping_rtt_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "receive_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "reconnect_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "reconnects": number;
+                  "samples": number;
+                  "send_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "text_receive_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "timeouts": number;
+                  "write_wait_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                }) | null;
               }) | null;
               "group": string;
               "id": string;
@@ -18390,6 +21397,56 @@ export interface operations {
                 "coverage_pct": number;
                 "error_pct": number;
                 "errors": number;
+                "grpc"?: ({
+                  "call_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "deadline_budget_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "deadline_observed"?: number;
+                  "decode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "encode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "first_message_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "messages_received": number;
+                  "messages_sent": number;
+                  "method"?: string;
+                  "mixed_methods"?: boolean;
+                  "mode"?: string;
+                  "near_deadline"?: number;
+                  "receive_limit_reached": number;
+                  "request_bytes": number;
+                  "response_bytes": number;
+                  "samples": number;
+                  "status_counts": Array<number>;
+                  "unavailable_status": number;
+                }) | null;
                 "instances": number;
                 "max": number;
                 "mean": number;
@@ -18404,6 +21461,75 @@ export interface operations {
                 "successes": number;
                 "successful_throughput": number;
                 "throughput": number;
+                "websocket"?: ({
+                  "abnormal_closes": number;
+                  "binary_receive_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "bytes_received": number;
+                  "bytes_sent": number;
+                  "cancellations": number;
+                  "handshake_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "max_pending_writes": number;
+                  "messages_received": number;
+                  "messages_sent": number;
+                  "normal_closes": number;
+                  "ping_rtt_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "receive_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "reconnect_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "reconnects": number;
+                  "samples": number;
+                  "send_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "text_receive_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "timeouts": number;
+                  "write_wait_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                }) | null;
               }) | null;
               "group": string;
               "id": string;
@@ -21149,8 +24275,10 @@ export interface operations {
           "start_delay"?: string;
           "start_immediately"?: boolean;
           "start_options"?: ({
+            "expected_preparation_revision"?: string;
             "override_capacity_shortfall"?: boolean;
             "override_script_shakeout_failure"?: boolean;
+            "preparation_id"?: string;
           }) | null;
           "termination_mode"?: string;
           "test"?: ({
@@ -27602,6 +30730,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -27621,6 +30750,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -27630,6 +30774,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -27659,6 +30807,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -27703,6 +30920,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -27722,6 +30940,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -27731,6 +30964,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -27760,6 +30997,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -28613,6 +31919,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -28632,6 +31939,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -28641,6 +31963,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -28670,6 +31996,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -28730,6 +32125,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -28749,6 +32145,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -28758,6 +32169,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -28787,6 +32202,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -29065,6 +32549,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -29084,6 +32569,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -29093,6 +32593,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -29122,6 +32626,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -29215,6 +32788,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -29234,6 +32808,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -29243,6 +32832,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -29272,6 +32865,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -29365,6 +33027,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -29384,6 +33047,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -29393,6 +33071,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -29422,6 +33104,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -39352,6 +43103,56 @@ export interface operations {
                 "coverage_pct": number;
                 "error_pct": number;
                 "errors": number;
+                "grpc"?: ({
+                  "call_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "deadline_budget_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "deadline_observed"?: number;
+                  "decode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "encode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "first_message_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "messages_received": number;
+                  "messages_sent": number;
+                  "method"?: string;
+                  "mixed_methods"?: boolean;
+                  "mode"?: string;
+                  "near_deadline"?: number;
+                  "receive_limit_reached": number;
+                  "request_bytes": number;
+                  "response_bytes": number;
+                  "samples": number;
+                  "status_counts": Array<number>;
+                  "unavailable_status": number;
+                }) | null;
                 "instances": number;
                 "max": number;
                 "mean": number;
@@ -39366,6 +43167,75 @@ export interface operations {
                 "successes": number;
                 "successful_throughput": number;
                 "throughput": number;
+                "websocket"?: ({
+                  "abnormal_closes": number;
+                  "binary_receive_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "bytes_received": number;
+                  "bytes_sent": number;
+                  "cancellations": number;
+                  "handshake_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "max_pending_writes": number;
+                  "messages_received": number;
+                  "messages_sent": number;
+                  "normal_closes": number;
+                  "ping_rtt_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "receive_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "reconnect_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "reconnects": number;
+                  "samples": number;
+                  "send_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "text_receive_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "timeouts": number;
+                  "write_wait_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                }) | null;
               }) | null;
               "group": string;
               "id": string;
@@ -39404,6 +43274,56 @@ export interface operations {
                 "coverage_pct": number;
                 "error_pct": number;
                 "errors": number;
+                "grpc"?: ({
+                  "call_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "deadline_budget_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "deadline_observed"?: number;
+                  "decode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "encode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "first_message_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "messages_received": number;
+                  "messages_sent": number;
+                  "method"?: string;
+                  "mixed_methods"?: boolean;
+                  "mode"?: string;
+                  "near_deadline"?: number;
+                  "receive_limit_reached": number;
+                  "request_bytes": number;
+                  "response_bytes": number;
+                  "samples": number;
+                  "status_counts": Array<number>;
+                  "unavailable_status": number;
+                }) | null;
                 "instances": number;
                 "max": number;
                 "mean": number;
@@ -39418,6 +43338,75 @@ export interface operations {
                 "successes": number;
                 "successful_throughput": number;
                 "throughput": number;
+                "websocket"?: ({
+                  "abnormal_closes": number;
+                  "binary_receive_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "bytes_received": number;
+                  "bytes_sent": number;
+                  "cancellations": number;
+                  "handshake_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "max_pending_writes": number;
+                  "messages_received": number;
+                  "messages_sent": number;
+                  "normal_closes": number;
+                  "ping_rtt_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "receive_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "reconnect_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "reconnects": number;
+                  "samples": number;
+                  "send_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "text_receive_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "timeouts": number;
+                  "write_wait_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                }) | null;
               }) | null;
               "group": string;
               "id": string;
@@ -45080,6 +49069,17 @@ export interface operations {
               "retained_items": number;
               "truncated_items": number;
             }) | null;
+            "monitor_coverage"?: Array<{
+              "batches": number;
+              "binding_revision": number;
+              "job_id": string;
+              "reason"?: string;
+              "source_id": string;
+              "source_revision": number;
+              "state": string;
+            }>;
+            "monitor_evidence_count"?: number;
+            "monitor_evidence_file"?: string;
             "provenance"?: {
               "application_id"?: string;
               "assignment"?: ({
@@ -45915,6 +49915,56 @@ export interface operations {
                   "coverage_pct": number;
                   "error_pct": number;
                   "errors": number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "instances": number;
                   "max": number;
                   "mean": number;
@@ -45929,6 +49979,75 @@ export interface operations {
                   "successes": number;
                   "successful_throughput": number;
                   "throughput": number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "group": string;
                 "id": string;
@@ -45958,6 +50077,56 @@ export interface operations {
                   "coverage_pct": number;
                   "error_pct": number;
                   "errors": number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
                   "instances": number;
                   "max": number;
                   "mean": number;
@@ -45972,6 +50141,75 @@ export interface operations {
                   "successes": number;
                   "successful_throughput": number;
                   "throughput": number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "group": string;
                 "id": string;
@@ -46051,8 +50289,67 @@ export interface operations {
             }>;
             "by_action": Record<string, {
               "avg_response_ms": number;
+              "diagnostic_findings"?: Array<{
+                "advisory": boolean;
+                "measurement": string;
+                "message": string;
+                "observed": number;
+                "protocol": string;
+                "rule": string;
+                "samples": number;
+              }>;
               "error_pct": number;
               "errors": number;
+              "grpc"?: ({
+                "call_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_budget_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "first_message_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "messages_received": number;
+                "messages_sent": number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached": number;
+                "request_bytes": number;
+                "response_bytes": number;
+                "samples": number;
+                "status_counts": Array<number>;
+                "unavailable_status": number;
+              }) | null;
               "max_response_ms": number;
               "min_response_ms": number;
               "p50_ms"?: number;
@@ -46061,11 +50358,139 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions": number;
+              "websocket"?: ({
+                "abnormal_closes": number;
+                "binary_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "bytes_received": number;
+                "bytes_sent": number;
+                "cancellations": number;
+                "handshake_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "max_pending_writes": number;
+                "messages_received": number;
+                "messages_sent": number;
+                "normal_closes": number;
+                "ping_rtt_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnect_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnects": number;
+                "samples": number;
+                "send_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "text_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "timeouts": number;
+                "write_wait_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+              }) | null;
             }>;
             "by_group"?: Record<string, {
               "avg_response_ms": number;
+              "diagnostic_findings"?: Array<{
+                "advisory": boolean;
+                "measurement": string;
+                "message": string;
+                "observed": number;
+                "protocol": string;
+                "rule": string;
+                "samples": number;
+              }>;
               "error_pct": number;
               "errors": number;
+              "grpc"?: ({
+                "call_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_budget_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "first_message_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "messages_received": number;
+                "messages_sent": number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached": number;
+                "request_bytes": number;
+                "response_bytes": number;
+                "samples": number;
+                "status_counts": Array<number>;
+                "unavailable_status": number;
+              }) | null;
               "max_response_ms": number;
               "min_response_ms": number;
               "p50_ms"?: number;
@@ -46074,11 +50499,139 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions": number;
+              "websocket"?: ({
+                "abnormal_closes": number;
+                "binary_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "bytes_received": number;
+                "bytes_sent": number;
+                "cancellations": number;
+                "handshake_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "max_pending_writes": number;
+                "messages_received": number;
+                "messages_sent": number;
+                "normal_closes": number;
+                "ping_rtt_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnect_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnects": number;
+                "samples": number;
+                "send_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "text_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "timeouts": number;
+                "write_wait_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+              }) | null;
             }>;
             "by_network_profile"?: Record<string, {
               "avg_response_ms": number;
+              "diagnostic_findings"?: Array<{
+                "advisory": boolean;
+                "measurement": string;
+                "message": string;
+                "observed": number;
+                "protocol": string;
+                "rule": string;
+                "samples": number;
+              }>;
               "error_pct": number;
               "errors": number;
+              "grpc"?: ({
+                "call_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_budget_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "first_message_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "messages_received": number;
+                "messages_sent": number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached": number;
+                "request_bytes": number;
+                "response_bytes": number;
+                "samples": number;
+                "status_counts": Array<number>;
+                "unavailable_status": number;
+              }) | null;
               "max_response_ms": number;
               "min_response_ms": number;
               "p50_ms"?: number;
@@ -46087,11 +50640,139 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions": number;
+              "websocket"?: ({
+                "abnormal_closes": number;
+                "binary_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "bytes_received": number;
+                "bytes_sent": number;
+                "cancellations": number;
+                "handshake_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "max_pending_writes": number;
+                "messages_received": number;
+                "messages_sent": number;
+                "normal_closes": number;
+                "ping_rtt_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnect_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnects": number;
+                "samples": number;
+                "send_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "text_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "timeouts": number;
+                "write_wait_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+              }) | null;
             }>;
             "by_region"?: Record<string, {
               "avg_response_ms": number;
+              "diagnostic_findings"?: Array<{
+                "advisory": boolean;
+                "measurement": string;
+                "message": string;
+                "observed": number;
+                "protocol": string;
+                "rule": string;
+                "samples": number;
+              }>;
               "error_pct": number;
               "errors": number;
+              "grpc"?: ({
+                "call_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_budget_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "first_message_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "messages_received": number;
+                "messages_sent": number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached": number;
+                "request_bytes": number;
+                "response_bytes": number;
+                "samples": number;
+                "status_counts": Array<number>;
+                "unavailable_status": number;
+              }) | null;
               "max_response_ms": number;
               "min_response_ms": number;
               "p50_ms"?: number;
@@ -46100,11 +50781,139 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions": number;
+              "websocket"?: ({
+                "abnormal_closes": number;
+                "binary_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "bytes_received": number;
+                "bytes_sent": number;
+                "cancellations": number;
+                "handshake_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "max_pending_writes": number;
+                "messages_received": number;
+                "messages_sent": number;
+                "normal_closes": number;
+                "ping_rtt_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnect_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnects": number;
+                "samples": number;
+                "send_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "text_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "timeouts": number;
+                "write_wait_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+              }) | null;
             }>;
             "by_request"?: Record<string, {
               "avg_response_ms": number;
+              "diagnostic_findings"?: Array<{
+                "advisory": boolean;
+                "measurement": string;
+                "message": string;
+                "observed": number;
+                "protocol": string;
+                "rule": string;
+                "samples": number;
+              }>;
               "error_pct": number;
               "errors": number;
+              "grpc"?: ({
+                "call_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_budget_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "first_message_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "messages_received": number;
+                "messages_sent": number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached": number;
+                "request_bytes": number;
+                "response_bytes": number;
+                "samples": number;
+                "status_counts": Array<number>;
+                "unavailable_status": number;
+              }) | null;
               "max_response_ms": number;
               "min_response_ms": number;
               "p50_ms"?: number;
@@ -46113,13 +50922,141 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions": number;
+              "websocket"?: ({
+                "abnormal_closes": number;
+                "binary_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "bytes_received": number;
+                "bytes_sent": number;
+                "cancellations": number;
+                "handshake_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "max_pending_writes": number;
+                "messages_received": number;
+                "messages_sent": number;
+                "normal_closes": number;
+                "ping_rtt_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnect_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnects": number;
+                "samples": number;
+                "send_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "text_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "timeouts": number;
+                "write_wait_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+              }) | null;
             }>;
             "by_soap_fault_category"?: Record<string, number>;
             "by_soap_fault_code"?: Record<string, number>;
             "by_soap_operation"?: Record<string, {
               "avg_response_ms": number;
+              "diagnostic_findings"?: Array<{
+                "advisory": boolean;
+                "measurement": string;
+                "message": string;
+                "observed": number;
+                "protocol": string;
+                "rule": string;
+                "samples": number;
+              }>;
               "error_pct": number;
               "errors": number;
+              "grpc"?: ({
+                "call_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_budget_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "first_message_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "messages_received": number;
+                "messages_sent": number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached": number;
+                "request_bytes": number;
+                "response_bytes": number;
+                "samples": number;
+                "status_counts": Array<number>;
+                "unavailable_status": number;
+              }) | null;
               "max_response_ms": number;
               "min_response_ms": number;
               "p50_ms"?: number;
@@ -46128,11 +51065,139 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions": number;
+              "websocket"?: ({
+                "abnormal_closes": number;
+                "binary_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "bytes_received": number;
+                "bytes_sent": number;
+                "cancellations": number;
+                "handshake_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "max_pending_writes": number;
+                "messages_received": number;
+                "messages_sent": number;
+                "normal_closes": number;
+                "ping_rtt_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnect_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnects": number;
+                "samples": number;
+                "send_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "text_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "timeouts": number;
+                "write_wait_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+              }) | null;
             }>;
             "by_transaction"?: Record<string, {
               "avg_response_ms": number;
+              "diagnostic_findings"?: Array<{
+                "advisory": boolean;
+                "measurement": string;
+                "message": string;
+                "observed": number;
+                "protocol": string;
+                "rule": string;
+                "samples": number;
+              }>;
               "error_pct": number;
               "errors": number;
+              "grpc"?: ({
+                "call_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_budget_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "first_message_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "messages_received": number;
+                "messages_sent": number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached": number;
+                "request_bytes": number;
+                "response_bytes": number;
+                "samples": number;
+                "status_counts": Array<number>;
+                "unavailable_status": number;
+              }) | null;
               "max_response_ms": number;
               "min_response_ms": number;
               "p50_ms"?: number;
@@ -46141,11 +51206,139 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions": number;
+              "websocket"?: ({
+                "abnormal_closes": number;
+                "binary_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "bytes_received": number;
+                "bytes_sent": number;
+                "cancellations": number;
+                "handshake_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "max_pending_writes": number;
+                "messages_received": number;
+                "messages_sent": number;
+                "normal_closes": number;
+                "ping_rtt_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnect_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnects": number;
+                "samples": number;
+                "send_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "text_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "timeouts": number;
+                "write_wait_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+              }) | null;
             }>;
             "by_unknown"?: Record<string, {
               "avg_response_ms": number;
+              "diagnostic_findings"?: Array<{
+                "advisory": boolean;
+                "measurement": string;
+                "message": string;
+                "observed": number;
+                "protocol": string;
+                "rule": string;
+                "samples": number;
+              }>;
               "error_pct": number;
               "errors": number;
+              "grpc"?: ({
+                "call_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_budget_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "first_message_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "messages_received": number;
+                "messages_sent": number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached": number;
+                "request_bytes": number;
+                "response_bytes": number;
+                "samples": number;
+                "status_counts": Array<number>;
+                "unavailable_status": number;
+              }) | null;
               "max_response_ms": number;
               "min_response_ms": number;
               "p50_ms"?: number;
@@ -46154,6 +51347,75 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions": number;
+              "websocket"?: ({
+                "abnormal_closes": number;
+                "binary_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "bytes_received": number;
+                "bytes_sent": number;
+                "cancellations": number;
+                "handshake_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "max_pending_writes": number;
+                "messages_received": number;
+                "messages_sent": number;
+                "normal_closes": number;
+                "ping_rtt_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnect_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnects": number;
+                "samples": number;
+                "send_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "text_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "timeouts": number;
+                "write_wait_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+              }) | null;
             }>;
             "change_attribution": {
               "data_revision"?: string;
@@ -46606,6 +51868,17 @@ export interface operations {
                 "retained_items": number;
                 "truncated_items": number;
               }) | null;
+              "monitor_coverage"?: Array<{
+                "batches": number;
+                "binding_revision": number;
+                "job_id": string;
+                "reason"?: string;
+                "source_id": string;
+                "source_revision": number;
+                "state": string;
+              }>;
+              "monitor_evidence_count"?: number;
+              "monitor_evidence_file"?: string;
               "provenance"?: {
                 "application_id"?: string;
                 "assignment"?: ({
@@ -46906,8 +52179,59 @@ export interface operations {
             "metric_populations"?: Record<string, {
               "average_rate_per_second"?: (number) | null;
               "avg_response_ms": number;
+              "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct": number;
               "errors": number;
+              "grpc"?: ({
+                "call_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_budget_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "first_message_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "messages_received": number;
+                "messages_sent": number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached": number;
+                "request_bytes": number;
+                "response_bytes": number;
+                "samples": number;
+                "status_counts": Array<number>;
+                "unavailable_status": number;
+              }) | null;
               "max_response_ms": number;
               "min_response_ms": number;
               "p50_ms"?: number;
@@ -46916,6 +52240,75 @@ export interface operations {
               "p99_ms"?: number;
               "peak_tps"?: number;
               "transactions": number;
+              "websocket"?: ({
+                "abnormal_closes": number;
+                "binary_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "bytes_received": number;
+                "bytes_sent": number;
+                "cancellations": number;
+                "handshake_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "max_pending_writes": number;
+                "messages_received": number;
+                "messages_sent": number;
+                "normal_closes": number;
+                "ping_rtt_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnect_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnects": number;
+                "samples": number;
+                "send_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "text_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "timeouts": number;
+                "write_wait_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+              }) | null;
             }>;
             "network_phases"?: {
               "by_action"?: Record<string, {
@@ -50964,6 +56357,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -50983,6 +56377,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -50992,6 +56401,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -51021,6 +56434,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -51065,6 +56547,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -51084,6 +56567,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -51093,6 +56591,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -51122,6 +56624,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -51975,6 +57546,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -51994,6 +57566,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -52003,6 +57590,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -52032,6 +57623,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -52092,6 +57752,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -52111,6 +57772,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -52120,6 +57796,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -52149,6 +57829,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -52427,6 +58176,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -52446,6 +58196,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -52455,6 +58220,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -52484,6 +58253,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -52577,6 +58415,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -52596,6 +58435,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -52605,6 +58459,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -52634,6 +58492,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -52727,6 +58654,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -52746,6 +58674,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -52755,6 +58698,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -52784,6 +58731,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -63637,6 +69653,380 @@ export interface operations {
       };
     };
   };
+  "handleMonitorBindings": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "project_id": string;
+            "revision": number;
+            "scenario_id": string;
+            "sources": Array<{
+              "required": boolean;
+              "source_id": string;
+            }>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleMonitorBindings_2": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "project_id"?: string;
+          "revision"?: number;
+          "scenario_id"?: string;
+          "sources"?: Array<{
+            "required"?: boolean;
+            "source_id"?: string;
+          }>;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "project_id": string;
+            "revision": number;
+            "scenario_id": string;
+            "sources": Array<{
+              "required": boolean;
+              "source_id": string;
+            }>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleMonitorSources": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "204": {
+        content?: never;
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleMonitorSources_2": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "collector_id"?: string;
+          "destination"?: string;
+          "enabled"?: boolean;
+          "id"?: string;
+          "interval_seconds"?: number;
+          "name"?: string;
+          "pack"?: string;
+          "project_id"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "204": {
+        content?: never;
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleMonitorSources_3": {
+    parameters: {
+      "path": {
+        "id": string;
+        "source_id": string;
+      };
+      "query"?: {
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "collector_id"?: string;
+          "destination"?: string;
+          "enabled"?: boolean;
+          "id"?: string;
+          "interval_seconds"?: number;
+          "name"?: string;
+          "pack"?: string;
+          "project_id"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "204": {
+        content?: never;
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleMonitorSources_4": {
+    parameters: {
+      "path": {
+        "id": string;
+        "source_id": string;
+      };
+      "query"?: {
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "collector_id"?: string;
+          "destination"?: string;
+          "enabled"?: boolean;
+          "id"?: string;
+          "interval_seconds"?: number;
+          "name"?: string;
+          "pack"?: string;
+          "project_id"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "204": {
+        content?: never;
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleMoveScript": {
     parameters: {
       "path": {
@@ -66510,6 +72900,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -66529,6 +72920,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -66538,6 +72944,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -66567,6 +72977,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -66611,6 +73090,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -66630,6 +73110,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -66639,6 +73134,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -66668,6 +73167,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -67521,6 +74089,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -67540,6 +74109,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -67549,6 +74133,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -67578,6 +74166,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -67638,6 +74295,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -67657,6 +74315,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -67666,6 +74339,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -67695,6 +74372,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -67973,6 +74719,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -67992,6 +74739,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -68001,6 +74763,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -68030,6 +74796,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -68123,6 +74958,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -68142,6 +74978,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -68151,6 +75002,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -68180,6 +75035,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -68273,6 +75197,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -68292,6 +75217,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -68301,6 +75241,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -68330,6 +75274,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -68904,6 +75917,45 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handlePollRunMonitorJobs": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "header"?: {
+        "X-APEX-Monitor-Readiness"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Array<{
+            "payload": string;
+            "signature": string;
+          }>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -69541,6 +76593,237 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handlePreparation": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "header"?: {
+        "Idempotency-Key"?: string;
+      };
+    };
+    requestBody?: {
+      content: {
+        "application/json": {
+          "expected_revision"?: string;
+          "preparation_id"?: string;
+          "revision"?: number;
+          "ttl_seconds"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "202": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handlePreparation_2": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "header"?: {
+        "Idempotency-Key"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "202": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handlePreparation_3": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "header"?: {
+        "Idempotency-Key"?: string;
+      };
+    };
+    requestBody?: {
+      content: {
+        "application/json": {
+          "expected_revision"?: string;
+          "preparation_id"?: string;
+          "revision"?: number;
+          "ttl_seconds"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "202": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -77231,8 +84514,10 @@ export interface operations {
     requestBody?: {
       content: {
         "application/json": {
+          "expected_preparation_revision"?: string;
           "override_capacity_shortfall"?: boolean;
           "override_script_shakeout_failure"?: boolean;
+          "preparation_id"?: string;
         };
       };
     };
@@ -78627,8 +85912,10 @@ export interface operations {
     requestBody?: {
       content: {
         "application/json": {
+          "expected_preparation_revision"?: string;
           "override_capacity_shortfall"?: boolean;
           "override_script_shakeout_failure"?: boolean;
+          "preparation_id"?: string;
         };
       };
     };
@@ -80023,8 +87310,10 @@ export interface operations {
     requestBody?: {
       content: {
         "application/json": {
+          "expected_preparation_revision"?: string;
           "override_capacity_shortfall"?: boolean;
           "override_script_shakeout_failure"?: boolean;
+          "preparation_id"?: string;
         };
       };
     };
@@ -81419,8 +88708,10 @@ export interface operations {
     requestBody?: {
       content: {
         "application/json": {
+          "expected_preparation_revision"?: string;
           "override_capacity_shortfall"?: boolean;
           "override_script_shakeout_failure"?: boolean;
+          "preparation_id"?: string;
         };
       };
     };
@@ -82815,8 +90106,10 @@ export interface operations {
     requestBody?: {
       content: {
         "application/json": {
+          "expected_preparation_revision"?: string;
           "override_capacity_shortfall"?: boolean;
           "override_script_shakeout_failure"?: boolean;
+          "preparation_id"?: string;
         };
       };
     };
@@ -88742,6 +96035,175 @@ export interface operations {
         };
       };
       "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleRunMonitorSamples": {
+    parameters: {
+      "path": {
+        "id": string;
+        "job_id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "job"?: {
+            "payload"?: string;
+            "signature"?: string;
+          };
+          "points"?: Array<{
+            "active_runtime_ms"?: (number) | null;
+            "dataset_id"?: string;
+            "dimensions"?: Record<string, string>;
+            "host"?: string;
+            "input_kind"?: string;
+            "kind"?: string;
+            "metric_name"?: string;
+            "project_id"?: string;
+            "quality"?: string;
+            "received_at"?: string;
+            "relative_time_ms"?: (number) | null;
+            "run_id"?: string;
+            "scenario_id"?: string;
+            "schema_version"?: string;
+            "service"?: string;
+            "source"?: string;
+            "timestamp_utc"?: string;
+            "unit"?: string;
+            "value"?: (number) | null;
+          }>;
+          "sequence"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleRunMonitorSeries": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "after_job"?: string;
+        "after_sequence"?: string;
+        "dimensions"?: string;
+        "host"?: string;
+        "metric"?: string;
+        "source_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleRunMonitors": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -99619,8 +107081,10 @@ export interface operations {
     requestBody?: {
       content: {
         "application/json": {
+          "expected_preparation_revision"?: string;
           "override_capacity_shortfall"?: boolean;
           "override_script_shakeout_failure"?: boolean;
+          "preparation_id"?: string;
         };
       };
     };
@@ -103054,6 +110518,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -103073,6 +110538,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -103082,6 +110562,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -103111,6 +110595,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -103155,6 +110708,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -103174,6 +110728,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -103183,6 +110752,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -103212,6 +110785,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -104065,6 +111707,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -104084,6 +111727,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -104093,6 +111751,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -104122,6 +111784,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -104182,6 +111913,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -104201,6 +111933,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -104210,6 +111957,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -104239,6 +111990,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -104517,6 +112337,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -104536,6 +112357,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -104545,6 +112381,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -104574,6 +112414,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -104667,6 +112576,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -104686,6 +112596,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -104695,6 +112620,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -104724,6 +112653,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -104817,6 +112815,7 @@ export interface operations {
                   "connection_reused_pct"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
                   "duplicate_count"?: number;
                   "duplicate_rate_pct"?: number;
                   "event_count"?: number;
@@ -104836,6 +112835,21 @@ export interface operations {
                       "min": number;
                       "sum": number;
                     };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
                     "first_message_ms": {
                       "buckets": Array<number>;
                       "count": number;
@@ -104845,6 +112859,10 @@ export interface operations {
                     };
                     "messages_received": number;
                     "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
                     "receive_limit_reached": number;
                     "request_bytes": number;
                     "response_bytes": number;
@@ -104874,6 +112892,75 @@ export interface operations {
                   "total_quota_exceeded_count"?: number;
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
                 }) | null;
                 "tps": number;
               }) | null>;
@@ -119008,6 +127095,62 @@ export interface paths {
   "/api/v1/ai/review-queue": {
     "get": operations["handleAIReviewQueue"];
   };
+  "/api/v1/analysis/capabilities": {
+    "get": operations["handleAnalysisCapabilities"];
+  };
+  "/api/v1/analysis/compare": {
+    "post": operations["handleAnalysisComparison"];
+  };
+  "/api/v1/analysis/comparisons": {
+    "get": operations["handleAnalysisDefinitions"];
+    "post": operations["handleAnalysisDefinitions_2"];
+  };
+  "/api/v1/analysis/comparisons/{id}": {
+    "get": operations["handleAnalysisDefinitions_4"];
+    "put": operations["handleAnalysisDefinitions_5"];
+    "delete": operations["handleAnalysisDefinitions_3"];
+  };
+  "/api/v1/analysis/datasets/{id}": {
+    "get": operations["handleAnalysisImport"];
+  };
+  "/api/v1/analysis/datasets/{id}/association": {
+    "put": operations["handleAnalysisAssociation"];
+  };
+  "/api/v1/analysis/datasets/{id}/rejections/{index}": {
+    "get": operations["handleAnalysisRejections"];
+  };
+  "/api/v1/analysis/datasets/{id}/series": {
+    "post": operations["handleAnalysisDatasetSeries"];
+  };
+  "/api/v1/analysis/imports": {
+    "get": operations["handleAnalysisImports"];
+    "post": operations["handleAnalysisImports_2"];
+  };
+  "/api/v1/analysis/imports/{id}": {
+    "get": operations["handleAnalysisImport_3"];
+    "delete": operations["handleAnalysisImport_2"];
+  };
+  "/api/v1/analysis/imports/{id}/commit": {
+    "post": operations["handleAnalysisCommit"];
+  };
+  "/api/v1/analysis/imports/{id}/files/{file_id}": {
+    "put": operations["handleAnalysisUpload"];
+  };
+  "/api/v1/analysis/imports/{id}/files/{file_id}/preview": {
+    "get": operations["handleAnalysisPreview"];
+  };
+  "/api/v1/analysis/imports/{id}/mapping": {
+    "put": operations["handleAnalysisMapping"];
+  };
+  "/api/v1/analysis/mappings": {
+    "get": operations["handleAnalysisDefinitions_6"];
+    "post": operations["handleAnalysisDefinitions_7"];
+  };
+  "/api/v1/analysis/mappings/{id}": {
+    "get": operations["handleAnalysisDefinitions_9"];
+    "put": operations["handleAnalysisDefinitions_10"];
+    "delete": operations["handleAnalysisDefinitions_8"];
+  };
   "/api/v1/application-repository/categories/{id}": {
     "put": operations["handleUpdateRepositoryCategory"];
     "delete": operations["handleDeleteRepositoryCategory"];
@@ -119582,6 +127725,12 @@ export interface paths {
   "/api/v1/monitoring/collectors/{id}/heartbeat": {
     "post": operations["handleCollectorHeartbeat"];
   };
+  "/api/v1/monitoring/collectors/{id}/jobs": {
+    "get": operations["handlePollRunMonitorJobs"];
+  };
+  "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/samples": {
+    "post": operations["handleRunMonitorSamples"];
+  };
   "/api/v1/monitoring/collectors/{id}/metrics": {
     "get": operations["handleGetCollectorMetrics"];
   };
@@ -119679,6 +127828,14 @@ export interface paths {
   };
   "/api/v1/projects/{id}/integrations/confluence-connections/{connection_id}/test": {
     "post": operations["handleTestConfluenceConnection"];
+  };
+  "/api/v1/projects/{id}/monitor-sources": {
+    "get": operations["handleMonitorSources"];
+    "post": operations["handleMonitorSources_2"];
+  };
+  "/api/v1/projects/{id}/monitor-sources/{source_id}": {
+    "put": operations["handleMonitorSources_4"];
+    "delete": operations["handleMonitorSources_3"];
   };
   "/api/v1/projects/{id}/monitoring/dynatrace-connections": {
     "get": operations["handleListDynatraceConnections"];
@@ -119894,6 +128051,10 @@ export interface paths {
   };
   "/api/v1/scenarios/{id}/library-assignment": {
     "put": operations["handleScenarioLibraryAssignment"];
+  };
+  "/api/v1/scenarios/{id}/monitor-bindings": {
+    "get": operations["handleMonitorBindings"];
+    "put": operations["handleMonitorBindings_2"];
   };
   "/api/v1/scenarios/{id}/results": {
     "get": operations["handleScenarioResults"];
@@ -120510,6 +128671,12 @@ export interface paths {
   "/api/v1/tests/{id}/metrics": {
     "get": operations["handleGetMetrics"];
   };
+  "/api/v1/tests/{id}/monitor-series": {
+    "get": operations["handleRunMonitorSeries"];
+  };
+  "/api/v1/tests/{id}/monitors": {
+    "get": operations["handleRunMonitors"];
+  };
   "/api/v1/tests/{id}/move": {
     "patch": operations["handleMoveTest"];
   };
@@ -120523,6 +128690,11 @@ export interface paths {
   };
   "/api/v1/tests/{id}/pause": {
     "post": operations["handlePauseTest"];
+  };
+  "/api/v1/tests/{id}/preparation": {
+    "get": operations["handlePreparation_2"];
+    "post": operations["handlePreparation_3"];
+    "delete": operations["handlePreparation"];
   };
   "/api/v1/tests/{id}/publish/confluence": {
     "get": operations["handleGetConfluencePublicationStatus"];

@@ -303,6 +303,9 @@ func (s *Server) startArchiveCleanupRetry() {
 			if err := s.retryArchiveCleanupJobs(sweepCtx); err != nil && ctx.Err() == nil {
 				slog.Warn("archive cleanup outbox retry incomplete", "error", err)
 			}
+			if err := s.retryAnalysisCleanup(sweepCtx); err != nil && ctx.Err() == nil {
+				slog.Warn("analytical cleanup pending", "error", err)
+			}
 		}
 		runSweep()
 		for {
