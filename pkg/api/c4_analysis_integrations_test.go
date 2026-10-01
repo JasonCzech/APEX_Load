@@ -58,6 +58,11 @@ func TestC4ProfileCatalogEndpoints(t *testing.T) {
 			t.Fatalf("missing monitor pack %q in %#v", id, packPayload.Packs)
 		}
 	}
+	for _, id := range []string{"cloudwatch", "azure-monitor"} {
+		if packs[id].Status != "preview" || len(packs[id].SetupActions) == 0 {
+			t.Fatalf("cloud pack %s must retain preview status and setup requirements: %#v", id, packs[id])
+		}
+	}
 	databasePack := packs["database"]
 	if len(databasePack.Profiles) == 0 || databasePack.Profiles[0].ID != "oracle-database" {
 		t.Fatalf("database pack profiles = %#v, want Oracle child profile", databasePack.Profiles)

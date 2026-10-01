@@ -115,6 +115,14 @@ func sanitizeArchivedTransaction(item *TransactionEvent) {
 	item.CorrelationID = scrub.ValueLabel(item.CorrelationID, policy)
 	item.TraceID = scrub.ValueLabel(item.TraceID, policy)
 	item.SpanID = scrub.ValueLabel(item.SpanID, policy)
+	if len(item.PropertyDimensions) > 4 {
+		item.PropertyDimensions = nil
+	}
+	for key, value := range item.PropertyDimensions {
+		if len(key) > 64 || len(value) > 64 || scrub.ValueLabel(key, policy) != key || scrub.ValueLabel(value, policy) != value {
+			delete(item.PropertyDimensions, key)
+		}
+	}
 	item.NetworkProfile = scrub.ValueLabel(item.NetworkProfile, policy)
 	item.DependencyType = scrub.ValueLabel(item.DependencyType, policy)
 	item.DependencyTarget = scrubArchiveTarget(item.DependencyTarget, policy)

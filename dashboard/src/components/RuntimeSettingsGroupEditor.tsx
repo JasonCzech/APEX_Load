@@ -1,3 +1,4 @@
+import PropertyAnalyticsFields from './PropertyAnalyticsFields'
 import { MessageDetailFields } from './MessageDetailFields'
 import { HTTPReplayPolicyFields } from './HTTPReplayPolicyFields'
 import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
@@ -991,7 +992,8 @@ export default function RuntimeSettingsGroupEditor({
 
         {activeTab === 'error_handling' && (
           <>
-            {isRuntimeFieldApplicable('results', focusGroup.protocol) && <MessageDetailFields value={draft.results?.message_detail ?? inheritedOverride?.results?.message_detail} onChange={value => patch({ results: value ? { message_detail: value } : undefined })} />}
+            {isRuntimeFieldApplicable('results', focusGroup.protocol) && <MessageDetailFields value={draft.results?.message_detail ?? inheritedOverride?.results?.message_detail} onChange={value => patch({ results: { ...inheritedOverride?.results, ...draft.results, message_detail: value } })} />}
+            {isRuntimeFieldApplicable('results', focusGroup.protocol) && <PropertyAnalyticsFields value={draft.results?.property_analytics ?? inheritedOverride?.results?.property_analytics} onChange={value => patch({ results: { ...inheritedOverride?.results, ...draft.results, property_analytics: value } })} />}
             <div className="scenario-option-grid">
               <label className={`scenario-option-card ${effectiveError.continue_on_error ? 'selected' : ''}`}>
                 <input type="checkbox" checked={effectiveError.continue_on_error ?? false} onChange={event => patchErrorHandling({ continue_on_error: event.target.checked })} />

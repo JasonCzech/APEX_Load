@@ -119,3 +119,35 @@ func TestSignedCollectorRejectsUnapprovedDestination(t *testing.T) {
 		t.Fatal("unapproved destination accepted")
 	}
 }
+
+func TestCloudEmptyWindowRetainsCollectionInterval(t *testing.T) {
+	pub, key, _ := ed25519.GenerateKey(rand.Reader)
+	now := time.Now().UTC()
+	job := RunJob{ID: "job", ProjectID: "p", RunID: "r", CollectorID: "c", SourceID: "s", SourceRevision: 1, IntervalSeconds: 60, Pack: "cloudwatch", Destination: "cloudwatch://ec2", StartedAt: now, ExpiresAt: now.Add(time.Hour), LeaseExpiresAt: now.Add(time.Minute)}
+	signed, _ := SignRunJob(job, key)
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode([]SignedRunJob{signed}) }))
+	defer controller.Close()
+	target := AdapterTarget{Pack: job.Pack, Destination: job.Destination, Cloud: &CloudQuery{Region: "us-east-1", AccountID: "123456789012", Namespace: "AWS/EC2", Metrics: []CloudMetric{{Name: "CPU", Unit: "Percent", Statistic: "Average"}}}}
+	a, err := New(Config{ControllerURL: controller.URL, CollectorID: "c", Token: "token", ControllerPublicKey: pub, Packs: []string{"cloudwatch"}, AdapterTargets: []AdapterTarget{target}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.runJobTick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	until := a.nextCollection[job.ID]
+	if until.Before(now.Add(time.Minute)) {
+		t.Fatal("empty cloud window lost collection interval")
+	}
+	if err = a.runJobTick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !a.nextCollection[job.ID].Equal(until) {
+		t.Fatal("heartbeat triggered another cloud collection")
+	}
+	job.IntervalSeconds = 1
+	signed, _ = SignRunJob(job, key)
+	if _, err = VerifyRunJob(signed, pub, "c", now); err == nil {
+		t.Fatal("cloud interval below provider bound accepted")
+	}
+}

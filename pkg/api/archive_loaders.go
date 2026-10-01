@@ -187,6 +187,9 @@ func transactionMatchesArchiveFilter(item *TransactionEvent, filter transactionE
 	if filter.Region != "" && !strings.EqualFold(item.Region, filter.Region) {
 		return false
 	}
+	if filter.PropertyName != "" && item.PropertyDimensions[filter.PropertyName] != filter.PropertyValue {
+		return false
+	}
 	if filter.NetworkProfile != "" && !strings.EqualFold(item.NetworkProfile, filter.NetworkProfile) {
 		return false
 	}

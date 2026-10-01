@@ -1,3 +1,4 @@
+import PropertyAnalyticsFields from './PropertyAnalyticsFields'
 import { requiresScriptBaseURL } from './scriptAuthoringAssist'
 import { MessageDetailFields } from './MessageDetailFields'
 import { HTTPReplayPolicyFields } from './HTTPReplayPolicyFields'
@@ -687,6 +688,7 @@ export function ScriptRuntimeSettingsView({
     {runtimeSectionIsActive('errors') && (
       <div className="section-body">
         {['http', 'http/1.1', 'http/2', 'soap', 'java_http'].includes(script.protocol) && <MessageDetailFields value={script.config.results?.message_detail} onChange={value => updateField('config.results', { ...script.config.results, message_detail: value })} />}
+        <PropertyAnalyticsFields value={script.config.results?.property_analytics} onChange={value => updateField('config.results', { ...script.config.results, property_analytics: value })} />
         <div className="form-grid">
           <div className="runtime-checkbox-list">
             <label className="checkbox-label">

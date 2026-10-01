@@ -152,6 +152,9 @@ func TestKafkaProduceConsumeWithExtractionAndAssertion(t *testing.T) {
 	if consumed.Extractions["src"] != "checkout" {
 		t.Fatalf("src = %q, want checkout", consumed.Extractions["src"])
 	}
+	if consumed.ServerTelemetry == nil || !consumed.ServerTelemetry.ConsumerOffsetLagObserved || consumed.ServerTelemetry.ConsumerOffsetLag != 0 {
+		t.Fatalf("observed zero backlog missing: %+v", consumed.ServerTelemetry)
+	}
 	if consumed.Extractions["kafka_consumer_lag"] != "0" {
 		t.Fatalf("kafka_consumer_lag = %q, want 0", consumed.Extractions["kafka_consumer_lag"])
 	}

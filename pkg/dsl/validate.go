@@ -730,6 +730,7 @@ func validateExecutionResourceIssues(script *Script) []string {
 	issues := validateParameterIssues(script)
 	issues = append(issues, ValidateJMeterCompatibility(script)...)
 	issues = append(issues, validateCSVExports(script)...)
+	issues = append(issues, ValidatePropertyAnalytics(script.Config.Results.PropertyAnalytics)...)
 	issues = append(issues, ValidateWorkloadSettingsIssues(script.Config.RunLogic, script.Config.Pacing)...)
 	issues = append(issues, validateThinkTimeResourceIssues("config.think_time", script.Config.ThinkTime)...)
 	issues = append(issues, validateErrorHandlingResourceIssues(script.Config.ErrorHandling)...)
@@ -1501,6 +1502,7 @@ func validateGoalConfigIssues(goal *GoalConfig) []string {
 		"min_duration_ms": true, "max_duration_ms": true, "error_count": true,
 		"error_rate_pct": true, "minimum_count": true, "bytes_sent": true,
 		"bytes_received": true, "tps": true,
+		"max_consumer_lag_ms": true, "max_consumer_offset_lag": true,
 	}
 	comparators := map[string]bool{"lt": true, "lte": true, "gt": true, "gte": true, "eq": true, "neq": true}
 	for index, rule := range goal.TransactionRules {

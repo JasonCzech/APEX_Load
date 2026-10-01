@@ -1,3 +1,4 @@
+import NativeAnalyticsPanel, { NativePanelAuthoring, NativeProjectPanels } from './NativeAnalyticsPanel'
 import { OrchestrationReturn } from './OrchestrationReturn'
 import RunOutcomeSummary from './RunOutcomeSummary'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -88,49 +89,6 @@ function formatRunStartTime(startedAt?: string) {
 
 function sharedDashboardPanelCardId(definitionId: string, panelId: string) {
   return `shared-dashboard:${definitionId}:${panelId}`
-}
-
-function nativeAnalyticsMetricValue(point: MetricsHistoryPoint, panel: DashboardDefinitionPanel): number | undefined {
-  const query = panel.query
-  if (!query) return undefined
-  switch (query.metric) {
-    case 'tps':
-    case 'throughput':
-      return point.tps
-    case 'response_time':
-    case 'transaction_duration':
-      switch (query.aggregation) {
-        case 'p50': return point.p50
-        case 'p90': return point.p90
-        case 'p95': return point.p95
-        case 'p99': return point.p99
-        default: return point.avgMs
-      }
-    case 'error_rate': return point.errorPct
-    case 'active_vusers': return point.vusers
-    case 'resource_cpu': return point.cpuProcess
-    case 'resource_memory': return point.memProcess
-    default: return undefined
-  }
-}
-
-function NativeAnalyticsPanel({ panel, history }: { panel: DashboardDefinitionPanel; history: MetricsHistoryPoint[] }) {
-  const query = panel.query
-  const samples = history.map(point => nativeAnalyticsMetricValue(point, panel)).filter((value): value is number => Number.isFinite(value))
-  const latest = samples.length > 0 ? samples[samples.length - 1] : undefined
-  return (
-    <div className="execution-native-analytics-panel" data-panel-kind={panel.kind}>
-      <div className="execution-native-analytics-contract">
-        <span>{query?.metric || 'unknown metric'}</span>
-        <span>{query?.aggregation || 'unknown aggregation'}</span>
-        {query?.dimensions?.length ? <span>by {query.dimensions.join(', ')}</span> : null}
-      </div>
-      <strong>{latest === undefined ? 'No matching live series' : latest.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
-      {query?.filters && Object.keys(query.filters).length > 0 ? (
-        <small>Filters: {Object.entries(query.filters).map(([name, value]) => `${name}=${value}`).join(', ')}</small>
-      ) : null}
-    </div>
-  )
 }
 
 export function buildProjectDashboardWorkspace(definitions: DashboardDefinition[], history: MetricsHistoryPoint[]) {
@@ -1081,8 +1039,6 @@ export default function TestExecution({
     })
     setProjectDashboardDefinitions(current => [...current.filter(item => item.id !== created.id), created])
   }
-  void projectDashboardProfiles
-  void saveWorkspaceToProject
 
   return (
     <div className="execution">
@@ -1153,6 +1109,11 @@ export default function TestExecution({
       )}
 
       {archiveReport && <RunOutcomeSummary report={archiveReport} />}
+      {canManageTests && api && test.project_id && <NativePanelAuthoring key={`panels-${testId}`} onSave={async definition => {
+        const created = await api.createDashboardDefinition({ ...definition, project_id: test.project_id!, visibility: 'project' })
+        setProjectDashboardDefinitions(current => [...current, created])
+      }} />}
+      <NativeProjectPanels key={`project-panels-${testId}`} definitions={projectDashboardDefinitions} history={filteredData} />
       <DashboardWorkspace
         key={testId}
         ariaLabel="Test execution workspace"
@@ -1162,7 +1123,9 @@ export default function TestExecution({
         defaultProfile={EXECUTION_WORKSPACE_DEFAULT_PROFILE}
         allowCustomization={false}
         defaultCardInsertions={EXECUTION_WORKSPACE_CARD_INSERTIONS}
-        cards={executionWorkspaceCards}
+        cards={allExecutionWorkspaceCards}
+        projectProfiles={projectDashboardProfiles}
+        onSaveToProject={canManageTests ? saveWorkspaceToProject : undefined}
         context={executionWorkspaceContext}
         initialActiveTabId={initialWorkspaceTabId}
         onActiveTabChange={handleWorkspaceActiveTabChange}

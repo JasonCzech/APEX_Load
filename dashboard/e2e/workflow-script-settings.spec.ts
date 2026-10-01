@@ -238,3 +238,29 @@ test('older imported draft retains its saved snapshot classification until re-im
   expect(stored.config.results?.message_detail).toBeUndefined()
   await page.screenshot({ path: testInfo.outputPath('legacy-runtime-classification.png'), fullPage: true })
 })
+
+test('property promotion survives capture changes and script save reopen', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script: { name: 'Property promotion', version: '1.0', protocol: 'http', config: { base_url: 'https://example.invalid' }, actions: [{ name: 'Read', type: 'request', method: 'GET', target: '/' }] } } })))
+  const open = async () => {
+    await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+    await page.reload()
+    await page.getByRole('tab', { name: 'Runtime Settings', exact: true }).click()
+    const runtime = page.getByRole('region', { name: 'Runtime Settings', exact: true })
+    await runtime.getByRole('navigation', { name: 'Runtime setting categories' }).getByRole('tab', { name: 'Error Handling', exact: true }).click()
+  }
+  await open()
+  const fields = page.getByRole('group', { name: 'Response property analytics', exact: true })
+  await fields.getByRole('button', { name: 'Promote extraction', exact: true }).click()
+  await fields.getByLabel('Property name', { exact: true }).fill('operation')
+  await fields.getByLabel('Extraction key', { exact: true }).fill('operation_type')
+  await fields.getByLabel('Approved categories (comma separated)', { exact: true }).fill('checkout,search')
+  await page.getByRole('combobox', { name: 'Exchange capture', exact: true }).selectOption('errors')
+  await page.getByRole('button', { name: 'Save script', exact: true }).click()
+  await expect.poll(async () => ((await json(await request.get(`/api/v1/scripts/${id}`))).script as { config: { results?: { property_analytics?: unknown } } }).config.results?.property_analytics).toEqual([{ name: 'operation', extraction: 'operation_type', values: ['checkout', 'search'] }])
+  await open()
+  await expect(fields.getByLabel('Property name', { exact: true })).toHaveValue('operation')
+  await expect(fields.getByLabel('Approved categories (comma separated)', { exact: true })).toHaveValue('checkout,search')
+})

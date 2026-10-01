@@ -132,6 +132,9 @@ func TestEventHubsProduceConsumeRoundTrip(t *testing.T) {
 	if consumed.Extractions["device"] != "sensor" {
 		t.Fatalf("property extractor device = %q, want sensor", consumed.Extractions["device"])
 	}
+	if consumed.ServerTelemetry == nil || !consumed.ServerTelemetry.ConsumerOffsetLagObserved || consumed.ServerTelemetry.ConsumerOffsetLag != 0 {
+		t.Fatalf("observed zero backlog missing: %+v", consumed.ServerTelemetry)
+	}
 	if consumed.Extractions["eventhubs_consumer_lag"] != "0" {
 		t.Fatalf("eventhubs_consumer_lag = %q, want 0 (drained)", consumed.Extractions["eventhubs_consumer_lag"])
 	}
@@ -189,5 +192,27 @@ func TestEventHubsUnsupportedAction(t *testing.T) {
 	}
 	if !strings.Contains(result.ErrorMessage, "unsupported eventhubs action") {
 		t.Fatalf("unexpected error: %q", result.ErrorMessage)
+	}
+}
+
+func TestEventHubsDeploymentDefaultsDoNotOverrideScript(t *testing.T) {
+	t.Setenv("APEXLOAD_EVENTHUBS_AUTH", "aad")
+	t.Setenv("APEXLOAD_EVENTHUBS_PROBE_CONSUMER_GROUP", "isolated-observer")
+	e := &EventHubs{}
+	if err := e.Init(context.Background(), map[string]any{"eventhubs_mock": true}); err != nil {
+		t.Fatal(err)
+	}
+	defer e.Teardown(context.Background())
+	if e.cfg.AuthType != "aad" || e.cfg.ConsumerGroup != "isolated-observer" {
+		t.Fatalf("defaults: %+v", e.cfg)
+	}
+}
+
+func TestEventHubsExplicitConfigWinsOverDeploymentDefaults(t *testing.T) {
+	t.Setenv("APEXLOAD_EVENTHUBS_AUTH", "aad")
+	t.Setenv("APEXLOAD_EVENTHUBS_PROBE_CONSUMER_GROUP", "isolated-observer")
+	e := newMockEventHubs(t, map[string]any{"eventhubs_auth_type": "connection_string", "eventhubs_consumer_group": "explicit"})
+	if e.cfg.AuthType != "connection_string" || e.cfg.ConsumerGroup != "explicit" {
+		t.Fatal("deployment defaults replaced explicit script settings")
 	}
 }

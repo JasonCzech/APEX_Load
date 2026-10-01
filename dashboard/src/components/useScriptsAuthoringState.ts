@@ -347,7 +347,7 @@ export function useScriptsAuthoringState({
   // Pairing a recorder changes the composite API object. It must not reset the
   // active authoring surface through the initial-route effect below.
   const getScript = api.getScript
-  const handleEdit = useCallback(async (id: string) => {
+  const handleEdit = useCallback(async (id: string, notice?: string | null) => {
     const requestGeneration = ++editRequestGenerationRef.current
     setAuthoringState(previous => previous.subView === 'edit'
       ? {
@@ -358,7 +358,7 @@ export function useScriptsAuthoringState({
           draftInitiallyDirty: false,
           draftEditorFocus: null,
           draftReturnTarget: null,
-          authoringNotice: null,
+          authoringNotice: notice?.trim() || null,
           importLauncher: null,
           importMode: null,
           importFiles: null,
@@ -375,7 +375,7 @@ export function useScriptsAuthoringState({
         draftInitiallyDirty: false,
         draftEditorFocus: null,
         draftReturnTarget: null,
-        authoringNotice: null,
+        authoringNotice: notice?.trim() || null,
         importLauncher: null,
         importMode: null,
         importFiles: null,
@@ -399,11 +399,15 @@ export function useScriptsAuthoringState({
   }, [getScript])
 
   const handleSavedScript = useCallback((savedScript: StoredScript, notice?: string | null) => {
+    if (!savedScript.script) {
+      void handleEdit(savedScript.id, notice)
+      return
+    }
     invalidateEditRequest()
-    setAuthoringState(previous => ({
+    setAuthoringState({
       subView: 'edit',
       editingId: savedScript.id,
-      editingScript: savedScript.script ?? previous.draftScript ?? previous.editingScript,
+      editingScript: savedScript.script,
       draftScript: null,
       draftInitiallyDirty: false,
       draftEditorFocus: null,
@@ -412,8 +416,8 @@ export function useScriptsAuthoringState({
       importLauncher: null,
       importMode: null,
       importFiles: null,
-    }))
-  }, [invalidateEditRequest])
+    })
+  }, [handleEdit, invalidateEditRequest])
 
   const openCreateOptionsWithNotice = useCallback((notice: string) => {
     invalidateEditRequest()

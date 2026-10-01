@@ -168,6 +168,7 @@ type MetricsBatch struct {
 	DependencyMetrics          []MetricAggregate
 	SOAPMetrics                []MetricAggregate
 	NetworkProfileMetrics      []MetricAggregate
+	PropertyMetrics            []MetricAggregate
 	RegionMetrics              []MetricAggregate
 	Browser                    *BrowserMetrics
 	BrowserByDevice            []BrowserDeviceMetrics
@@ -258,37 +259,39 @@ type BrowserDeviceMetrics struct {
 }
 
 type ServerTelemetry struct {
-	GRPC                   *protocol.GRPCDiagnostics
-	WebSocket              *protocol.WebSocketDiagnostics
-	ServerProcessingMs     float64
-	TransferMs             float64
-	RequestPayloadKB       float64
-	ResponsePayloadKB      float64
-	ConnectionReused       bool
-	RequestSizeClass       string
-	ResponseSizeClass      string
-	FirstEventMs           float64
-	EventCount             int32
-	MessageLatencyMs       float64
-	MessagesSent           int32
-	MessagesReceived       int32
-	MessagesSentPerSec     float64
-	MessagesReceivedPerSec float64
-	ConsumerLagMs          float64
-	SendFailureCount       int32
-	RedeliveryCount        int32
-	DeadLetteredCount      int32
-	DuplicateCount         int32
-	OutOfOrderCount        int32
-	CommitCount            int32
-	AbortCount             int32
-	ConsumerOffsetLag      int64
-	ThrottledRequests      int32
-	ServerBusyCount        int32
-	QuotaExceededCount     int32
-	EventTooLargeCount     int32
-	EndToEndLatencyMs      float64
-	PartitionID            string
+	ConsumerLagObserved       bool
+	ConsumerOffsetLagObserved bool
+	GRPC                      *protocol.GRPCDiagnostics
+	WebSocket                 *protocol.WebSocketDiagnostics
+	ServerProcessingMs        float64
+	TransferMs                float64
+	RequestPayloadKB          float64
+	ResponsePayloadKB         float64
+	ConnectionReused          bool
+	RequestSizeClass          string
+	ResponseSizeClass         string
+	FirstEventMs              float64
+	EventCount                int32
+	MessageLatencyMs          float64
+	MessagesSent              int32
+	MessagesReceived          int32
+	MessagesSentPerSec        float64
+	MessagesReceivedPerSec    float64
+	ConsumerLagMs             float64
+	SendFailureCount          int32
+	RedeliveryCount           int32
+	DeadLetteredCount         int32
+	DuplicateCount            int32
+	OutOfOrderCount           int32
+	CommitCount               int32
+	AbortCount                int32
+	ConsumerOffsetLag         int64
+	ThrottledRequests         int32
+	ServerBusyCount           int32
+	QuotaExceededCount        int32
+	EventTooLargeCount        int32
+	EndToEndLatencyMs         float64
+	PartitionID               string
 }
 
 type TransactionMetric struct {
@@ -1402,37 +1405,39 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		var serverTelemetry *ServerTelemetry
 		if tx.GetServerTelemetry() != nil {
 			serverTelemetry = &ServerTelemetry{
-				GRPC:                   grpcDiagnosticsFromProto(tx.GetServerTelemetry().GetGrpc()),
-				WebSocket:              websocketDiagnosticsFromProto(tx.GetServerTelemetry().GetWebsocket()),
-				ServerProcessingMs:     tx.GetServerTelemetry().GetServerProcessingMs(),
-				TransferMs:             tx.GetServerTelemetry().GetTransferMs(),
-				RequestPayloadKB:       tx.GetServerTelemetry().GetRequestPayloadKb(),
-				ResponsePayloadKB:      tx.GetServerTelemetry().GetResponsePayloadKb(),
-				ConnectionReused:       tx.GetServerTelemetry().GetConnectionReused(),
-				RequestSizeClass:       tx.GetServerTelemetry().GetRequestSizeClass(),
-				ResponseSizeClass:      tx.GetServerTelemetry().GetResponseSizeClass(),
-				FirstEventMs:           tx.GetServerTelemetry().GetFirstEventMs(),
-				EventCount:             tx.GetServerTelemetry().GetEventCount(),
-				MessageLatencyMs:       tx.GetServerTelemetry().GetMessageLatencyMs(),
-				MessagesSent:           tx.GetServerTelemetry().GetMessagesSent(),
-				MessagesReceived:       tx.GetServerTelemetry().GetMessagesReceived(),
-				MessagesSentPerSec:     tx.GetServerTelemetry().GetMessagesSentPerSec(),
-				MessagesReceivedPerSec: tx.GetServerTelemetry().GetMessagesReceivedPerSec(),
-				ConsumerLagMs:          tx.GetServerTelemetry().GetConsumerLagMs(),
-				SendFailureCount:       tx.GetServerTelemetry().GetSendFailureCount(),
-				RedeliveryCount:        tx.GetServerTelemetry().GetRedeliveryCount(),
-				DeadLetteredCount:      tx.GetServerTelemetry().GetDeadLetteredCount(),
-				DuplicateCount:         tx.GetServerTelemetry().GetDuplicateCount(),
-				OutOfOrderCount:        tx.GetServerTelemetry().GetOutOfOrderCount(),
-				CommitCount:            tx.GetServerTelemetry().GetCommitCount(),
-				AbortCount:             tx.GetServerTelemetry().GetAbortCount(),
-				ConsumerOffsetLag:      tx.GetServerTelemetry().GetConsumerOffsetLag(),
-				ThrottledRequests:      tx.GetServerTelemetry().GetThrottledRequests(),
-				ServerBusyCount:        tx.GetServerTelemetry().GetServerBusyCount(),
-				QuotaExceededCount:     tx.GetServerTelemetry().GetQuotaExceededCount(),
-				EventTooLargeCount:     tx.GetServerTelemetry().GetEventTooLargeCount(),
-				EndToEndLatencyMs:      tx.GetServerTelemetry().GetEndToEndLatencyMs(),
-				PartitionID:            tx.GetServerTelemetry().GetPartitionId(),
+				GRPC:                      grpcDiagnosticsFromProto(tx.GetServerTelemetry().GetGrpc()),
+				WebSocket:                 websocketDiagnosticsFromProto(tx.GetServerTelemetry().GetWebsocket()),
+				ServerProcessingMs:        tx.GetServerTelemetry().GetServerProcessingMs(),
+				TransferMs:                tx.GetServerTelemetry().GetTransferMs(),
+				RequestPayloadKB:          tx.GetServerTelemetry().GetRequestPayloadKb(),
+				ResponsePayloadKB:         tx.GetServerTelemetry().GetResponsePayloadKb(),
+				ConnectionReused:          tx.GetServerTelemetry().GetConnectionReused(),
+				RequestSizeClass:          tx.GetServerTelemetry().GetRequestSizeClass(),
+				ResponseSizeClass:         tx.GetServerTelemetry().GetResponseSizeClass(),
+				FirstEventMs:              tx.GetServerTelemetry().GetFirstEventMs(),
+				EventCount:                tx.GetServerTelemetry().GetEventCount(),
+				MessageLatencyMs:          tx.GetServerTelemetry().GetMessageLatencyMs(),
+				MessagesSent:              tx.GetServerTelemetry().GetMessagesSent(),
+				MessagesReceived:          tx.GetServerTelemetry().GetMessagesReceived(),
+				MessagesSentPerSec:        tx.GetServerTelemetry().GetMessagesSentPerSec(),
+				MessagesReceivedPerSec:    tx.GetServerTelemetry().GetMessagesReceivedPerSec(),
+				ConsumerLagMs:             tx.GetServerTelemetry().GetConsumerLagMs(),
+				ConsumerLagObserved:       tx.GetServerTelemetry().GetConsumerLagObserved(),
+				ConsumerOffsetLagObserved: tx.GetServerTelemetry().GetConsumerOffsetLagObserved(),
+				SendFailureCount:          tx.GetServerTelemetry().GetSendFailureCount(),
+				RedeliveryCount:           tx.GetServerTelemetry().GetRedeliveryCount(),
+				DeadLetteredCount:         tx.GetServerTelemetry().GetDeadLetteredCount(),
+				DuplicateCount:            tx.GetServerTelemetry().GetDuplicateCount(),
+				OutOfOrderCount:           tx.GetServerTelemetry().GetOutOfOrderCount(),
+				CommitCount:               tx.GetServerTelemetry().GetCommitCount(),
+				AbortCount:                tx.GetServerTelemetry().GetAbortCount(),
+				ConsumerOffsetLag:         tx.GetServerTelemetry().GetConsumerOffsetLag(),
+				ThrottledRequests:         tx.GetServerTelemetry().GetThrottledRequests(),
+				ServerBusyCount:           tx.GetServerTelemetry().GetServerBusyCount(),
+				QuotaExceededCount:        tx.GetServerTelemetry().GetQuotaExceededCount(),
+				EventTooLargeCount:        tx.GetServerTelemetry().GetEventTooLargeCount(),
+				EndToEndLatencyMs:         tx.GetServerTelemetry().GetEndToEndLatencyMs(),
+				PartitionID:               tx.GetServerTelemetry().GetPartitionId(),
 			}
 		}
 		var snapshot *protocol.ErrorSnapshot
@@ -1509,6 +1514,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		DependencyMetrics:          metricAggregatesFromProto(batch.GetDependencyMetrics()),
 		SOAPMetrics:                metricAggregatesFromProto(batch.GetSoapMetrics()),
 		NetworkProfileMetrics:      metricAggregatesFromProto(batch.GetNetworkProfileMetrics()),
+		PropertyMetrics:            metricAggregatesFromProto(batch.GetPropertyMetrics()),
 		RegionMetrics:              metricAggregatesFromProto(batch.GetRegionMetrics()),
 		Browser:                    browserMetricsFromProto(batch.GetBrowserMetrics()),
 		BrowserByDevice:            browserDeviceMetricsFromProto(batch.GetBrowserDeviceMetrics()),

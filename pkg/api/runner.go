@@ -851,6 +851,7 @@ type LiveMetrics struct {
 	ErrorPatterns              []LiveErrorPattern                    `json:"error_patterns,omitempty"`
 	SOAPOperations             map[string]*TxMetrics                 `json:"soap_operations,omitempty"`
 	NetworkProfiles            map[string]*TxMetrics                 `json:"network_profiles,omitempty"`
+	Properties                 map[string]*TxMetrics                 `json:"properties,omitempty"`
 	ByRegion                   map[string]*TxMetrics                 `json:"by_region,omitempty"`
 	GroupMetrics               map[string]*GroupLiveMetrics          `json:"groups,omitempty"`
 	Browser                    *BrowserLiveMetrics                   `json:"browser,omitempty"`

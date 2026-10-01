@@ -11,6 +11,10 @@ import (
 )
 
 type transactionSLAAccumulator struct {
+	lagSamples    int64
+	offsetSamples int64
+	maxLag        float64
+	maxOffset     float64
 	count         int64
 	errors        int64
 	bytesSent     int64
@@ -68,6 +72,16 @@ func applyTransactionSLARules(root string, manifest *RunArchiveManifest) error {
 			stats[event.ActionName] = accumulator
 		}
 		accumulator.count++
+		if telemetry := event.ServerTelemetry; telemetry != nil {
+			if telemetry.ConsumerLagObserved && telemetry.ConsumerLagMs >= 0 && !math.IsNaN(telemetry.ConsumerLagMs) && !math.IsInf(telemetry.ConsumerLagMs, 0) {
+				accumulator.lagSamples++
+				accumulator.maxLag = math.Max(accumulator.maxLag, telemetry.ConsumerLagMs)
+			}
+			if telemetry.ConsumerOffsetLagObserved && telemetry.ConsumerOffsetLag >= 0 && telemetry.ConsumerOffsetLag <= 1<<53 {
+				accumulator.offsetSamples++
+				accumulator.maxOffset = math.Max(accumulator.maxOffset, float64(telemetry.ConsumerOffsetLag))
+			}
+		}
 		if !event.Success {
 			accumulator.errors++
 		}
@@ -227,6 +241,10 @@ func transactionSLAMetricValue(metric string, stats *transactionSLAAccumulator, 
 		return 0, false
 	}
 	switch metric {
+	case "max_consumer_lag_ms":
+		return stats.maxLag, stats.lagSamples == stats.count
+	case "max_consumer_offset_lag":
+		return stats.maxOffset, stats.offsetSamples == stats.count
 	case "average_duration_ms":
 		return stats.durationTotal / float64(stats.count), true
 	case "p90_duration_ms":

@@ -8580,6 +8580,24 @@
       },
       "type": "object"
     },
+    "PropertyAnalytics": {
+      "additionalProperties": false,
+      "properties": {
+        "extraction": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "values": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "ProxyConfig": {
       "additionalProperties": false,
       "properties": {
@@ -8615,6 +8633,12 @@
         },
         "message_detail": {
           "$ref": "#/$defs/MessageDetailConfig"
+        },
+        "property_analytics": {
+          "items": {
+            "$ref": "#/$defs/PropertyAnalytics"
+          },
+          "type": "array"
         }
       },
       "type": "object"

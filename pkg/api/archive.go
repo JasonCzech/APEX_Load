@@ -229,6 +229,7 @@ type TransactionEvent struct {
 	Group                 string                    `json:"group,omitempty"`
 	Region                string                    `json:"region,omitempty"`
 	NetworkProfile        string                    `json:"network_profile,omitempty"`
+	PropertyDimensions    map[string]string         `json:"property_dimensions,omitempty"`
 	SourceTransaction     string                    `json:"source_transaction,omitempty"`
 	Hierarchy             string                    `json:"hierarchy,omitempty"`
 	PageName              string                    `json:"page_name,omitempty"`
@@ -382,6 +383,8 @@ type archivePage struct {
 }
 
 type transactionEventFilter struct {
+	PropertyName      string
+	PropertyValue     string
 	Population        string
 	Action            string
 	SOAPOperation     string
@@ -451,6 +454,7 @@ type RunArchiveReport struct {
 	ByAction                          map[string]RunArchiveActionStats       `json:"by_action"`
 	ByGroup                           map[string]RunArchiveActionStats       `json:"by_group,omitempty"`
 	BySOAPOperation                   map[string]RunArchiveActionStats       `json:"by_soap_operation,omitempty"`
+	ByProperty                        map[string]RunArchiveActionStats       `json:"by_property,omitempty"`
 	ByNetworkProfile                  map[string]RunArchiveActionStats       `json:"by_network_profile,omitempty"`
 	ByRegion                          map[string]RunArchiveActionStats       `json:"by_region,omitempty"`
 	BySOAPFaultCode                   map[string]int64                       `json:"by_soap_fault_code,omitempty"`

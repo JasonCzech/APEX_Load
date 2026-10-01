@@ -41,6 +41,7 @@ kept for planning or audit context only.
 | [TROUBLESHOOTING.md](../TROUBLESHOOTING.md) | Developer and operational troubleshooting |
 | [SCRIPT_LIFECYCLE.md](SCRIPT_LIFECYCLE.md) | Script source-to-run lifecycle |
 | [SCRIPT_DEBUGGER_GUIDE.md](SCRIPT_DEBUGGER_GUIDE.md) | Script replay debugger workflow, routes, and imported runtime-setting/capture diagnostics |
+| [EVENT_HUBS_HOWTO.md](EVENT_HUBS_HOWTO.md) | Native Event Hubs deployment defaults, observer isolation and terminal lag gates |
 | [PROTOCOL_SUPPORT.md](PROTOCOL_SUPPORT.md) | Web/API, browser, messaging, Java Vuser, and SAP GUI support boundaries |
 | [PROTOCOL_DIAGNOSTICS.md](PROTOCOL_DIAGNOSTICS.md) | gRPC measurement semantics, availability, distributed summaries, and archive compatibility |
 | [IMPORT_FIDELITY_AND_REPAIRS.md](IMPORT_FIDELITY_AND_REPAIRS.md) | JMeter and LoadRunner import fidelity, source-plan execution, guided repair, native archive compatibility, and regression coverage |

@@ -449,6 +449,7 @@ message MetricsBatch {
   // that a bounded subscriber queue could not deliver.
   uint64 batch_sequence = 19;
   repeated MetricAggregate region_metrics = 20;
+  repeated MetricAggregate property_metrics = 22;
   repeated TransactionResponseTimeSLACompliance transaction_response_time_sla = 21;
 }
 
@@ -573,6 +574,8 @@ message ServerTelemetry {
   string partition_id = 29;
   GRPCDiagnostics grpc = 30;
   WebSocketDiagnostics websocket = 31;
+  bool consumer_lag_observed = 32;
+  bool consumer_offset_lag_observed = 33;
 }
 
 message WebSocketDiagnostics {

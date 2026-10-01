@@ -23,3 +23,24 @@ func TestSnapshotJSONReturnsValidTypedTruncation(t *testing.T) {
 		t.Fatalf("truncated snapshot = %+v", snapshot)
 	}
 }
+
+func TestCloneServerTelemetryPreservesWebSocket(t *testing.T) {
+	zero := 0.0
+	code := int32(1000)
+	input := &protocol.ServerTelemetry{WebSocket: &protocol.WebSocketDiagnostics{
+		Operation: "receive", ReceiveMs: &zero, CloseCode: &code, PingRTTMs: []float64{2},
+	}}
+	got := cloneServerTelemetry(input)
+	if got.WebSocket == nil || got.WebSocket.ReceiveMs == nil || *got.WebSocket.ReceiveMs != 0 || got.WebSocket.Operation != "receive" {
+		t.Fatal("WebSocket evidence lost")
+	}
+	*got.WebSocket.ReceiveMs = 3
+	*got.WebSocket.CloseCode = 1001
+	got.WebSocket.PingRTTMs[0] = 4
+	if *input.WebSocket.ReceiveMs != 0 || *input.WebSocket.CloseCode != 1000 || input.WebSocket.PingRTTMs[0] != 2 {
+		t.Fatal("clone aliases source diagnostics")
+	}
+	if cloneServerTelemetry(&protocol.ServerTelemetry{}).WebSocket != nil {
+		t.Fatal("missing diagnostics invented")
+	}
+}

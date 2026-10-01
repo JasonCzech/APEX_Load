@@ -259,6 +259,7 @@ type metricsAggregateSet struct {
 	Dependencies    []MetricAggregate
 	SOAP            []MetricAggregate
 	NetworkProfiles []MetricAggregate
+	Properties      []MetricAggregate
 	Regions         []MetricAggregate
 	Browser         *BrowserMetrics
 	BrowserByDevice []BrowserDeviceMetrics
@@ -1459,7 +1460,7 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 	names := protocol.List()
 	sort.Strings(names)
 	available := make([]string, 0, len(names))
-	features := []string{FeaturePreparationV1, dsl.FeatureLRFidelityV1, FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1, FeatureRunSupervisionV1, FeatureMessageDetailCaptureV1, FeatureControlParallelV1, FeatureMessageDetailControlParallelV1}
+	features := []string{dsl.FeaturePropertyAnalyticsV1, FeaturePreparationV1, dsl.FeatureLRFidelityV1, FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1, FeatureRunSupervisionV1, FeatureMessageDetailCaptureV1, FeatureControlParallelV1, FeatureMessageDetailControlParallelV1}
 	runtimeCapacities := make([]*pb.ProtocolRuntimeCapacity, 0)
 	for _, name := range names {
 		normalized := strings.ToLower(strings.TrimSpace(name))
@@ -2235,37 +2236,39 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		var protoServerTelemetry *pb.ServerTelemetry
 		if tx.ServerTelemetry != nil {
 			protoServerTelemetry = &pb.ServerTelemetry{
-				Grpc:                   grpcDiagnosticsToProto(tx.ServerTelemetry.GRPC),
-				Websocket:              websocketDiagnosticsToProto(tx.ServerTelemetry.WebSocket),
-				ServerProcessingMs:     tx.ServerTelemetry.ServerProcessingMs,
-				TransferMs:             tx.ServerTelemetry.TransferMs,
-				RequestPayloadKb:       tx.ServerTelemetry.RequestPayloadKB,
-				ResponsePayloadKb:      tx.ServerTelemetry.ResponsePayloadKB,
-				ConnectionReused:       tx.ServerTelemetry.ConnectionReused,
-				RequestSizeClass:       tx.ServerTelemetry.RequestSizeClass,
-				ResponseSizeClass:      tx.ServerTelemetry.ResponseSizeClass,
-				FirstEventMs:           tx.ServerTelemetry.FirstEventMs,
-				EventCount:             tx.ServerTelemetry.EventCount,
-				MessageLatencyMs:       tx.ServerTelemetry.MessageLatencyMs,
-				MessagesSent:           tx.ServerTelemetry.MessagesSent,
-				MessagesReceived:       tx.ServerTelemetry.MessagesReceived,
-				MessagesSentPerSec:     tx.ServerTelemetry.MessagesSentPerSec,
-				MessagesReceivedPerSec: tx.ServerTelemetry.MessagesReceivedPerSec,
-				ConsumerLagMs:          tx.ServerTelemetry.ConsumerLagMs,
-				SendFailureCount:       tx.ServerTelemetry.SendFailureCount,
-				RedeliveryCount:        tx.ServerTelemetry.RedeliveryCount,
-				DeadLetteredCount:      tx.ServerTelemetry.DeadLetteredCount,
-				DuplicateCount:         tx.ServerTelemetry.DuplicateCount,
-				OutOfOrderCount:        tx.ServerTelemetry.OutOfOrderCount,
-				CommitCount:            tx.ServerTelemetry.CommitCount,
-				AbortCount:             tx.ServerTelemetry.AbortCount,
-				ConsumerOffsetLag:      tx.ServerTelemetry.ConsumerOffsetLag,
-				ThrottledRequests:      tx.ServerTelemetry.ThrottledRequests,
-				ServerBusyCount:        tx.ServerTelemetry.ServerBusyCount,
-				QuotaExceededCount:     tx.ServerTelemetry.QuotaExceededCount,
-				EventTooLargeCount:     tx.ServerTelemetry.EventTooLargeCount,
-				EndToEndLatencyMs:      tx.ServerTelemetry.EndToEndLatencyMs,
-				PartitionId:            tx.ServerTelemetry.PartitionID,
+				Grpc:                      grpcDiagnosticsToProto(tx.ServerTelemetry.GRPC),
+				Websocket:                 websocketDiagnosticsToProto(tx.ServerTelemetry.WebSocket),
+				ServerProcessingMs:        tx.ServerTelemetry.ServerProcessingMs,
+				TransferMs:                tx.ServerTelemetry.TransferMs,
+				RequestPayloadKb:          tx.ServerTelemetry.RequestPayloadKB,
+				ResponsePayloadKb:         tx.ServerTelemetry.ResponsePayloadKB,
+				ConnectionReused:          tx.ServerTelemetry.ConnectionReused,
+				RequestSizeClass:          tx.ServerTelemetry.RequestSizeClass,
+				ResponseSizeClass:         tx.ServerTelemetry.ResponseSizeClass,
+				FirstEventMs:              tx.ServerTelemetry.FirstEventMs,
+				EventCount:                tx.ServerTelemetry.EventCount,
+				MessageLatencyMs:          tx.ServerTelemetry.MessageLatencyMs,
+				MessagesSent:              tx.ServerTelemetry.MessagesSent,
+				MessagesReceived:          tx.ServerTelemetry.MessagesReceived,
+				MessagesSentPerSec:        tx.ServerTelemetry.MessagesSentPerSec,
+				MessagesReceivedPerSec:    tx.ServerTelemetry.MessagesReceivedPerSec,
+				ConsumerLagMs:             tx.ServerTelemetry.ConsumerLagMs,
+				ConsumerLagObserved:       tx.ServerTelemetry.ConsumerLagObserved,
+				ConsumerOffsetLagObserved: tx.ServerTelemetry.ConsumerOffsetLagObserved,
+				SendFailureCount:          tx.ServerTelemetry.SendFailureCount,
+				RedeliveryCount:           tx.ServerTelemetry.RedeliveryCount,
+				DeadLetteredCount:         tx.ServerTelemetry.DeadLetteredCount,
+				DuplicateCount:            tx.ServerTelemetry.DuplicateCount,
+				OutOfOrderCount:           tx.ServerTelemetry.OutOfOrderCount,
+				CommitCount:               tx.ServerTelemetry.CommitCount,
+				AbortCount:                tx.ServerTelemetry.AbortCount,
+				ConsumerOffsetLag:         tx.ServerTelemetry.ConsumerOffsetLag,
+				ThrottledRequests:         tx.ServerTelemetry.ThrottledRequests,
+				ServerBusyCount:           tx.ServerTelemetry.ServerBusyCount,
+				QuotaExceededCount:        tx.ServerTelemetry.QuotaExceededCount,
+				EventTooLargeCount:        tx.ServerTelemetry.EventTooLargeCount,
+				EndToEndLatencyMs:         tx.ServerTelemetry.EndToEndLatencyMs,
+				PartitionId:               tx.ServerTelemetry.PartitionID,
 			}
 		}
 		protoTransactions = append(protoTransactions, &pb.TransactionMetric{
@@ -2327,6 +2330,7 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		DependencyMetrics:     metricAggregatesToProto(aggregates.Dependencies),
 		SoapMetrics:           metricAggregatesToProto(aggregates.SOAP),
 		NetworkProfileMetrics: metricAggregatesToProto(aggregates.NetworkProfiles),
+		PropertyMetrics:       metricAggregatesToProto(aggregates.Properties),
 		RegionMetrics:         metricAggregatesToProto(aggregates.Regions),
 		FleetMetrics:          metricAggregateToProto(aggregates.Fleet),
 		BrowserMetrics:        browserMetricsToProto(aggregates.Browser),
@@ -2712,7 +2716,7 @@ func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapsho
 }
 
 func metricsAggregateSetHasEvidence(aggregates metricsAggregateSet) bool {
-	return aggregates.Fleet != nil || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
+	return aggregates.Fleet != nil || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Properties) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
 }
 
 func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName string, metrics executionMetricsSnapshot) {
@@ -2942,6 +2946,7 @@ func mergeSnapshotSideChannelAggregates(out *metricsAggregateSet, snapshot engin
 		return
 	}
 	out.NetworkProfiles = engineActionMetricsToAggregates(snapshot.ByNetworkProfile)
+	out.Properties = engineActionMetricsToAggregates(snapshot.ByProperty)
 	out.Regions = engineActionMetricsToAggregates(snapshot.ByRegion)
 	out.Browser = browserMetricsFromEngine(snapshot.Browser)
 	out.BrowserByDevice = browserDeviceMetricsFromEngine(snapshot.BrowserByDevice)
@@ -3051,6 +3056,7 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 	dependencyMetrics := make([]MetricAggregate, 0)
 	soapMetrics := make([]MetricAggregate, 0)
 	networkProfileMetrics := make([]MetricAggregate, 0)
+	propertyMetrics := make([]MetricAggregate, 0)
 	regionMetrics := make([]MetricAggregate, 0)
 	groupMetrics := make([]GroupMetric, 0)
 	browsers := make([]*BrowserMetrics, 0)
@@ -3063,6 +3069,7 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 		dependencyMetrics = append(dependencyMetrics, value.Dependencies...)
 		soapMetrics = append(soapMetrics, value.SOAP...)
 		networkProfileMetrics = append(networkProfileMetrics, value.NetworkProfiles...)
+		propertyMetrics = append(propertyMetrics, value.Properties...)
 		regionMetrics = append(regionMetrics, value.Regions...)
 		groupMetrics = append(groupMetrics, value.Groups...)
 		if value.Browser != nil {
@@ -3075,6 +3082,7 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 	out.Dependencies = mergeMetricAggregateSeries(dependencyMetrics)
 	out.SOAP = mergeMetricAggregateSeries(soapMetrics)
 	out.NetworkProfiles = mergeMetricAggregateSeries(networkProfileMetrics)
+	out.Properties = mergeMetricAggregateSeries(propertyMetrics)
 	out.Regions = mergeMetricAggregateSeries(regionMetrics)
 	out.Groups = mergeGroupMetricSeries(groupMetrics)
 	out.Browser = mergeBrowserMetricSeries(browsers)

@@ -919,6 +919,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -1817,6 +1818,139 @@ export interface operations {
               }) | null;
             }>;
             "by_network_profile"?: Record<string, {
+              "avg_response_ms"?: number;
+              "diagnostic_findings"?: Array<Record<string, unknown>>;
+              "error_pct"?: number;
+              "errors"?: number;
+              "grpc"?: ({
+                "call_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_budget_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "first_message_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached"?: number;
+                "request_bytes"?: number;
+                "response_bytes"?: number;
+                "samples"?: number;
+                "status_counts"?: Array<number>;
+                "unavailable_status"?: number;
+              }) | null;
+              "max_response_ms"?: number;
+              "min_response_ms"?: number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions"?: number;
+              "websocket"?: ({
+                "abnormal_closes"?: number;
+                "binary_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
+                "cancellations"?: number;
+                "handshake_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "max_pending_writes"?: number;
+                "messages_received"?: number;
+                "messages_sent"?: number;
+                "normal_closes"?: number;
+                "ping_rtt_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnect_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "reconnects"?: number;
+                "samples"?: number;
+                "send_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "text_receive_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "timeouts"?: number;
+                "write_wait_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+              }) | null;
+            }>;
+            "by_property"?: Record<string, {
               "avg_response_ms"?: number;
               "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
@@ -3605,6 +3739,11 @@ export interface operations {
                 "mode"?: string;
                 "sample_rate"?: number;
               }) | null;
+              "property_analytics"?: Array<{
+                "extraction"?: string;
+                "name"?: string;
+                "values"?: Array<string>;
+              }>;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -3941,6 +4080,7 @@ export interface operations {
               "results"?: ({
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -4396,6 +4536,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -5188,6 +5329,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -5882,6 +6024,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -9466,6 +9609,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -10312,6 +10456,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -10983,6 +11128,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -11623,6 +11769,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -12156,6 +12303,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -12762,6 +12910,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -13377,6 +13526,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -13984,6 +14134,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -14593,6 +14744,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -15975,6 +16127,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -17619,6 +17772,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -18278,6 +18432,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -19255,6 +19410,11 @@ export interface operations {
                   "mode": string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<{
+                  "extraction": string;
+                  "name": string;
+                  "values": Array<string>;
+                }>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -20073,6 +20233,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -20756,6 +20917,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -24258,6 +24420,7 @@ export interface operations {
             "results"?: ({
               "csv_exports"?: Array<Record<string, unknown>>;
               "message_detail"?: (Record<string, unknown>) | null;
+              "property_analytics"?: Array<Record<string, unknown>>;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -24595,6 +24758,7 @@ export interface operations {
               "results"?: ({
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -25286,6 +25450,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
@@ -25616,6 +25781,29 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "properties"?: Record<string, ({
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
+                }) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
@@ -25914,6 +26102,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -26804,6 +26993,7 @@ export interface operations {
               "results"?: ({
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -27067,6 +27257,11 @@ export interface operations {
                 "mode"?: string;
                 "sample_rate"?: number;
               }) | null;
+              "property_analytics"?: Array<{
+                "extraction"?: string;
+                "name"?: string;
+                "values"?: Array<string>;
+              }>;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -27561,6 +27756,11 @@ export interface operations {
                   "mode": string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<{
+                  "extraction": string;
+                  "name": string;
+                  "values": Array<string>;
+                }>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -27882,6 +28082,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -28695,6 +28896,7 @@ export interface operations {
                   "mode"?: string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -29473,6 +29675,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -30170,6 +30373,7 @@ export interface operations {
               "results"?: ({
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -30438,6 +30642,11 @@ export interface operations {
                 "mode"?: string;
                 "sample_rate"?: number;
               }) | null;
+              "property_analytics"?: Array<{
+                "extraction"?: string;
+                "name"?: string;
+                "values"?: Array<string>;
+              }>;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -31452,6 +31661,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -31751,6 +31961,29 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "properties"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
@@ -32764,6 +32997,193 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "properties"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
@@ -33463,6 +33883,11 @@ export interface operations {
                   "mode": string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<{
+                  "extraction": string;
+                  "name": string;
+                  "values": Array<string>;
+                }>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -36030,6 +36455,7 @@ export interface operations {
               "results"?: ({
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -36663,6 +37089,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -37218,6 +37645,7 @@ export interface operations {
               "results"?: ({
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -37851,6 +38279,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -39446,6 +39875,7 @@ export interface operations {
               "results"?: ({
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -39714,6 +40144,11 @@ export interface operations {
                 "mode"?: string;
                 "sample_rate"?: number;
               }) | null;
+              "property_analytics"?: Array<{
+                "extraction"?: string;
+                "name"?: string;
+                "values"?: Array<string>;
+              }>;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -40187,6 +40622,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -41092,6 +41528,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -42819,6 +43256,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -47379,6 +47817,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
@@ -47709,6 +48148,29 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "properties"?: Record<string, ({
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
+                }) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
@@ -48007,6 +48469,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -48405,6 +48868,8 @@ export interface operations {
         "offset"?: number;
         "phase"?: string;
         "population"?: string;
+        "property_name"?: string;
+        "property_value"?: string;
         "region"?: string;
         "soap_operation"?: string;
         "sort_by"?: string;
@@ -49097,6 +49562,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -49762,6 +50228,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -50755,6 +51222,147 @@ export interface operations {
               }) | null;
             }>;
             "by_network_profile"?: Record<string, {
+              "avg_response_ms": number;
+              "diagnostic_findings"?: Array<{
+                "advisory": boolean;
+                "measurement": string;
+                "message": string;
+                "observed": number;
+                "protocol": string;
+                "rule": string;
+                "samples": number;
+              }>;
+              "error_pct": number;
+              "errors": number;
+              "grpc"?: ({
+                "call_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_budget_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "deadline_observed"?: number;
+                "decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "first_message_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "messages_received": number;
+                "messages_sent": number;
+                "method"?: string;
+                "mixed_methods"?: boolean;
+                "mode"?: string;
+                "near_deadline"?: number;
+                "receive_limit_reached": number;
+                "request_bytes": number;
+                "response_bytes": number;
+                "samples": number;
+                "status_counts": Array<number>;
+                "unavailable_status": number;
+              }) | null;
+              "max_response_ms": number;
+              "min_response_ms": number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions": number;
+              "websocket"?: ({
+                "abnormal_closes": number;
+                "binary_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "bytes_received": number;
+                "bytes_sent": number;
+                "cancellations": number;
+                "handshake_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "max_pending_writes": number;
+                "messages_received": number;
+                "messages_sent": number;
+                "normal_closes": number;
+                "ping_rtt_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnect_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "reconnects": number;
+                "samples": number;
+                "send_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "text_receive_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "timeouts": number;
+                "write_wait_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+              }) | null;
+            }>;
+            "by_property"?: Record<string, {
               "avg_response_ms": number;
               "diagnostic_findings"?: Array<{
                 "advisory": boolean;
@@ -53087,6 +53695,8 @@ export interface operations {
         "offset"?: number;
         "phase"?: string;
         "population"?: string;
+        "property_name"?: string;
+        "property_value"?: string;
         "region"?: string;
         "soap_operation"?: string;
         "sort_by"?: string;
@@ -53576,6 +54186,11 @@ export interface operations {
                   "mode": string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<{
+                  "extraction": string;
+                  "name": string;
+                  "values": Array<string>;
+                }>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -53897,6 +54512,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -54535,6 +55151,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -57228,6 +57845,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -57527,6 +58145,29 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "properties"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
@@ -58540,6 +59181,193 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "properties"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
@@ -59239,6 +60067,11 @@ export interface operations {
                   "mode": string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<{
+                  "extraction": string;
+                  "name": string;
+                  "values": Array<string>;
+                }>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -59839,6 +60672,11 @@ export interface operations {
                   "mode": string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<{
+                  "extraction": string;
+                  "name": string;
+                  "values": Array<string>;
+                }>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -60131,6 +60969,11 @@ export interface operations {
                   "mode": string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<{
+                  "extraction": string;
+                  "name": string;
+                  "values": Array<string>;
+                }>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -60409,6 +61252,11 @@ export interface operations {
                   "mode": string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<{
+                  "extraction": string;
+                  "name": string;
+                  "values": Array<string>;
+                }>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -60687,6 +61535,11 @@ export interface operations {
                   "mode": string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<{
+                  "extraction": string;
+                  "name": string;
+                  "values": Array<string>;
+                }>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -61181,6 +62034,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -61657,6 +62511,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -62173,6 +63028,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -64606,6 +65462,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -65281,6 +66138,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -73811,6 +74669,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -74110,6 +74969,29 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "properties"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
@@ -75123,6 +76005,193 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "properties"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
@@ -75822,6 +76891,11 @@ export interface operations {
                   "mode": string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<{
+                  "extraction": string;
+                  "name": string;
+                  "values": Array<string>;
+                }>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -76541,6 +77615,7 @@ export interface operations {
             "results"?: ({
               "csv_exports"?: Array<Record<string, unknown>>;
               "message_detail"?: (Record<string, unknown>) | null;
+              "property_analytics"?: Array<Record<string, unknown>>;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -77501,6 +78576,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -78342,6 +79418,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -79026,6 +80103,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -79779,6 +80857,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -80741,6 +81820,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -81412,6 +82492,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -82052,6 +83133,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -82585,6 +83667,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -84107,6 +85190,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -85322,6 +86406,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
@@ -85652,6 +86737,29 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "properties"?: Record<string, ({
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
+                }) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
@@ -85950,6 +87058,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -86728,6 +87837,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
@@ -87058,6 +88168,29 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "properties"?: Record<string, ({
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
+                }) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
@@ -87356,6 +88489,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -88134,6 +89268,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
@@ -88464,6 +89599,29 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "properties"?: Record<string, ({
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
+                }) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
@@ -88762,6 +89920,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -89540,6 +90699,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
@@ -89870,6 +91030,29 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "properties"?: Record<string, ({
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
+                }) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
@@ -90168,6 +91351,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -90946,6 +92130,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
@@ -91276,6 +92461,29 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "properties"?: Record<string, ({
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
+                }) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
@@ -91574,6 +92782,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -92249,6 +93458,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -93018,6 +94228,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -95489,6 +96700,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -96687,6 +97899,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -97091,6 +98304,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -97701,6 +98915,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -99414,6 +100629,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -100106,6 +101322,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -101334,6 +102551,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -102639,6 +103857,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -103943,6 +105162,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -105248,6 +106468,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -106552,6 +107773,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -111522,6 +112744,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -111821,6 +113044,29 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "properties"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
@@ -112834,6 +114080,193 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "properties"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
@@ -113533,6 +114966,11 @@ export interface operations {
                   "mode": string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<{
+                  "extraction": string;
+                  "name": string;
+                  "values": Array<string>;
+                }>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -114321,6 +115759,7 @@ export interface operations {
               "results"?: {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -115003,6 +116442,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -118056,6 +119496,7 @@ export interface operations {
               "results"?: ({
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -118319,6 +119760,11 @@ export interface operations {
                 "mode"?: string;
                 "sample_rate"?: number;
               }) | null;
+              "property_analytics"?: Array<{
+                "extraction"?: string;
+                "name"?: string;
+                "values"?: Array<string>;
+              }>;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -118813,6 +120259,11 @@ export interface operations {
                   "mode": string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<{
+                  "extraction": string;
+                  "name": string;
+                  "values": Array<string>;
+                }>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -119134,6 +120585,7 @@ export interface operations {
                 "results"?: ({
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -120047,6 +121499,7 @@ export interface operations {
                   "mode"?: string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -120824,6 +122277,7 @@ export interface operations {
                 "results"?: {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -124039,6 +125493,11 @@ export interface operations {
                 "mode"?: string;
                 "sample_rate"?: number;
               }) | null;
+              "property_analytics"?: Array<{
+                "extraction"?: string;
+                "name"?: string;
+                "values"?: Array<string>;
+              }>;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -124328,6 +125787,11 @@ export interface operations {
                   "mode": string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<{
+                  "extraction": string;
+                  "name": string;
+                  "values": Array<string>;
+                }>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -125205,6 +126669,7 @@ export interface operations {
                   "mode"?: string;
                   "sample_rate"?: number;
                 }) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -126135,6 +127600,7 @@ export interface operations {
               "results"?: ({
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
+                "property_analytics"?: Array<Record<string, unknown>>;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -126398,6 +127864,11 @@ export interface operations {
                 "mode"?: string;
                 "sample_rate"?: number;
               }) | null;
+              "property_analytics"?: Array<{
+                "extraction"?: string;
+                "name"?: string;
+                "values"?: Array<string>;
+              }>;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;

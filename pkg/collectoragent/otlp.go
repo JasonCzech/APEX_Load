@@ -295,7 +295,7 @@ func otlpPointIdentity(point analysis.MetricPoint) string {
 	return hex.EncodeToString(sum[:])
 }
 func (a *Agent) acknowledgeOTLP(job RunJob, points []analysis.MetricPoint) {
-	if job.Pack != "otel-metrics" {
+	if job.Pack != "otel-metrics" && job.Pack != "cloudwatch" && job.Pack != "azure-monitor" {
 		return
 	}
 	if a.otlpAccepted == nil {
@@ -305,10 +305,17 @@ func (a *Agent) acknowledgeOTLP(job RunJob, points []analysis.MetricPoint) {
 		a.otlpAccepted[job.ID] = map[string]time.Time{}
 	}
 	for _, point := range points {
+		if (job.Pack == "cloudwatch" || job.Pack == "azure-monitor") && (point.Value == nil || point.Quality == analysis.QualityMissing) {
+			continue
+		}
 		a.otlpAccepted[job.ID][otlpPointIdentity(point)] = point.TimestampUTC
 	}
+	retention := 5 * time.Minute
+	if job.Pack == "cloudwatch" || job.Pack == "azure-monitor" {
+		retention = 7 * time.Minute
+	}
 	for key, at := range a.otlpAccepted[job.ID] {
-		if at.Before(time.Now().Add(-5 * time.Minute)) {
+		if at.Before(time.Now().Add(-retention)) {
 			delete(a.otlpAccepted[job.ID], key)
 		}
 	}

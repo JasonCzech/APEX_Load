@@ -92,3 +92,16 @@ func TestParseTransactionEventFilterRejectsInvalidHasDetail(t *testing.T) {
 		t.Fatalf("parse ok=%v status=%d, want false/400", ok, response.Code)
 	}
 }
+
+func TestPropertyFiltersAreExactAndDoNotMatchMissingEvidence(t *testing.T) {
+	filter := transactionEventFilter{PropertyName: "kind", PropertyValue: "checkout"}
+	if transactionMatchesArchiveFilter(&TransactionEvent{}, filter) {
+		t.Fatal("missing property matched")
+	}
+	if !transactionMatchesArchiveFilter(&TransactionEvent{PropertyDimensions: map[string]string{"kind": "checkout"}}, filter) {
+		t.Fatal("property did not match")
+	}
+	if transactionMatchesArchiveFilter(&TransactionEvent{PropertyDimensions: map[string]string{"kind": "Checkout"}}, filter) {
+		t.Fatal("property categories were case folded")
+	}
+}

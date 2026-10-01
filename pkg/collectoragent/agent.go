@@ -114,6 +114,14 @@ func New(cfg Config) (*Agent, error) {
 	cfg.Packs = append([]string(nil), cfg.Packs...)
 	cfg.CredentialPrivateKey = append([]byte(nil), cfg.CredentialPrivateKey...)
 	cfg.AdapterTargets = append([]AdapterTarget(nil), cfg.AdapterTargets...)
+	for i := range cfg.AdapterTargets {
+		if cfg.AdapterTargets[i].Cloud != nil {
+			body, _ := json.Marshal(cfg.AdapterTargets[i].Cloud)
+			var cloned CloudQuery
+			_ = json.Unmarshal(body, &cloned)
+			cfg.AdapterTargets[i].Cloud = &cloned
+		}
+	}
 	if err := validateAdapterTargets(cfg); err != nil {
 		return nil, err
 	}
@@ -124,14 +132,14 @@ func New(cfg Config) (*Agent, error) {
 		}
 		seenPacks[pack] = true
 		switch pack {
-		case "ssh-linux", "jmx", "jdbc", "otel-metrics":
+		case "ssh-linux", "jmx", "jdbc", "otel-metrics", "cloudwatch", "azure-monitor":
 			if len(cfg.ControllerPublicKey) == 0 {
 				return nil, fmt.Errorf("remote adapters require signed run jobs")
 			}
 			if pack == "otel-metrics" && cfg.OTLP == nil {
 				return nil, fmt.Errorf("OTLP receiver not configured")
 			}
-			if pack != "otel-metrics" && len(cfg.CredentialPrivateKey) != 32 {
+			if (pack == "ssh-linux" || pack == "jmx" || pack == "jdbc") && len(cfg.CredentialPrivateKey) != 32 {
 				return nil, fmt.Errorf("collector encryption private key required")
 			}
 			approved := false

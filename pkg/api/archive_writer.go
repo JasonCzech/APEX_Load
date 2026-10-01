@@ -293,6 +293,7 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		Group:                 result.Group,
 		Region:                firstNonEmpty(result.Region, w.region),
 		NetworkProfile:        result.NetworkProfile,
+		PropertyDimensions:    result.PropertyDimensions,
 		SourceTransaction:     result.SourceTransaction,
 		Hierarchy:             firstNonEmpty(result.Hierarchy, result.SourcePath),
 		PageName:              result.PageName,

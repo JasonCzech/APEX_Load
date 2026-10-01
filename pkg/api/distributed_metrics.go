@@ -34,6 +34,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	dependencyMetrics := make([]generatorrpc.MetricAggregate, 0)
 	soapMetrics := make([]generatorrpc.MetricAggregate, 0)
 	networkProfileMetrics := make([]generatorrpc.MetricAggregate, 0)
+	propertyMetrics := make([]generatorrpc.MetricAggregate, 0)
 	regionMetrics := make([]generatorrpc.MetricAggregate, 0)
 	browserMetrics := make([]*generatorrpc.BrowserMetrics, 0)
 	browserDeviceMetrics := make([]generatorrpc.BrowserDeviceMetrics, 0)
@@ -111,6 +112,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		dependencyMetrics = append(dependencyMetrics, batch.DependencyMetrics...)
 		soapMetrics = append(soapMetrics, batch.SOAPMetrics...)
 		networkProfileMetrics = append(networkProfileMetrics, batch.NetworkProfileMetrics...)
+		propertyMetrics = append(propertyMetrics, batch.PropertyMetrics...)
 		regionMetrics = append(regionMetrics, batch.RegionMetrics...)
 		if batch.Browser != nil {
 			browserMetrics = append(browserMetrics, batch.Browser)
@@ -218,6 +220,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	combined.DependencyMetrics = mergeGeneratorMetricAggregateSeries(dependencyMetrics)
 	combined.SOAPMetrics = mergeGeneratorMetricAggregateSeries(soapMetrics)
 	combined.NetworkProfileMetrics = mergeGeneratorMetricAggregateSeries(networkProfileMetrics)
+	combined.PropertyMetrics = mergeGeneratorMetricAggregateSeries(propertyMetrics)
 	combined.RegionMetrics = mergeGeneratorMetricAggregateSeries(regionMetrics)
 	combined.Browser = mergeGeneratorBrowserMetrics(browserMetrics)
 	combined.BrowserByDevice = mergeGeneratorBrowserDeviceMetrics(browserDeviceMetrics)
@@ -514,6 +517,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		DependencyHealth:           make(map[string]*TxMetrics),
 		SOAPOperations:             make(map[string]*TxMetrics),
 		NetworkProfiles:            make(map[string]*TxMetrics),
+		Properties:                 make(map[string]*TxMetrics),
 		ByRegion:                   make(map[string]*TxMetrics),
 		GroupMetrics:               make(map[string]*GroupLiveMetrics),
 		Telemetry:                  &TelemetryHealth{},
@@ -804,6 +808,12 @@ func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batc
 		metrics := txMetricsFromAggregate(aggregate)
 		if metrics != nil {
 			live.NetworkProfiles[metrics.Name] = metrics
+		}
+	}
+	for _, aggregate := range batch.PropertyMetrics {
+		metrics := txMetricsFromAggregate(aggregate)
+		if metrics != nil {
+			live.Properties[metrics.Name] = metrics
 		}
 	}
 	for _, aggregate := range batch.RegionMetrics {

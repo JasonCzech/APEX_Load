@@ -196,7 +196,19 @@ type CSVExportColumn struct {
 	DefaultValue *string `json:"default_value,omitempty"`
 }
 
+// PropertyAnalytics explicitly promotes a finite set of non-sensitive extraction
+// categories. Unlisted observations aggregate into other; absent values are missing.
+type PropertyAnalytics struct {
+	Name       string   `json:"name"`
+	Extraction string   `json:"extraction"`
+	Values     []string `json:"values"`
+}
+
+const FeaturePropertyAnalyticsV1 = "property_analytics_v1"
+
 type ResultsConfig struct {
+	PropertyAnalytics []PropertyAnalytics `json:"property_analytics,omitempty"`
+
 	CSVExports    []CSVExport          `json:"csv_exports,omitempty"`
 	MessageDetail *MessageDetailConfig `json:"message_detail,omitempty"`
 }

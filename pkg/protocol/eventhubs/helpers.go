@@ -123,11 +123,13 @@ func finalizeTelemetry(result *protocol.Result, sent event, hasSent bool, receiv
 		if !received.EnqueuedAt.IsZero() && !observedAt.Before(received.EnqueuedAt) {
 			lagMs := durationToMs(observedAt.Sub(received.EnqueuedAt))
 			t.ConsumerLagMs = lagMs
+			t.ConsumerLagObserved = true
 			// For the observer probe, enqueue->observe IS the end-to-end latency.
 			t.EndToEndLatencyMs = lagMs
 		}
-		if lag, err := strconv.ParseInt(result.Extractions["eventhubs_consumer_lag"], 10, 64); err == nil && lag > 0 {
+		if lag, err := strconv.ParseInt(result.Extractions["eventhubs_consumer_lag"], 10, 64); err == nil && lag >= 0 {
 			t.ConsumerOffsetLag = lag
+			t.ConsumerOffsetLagObserved = true
 		}
 		if result.Extractions["eventhubs_duplicate"] == "1" {
 			t.DuplicateCount = 1

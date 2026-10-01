@@ -1183,6 +1183,8 @@ func parseArchiveSampleLimit(w http.ResponseWriter, r *http.Request) (int, bool)
 func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transactionEventFilter, bool) {
 	query := r.URL.Query()
 	filter := transactionEventFilter{
+		PropertyName:      query.Get("property_name"),
+		PropertyValue:     query.Get("property_value"),
 		Population:        strings.TrimSpace(query.Get("population")),
 		Action:            strings.TrimSpace(query.Get("action")),
 		SOAPOperation:     strings.TrimSpace(query.Get("soap_operation")),
@@ -1198,6 +1200,10 @@ func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transa
 		DependencyTarget:  strings.TrimSpace(query.Get("dependency_target")),
 		Status:            strings.TrimSpace(query.Get("status")),
 		ErrorContains:     strings.TrimSpace(query.Get("error_contains")),
+	}
+	if (filter.PropertyName == "") != (filter.PropertyValue == "") || len(filter.PropertyName) > 64 || len(filter.PropertyValue) > 64 {
+		writeError(w, http.StatusBadRequest, "property filters require a bounded name and value")
+		return transactionEventFilter{}, false
 	}
 	if filter.Population != "" && filter.Population != "action" && filter.Population != "transaction" && filter.Population != "unknown" {
 		writeError(w, http.StatusBadRequest, "invalid population")

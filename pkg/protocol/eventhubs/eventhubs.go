@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -97,6 +98,12 @@ func (e *EventHubs) Init(_ context.Context, cfg map[string]any) error {
 		Timeout:            time.Duration(timeoutMS) * time.Millisecond,
 		Mock:               boolValue(cfg, "eventhubs_mock"),
 		AllowedTargetHosts: protocol.TargetPolicyHosts(cfg),
+	}
+	if e.cfg.AuthType == "" {
+		e.cfg.AuthType = strings.TrimSpace(os.Getenv("APEXLOAD_EVENTHUBS_AUTH"))
+	}
+	if e.cfg.ConsumerGroup == "" {
+		e.cfg.ConsumerGroup = strings.TrimSpace(os.Getenv("APEXLOAD_EVENTHUBS_PROBE_CONSUMER_GROUP"))
 	}
 	if e.cfg.ConnectionString == "" {
 		e.cfg.ConnectionString = stringValue(cfg, "eventhubs_connection_string_secret")

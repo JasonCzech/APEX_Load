@@ -55,6 +55,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		ByGroup:             make(map[string]RunArchiveActionStats),
 		BySOAPOperation:     make(map[string]RunArchiveActionStats),
 		ByNetworkProfile:    make(map[string]RunArchiveActionStats),
+		ByProperty:          make(map[string]RunArchiveActionStats),
 		ByRegion:            make(map[string]RunArchiveActionStats),
 		BySOAPFaultCode:     make(map[string]int64),
 		BySOAPFaultCategory: make(map[string]int64),
@@ -78,6 +79,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	groupQuantiles := make(map[string]*archiveQuantileAccumulator)
 	soapOperationQuantiles := make(map[string]*archiveQuantileAccumulator)
 	networkProfileQuantiles := make(map[string]*archiveQuantileAccumulator)
+	propertyQuantiles := make(map[string]*archiveQuantileAccumulator)
 	regionQuantiles := make(map[string]*archiveQuantileAccumulator)
 	networkPhases := newRunArchiveNetworkPhaseAccumulator()
 	web2Migration := newRunArchiveWeb2MigrationAccumulator()
@@ -209,6 +211,17 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 				return err
 			}
 			report.ByNetworkProfile[tx.NetworkProfile] = mergeRunArchiveActionStats(report.ByNetworkProfile[tx.NetworkProfile], quantiles, tx)
+		}
+		for property, value := range tx.PropertyDimensions {
+			if population != "action" {
+				continue
+			}
+			key := property + "=" + value
+			quantiles, err := quantilesFor(propertyQuantiles, key, "property")
+			if err != nil {
+				return err
+			}
+			report.ByProperty[key] = mergeRunArchiveActionStats(report.ByProperty[key], quantiles, tx)
 		}
 		if tx.Region != "" {
 			quantiles, err := quantilesFor(regionQuantiles, tx.Region, "region")
@@ -367,6 +380,12 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 	if len(report.ByNetworkProfile) == 0 {
 		report.ByNetworkProfile = nil
+	}
+	for profile, stats := range report.ByProperty {
+		report.ByProperty[profile] = finalizeRunArchiveActionStats(stats, propertyQuantiles[profile])
+	}
+	if len(report.ByProperty) == 0 {
+		report.ByProperty = nil
 	}
 	for region, stats := range report.ByRegion {
 		report.ByRegion[region] = finalizeRunArchiveActionStats(stats, regionQuantiles[region])

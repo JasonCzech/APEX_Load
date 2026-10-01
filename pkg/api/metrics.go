@@ -67,6 +67,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		SOAPOperations:             make(map[string]*TxMetrics),
 		GroupMetrics:               make(map[string]*GroupLiveMetrics),
 		NetworkProfiles:            make(map[string]*TxMetrics),
+		Properties:                 make(map[string]*TxMetrics),
 		ByRegion:                   make(map[string]*TxMetrics),
 		Resources:                  snap.Resources,
 		TransactionResponseTimeSLA: transactionResponseTimeSLAResultsFromEngine(snap.TransactionResponseTimeSLA),
@@ -137,6 +138,9 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 
 	for name, am := range snap.ByNetworkProfile {
 		live.NetworkProfiles[name] = buildTxMetricsFromAction(name, am, snap.Window)
+	}
+	for name, am := range snap.ByProperty {
+		live.Properties[name] = buildTxMetricsFromAction(name, am, snap.Window)
 	}
 	for name, am := range snap.ByRegion {
 		live.ByRegion[name] = buildTxMetricsFromAction(name, am, snap.Window)

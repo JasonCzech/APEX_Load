@@ -30,3 +30,11 @@ it('retains percentage bounds through scenario runtime replacement and form seri
  const next = replaceScenarioRuntimeDefaults(form, { log_level: '', auto_transactions: '', think_time: { type: 'random_percentage', min_percent: 0, max_percent: 125 } })
  expect(runtimeSettingsFromForm(next, false)?.think_time).toMatchObject({ type: 'random_percentage', min_percent: 0, max_percent: 125 })
 })
+
+it('preserves group SLA overrides when applying a new load shape', () => {
+  const group = { name: 'Checkout', script_id: 'script-a', vusers: 10, ramp_up: '', ramp_down: '', stages: [], initialization: 'at_runtime' as const, transactionResponseTimeSlaMs: 1250 }
+  const [next] = reseedScenarioGroups([{ name: 'Peak', vusers: 50 }], [group])
+  expect(next.transactionResponseTimeSlaMs).toBe(1250)
+  expect(next.vusers).toBe(50)
+  expect(group.vusers).toBe(10)
+})

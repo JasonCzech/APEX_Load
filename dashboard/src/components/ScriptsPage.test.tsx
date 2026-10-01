@@ -794,6 +794,7 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
     expect(container.textContent).toContain('editor:Sample Draft')
 
+    apiMock.getScript.mockResolvedValueOnce({ script: { name: 'Canonical saved script', protocol: 'http', actions: [] } })
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-save'))
     expect(saveButton).toBeDefined()
     if (!saveButton) {
@@ -809,7 +810,8 @@ describe('ScriptsPage', () => {
     expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
     expect(apiMock.listScripts).toHaveBeenLastCalledWith('project-1')
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
-    expect(container.textContent).toContain('editor:Sample Draft')
+    expect(apiMock.getScript).toHaveBeenCalledWith('saved-script-1')
+    expect(container.textContent).toContain('editor:Canonical saved script')
     expect(container.textContent).toContain('script-id:saved-script-1')
   })
 

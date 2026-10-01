@@ -203,6 +203,7 @@ export interface ScriptMessageDetailConfig {
 }
 
 export interface ScriptResultsConfig {
+ property_analytics?: Array<{ name: string; extraction: string; values: string[] }>
   csv_exports?: Array<{ id: string; file_name: string; action_name: string; columns: Array<{ name: string; extraction?: string; metric?: "latency_ms"; default_value?: string }> }>
 	message_detail?: ScriptMessageDetailConfig
 }

@@ -1701,6 +1701,7 @@ export interface RunArchiveReport {
   by_action: Record<string, RunArchiveActionStats>
   by_group?: Record<string, RunArchiveActionStats>
   by_soap_operation?: Record<string, RunArchiveActionStats>
+  by_property?: Record<string, RunArchiveActionStats>
   by_network_profile?: Record<string, RunArchiveActionStats>
   by_region?: Record<string, RunArchiveActionStats>
   by_soap_fault_code?: Record<string, number>
@@ -2088,6 +2089,7 @@ export interface LiveMetrics {
   dependency_map?: LiveDependencyMap
   error_patterns?: LiveErrorPattern[]
   soap_operations?: Record<string, TxMetrics>
+  properties?: Record<string, TxMetrics>
   network_profiles?: Record<string, TxMetrics>
   by_region?: Record<string, TxMetrics>
   groups?: Record<string, GroupLiveMetrics>

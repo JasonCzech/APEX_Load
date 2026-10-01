@@ -21,14 +21,15 @@ import (
 // AdapterTarget is a local operator approval. A signed job cannot add a remote
 // identity, executable, driver, command, query, or credential destination.
 type AdapterTarget struct {
-	Pack            string `json:"pack"`
-	Destination     string `json:"destination"`
-	HostKey         string `json:"host_key,omitempty"`
-	JavaExecutable  string `json:"java_executable,omitempty"`
-	HelperClassPath string `json:"helper_class_path,omitempty"`
-	QueryPack       string `json:"query_pack,omitempty"`
-	TLSCAFile       string `json:"tls_ca_file,omitempty"`
-	JVMTrustStore   string `json:"jvm_trust_store,omitempty"`
+	Cloud           *CloudQuery `json:"cloud,omitempty"`
+	Pack            string      `json:"pack"`
+	Destination     string      `json:"destination"`
+	HostKey         string      `json:"host_key,omitempty"`
+	JavaExecutable  string      `json:"java_executable,omitempty"`
+	HelperClassPath string      `json:"helper_class_path,omitempty"`
+	QueryPack       string      `json:"query_pack,omitempty"`
+	TLSCAFile       string      `json:"tls_ca_file,omitempty"`
+	JVMTrustStore   string      `json:"jvm_trust_store,omitempty"`
 }
 
 func LoadAdapterTargets(path string) ([]AdapterTarget, error) {
@@ -84,6 +85,13 @@ func (a *Agent) collectAdapter(ctx context.Context, job RunJob) ([]analysis.Metr
 		}
 		return fresh, nil
 	}
+	if job.Pack == "cloudwatch" || job.Pack == "azure-monitor" {
+		points, err := collectCloud(ctx, target, job)
+		if err != nil {
+			return nil, err
+		}
+		return a.freshCloudPoints(job, points), nil
+	}
 	credentials, err := OpenCredentials(job, a.cfg.CredentialPrivateKey, time.Now().UTC())
 	if err != nil {
 		return nil, err
@@ -103,7 +111,7 @@ func (a *Agent) approvedDestinations() []string {
 	}
 	for _, target := range a.cfg.AdapterTargets {
 		destination := target.Destination
-		if target.Pack != "otel-metrics" {
+		if target.Pack == "ssh-linux" || target.Pack == "jmx" || target.Pack == "jdbc" {
 			if key, err := ecdh.X25519().NewPrivateKey(a.cfg.CredentialPrivateKey); err == nil {
 				destination += "#" + base64.StdEncoding.EncodeToString(key.PublicKey().Bytes())
 			}
@@ -120,7 +128,7 @@ func validateAdapterTargets(cfg Config) error {
 	}
 	seen := map[string]bool{}
 	for _, target := range cfg.AdapterTargets {
-		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp"}[target.Pack]
+		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[target.Pack]
 		endpoint, err := url.Parse(target.Destination)
 		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && endpoint.Path != "" {
 			return errors.New("invalid approved monitor destination")
@@ -130,6 +138,13 @@ func validateAdapterTargets(cfg Config) error {
 		}
 		seen[target.Pack+"\x00"+target.Destination] = true
 		switch target.Pack {
+		case "cloudwatch", "azure-monitor":
+			if endpoint.Port() != "" {
+				return errors.New("cloud destination is an alias, not an endpoint")
+			}
+			if err := validateCloudQuery(target.Pack, target.Cloud); err != nil {
+				return err
+			}
 		case "ssh-linux":
 			_, _, _, rest, err := ssh.ParseAuthorizedKey([]byte(target.HostKey))
 			if err != nil || strings.TrimSpace(string(rest)) != "" {
@@ -174,4 +189,19 @@ func validateJavaTarget(target AdapterTarget) error {
 		return errors.New("unapproved Java query pack")
 	}
 	return nil
+}
+
+// Missing provider buckets may acquire a value during the next lookback query.
+// Only numeric observations are immutable evidence eligible for deduplication.
+func (a *Agent) freshCloudPoints(job RunJob, points []analysis.MetricPoint) []analysis.MetricPoint {
+	fresh := make([]analysis.MetricPoint, 0, len(points))
+	for _, point := range points {
+		if point.Value == nil || point.Quality == analysis.QualityMissing {
+			continue
+		}
+		if _, accepted := a.otlpAccepted[job.ID][otlpPointIdentity(point)]; !accepted {
+			fresh = append(fresh, point)
+		}
+	}
+	return fresh
 }

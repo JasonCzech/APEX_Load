@@ -213,3 +213,21 @@ func TestMonitorPackRejectsUnusedCredentials(t *testing.T) {
 		}
 	}
 }
+
+func TestCloudMonitorSourcesRequireBoundedPollingAndAlias(t *testing.T) {
+	for _, pack := range []string{"cloudwatch", "azure-monitor"} {
+		source := MonitorSource{ID: "source", ProjectID: "project", Name: "cloud", CollectorID: "collector", Pack: pack, Destination: pack + "://approved", IntervalSeconds: 60}
+		if err := source.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		source.IntervalSeconds = 1
+		if source.Validate() == nil {
+			t.Fatal("cloud polling below minimum accepted")
+		}
+		source.IntervalSeconds = 60
+		source.Destination += ":443"
+		if source.Validate() == nil {
+			t.Fatal("cloud alias accepted a port")
+		}
+	}
+}

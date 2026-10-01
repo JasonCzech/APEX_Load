@@ -62,6 +62,7 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	scrubSensitiveStructuredResult(result, vu.RedactionConfig)
 	scrubSensitiveResultWithOptions(result, vu.RedactionConfig, retainResponseBody)
 	boundResultEvidence(result)
+	result.PropertyDimensions = promotedPropertyDimensions(vu.Script, result.Extractions)
 	if result.BusinessTransaction {
 		// Streamed adapters (notably java_vuser) emit completed business
 		// transactions as child results. Route those through the same cumulative
@@ -171,6 +172,7 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 		tx.StatusCode = source.StatusCode
 		tx.ErrorMessage = source.ErrorMessage
 		tx.Extractions = source.Extractions
+		tx.PropertyDimensions = source.PropertyDimensions
 		tx.ServerTelemetry = source.ServerTelemetry
 		tx.SourceStepID = source.SourceStepID
 		tx.SourceStepIndex = source.SourceStepIndex
@@ -194,6 +196,7 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	scrubSensitiveStructuredResult(tx, vu.RedactionConfig)
 	scrubSensitiveResultWithOptions(tx, vu.RedactionConfig, false)
 	boundResultEvidence(tx)
+	tx.PropertyDimensions = promotedPropertyDimensions(vu.Script, tx.Extractions)
 	if vu.Metrics != nil {
 		vu.Metrics.RecordTransactionResult(tx)
 	}

@@ -12,17 +12,19 @@ const (
 )
 
 var transactionSLAMetrics = map[string]struct{}{
-	"average_duration_ms": {},
-	"p90_duration_ms":     {},
-	"p95_duration_ms":     {},
-	"min_duration_ms":     {},
-	"max_duration_ms":     {},
-	"error_count":         {},
-	"error_rate_pct":      {},
-	"minimum_count":       {},
-	"bytes_sent":          {},
-	"bytes_received":      {},
-	"tps":                 {},
+	"average_duration_ms":     {},
+	"p90_duration_ms":         {},
+	"p95_duration_ms":         {},
+	"min_duration_ms":         {},
+	"max_duration_ms":         {},
+	"error_count":             {},
+	"error_rate_pct":          {},
+	"minimum_count":           {},
+	"bytes_sent":              {},
+	"bytes_received":          {},
+	"tps":                     {},
+	"max_consumer_lag_ms":     {},
+	"max_consumer_offset_lag": {},
 }
 
 var transactionSLAComparators = map[string]struct{}{

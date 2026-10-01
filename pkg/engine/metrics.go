@@ -96,6 +96,7 @@ type MetricsSnapshot struct {
 	ByDependencyTarget         map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
 	BySOAPOperation            map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
 	ByNetworkProfile           map[string]*ActionMetrics `json:"by_network_profile,omitempty"`
+	ByProperty                 map[string]*ActionMetrics `json:"by_property,omitempty"`
 	ByRegion                   map[string]*ActionMetrics `json:"by_region,omitempty"`
 	ByGroup                    map[string]*GroupMetrics
 	Browser                    *BrowserMetricsSummary                 `json:"browser,omitempty"`
@@ -625,6 +626,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		ByDependencyTarget:  make(map[string]*ActionMetrics),
 		BySOAPOperation:     make(map[string]*ActionMetrics),
 		ByNetworkProfile:    make(map[string]*ActionMetrics),
+		ByProperty:          make(map[string]*ActionMetrics),
 		ByRegion:            make(map[string]*ActionMetrics),
 		ByGroup:             make(map[string]*GroupMetrics),
 		ErrorsByClass:       make(map[string]int64),
@@ -658,6 +660,8 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	dependencyDurationSum := make(map[string]time.Duration)
 	soapDigests := make(map[string]*TDigest)
 	soapDurationSum := make(map[string]time.Duration)
+	propertyDigests := make(map[string]*TDigest)
+	propertyDurationSum := make(map[string]time.Duration)
 	networkProfileDigests := make(map[string]*TDigest)
 	networkProfileDurationSum := make(map[string]time.Duration)
 	regionDigests := make(map[string]*TDigest)
@@ -808,6 +812,21 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				mergeActionResult(pm, r)
 				recordDurationSample(networkProfileDigests, networkProfileDurationSum, profile, r.Duration)
 			}
+			for property, value := range r.PropertyDimensions {
+				profile := property + "=" + value
+				profile = boundedDimensionKey(profile, snap.ByProperty)
+				pm, ok := snap.ByProperty[profile]
+				if !ok {
+					pm = &ActionMetrics{
+						Name:        profile,
+						MinDuration: r.Duration,
+						MaxDuration: r.Duration,
+					}
+					snap.ByProperty[profile] = pm
+				}
+				mergeActionResult(pm, r)
+				recordDurationSample(propertyDigests, propertyDurationSum, profile, r.Duration)
+			}
 
 			if r.ClientMetrics != nil {
 				if snap.Browser == nil {
@@ -936,6 +955,12 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 	if len(snap.ByNetworkProfile) == 0 {
 		snap.ByNetworkProfile = nil
+	}
+	for name, am := range snap.ByProperty {
+		finalizeActionMetrics(am, propertyDurationSum[name], propertyDigests[name])
+	}
+	if len(snap.ByProperty) == 0 {
+		snap.ByProperty = nil
 	}
 	for name, am := range snap.ByRegion {
 		finalizeActionMetrics(am, regionDurationSum[name], regionDigests[name])

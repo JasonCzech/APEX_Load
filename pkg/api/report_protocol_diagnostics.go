@@ -14,6 +14,10 @@ func protocolReportLines(report *RunArchiveReport) []string {
 	for _, finding := range report.StatisticalFindings {
 		lines = append(lines, fmt.Sprintf("%s at %s: %.2f standard deviations from %d comparable buckets (mean %.3f, standard deviation %.3f). Advisory association.", finding.MetricName, finding.Timestamp.Format("15:04:05Z07:00"), finding.ZScore, finding.BaselineBuckets, finding.BaselineMean, finding.BaselineStdDev))
 	}
+	for _, key := range sortedArchiveReportStatKeys(report.ByProperty) {
+		stats := report.ByProperty[key]
+		lines = append(lines, fmt.Sprintf("Property %s: %d observations, %.2f%% errors, mean %.3f ms, P95 %.3f ms", key, stats.Transactions, stats.ErrorPct, stats.AvgResponseMs, stats.P95Ms))
+	}
 	keys := sortedArchiveReportStatKeys(report.ByAction)
 	// Rank method hotspots by measured client call P95, retaining stable names
 	// for ties. This never substitutes call time for server processing time.

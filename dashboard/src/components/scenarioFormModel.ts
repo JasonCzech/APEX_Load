@@ -90,6 +90,7 @@ export function reseedScenarioGroups(
       initialization: previous?.initialization || 'at_runtime',
       runtimeSettings: previous?.runtimeSettings ? structuredClone(previous.runtimeSettings) : undefined,
       assignment: cloneAssignment(previous?.assignment),
+      transactionResponseTimeSlaMs: previous?.transactionResponseTimeSlaMs,
     }
   })
   const preservedExtraGroups = previousGroups.slice(groups.length).map(group => ({

@@ -76,6 +76,9 @@ func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, 
 	if job.CollectorID != collector || job.ID == "" || job.ProjectID == "" || job.RunID == "" || job.SourceID == "" || job.SourceRevision < 1 || job.NextSequence < 0 || job.IntervalSeconds < 1 || job.IntervalSeconds > 3600 || job.StartedAt.IsZero() || job.StartedAt.After(now.Add(30*time.Second)) || !job.ExpiresAt.After(now) || !job.LeaseExpiresAt.After(now) || job.LeaseExpiresAt.After(now.Add(2*time.Minute)) || job.LeaseExpiresAt.After(job.ExpiresAt) {
 		return RunJob{}, errors.New("monitor job identity or collection lease rejected")
 	}
+	if (job.Pack == "cloudwatch" || job.Pack == "azure-monitor") && job.IntervalSeconds < 60 {
+		return RunJob{}, errors.New("cloud collection interval must be at least 60 seconds")
+	}
 	return job, nil
 }
 
@@ -121,6 +124,11 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 				}
 				var points []analysis.MetricPoint
 				if adapterApproved {
+					// Cloud throttling and delayed/empty data must not turn the
+					// one-second control heartbeat into one-second provider queries.
+					if job.Pack == "cloudwatch" || job.Pack == "azure-monitor" {
+						a.nextCollection[job.ID] = now.Add(time.Duration(job.IntervalSeconds) * time.Second)
+					}
 					leaseCtx, cancel := context.WithDeadline(ctx, job.LeaseExpiresAt)
 					points, err = a.collectAdapter(leaseCtx, job)
 					cancel()
@@ -198,7 +206,7 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 					}
 				}
 				if len(points) == 0 {
-					if job.Pack == "otel-metrics" {
+					if job.Pack == "otel-metrics" || job.Pack == "cloudwatch" || job.Pack == "azure-monitor" {
 						return nil
 					}
 					return errors.New("monitor job returned no samples")

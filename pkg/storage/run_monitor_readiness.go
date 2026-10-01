@@ -28,7 +28,7 @@ func (s *SQLiteStore) SaveCollectorRunReadiness(project, collector string, packs
 		return errors.New("invalid collector readiness")
 	}
 	for _, pack := range packs {
-		if pack != "go-runtime" && pack != "linux-hosts" && pack != "prometheus" && pack != "ssh-linux" && pack != "otel-metrics" && pack != "jmx" && pack != "jdbc" {
+		if pack != "go-runtime" && pack != "linux-hosts" && pack != "prometheus" && pack != "ssh-linux" && pack != "otel-metrics" && pack != "jmx" && pack != "jdbc" && pack != "cloudwatch" && pack != "azure-monitor" {
 			return errors.New("unsupported collector pack")
 		}
 	}
@@ -48,6 +48,8 @@ func (s *SQLiteStore) SaveCollectorRunReadiness(project, collector string, packs
 			if pack == "prometheus" {
 				source := MonitorSource{ID: "validation", ProjectID: project, Name: "validation", CollectorID: collector, Pack: pack, Destination: destination, IntervalSeconds: 1}
 				valid = valid || source.Validate() == nil
+			} else if pack == "cloudwatch" || pack == "azure-monitor" {
+				valid = valid || !hasKey && validateRemoteMonitorDestination(pack, raw) == nil
 			} else if pack == "ssh-linux" || pack == "jmx" || pack == "jdbc" || pack == "otel-metrics" {
 				valid = valid || (pack == "otel-metrics" && !hasKey || pack != "otel-metrics" && hasKey) && validateRemoteMonitorDestination(pack, raw) == nil
 			}

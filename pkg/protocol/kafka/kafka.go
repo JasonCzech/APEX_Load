@@ -1080,11 +1080,13 @@ func finalizeKafkaServerTelemetry(result *protocol.Result, request kafkaRecord, 
 		observedAt := result.StartTime.Add(result.Duration)
 		if !response.Timestamp.IsZero() && !observedAt.Before(response.Timestamp) {
 			telemetry.ConsumerLagMs = durationToNonNegativeMilliseconds(observedAt.Sub(response.Timestamp))
+			telemetry.ConsumerLagObserved = true
 		}
 		// Surface the broker offset backlog (highWatermark - offset - 1) that the
 		// consume path records, instead of discarding it to a string extraction.
-		if lag, err := strconv.ParseInt(result.Extractions["kafka_consumer_lag"], 10, 64); err == nil && lag > 0 {
+		if lag, err := strconv.ParseInt(result.Extractions["kafka_consumer_lag"], 10, 64); err == nil && lag >= 0 {
 			telemetry.ConsumerOffsetLag = lag
+			telemetry.ConsumerOffsetLagObserved = true
 		}
 		if result.Extractions["kafka_duplicate"] == "1" {
 			telemetry.DuplicateCount = 1

@@ -460,6 +460,11 @@ func (m MonitorSource) Validate() error {
 			return errors.New("remote monitor requires project secret reference and enrolled collector encryption key")
 		}
 		return validateRemoteMonitorDestination(m.Pack, m.Destination)
+	case "cloudwatch", "azure-monitor":
+		if m.IntervalSeconds < 60 {
+			return errors.New("cloud monitor interval must be at least 60 seconds")
+		}
+		return validateRemoteMonitorDestination(m.Pack, m.Destination)
 	case "otel-metrics":
 		return validateRemoteMonitorDestination(m.Pack, m.Destination)
 	case "prometheus":
@@ -657,9 +662,12 @@ func validateRemoteMonitorDestination(pack, destination string) error {
 	if err != nil || len(destination) > 2048 || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" || u.Hostname() == "" {
 		return errors.New("invalid monitor destination")
 	}
-	expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp"}[pack]
+	expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[pack]
 	if u.Scheme != expected || pack != "jdbc" && u.Path != "" {
 		return errors.New("invalid monitor destination scheme or path")
+	}
+	if (pack == "cloudwatch" || pack == "azure-monitor") && u.Port() != "" {
+		return errors.New("cloud destination must be an alias without a port")
 	}
 	if pack == "jmx" && u.Port() == "" {
 		return errors.New("JMX requires a fixed TLS registry/server port")

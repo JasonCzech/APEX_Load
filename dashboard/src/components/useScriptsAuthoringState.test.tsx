@@ -97,7 +97,7 @@ describe('useScriptsAuthoringState', () => {
 
   it('normalizes create mode to create-options and drives draft entry transitions', async () => {
     const api = {
-      getScript: vi.fn(),
+      getScript: vi.fn().mockResolvedValue({ script: { name: 'Canonical saved script', protocol: 'http' } }),
     }
 
     await act(async () => {
@@ -175,7 +175,8 @@ describe('useScriptsAuthoringState', () => {
 
     expect(readTestId('subview')).toBe('edit')
     expect(readTestId('editing-id')).toBe('saved-script-1')
-    expect(readTestId('editing-name')).toBe('Data Source Draft')
+    expect(api.getScript).toHaveBeenCalledWith('saved-script-1')
+    expect(readTestId('editing-name')).not.toBe('Data Source Draft')
     expect(readTestId('draft-name')).toBe('none')
     expect(readTestId('draft-target-action')).toBe('none')
     expect(readTestId('draft-target-section')).toBe('none')
