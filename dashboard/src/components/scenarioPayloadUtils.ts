@@ -403,159 +403,47 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
   }
 }
 
-export function buildScenarioUpsertPayload({
-  name,
-  projectId,
-  workloadShapeId,
-  duration,
-  termination_mode,
-  startDelay,
-  scenarioMode,
-  scriptShakeout,
-  resourceBaseline,
-  assignment,
-  groups,
-  goalConfig,
-  runtimeSettings,
-  trafficProfile,
-  dataPools,
-}: ScenarioUpsertPayloadInput): ScenarioUpsertPayload {
-  const resolvedAssignment = buildRootAssignmentPayload(assignment)
 
-  const payload: ScenarioUpsertPayload = {
-    name: name.trim(),
-    ...(projectId ? { project_id: projectId } : {}),
-    ...(workloadShapeId !== undefined ? { workload_shape_id: workloadShapeId } : {}),
-    duration,
-    ...(termination_mode ? { termination_mode } : {}),
-    scenario_mode: scenarioMode,
-    script_shakeout: scriptShakeout,
-    resource_baseline: resourceBaseline,
-    assignment: resolvedAssignment,
-    groups: buildScenarioGroupPayloads(groups),
-  }
-
-  if (startDelay) {
-    payload.start_delay = startDelay
-  }
-
-  const goalConfigPayload = buildGoalConfigPayload(scenarioMode, goalConfig)
-  if (goalConfigPayload) {
-    payload.goal_config = goalConfigPayload
-  }
-
-  if (trafficProfile) {
-    payload.traffic_profile = structuredClone(trafficProfile)
-  }
-
-  const runtimeSettingsPayload = buildRuntimeSettingsPayload(runtimeSettings)
-  if (runtimeSettingsPayload) {
-    payload.runtime_settings = runtimeSettingsPayload
-  }
-
-  if (dataPools) {
-    payload.data_pools = dataPools
-  }
-
-  return payload
+// One canonical execution contract for scenario saves, new runs and revisions.
+// Snapshot nested values so edits cannot mutate a submitted or validated payload.
+export function buildScenarioExecutionPayload(input: ScenarioPayloadInput & { dataPools?: ScenarioDataPoolBinding[] }): Omit<ScenarioUpsertPayload, 'name' | 'project_id' | 'workload_shape_id'> {
+ const goal = buildGoalConfigPayload(input.scenarioMode, input.goalConfig)
+ const runtime = buildRuntimeSettingsPayload(input.runtimeSettings)
+ return structuredClone({
+  duration: input.duration,
+  ...(input.termination_mode ? { termination_mode: input.termination_mode } : {}),
+  scenario_mode: input.scenarioMode,
+  script_shakeout: input.scriptShakeout,
+  resource_baseline: input.resourceBaseline,
+  assignment: buildRootAssignmentPayload(input.assignment),
+  groups: buildScenarioGroupPayloads(input.groups),
+  ...(input.startDelay ? {start_delay: input.startDelay} : {}),
+  ...(goal ? {goal_config: goal} : {}),
+  ...(runtime ? {runtime_settings: runtime} : {}),
+  ...(input.trafficProfile ? {traffic_profile: input.trafficProfile} : {}),
+  ...(input.dataPools !== undefined ? {data_pools: input.dataPools} : {}),
+ })
 }
 
-export function buildCreateTestPayload({
-  name,
-  duration,
-  termination_mode,
-  startDelay,
-  scenarioMode,
-  scriptShakeout,
-  resourceBaseline,
-  assignment,
-  groups,
-  goalConfig,
-  runtimeSettings,
-  trafficProfile,
-  applicationId,
-  releaseId,
-  scenarioId,
-  revisionSourceTestId,
-  projectId,
-  folderId,
-  dataPools,
-  elkConnectionId,
-  dynatraceConnectionId,
-}: CreateTestPayloadInput): CreateTestPayload {
-  const resolvedAssignment = buildRootAssignmentPayload(assignment)
+export function buildScenarioUpsertPayload(input: ScenarioUpsertPayloadInput): ScenarioUpsertPayload {
+ return {
+  ...buildScenarioExecutionPayload(input), name: input.name.trim(),
+  ...(input.projectId ? {project_id: input.projectId} : {}),
+  ...(input.workloadShapeId !== undefined ? {workload_shape_id: input.workloadShapeId} : {}),
+ }
+}
 
-  const payload: CreateTestPayload = {
-    duration,
-    ...(termination_mode ? { termination_mode } : {}),
-    scenario_mode: scenarioMode,
-    script_shakeout: scriptShakeout,
-    resource_baseline: resourceBaseline,
-    assignment: resolvedAssignment,
-  }
-
-  if (startDelay) {
-    payload.start_delay = startDelay
-  }
-
-  if (name) {
-    payload.name = name
-  }
-
-  const goalConfigPayload = buildGoalConfigPayload(scenarioMode, goalConfig)
-  if (goalConfigPayload) {
-    payload.goal_config = goalConfigPayload
-  }
-
-  if (trafficProfile) {
-    payload.traffic_profile = structuredClone(trafficProfile)
-  }
-
-  const runtimeSettingsPayload = buildRuntimeSettingsPayload(runtimeSettings)
-  if (runtimeSettingsPayload) {
-    payload.runtime_settings = runtimeSettingsPayload
-  }
-
-  if (projectId) {
-    payload.project_id = projectId
-  }
-
-  if (applicationId) {
-    payload.application_id = applicationId
-  }
-
-  if (releaseId) {
-    payload.release_id = releaseId
-  }
-
-  if (scenarioId) {
-    payload.scenario_id = scenarioId
-  }
-
-  if (revisionSourceTestId) {
-    payload.revision_source_test_id = revisionSourceTestId
-  }
-
-  if (folderId !== undefined) {
-    payload.folder_id = folderId
-  }
-
-  if (dataPools !== undefined) {
-    payload.data_pools = dataPools.map(binding => ({ ...binding }))
-  }
-
-  if (elkConnectionId) {
-    payload.elk_capture = { connection_id: elkConnectionId }
-  }
-  if (dynatraceConnectionId) {
-    payload.dynatrace_capture = { connection_id: dynatraceConnectionId }
-  }
-
-  // Always use the canonical group representation. The legacy single-script
-  // shorthand cannot represent the complete group contract (role, ramp-down,
-  // initialization, stages, iterations, runtime overrides, and placement), so
-  // flattening a seemingly-simple group makes later editor additions silently
-  // disappear at the API boundary.
-  payload.groups = buildScenarioGroupPayloads(groups)
-  return payload
+export function buildCreateTestPayload(input: CreateTestPayloadInput): CreateTestPayload {
+ return {
+  ...buildScenarioExecutionPayload(input),
+  ...(input.name ? {name: input.name} : {}),
+  ...(input.projectId ? {project_id: input.projectId} : {}),
+  ...(input.applicationId ? {application_id: input.applicationId} : {}),
+  ...(input.releaseId ? {release_id: input.releaseId} : {}),
+  ...(input.scenarioId ? {scenario_id: input.scenarioId} : {}),
+  ...(input.revisionSourceTestId ? {revision_source_test_id: input.revisionSourceTestId} : {}),
+  ...(input.folderId !== undefined ? {folder_id: input.folderId} : {}),
+  ...(input.elkConnectionId ? {elk_capture: {connection_id: input.elkConnectionId}} : {}),
+  ...(input.dynatraceConnectionId ? {dynatrace_capture: {connection_id: input.dynatraceConnectionId}} : {}),
+ }
 }

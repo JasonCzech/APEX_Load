@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ScenarioFormState } from './TestHub'
-import { runtimeSettingsFromForm, replaceScenarioRuntimeDefaults, reseedScenarioGroups } from './scenarioFormModel'
+import { scenarioFormStateFromStoredScenario, runtimeSettingsFromForm, replaceScenarioRuntimeDefaults, reseedScenarioGroups } from './scenarioFormModel'
 
 describe('reseedScenarioGroups', () => {
   it('preserves groups beyond the selected shape and does not invent script mappings', () => {
@@ -37,4 +37,13 @@ it('preserves group SLA overrides when applying a new load shape', () => {
   expect(next.transactionResponseTimeSlaMs).toBe(1250)
   expect(next.vusers).toBe(50)
   expect(group.vusers).toBe(10)
+})
+
+it('reopens every pool binding without maintaining first-binding shadow fields', () => {
+ const scenario={id:'scenario',created_at:'',updated_at:'',script_count:0,name:'Pools',duration:'1m',scripts:[],data_pools:[{pool_id:'first',alias:'customers',access_mode:'read_only',selection_strategy:'unique'},{pool_id:'second',alias:'orders',access_mode:'read_only',selection_strategy:'random'}]} as Parameters<typeof scenarioFormStateFromStoredScenario>[0]
+ const form=scenarioFormStateFromStoredScenario(scenario,'script')
+ expect(form.data_pools).toEqual(scenario.data_pools)
+ expect(form).not.toHaveProperty('data_pool_id')
+ form.data_pools![0].alias='changed'
+ expect(scenario.data_pools![0].alias).toBe('customers')
 })

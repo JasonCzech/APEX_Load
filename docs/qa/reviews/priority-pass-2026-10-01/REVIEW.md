@@ -28,6 +28,14 @@ Review fixes: prevent raw-sample double counting; preserve zero observations and
 
 Validation: focused protocol/engine/generator/API/storage tests and real Kafka/Event Hubs/Service Bus build-profile tests passed. Dashboard typecheck/lint/build and 76 affected component tests passed. All three diagnostic browser workflows passed in each auth profile. Protocol, engine, generator and API messaging race regressions passed, including legacy archive coverage and capability admission. The final review also fixed the archive fixture timestamp to remove a second-boundary flake. Follow-up review found no remaining actionable issues. Live provider acceptance is not claimed.
 
-## Items 4–5
+## Item 4 — shared scenario assembly and authoring parity
+
+Scenario save, run creation and revisions now use one execution payload builder with independent nested snapshots. The authoring form uses the complete canonical data-pool binding array. Legacy browser checkpoints are upgraded at their read boundary before the first-binding adapter is removed. Other adapters remain until their compatibility fixtures prove they can be removed.
+
+Review fixes: preserve every binding through save/reopen and append new attachments; retain legacy-only checkpoint attachments; make an empty first-row field genuinely optional rather than submitting an invalid empty object; test durable reopen after a full reload and compare storage bindings by identity because storage sorts aliases.
+
+Validation: focused API validation/parsing/runtime/snapshot/data-pool and messaging archive regressions passed. Dashboard typecheck, lint, build and all 4,693 unit tests passed. The complete dev-admin suite passed (182 tests, four expected skips). All five affected authoring/composition/data browser workflows passed in local-auth, including durable three-pool save/reopen. The broader local-auth suite remains running as a final pass gate. Documentation and whitespace checks passed. The current follow-up review found no further actionable implementation issues.
+
+## Item 5 — preparation recovery
 
 Pending implementation and individual review.

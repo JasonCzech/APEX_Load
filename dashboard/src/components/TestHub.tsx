@@ -148,11 +148,7 @@ export interface ScenarioFormState {
   assignment_mode: NonNullable<GeneratorAssignmentSettings['mode']>
   assignment_targets: string[]
   assignment?: GeneratorAssignmentSettings
-  data_pool_id?: string
-  data_pool_alias?: string
-  data_pool_access_mode?: ScenarioDataPoolBinding['access_mode']
-  data_pool_selection_strategy?: ScenarioDataPoolBinding['selection_strategy']
-  /** Complete aggregate retained while the compact data-pool editor changes the first binding. */
+  /** Canonical data-pool bindings shared by editing, validation and submission. */
   data_pools?: ScenarioDataPoolBinding[]
 }
 
@@ -239,10 +235,6 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
     browser_headless: '',
     assignment_mode: 'auto',
     assignment_targets: [],
-    data_pool_id: '',
-    data_pool_alias: '',
-    data_pool_access_mode: 'read_only',
-    data_pool_selection_strategy: 'sequential',
   }
 }
 
@@ -1000,7 +992,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const [scenarioStartPath, setScenarioStartPath] = useState<'new' | 'copy'>('new')
   const [selectedShapeId, setSelectedShapeId] = useState('')
   const [prerequisiteScript, setPrerequisiteScript] = useState<'start-new' | 'source' | null>(null)
-  const [newPoolRow, setNewPoolRow] = useState('{}')
+  const [newPoolRow, setNewPoolRow] = useState('')
   const [createdPoolId, setCreatedPoolId] = useState<string | null>(null)
   const [newPoolName, setNewPoolName] = useState('')
   const [poolCreating, setPoolCreating] = useState(false)
@@ -1094,7 +1086,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setPrerequisiteScript(null)
     setCreatedPoolId(null)
     setNewPoolName('')
-    setNewPoolRow('{}')
+    setNewPoolRow('')
     currentProjectIdRef.current = activeProjectId
     refreshGenerationRef.current += 1
     scenarioDraftGenerationRef.current += 1
@@ -1431,27 +1423,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const showModelPreview = showForm && wizardStep !== 'scripts' && !sourcePending && (wizardStep !== 'source' || Boolean(scenarioStartChoice))
   const showCompositionPreview = wizardStep === 'run' && runSettingsTab === 'scenario' && form.scenario_mode === 'vuser_driven' && !isSteppedRamp && !isGuidedClosedVUser && !isGoalDriven
 
-  const scenarioBindings: ScenarioDataPoolBinding[] = form.data_pools?.length ? form.data_pools.map((binding, index) => index === 0 ? {
-    ...binding, pool_id: form.data_pool_id || binding.pool_id, alias: form.data_pool_alias ?? binding.alias,
-    access_mode: 'read_only', selection_strategy: form.data_pool_selection_strategy || binding.selection_strategy,
-  } : { ...binding, access_mode: 'read_only' }) : form.data_pool_id ? [{
-    pool_id: form.data_pool_id, alias: form.data_pool_alias || '', access_mode: 'read_only', selection_strategy: form.data_pool_selection_strategy || 'sequential',
-  }] : []
+  const scenarioBindings: ScenarioDataPoolBinding[] = (form.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' }))
   const bindingErrors = dataBindingErrors(scenarioBindings)
-  const updateDataBindings = (bindings: ScenarioDataPoolBinding[]) => setForm(current => ({ ...current,
-    data_pools: bindings, data_pool_id: bindings[0]?.pool_id || '', data_pool_alias: bindings[0]?.alias || '',
-    data_pool_selection_strategy: bindings[0]?.selection_strategy || 'sequential', data_pool_access_mode: 'read_only',
-  }))
+  const updateDataBindings = (bindings: ScenarioDataPoolBinding[]) => setForm(current => ({ ...current, data_pools: bindings.map(binding => ({...binding})) }))
   const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form) => {
-    const retainedPools = (draftForm.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' as const }))
-    // Keep the legacy first-binding fields synchronized with the complete editor aggregate.
-    const dataPoolsPayload = draftForm.data_pool_id ? [{
-      ...(retainedPools[0] || {}),
-      pool_id: draftForm.data_pool_id,
-      alias: draftForm.data_pool_alias?.trim() || (dataPools.find(pool => pool.id === draftForm.data_pool_id)?.name || 'data').trim().toLowerCase().replace(/\s+/g, '_'),
-      access_mode: 'read_only' as const,
-      selection_strategy: draftForm.data_pool_selection_strategy || 'sequential',
-    }, ...retainedPools.slice(1)] : retainedPools.slice(1)
+    const dataPoolsPayload = (draftForm.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' as const }))
 
     return buildScenarioUpsertPayload({
       name: draftForm.name || 'Draft scenario',
@@ -1470,7 +1446,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       trafficProfile: draftForm.traffic_profile,
       dataPools: dataPoolsPayload,
     })
-  }, [activeProjectId, dataPools, form, selectedShapeId, showBrowserRuntimeSettings])
+  }, [activeProjectId, form, selectedShapeId, showBrowserRuntimeSettings])
 
   const refresh = useCallback(async () => {
     const projectId = activeProjectId
@@ -1791,7 +1767,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setGoalBaselineLoadingId('')
     setCreatedPoolId(null)
     setNewPoolName('')
-    setNewPoolRow('{}')
+    setNewPoolRow('')
     setPoolCreating(false)
     goalGuardrailsEditedRef.current = false
     setEditingId(null)
@@ -4520,8 +4496,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 setDataPools(previous => [...previous.filter(item => item.id !== pool.id), pool])
                 if (data !== null) await api.createDataPoolRow(pool.id, { data: data as Record<string, string> })
                 if (!isCurrentDraft()) return
-                setForm(previous => ({...previous, data_pool_id: pool.id, data_pool_alias: pool.name.toLowerCase().replace(/\W+/g, '_')}))
-                setCreatedPoolId(null); setNewPoolName(''); setNewPoolRow('{}'); setError('')
+                setForm(previous => ({...previous, data_pools: [...(previous.data_pools || []), {pool_id: pool.id, alias: pool.name.toLowerCase().replace(/\W+/g, '_'), access_mode: 'read_only', selection_strategy: 'sequential'}]}))
+                setCreatedPoolId(null); setNewPoolName(''); setNewPoolRow(''); setError('')
               } catch (error) { if (isCurrentDraft()) setError(getErrorMessage(error, 'Unable to create data pool. Your scenario draft is retained.')) }
               finally { if (isCurrentDraft()) setPoolCreating(false) }
             }}>{poolCreating ? 'Creating…' : createdPoolId ? 'Retry adding first row' : 'Create and attach data pool'}</button>

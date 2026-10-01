@@ -43,3 +43,16 @@ describe('explicit scenario authoring checkpoints', () => {
     }
   })
 })
+
+it('upgrades legacy pool attachments while keeping canonical arrays authoritative', () => {
+ saveScenarioAuthoringDraft(draft())
+ const storageKey=localStorage.key(0)!
+ const legacy={...draft(),form:{...draft().form,data_pool_id:'pool',data_pool_alias:'customers',data_pool_selection_strategy:'unique'}}
+ localStorage.setItem(storageKey,JSON.stringify(legacy))
+ const restored=readScenarioAuthoringDraft('project-a')!
+ expect(restored.form.data_pools).toEqual([{pool_id:'pool',alias:'customers',access_mode:'read_only',selection_strategy:'unique'}])
+ expect(restored.form).not.toHaveProperty('data_pool_id')
+ const canonical=[{pool_id:'first',alias:'first',access_mode:'read_only',selection_strategy:'sequential'},{pool_id:'second',alias:'second',access_mode:'read_only',selection_strategy:'random'}]
+ localStorage.setItem(storageKey,JSON.stringify({...legacy,form:{...legacy.form,data_pools:canonical}}))
+ expect(readScenarioAuthoringDraft('project-a')!.form.data_pools).toEqual(canonical)
+})

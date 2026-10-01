@@ -1523,3 +1523,28 @@ it('retains an explicit Java profile through group payload serialization without
   }
   expect(buildGroupAssignmentPayload({ mode: 'inherit' })).toBeUndefined()
 })
+
+it('uses one execution contract for scenario save, new run and revision with independent snapshots', () => {
+ const input: Parameters<typeof buildScenarioUpsertPayload>[0] = {
+  name:'Parity',projectId:'project',duration:'2m',startDelay:'5s',scenarioMode:'vuser_driven',scriptShakeout:false,resourceBaseline:false,
+  assignment:{mode:'region_weighted',region_weights:{east:70,west:30}},
+  groups:[{name:'load',scriptId:'script',vusers:2,rampUp:'5s',rampDown:'5s',startOffset:'10s',initialization:'at_once',role:'load',stages:[{type:'hold',duration:'1m',target_vusers:2}],runtimeSettings:{log_level:'',auto_transactions:'',web_runtime:{additional_attributes:{mode:'group'}}}}],
+  goalConfig:{transaction_response_time_sla_ms:500},runtimeSettings:{log_level:'',auto_transactions:'',web_runtime:{additional_attributes:{mode:'root'}},env:{KEY:'{{secret.key}}'},redaction_rules:[{pattern:'private',replacement:'safe'}]},
+  dataPools:[{pool_id:'first',alias:'customers',access_mode:'read_only',selection_strategy:'unique'},{pool_id:'second',alias:'orders',access_mode:'read_only',selection_strategy:'random'}],
+ }
+ const saved=buildScenarioUpsertPayload(input)
+ const run=buildCreateTestPayload(input)
+ expect(run).toEqual(saved)
+ const revision=buildCreateTestPayload({...input,revisionSourceTestId:'old'})
+ expect(revision).toEqual({...saved,revision_source_test_id:'old'})
+ input.assignment!.region_weights!.east=1
+ input.runtimeSettings.web_runtime!.additional_attributes!.mode='changed'
+ input.groups[0].runtimeSettings!.web_runtime!.additional_attributes!.mode='changed'
+ input.groups[0].stages![0].duration='1s'
+ input.dataPools![0].alias='changed'
+ expect(saved.assignment?.region_weights?.east).toBe(70)
+ expect(saved.runtime_settings?.web_runtime?.additional_attributes?.mode).toBe('root')
+ expect(saved.groups[0].runtime_settings?.web_runtime?.additional_attributes?.mode).toBe('group')
+ expect(saved.groups[0].stages?.[0].duration).toBe('1m')
+ expect(saved.data_pools?.map(binding=>binding.alias)).toEqual(['customers','orders'])
+})

@@ -335,7 +335,6 @@ export function scenarioFormStateFromStoredScenario(
   const groups = [...(scenario.scripts || [])]
     .sort((left, right) => (left.order ?? 0) - (right.order ?? 0))
     .map(group => scenarioFormGroupFromStored(group, fallbackScriptId))
-  const firstPool = scenario.data_pools?.[0]
   const runtimeSettings = scenario.runtime_settings
   const pacing = runtimeSettings?.pacing
   const thinkTime = runtimeSettings?.think_time
@@ -394,10 +393,6 @@ export function scenarioFormStateFromStoredScenario(
     assignment_mode: scenario.assignment?.mode || 'auto',
     assignment_targets: scenario.assignment?.selected_targets ? [...scenario.assignment.selected_targets] : [],
     assignment: cloneAssignment(scenario.assignment),
-    data_pool_id: firstPool?.pool_id || '',
-    data_pool_alias: firstPool?.alias || '',
-    data_pool_access_mode: 'read_only',
-    data_pool_selection_strategy: firstPool?.selection_strategy || 'sequential',
     data_pools: scenario.data_pools?.map(binding => cloneDraft ? {
       pool_id: binding.pool_id,
       pool_name: binding.pool_name,

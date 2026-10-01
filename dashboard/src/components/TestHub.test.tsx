@@ -1854,6 +1854,21 @@ describe('TestHub', () => {
     expect(apiMock.createScenario).not.toHaveBeenCalled()
   })
 
+  it('attaches an empty pool without submitting an invalid default row', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({ resources: [{ id: 'authoring', operations: [{ id: 'manage_tests', allowed: true }, { id: 'manage_scripts', allowed: true }] }] })
+    apiMock.createDataPool.mockResolvedValueOnce({ id: 'empty-pool', name: 'Empty pool' })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await clickWizardStep('Data')
+    const input=Array.from(container.querySelectorAll('label')).find(label=>label.textContent?.startsWith('New data pool name'))?.querySelector<HTMLInputElement>('input')
+    if (!input) throw new Error('Pool name input missing')
+    await act(async()=>setInputValue(input,'Empty pool'))
+    await clickButton('Create and attach data pool')
+    await flushPromises()
+    expect(apiMock.createDataPoolRow).not.toHaveBeenCalled()
+    expect(findControlByLabel<HTMLSelectElement>(container,'Data Pool','select')?.value).toBe('empty-pool')
+  })
+
   it('does not attach a late data-pool result to a replacement draft', async () => {
     let finish!: () => void
     apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({ resources: [{ id: 'authoring', operations: [{ id: 'manage_tests', allowed: true }, { id: 'manage_scripts', allowed: true }] }] })
@@ -1866,6 +1881,12 @@ describe('TestHub', () => {
     const poolNameInput = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('New data pool name'))?.querySelector<HTMLInputElement>('input')
     if (!poolNameInput) throw new Error('New data pool name input not found')
     await act(async () => setInputValue(poolNameInput, 'Old pool'))
+    const rowInput = container.querySelector<HTMLTextAreaElement>('textarea')
+    if (!rowInput) throw new Error('First data row input not found')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(rowInput, '{"email":"old@example.test"}')
+      rowInput.dispatchEvent(new Event('input', {bubbles:true}))
+    })
     await clickButton('Create and attach data pool')
     await flushPromises()
     expect(apiMock.createDataPoolRow).toHaveBeenCalled()

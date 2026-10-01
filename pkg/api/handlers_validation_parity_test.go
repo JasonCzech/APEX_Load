@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -69,6 +71,10 @@ func TestScriptValidationParityAcrossCurrentEndpoints(t *testing.T) {
 	}{
 		{name: "create", method: http.MethodPost, path: "/api/v1/scripts", body: invalidScriptBody, wantStatus: http.StatusBadRequest},
 		{name: "update", method: http.MethodPut, path: "/api/v1/scripts/" + storedValid.ID, body: invalidScriptBody, wantStatus: http.StatusBadRequest},
+		{name: "debug draft", method: http.MethodPost, path: "/api/v1/scripts/debug/sessions", body: invalidScriptBody, wantStatus: http.StatusBadRequest},
+		{name: "debug stored", method: http.MethodPost, path: "/api/v1/scripts/" + storedInvalid.ID + "/debug/sessions", wantStatus: http.StatusBadRequest},
+		{name: "replay session draft", method: http.MethodPost, path: "/api/v1/scripts/replay/sessions", body: invalidScriptBody, wantStatus: http.StatusBadRequest},
+		{name: "replay session stored", method: http.MethodPost, path: "/api/v1/scripts/" + storedInvalid.ID + "/replay/sessions", wantStatus: http.StatusBadRequest},
 		{name: "validate draft", method: http.MethodPost, path: "/api/v1/scripts/validate", body: invalidScriptBody, wantStatus: http.StatusOK},
 		{name: "validate stored", method: http.MethodPost, path: "/api/v1/scripts/" + storedInvalid.ID + "/validate", wantStatus: http.StatusOK},
 		{name: "replay draft", method: http.MethodPost, path: "/api/v1/scripts/replay", body: invalidScriptBody, wantStatus: http.StatusBadRequest},
@@ -76,6 +82,32 @@ func TestScriptValidationParityAcrossCurrentEndpoints(t *testing.T) {
 		{name: "browser replay draft", method: http.MethodPost, path: "/api/v1/scripts/browser-replay/sessions", body: invalidScriptBody, wantStatus: http.StatusBadRequest},
 		{name: "browser replay stored", method: http.MethodPost, path: "/api/v1/scripts/" + storedInvalid.ID + "/browser-replay/sessions", wantStatus: http.StatusBadRequest},
 	}
+
+	t.Run("parser and disk use the same validator", func(t *testing.T) {
+		data := invalidScriptBody(t)
+		if _, err := dsl.Parse(data); err == nil {
+			t.Fatal("parser accepted invalid draft")
+		} else {
+			for _, issue := range expectedIssues {
+				if !strings.Contains(err.Error(), issue) {
+					t.Fatalf("parser lost issue %q: %v", issue, err)
+				}
+			}
+		}
+		path := filepath.Join(t.TempDir(), "script.json")
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := dsl.ParseFile(path); err == nil {
+			t.Fatal("disk parser accepted invalid draft")
+		} else {
+			for _, issue := range expectedIssues {
+				if !strings.Contains(err.Error(), issue) {
+					t.Fatalf("disk parser lost issue %q: %v", issue, err)
+				}
+			}
+		}
+	})
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
