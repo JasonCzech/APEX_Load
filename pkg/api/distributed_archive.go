@@ -19,6 +19,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 	grpcCodes "google.golang.org/grpc/codes"
 	grpcStatus "google.golang.org/grpc/status"
@@ -1537,6 +1538,7 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 		durationDigestComplete := true
 		var sourceThroughputGap float64
 		var sourceThroughputMissed bool
+		messagingIncomplete := false
 		for _, record := range windowRecords {
 			if aggregate.TestID == "" {
 				aggregate.TestID, aggregate.TestName = record.TestID, record.TestName
@@ -1552,6 +1554,18 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 			}
 			sourceThroughputMissed = sourceThroughputMissed || record.ThroughputTargetMissed
 			aggregate.Groups = mergeRemoteArchiveSummaryGroups(aggregate.Groups, record.Groups)
+			if aggregate.Messaging == nil {
+				aggregate.Messaging = map[string]*protocol.MessagingSummary{}
+			}
+			if len(record.Messaging) == 0 {
+				messagingIncomplete = true
+			}
+			for name, s := range protocol.CloneMessagingSummaries(record.Messaging) {
+				existing := aggregate.Messaging[name]
+				protocol.MergeMessagingSummary(&existing, s)
+				aggregate.Messaging[name] = existing
+			}
+			aggregate.Messaging = protocol.CloneMessagingSummaries(aggregate.Messaging)
 			aggregate.Transactions = mergeIntervalTransactions(aggregate.Transactions, record.Transactions)
 			aggregate.ByRegion = mergeIntervalTransactions(aggregate.ByRegion, record.ByRegion)
 			aggregate.Browser = mergeRemoteArchiveSummaryBrowser(aggregate.Browser, record.Browser)
@@ -1590,6 +1604,13 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 			} else {
 				aggregate.P50Ms, aggregate.P90Ms, aggregate.P95Ms, aggregate.P99Ms = 0, 0, 0, 0
 				aggregate.PercentileQuality = archivePercentileQualityUnavailable
+			}
+		}
+		if messagingIncomplete {
+			for _, s := range aggregate.Messaging {
+				if s != nil {
+					s.Incomplete = true
+				}
 			}
 		}
 		aggregate.Transactions = compactIntervalTransactions(aggregate.Transactions)

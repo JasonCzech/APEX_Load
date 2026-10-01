@@ -82,12 +82,21 @@ func (c *realClient) SendBatch(ctx context.Context, hub string, events []event) 
 	if err != nil {
 		return eventMeta{}, err
 	}
+	var ackTotal float64
+	sendAcknowledged := func(batch *azeventhubs.EventDataBatch) error {
+		started := time.Now()
+		err := prod.SendEventDataBatch(ctx, batch, nil)
+		if err == nil {
+			ackTotal += float64(time.Since(started)) / float64(time.Millisecond)
+		}
+		return err
+	}
 	count := 0
 	for _, ev := range events {
 		data := &azeventhubs.EventData{Body: ev.Body, Properties: toAnyMap(ev.Properties)}
 		err = batch.AddEventData(data, nil)
 		if errors.Is(err, azeventhubs.ErrEventDataTooLarge) && count > 0 {
-			if err = prod.SendEventDataBatch(ctx, batch, nil); err != nil {
+			if err = sendAcknowledged(batch); err != nil {
 				return eventMeta{}, err
 			}
 			batch, err = prod.NewEventDataBatch(ctx, opts)
@@ -103,11 +112,11 @@ func (c *realClient) SendBatch(ctx context.Context, hub string, events []event) 
 		count++
 	}
 	if count > 0 {
-		if err = prod.SendEventDataBatch(ctx, batch, nil); err != nil {
+		if err = sendAcknowledged(batch); err != nil {
 			return eventMeta{}, err
 		}
 	}
-	return eventMeta{PartitionID: first.PartitionID, EnqueuedAt: time.Now()}, nil
+	return eventMeta{PartitionID: first.PartitionID, EnqueuedAt: time.Now(), AcknowledgementMs: &ackTotal}, nil
 }
 
 func (c *realClient) Receive(ctx context.Context, hub, group string, timeout time.Duration) (event, int64, error) {

@@ -519,6 +519,8 @@ message MetricAggregate {
   int64 bytes_received = 16;
   double tps = 17;
   TDigestSnapshot duration_digest = 18;
+  string messaging_summary_json = 19; // bounded, validated protocol.MessagingSummary v1
+  uint32 messaging_version = 20;
 }
 
 message BrowserMetrics {
@@ -579,6 +581,8 @@ message ServerTelemetry {
   WebSocketDiagnostics websocket = 31;
   bool consumer_lag_observed = 32;
   bool consumer_offset_lag_observed = 33;
+  optional double acknowledgement_ms = 34;
+  string subscription_id = 35;
 }
 
 message WebSocketDiagnostics {

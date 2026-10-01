@@ -21,21 +21,23 @@ type eventHubsClient interface {
 
 // event is a provider-neutral Event Hubs event.
 type event struct {
-	Body         []byte
-	PartitionKey string
-	PartitionID  string
-	Properties   map[string]string
-	Offset       int64
-	SequenceNum  int64
-	EnqueuedAt   time.Time
+	AcknowledgementMs *float64
+	Body              []byte
+	PartitionKey      string
+	PartitionID       string
+	Properties        map[string]string
+	Offset            int64
+	SequenceNum       int64
+	EnqueuedAt        time.Time
 }
 
 // eventMeta is the broker acknowledgement returned by a send.
 type eventMeta struct {
-	PartitionID string
-	Offset      int64
-	SequenceNum int64
-	EnqueuedAt  time.Time
+	AcknowledgementMs *float64
+	PartitionID       string
+	Offset            int64
+	SequenceNum       int64
+	EnqueuedAt        time.Time
 }
 
 // memoryBroker is a process-local Event Hubs mock: a log per event hub

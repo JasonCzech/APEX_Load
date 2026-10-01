@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 // copyErrorClassCounts returns a defensive copy of the error-taxonomy counts, or
@@ -125,6 +126,9 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 
 	for name, am := range snap.ByTransaction {
 		live.Transactions[name] = buildTxMetricsFromAction(name, am, snap.Window)
+		if am != nil && am.ServerTelemetry != nil && am.ServerTelemetry.Messaging != nil {
+			live.Messaging[name] = am.ServerTelemetry.Messaging.Clone()
+		}
 	}
 
 	for name, am := range snap.ByDependencyTarget {
@@ -165,10 +169,16 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		}
 	}
 
+	live.Messaging = map[string]*protocol.MessagingSummary{}
 	actions := map[string]*TxMetrics{}
 	for name, am := range snap.ByAction {
 		actions[name] = buildTxMetricsFromAction(name, am, snap.Window)
+		if am != nil && am.ServerTelemetry != nil && am.ServerTelemetry.Messaging != nil {
+			live.Messaging[name] = am.ServerTelemetry.Messaging.Clone()
+		}
 	}
+
+	live.Messaging = protocol.CloneMessagingSummaries(live.Messaging)
 	live.NativeEvidence = nativeIntervalEvidence(live, actions, true, snap.Window.Seconds())
 	if snap.ByActionProperty != nil {
 		live.NativeEvidence.Version = 2

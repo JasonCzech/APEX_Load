@@ -105,6 +105,7 @@ func boundResultMetadata(result *protocol.Result) {
 		result.ServerTelemetry.SOAPFaultCode = cloneBoundedResultString(result.ServerTelemetry.SOAPFaultCode, maxResultMetadataBytes)
 		result.ServerTelemetry.SOAPFaultCategory = cloneBoundedResultString(result.ServerTelemetry.SOAPFaultCategory, maxResultMetadataBytes)
 		result.ServerTelemetry.SOAPNamespaceConflict = cloneBoundedResultString(result.ServerTelemetry.SOAPNamespaceConflict, maxResultMetadataBytes)
+		result.ServerTelemetry.SubscriptionID = cloneBoundedResultString(result.ServerTelemetry.SubscriptionID, maxResultMetadataBytes)
 		result.ServerTelemetry.PartitionID = cloneBoundedResultString(result.ServerTelemetry.PartitionID, maxResultMetadataBytes)
 	}
 }

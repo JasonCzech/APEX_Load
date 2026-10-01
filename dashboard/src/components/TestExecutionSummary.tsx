@@ -714,7 +714,7 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
                     <td>{eventHubsThrottleTotal(tx)}</td>
                     <td>{st?.total_event_too_large_count ?? 0}</td>
                     <td>{formatTelemetryValue(st?.avg_end_to_end_latency_ms, ' ms')} / {formatTelemetryValue(st?.max_end_to_end_latency_ms, ' ms')}</td>
-                    <td>{formatTelemetryValue(st?.partition_skew_pct, '%', 1)}</td>
+                    <td>{st?.messaging ? 'See qualified messaging evidence' : `${formatTelemetryValue(st?.partition_skew_pct, '%', 1)} (legacy, unqualified)`}</td>
                     <td>{partitions.length > 0 ? partitions.map((p) => `${p.partition}:${p.events}`).join('  ') : '—'}</td>
                   </tr>
                 )
@@ -1453,7 +1453,7 @@ function buildJMSTopicFanOutProfile(
 
 function buildJMSConsumerLagTrend(history: MetricsHistoryPoint[] | undefined): JMSConsumerLagTrend | null {
   const points = (history ?? [])
-    .filter((point) => (point.jmsConsumerLagMs ?? 0) > 0 || (point.jmsPeakConsumerLagMs ?? 0) > 0)
+    .filter((point) => point.jmsConsumerLagMs !== undefined || point.jmsPeakConsumerLagMs !== undefined)
     .map((point) => ({
       time: point.time,
       avgLag: point.jmsConsumerLagMs ?? 0,

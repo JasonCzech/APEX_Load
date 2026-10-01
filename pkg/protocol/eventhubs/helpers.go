@@ -106,6 +106,7 @@ func finalizeTelemetry(result *protocol.Result, sent event, hasSent bool, receiv
 	}
 	t := &protocol.ServerTelemetry{TransferMs: durationToMs(result.Duration)}
 	if hasSent {
+		t.AcknowledgementMs = sent.AcknowledgementMs
 		t.MessagesSent = 1
 		t.RequestPayloadKB = bytesToKB(len(sent.Body))
 		t.RequestSizeClass = protocol.ClassifyPayloadSize(int64(len(sent.Body)))
@@ -116,6 +117,7 @@ func finalizeTelemetry(result *protocol.Result, sent event, hasSent bool, receiv
 		}
 	}
 	if hasReceived {
+		t.PartitionID = received.PartitionID
 		t.MessagesReceived = 1
 		t.ResponsePayloadKB = bytesToKB(len(received.Body))
 		t.ResponseSizeClass = protocol.ClassifyPayloadSize(int64(len(received.Body)))

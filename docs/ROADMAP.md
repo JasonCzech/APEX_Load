@@ -12,7 +12,7 @@ Source note: consolidated 2026-09-24 from the former `RUNTIME_TELEMETRY_SLA_PLAN
 | [Protocol telemetry parity](#protocol-telemetry-parity) | gRPC codec/call diagnostics and WebSocket transport diagnostics propagate through live/archive/report/baseline paths | Cross-protocol intelligence, Java HTTP object-vs-wire delta, JMS ack latency and broker-managed DLQ discovery |
 | [Script authoring consolidation](#script-authoring-consolidation) | Phases 1-2 done; 3-5 in progress | Scenario-assembly tightening, cross-entry-point lifecycle parity and adapter removal; canonical save/reopen and SLA reseeding fixes landed |
 | [PT Analysis Parquet import](#pt-analysis-native-parquet-import) | Native import, saved mappings, bounded queries and comparisons implemented behind a project flag | 10 GB acceptance skipped at user direction; cross-platform release and broader scale acceptance remain unverified |
-| [Messaging](#messaging) | Most of the program landed | Partition/subscription rollups, Event Hubs consumer ownership, provider depth, IBM MQ native (P2.5) and Solace SMF (P2.6) |
+| [Messaging](#messaging) | Most of the program landed | Event Hubs consumer ownership, provider depth, IBM MQ native (P2.5) and Solace SMF (P2.6) |
 | [Browser and mobile](#browser-and-mobile) | Device emulation, client metrics, import MVP and UX health slice landed | Measured benchmark publication, WebKit process attribution, TrueClient fixtures, HAR V2, UX intelligence beyond thresholds |
 | [CloudTest outcome parity](#cloudtest-outcome-parity) | Active; initial vertical slices implemented | Fixture-proven import mappings, additional analytics dimensions/live intersections, live provider acceptance, media and remaining chart exports |
 
@@ -30,7 +30,7 @@ Reconciled against published commits `0a480cee`, `7bf711ea` and `10e9f08e`. Thes
 | Native panels | Project editors save run-metric and filtered archive panels; viewers reopen them; bounded raw timelines, same-project comparisons, bucket inspection and CSV/SVG as applicable | Live/archive grouping and overlays reviewed; merged live distribution buckets, bounded action/property intersections and live lag correlation implemented |
 | Response properties | Explicit finite extraction categories, redaction-first promotion, capability negotiation, action metrics, distributed merges, JSONL/Parquet retention, archive filters/reports, bounded archived timelines, saved comparisons and bucket drill-down | Bounded live property history and single-dimension grouping implemented; bounded action/property intersections implemented in merged live mode; other intersections remain unavailable |
 | Cloud collector previews | Identity-scoped CloudWatch/Azure Monitor queries, fixed approved destinations, bounded retries/responses, durable numeric-sample deduplication; delayed missing buckets can fill and equivalent timestamps are rejected | Approved live AWS/Azure acceptance before production-readiness claims |
-| Messaging | Observed-zero versus unavailable lag in Kafka/Event Hubs; terminal maximum age/offset gates require complete evidence; Event Hubs auth/probe-group defaults and HOWTO | Partition/subscription views, processor/checkpoint ownership and provider-wide acknowledgement/depth telemetry |
+| Messaging | Observed-zero versus unavailable lag in Kafka/Event Hubs; terminal maximum age/offset gates require complete evidence; Event Hubs auth/probe-group defaults and HOWTO | Bounded partition/subscription views and client acknowledgement timing landed; processor/checkpoint ownership and provider-wide depth remain open |
 
 The latest implementation passed full Go tests, affected race tests, dashboard typecheck/lint/unit tests and the repaired browser workflows in both auth profiles. The review record distinguishes the initial browser failures from successful post-fix reruns. Cloud readiness, release-platform coverage and scale results require their own evidence; local tests do not close those gates.
 
@@ -113,7 +113,7 @@ Open work (effort estimates from the original plan):
 | WebSocket | Advisory connection-health findings, message distributions, report cards and qualified throughput comparisons implemented; no silent active health probes or inferred message RTT | L3 | `engine/metrics.go`, `dashboard/`, `api/` | Broader acceptance open |
 | gRPC | Client call/first-response timing, counts, sizes, statuses and deadline budgets landed. Measured protobuf codec timing added. Remaining: exposed transport phases and broader throughput analysis (no inferred server-processing or HTTP/2 phase timings) | L2 | `grpc/grpc.go` | ~3 days |
 | gRPC | Method hotspots, deadline/status findings, dashboard/report cards and qualified baseline comparisons implemented; project-gated statistical/dependency finding delivery implemented; broader live acceptance remains | L3 | `engine/metrics.go`, `dashboard/`, `api/` | Partial |
-| JMS | Consumer acknowledgement latency; broker-side latency isolation; queue-depth sampling (provider management API) | L2 | `jms/jms.go` | 0.5 day + provider-specific |
+| JMS | Broader adapter acknowledgement coverage; broker-side latency isolation; queue-depth sampling (provider management API) | L2 | `jms/jms.go` | 0.5 day + provider-specific |
 | JMS | Automatic broker-managed dead-letter discovery / queue-depth correlation | L3 | `jms/jms.go`, `api/` | 1.5 days |
 
 Shared infrastructure still to generalize: per-transaction SLA thresholds in the DSL evaluated protocol-agnostically (P90/P95/P99, max error rate, min throughput, max TTFB, consumer lag), and run-over-run baseline comparison (archive stores per-transaction P50/P90/P99; new runs load the latest baseline of the same script; `baseline_comparison` websocket event on threshold crossing). Baselines match by transaction name plus protocol and warn on added/removed transactions.
@@ -228,7 +228,7 @@ Original items were checked against the tree on 2026-09-24; Event Hubs defaults 
 | EH.5 | Event Hubs Capture (Avro) import and AsyncAPI EH binding | Landed (`POST /api/v1/scripts/import/eventhubs-capture`) |
 | EH.6 | Prometheus exposition, terraform, CI tag matrix | Landed, including optional auth/probe-group env defaults and the deployment HOWTO; `deployments/azure/terraform/eventhubs.tf` exists |
 | P3.1 | Messaging import breadth (AsyncAPI JMS/AMQP/Solace/MQ/MQTT bindings) | Partly landed: AMQP/JMS servers target `jms-solace`; other bindings review-only |
-| P4.1 | Messaging-aware goals and dashboard panels | Partly landed: redelivery/dead-letter thresholds and live breach flags; terminal maximum consumer age/offset rules require complete observed evidence, including zero; partition/subscription rollups remain open |
+| P4.1 | Messaging-aware goals and dashboard panels | Partly landed: redelivery/dead-letter thresholds and live breach flags; terminal maximum consumer age/offset rules require complete observed evidence, including zero; bounded partition/subscription rollups and qualified observed-partition goals implemented; provider-wide inventory remains open |
 | Kafka plugin + AsyncAPI converter | Direct Kafka protocol, AsyncAPI 2.x/3.x importer and wizard, franz-go real adapter | Landed (design record below) |
 
 ### Coverage assessment
@@ -530,7 +530,7 @@ Five items are delivered and reviewed independently, with one commit per item. T
 
 1. Live distribution buckets, bounded action/property intersections and aligned correlation: implemented and reviewed; affected browser/focused checks passed.
 2. Additional analytics dimensions, timestamped run annotations and waterfall investigation: implemented and reviewed; SQLite/PostgreSQL, browser acceptance in both profiles and targeted race tests passed.
-3. Messaging partition/subscription diagnostics and qualified goals: pending.
+3. Messaging partition/subscription diagnostics and qualified goals: implemented; bounded live/archive/report evidence, observed-zero availability and capability admission verified.
 4. Shared scenario assembly and authoring lifecycle parity: pending.
 5. Preparation recovery and zero-traffic acceptance: pending. Live provider acceptance requires its own evidence.
 

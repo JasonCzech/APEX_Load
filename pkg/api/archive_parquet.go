@@ -125,6 +125,7 @@ type parquetIntervalSummary struct {
 	P99Ms                  float64 `parquet:"name=p99_ms, type=DOUBLE"`
 	PercentileQuality      string  `parquet:"name=percentile_quality, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	GroupsJSON             string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	MessagingJSON          string  `parquet:"name=messaging_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	TransactionsJSON       string  `parquet:"name=transactions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	ByRegionJSON           string  `parquet:"name=by_region_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BrowserJSON            string  `parquet:"name=browser_json, type=BYTE_ARRAY, convertedtype=UTF8"`
@@ -371,6 +372,7 @@ func toParquetSummaries(items []IntervalSummaryRecord) []parquetIntervalSummary 
 			P99Ms:                  item.P99Ms,
 			PercentileQuality:      item.PercentileQuality,
 			GroupsJSON:             mustJSON(item.Groups),
+			MessagingJSON:          mustJSON(item.Messaging),
 			TransactionsJSON:       mustJSON(item.Transactions),
 			ByRegionJSON:           mustJSON(item.ByRegion),
 			BrowserJSON:            mustJSON(item.Browser),

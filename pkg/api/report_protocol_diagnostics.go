@@ -40,6 +40,24 @@ func protocolReportLines(report *RunArchiveReport) []string {
 	}
 	for _, name := range keys {
 		a := report.ByAction[name]
+		if a.Messaging != nil {
+			if a.Messaging.Incomplete {
+				lines = append(lines, name+" · Messaging coverage incomplete; partition skew is unscored.")
+			}
+			for _, d := range a.Messaging.Dimensions {
+				lines = append(lines, fmt.Sprintf("%s · source %s / partition %s / subscription %s: %d client operations, %d sent, %d received, %d throttled, %d redelivered", name, d.Source, d.Partition, d.Subscription, d.Operations, d.Sent, d.Received, d.Throttled, d.Redelivered))
+				for _, measurement := range []struct {
+					name string
+					m    protocol.MessagingMoments
+				}{{"message age (ms)", d.Age}, {"offset backlog", d.Offset}, {"acknowledged client operation (ms)", d.Ack}} {
+					if mean, ok := measurement.m.Mean(); ok {
+						lines = append(lines, fmt.Sprintf("%s: %d observed samples, mean %.3f, maximum %.3f", measurement.name, measurement.m.Count, mean, measurement.m.Max))
+					} else {
+						lines = append(lines, measurement.name+": unavailable")
+					}
+				}
+			}
+		}
 		if g := a.GRPC; g != nil {
 			identity := name
 			if g.Method != "" {
@@ -70,7 +88,7 @@ func protocolReportLines(report *RunArchiveReport) []string {
 		}
 	}
 	if len(lines) == 1 {
-		lines = append(lines, "No typed gRPC or WebSocket diagnostic samples were captured.")
+		lines = append(lines, "No typed messaging, gRPC or WebSocket diagnostic samples were captured.")
 	}
 	return lines
 }

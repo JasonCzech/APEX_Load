@@ -3363,27 +3363,29 @@ func (x *TDigestSnapshot) GetCentroids() []*TDigestCentroid {
 }
 
 type MetricAggregate struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Name             string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	DependencyType   string                 `protobuf:"bytes,2,opt,name=dependency_type,json=dependencyType,proto3" json:"dependency_type,omitempty"`
-	DependencyTarget string                 `protobuf:"bytes,3,opt,name=dependency_target,json=dependencyTarget,proto3" json:"dependency_target,omitempty"`
-	Count            int64                  `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"`
-	Errors           int64                  `protobuf:"varint,5,opt,name=errors,proto3" json:"errors,omitempty"`
-	AvgMs            float64                `protobuf:"fixed64,6,opt,name=avg_ms,json=avgMs,proto3" json:"avg_ms,omitempty"`
-	P50Ms            float64                `protobuf:"fixed64,7,opt,name=p50_ms,json=p50Ms,proto3" json:"p50_ms,omitempty"`
-	P90Ms            float64                `protobuf:"fixed64,8,opt,name=p90_ms,json=p90Ms,proto3" json:"p90_ms,omitempty"`
-	P95Ms            float64                `protobuf:"fixed64,9,opt,name=p95_ms,json=p95Ms,proto3" json:"p95_ms,omitempty"`
-	P99Ms            float64                `protobuf:"fixed64,10,opt,name=p99_ms,json=p99Ms,proto3" json:"p99_ms,omitempty"`
-	AvgDnsMs         float64                `protobuf:"fixed64,11,opt,name=avg_dns_ms,json=avgDnsMs,proto3" json:"avg_dns_ms,omitempty"`
-	AvgConnectMs     float64                `protobuf:"fixed64,12,opt,name=avg_connect_ms,json=avgConnectMs,proto3" json:"avg_connect_ms,omitempty"`
-	AvgTlsMs         float64                `protobuf:"fixed64,13,opt,name=avg_tls_ms,json=avgTlsMs,proto3" json:"avg_tls_ms,omitempty"`
-	AvgTtfbMs        float64                `protobuf:"fixed64,14,opt,name=avg_ttfb_ms,json=avgTtfbMs,proto3" json:"avg_ttfb_ms,omitempty"`
-	BytesSent        int64                  `protobuf:"varint,15,opt,name=bytes_sent,json=bytesSent,proto3" json:"bytes_sent,omitempty"`
-	BytesReceived    int64                  `protobuf:"varint,16,opt,name=bytes_received,json=bytesReceived,proto3" json:"bytes_received,omitempty"`
-	Tps              float64                `protobuf:"fixed64,17,opt,name=tps,proto3" json:"tps,omitempty"`
-	DurationDigest   *TDigestSnapshot       `protobuf:"bytes,18,opt,name=duration_digest,json=durationDigest,proto3" json:"duration_digest,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Name                 string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	DependencyType       string                 `protobuf:"bytes,2,opt,name=dependency_type,json=dependencyType,proto3" json:"dependency_type,omitempty"`
+	DependencyTarget     string                 `protobuf:"bytes,3,opt,name=dependency_target,json=dependencyTarget,proto3" json:"dependency_target,omitempty"`
+	Count                int64                  `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"`
+	Errors               int64                  `protobuf:"varint,5,opt,name=errors,proto3" json:"errors,omitempty"`
+	AvgMs                float64                `protobuf:"fixed64,6,opt,name=avg_ms,json=avgMs,proto3" json:"avg_ms,omitempty"`
+	P50Ms                float64                `protobuf:"fixed64,7,opt,name=p50_ms,json=p50Ms,proto3" json:"p50_ms,omitempty"`
+	P90Ms                float64                `protobuf:"fixed64,8,opt,name=p90_ms,json=p90Ms,proto3" json:"p90_ms,omitempty"`
+	P95Ms                float64                `protobuf:"fixed64,9,opt,name=p95_ms,json=p95Ms,proto3" json:"p95_ms,omitempty"`
+	P99Ms                float64                `protobuf:"fixed64,10,opt,name=p99_ms,json=p99Ms,proto3" json:"p99_ms,omitempty"`
+	AvgDnsMs             float64                `protobuf:"fixed64,11,opt,name=avg_dns_ms,json=avgDnsMs,proto3" json:"avg_dns_ms,omitempty"`
+	AvgConnectMs         float64                `protobuf:"fixed64,12,opt,name=avg_connect_ms,json=avgConnectMs,proto3" json:"avg_connect_ms,omitempty"`
+	AvgTlsMs             float64                `protobuf:"fixed64,13,opt,name=avg_tls_ms,json=avgTlsMs,proto3" json:"avg_tls_ms,omitempty"`
+	AvgTtfbMs            float64                `protobuf:"fixed64,14,opt,name=avg_ttfb_ms,json=avgTtfbMs,proto3" json:"avg_ttfb_ms,omitempty"`
+	BytesSent            int64                  `protobuf:"varint,15,opt,name=bytes_sent,json=bytesSent,proto3" json:"bytes_sent,omitempty"`
+	BytesReceived        int64                  `protobuf:"varint,16,opt,name=bytes_received,json=bytesReceived,proto3" json:"bytes_received,omitempty"`
+	Tps                  float64                `protobuf:"fixed64,17,opt,name=tps,proto3" json:"tps,omitempty"`
+	DurationDigest       *TDigestSnapshot       `protobuf:"bytes,18,opt,name=duration_digest,json=durationDigest,proto3" json:"duration_digest,omitempty"`
+	MessagingSummaryJson string                 `protobuf:"bytes,19,opt,name=messaging_summary_json,json=messagingSummaryJson,proto3" json:"messaging_summary_json,omitempty"` // bounded, validated protocol.MessagingSummary v1
+	MessagingVersion     uint32                 `protobuf:"varint,20,opt,name=messaging_version,json=messagingVersion,proto3" json:"messaging_version,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *MetricAggregate) Reset() {
@@ -3540,6 +3542,20 @@ func (x *MetricAggregate) GetDurationDigest() *TDigestSnapshot {
 		return x.DurationDigest
 	}
 	return nil
+}
+
+func (x *MetricAggregate) GetMessagingSummaryJson() string {
+	if x != nil {
+		return x.MessagingSummaryJson
+	}
+	return ""
+}
+
+func (x *MetricAggregate) GetMessagingVersion() uint32 {
+	if x != nil {
+		return x.MessagingVersion
+	}
+	return 0
 }
 
 type BrowserMetrics struct {
@@ -3779,6 +3795,8 @@ type ServerTelemetry struct {
 	Websocket                 *WebSocketDiagnostics `protobuf:"bytes,31,opt,name=websocket,proto3" json:"websocket,omitempty"`
 	ConsumerLagObserved       bool                  `protobuf:"varint,32,opt,name=consumer_lag_observed,json=consumerLagObserved,proto3" json:"consumer_lag_observed,omitempty"`
 	ConsumerOffsetLagObserved bool                  `protobuf:"varint,33,opt,name=consumer_offset_lag_observed,json=consumerOffsetLagObserved,proto3" json:"consumer_offset_lag_observed,omitempty"`
+	AcknowledgementMs         *float64              `protobuf:"fixed64,34,opt,name=acknowledgement_ms,json=acknowledgementMs,proto3,oneof" json:"acknowledgement_ms,omitempty"`
+	SubscriptionId            string                `protobuf:"bytes,35,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
@@ -4042,6 +4060,20 @@ func (x *ServerTelemetry) GetConsumerOffsetLagObserved() bool {
 		return x.ConsumerOffsetLagObserved
 	}
 	return false
+}
+
+func (x *ServerTelemetry) GetAcknowledgementMs() float64 {
+	if x != nil && x.AcknowledgementMs != nil {
+		return *x.AcknowledgementMs
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetSubscriptionId() string {
+	if x != nil {
+		return x.SubscriptionId
+	}
+	return ""
 }
 
 type WebSocketDiagnostics struct {
@@ -6325,7 +6357,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x03min\x18\x03 \x01(\x01R\x03min\x12\x10\n" +
 	"\x03max\x18\x04 \x01(\x01R\x03max\x12\x14\n" +
 	"\x05count\x18\x05 \x01(\x03R\x05count\x12:\n" +
-	"\tcentroids\x18\x06 \x03(\v2\x1c.apexload.v1.TDigestCentroidR\tcentroids\"\xbd\x04\n" +
+	"\tcentroids\x18\x06 \x03(\v2\x1c.apexload.v1.TDigestCentroidR\tcentroids\"\xa0\x05\n" +
 	"\x0fMetricAggregate\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12'\n" +
 	"\x0fdependency_type\x18\x02 \x01(\tR\x0edependencyType\x12+\n" +
@@ -6348,7 +6380,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"bytes_sent\x18\x0f \x01(\x03R\tbytesSent\x12%\n" +
 	"\x0ebytes_received\x18\x10 \x01(\x03R\rbytesReceived\x12\x10\n" +
 	"\x03tps\x18\x11 \x01(\x01R\x03tps\x12E\n" +
-	"\x0fduration_digest\x18\x12 \x01(\v2\x1c.apexload.v1.TDigestSnapshotR\x0edurationDigest\"\xd5\x03\n" +
+	"\x0fduration_digest\x18\x12 \x01(\v2\x1c.apexload.v1.TDigestSnapshotR\x0edurationDigest\x124\n" +
+	"\x16messaging_summary_json\x18\x13 \x01(\tR\x14messagingSummaryJson\x12+\n" +
+	"\x11messaging_version\x18\x14 \x01(\rR\x10messagingVersion\"\xd5\x03\n" +
 	"\x0eBrowserMetrics\x12\x18\n" +
 	"\asamples\x18\x01 \x01(\x03R\asamples\x12\x1c\n" +
 	"\n" +
@@ -6371,7 +6405,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\vdevice_tier\x18\x03 \x01(\tR\n" +
 	"deviceTier\x12%\n" +
 	"\x0ebrowser_engine\x18\x04 \x01(\tR\rbrowserEngine\x125\n" +
-	"\ametrics\x18\x05 \x01(\v2\x1b.apexload.v1.BrowserMetricsR\ametrics\"\xfa\v\n" +
+	"\ametrics\x18\x05 \x01(\v2\x1b.apexload.v1.BrowserMetricsR\ametrics\"\xee\f\n" +
 	"\x0fServerTelemetry\x120\n" +
 	"\x14server_processing_ms\x18\x01 \x01(\x01R\x12serverProcessingMs\x12\x1f\n" +
 	"\vtransfer_ms\x18\x02 \x01(\x01R\n" +
@@ -6409,7 +6443,10 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x04grpc\x18\x1e \x01(\v2\x1c.apexload.v1.GRPCDiagnosticsR\x04grpc\x12?\n" +
 	"\twebsocket\x18\x1f \x01(\v2!.apexload.v1.WebSocketDiagnosticsR\twebsocket\x122\n" +
 	"\x15consumer_lag_observed\x18  \x01(\bR\x13consumerLagObserved\x12?\n" +
-	"\x1cconsumer_offset_lag_observed\x18! \x01(\bR\x19consumerOffsetLagObserved\"\xe5\x05\n" +
+	"\x1cconsumer_offset_lag_observed\x18! \x01(\bR\x19consumerOffsetLagObserved\x122\n" +
+	"\x12acknowledgement_ms\x18\" \x01(\x01H\x00R\x11acknowledgementMs\x88\x01\x01\x12'\n" +
+	"\x0fsubscription_id\x18# \x01(\tR\x0esubscriptionIdB\x15\n" +
+	"\x13_acknowledgement_ms\"\xe5\x05\n" +
 	"\x14WebSocketDiagnostics\x12\x1c\n" +
 	"\toperation\x18\x01 \x01(\tR\toperation\x12!\n" +
 	"\fmessage_type\x18\x02 \x01(\tR\vmessageType\x12&\n" +
@@ -6842,6 +6879,7 @@ func file_api_proto_generator_proto_init() {
 	if File_api_proto_generator_proto != nil {
 		return
 	}
+	file_api_proto_generator_proto_msgTypes[37].OneofWrappers = []any{}
 	file_api_proto_generator_proto_msgTypes[38].OneofWrappers = []any{}
 	file_api_proto_generator_proto_msgTypes[39].OneofWrappers = []any{}
 	file_api_proto_generator_proto_msgTypes[42].OneofWrappers = []any{

@@ -612,6 +612,7 @@ func cloneTxMetricsMap(in map[string]*TxMetrics) map[string]*TxMetrics {
 		clone := *tx
 		if tx.ServerTelemetry != nil {
 			telemetry := *tx.ServerTelemetry
+			telemetry.Messaging = telemetry.Messaging.Clone()
 			telemetry.GRPC = telemetry.GRPC.Clone()
 			telemetry.WebSocket = telemetry.WebSocket.Clone()
 			telemetry.DiagnosticFindings = protocol.ProtocolDiagnosticFindings(telemetry.GRPC, telemetry.WebSocket)
@@ -1089,6 +1090,7 @@ func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {
 	cloned.StatisticalFindings = append([]StatisticalFinding(nil), metrics.StatisticalFindings...)
 	cloned.ObservationValidUntil = cloneTimePtr(metrics.ObservationValidUntil)
 	cloned.ErrorBreakdown = cloneStringInt64Map(metrics.ErrorBreakdown)
+	cloned.Messaging = protocol.CloneMessagingSummaries(metrics.Messaging)
 	cloned.Transactions = cloneTxMetricsMap(metrics.Transactions)
 	cloned.TransactionResponseTimeSLA = append([]TransactionResponseTimeSLAResult(nil), metrics.TransactionResponseTimeSLA...)
 	cloned.DependencyHealth = cloneTxMetricsMap(metrics.DependencyHealth)

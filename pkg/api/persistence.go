@@ -20,6 +20,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -1513,6 +1514,7 @@ func mapToLiveMetrics(m map[string]any) *LiveMetrics {
 
 func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *LiveMetrics {
 	live := &LiveMetrics{
+		Messaging:           protocol.CloneMessagingSummaries(record.Messaging),
 		NativeEvidence:      storage.CloneNativeIntervalEvidence(record.NativeEvidence),
 		CompletedIterations: record.CompletedIterations,
 		Timestamp:           record.Timestamp,

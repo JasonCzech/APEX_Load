@@ -75,3 +75,32 @@ test('WebSocket diagnostics preserves unavailable ping RTT and matched zero RTT'
   await page.setViewportSize({ width: 760, height: 900 })
   await panel.screenshot({ path: test.info().outputPath('websocket-diagnostics.png') })
 })
+
+test('messaging diagnostics preserves observed zero, missing acknowledgement and partial coverage', async ({ page, trackRun }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace)
+  const id = idOf(await json(await request.post('/api/v1/tests', { data: {
+    project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId,
+    name: 'Messaging evidence', duration: '2m', groups: [{ name: 'consumer', script_id: scriptId, vusers: 1 }],
+  } })))
+  trackRun(id)
+  const absent = { count: 0, sum: 0, max: 0 }
+  const messaging = { incomplete: true, dimensions: [{ source: 'orders', partition: '0', subscription: 'checkout', operations: 2, sent: 0, received: 2, throttled: 1, redelivered: 1, age_ms: { count: 2, sum: 0, max: 0 }, offset_lag: absent, ack_ms: absent }] }
+  await page.route(`**/api/v1/tests/${id}`, async route => {
+    const response = await route.fetch()
+    const record = await response.json()
+    await route.fulfill({ response, json: { ...record, status: 'RUNNING', live_metrics: { total_transactions: 2, total_errors: 0, active_vusers: 1, messaging: { receive: messaging }, transactions: {} } } })
+  })
+  await page.goto(`/#/test/${id}?tab=diagnostics&${scopeQuery(workspace)}`)
+  await page.reload()
+  await page.getByText('Messaging partition and subscription diagnostics', { exact: true }).click()
+  const evidence = page.getByRole('region', { name: 'Messaging evidence receive' })
+  await expect(evidence).toContainText('checkout')
+  await expect(evidence).toContainText('0.000 ms (max 0.000 ms; 2 observed)')
+  await expect(evidence).toContainText('Coverage incomplete; partition skew is unscored.')
+  await expect(evidence.getByRole('cell', { name: 'Unavailable', exact: true })).toHaveCount(2)
+  await page.setViewportSize({ width: 760, height: 900 })
+  await expect(evidence).toBeVisible()
+})

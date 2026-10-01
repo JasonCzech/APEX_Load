@@ -112,6 +112,7 @@ func filterLiveMetricsForGroups(live *LiveMetrics, filter groupFilterQuery) *Liv
 	// selected-group response cannot safely attribute any transaction series to
 	// the selected groups. Omit the global series instead of returning metrics
 	// from groups the caller explicitly hid.
+	out.Messaging = nil
 	out.NativeEvidence = nil
 	out.Transactions = nil
 	selectedNames := make(map[string]struct{}, len(filter.Names))
@@ -366,6 +367,7 @@ func cloneGroupLiveMetrics(metrics *GroupLiveMetrics) *GroupLiveMetrics {
 }
 
 func clearLivePerformanceMetrics(live *LiveMetrics) {
+	live.Messaging = nil
 	live.NativeEvidence = nil
 	live.Transactions = nil
 	live.ActiveVUsers = 0

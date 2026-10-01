@@ -469,6 +469,9 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 	if result.ServerTelemetry == nil {
 		result.ServerTelemetry = finalizeKafkaServerTelemetry(result, requestRec, hasRequest, responseRec, hasResponse)
 	}
+	if result.ServerTelemetry != nil && hasResponse {
+		result.ServerTelemetry.SubscriptionID = k.consumerGroup(action)
+	}
 	if err != nil {
 		result.Success = false
 		if result.StatusCode == 0 || result.StatusCode == 200 {
@@ -710,6 +713,7 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 	rec.Partition = meta.Partition
 	rec.Offset = meta.Offset
 	rec.Timestamp = meta.Timestamp
+	rec.AcknowledgementMs = meta.AcknowledgementMs
 	result.BytesSent = int64(len(rec.Value))
 	result.CorrelationID = rec.CorrelationID
 	if err := addRecordExtractions(result, rec); err != nil {
@@ -1069,11 +1073,18 @@ func finalizeKafkaServerTelemetry(result *protocol.Result, request kafkaRecord, 
 		TransferMs: durationToNonNegativeMilliseconds(result.Duration),
 	}
 	if hasRequest {
+		if request.Partition >= 0 && result.Extractions["kafka_transactional"] != "true" {
+			telemetry.PartitionID = strconv.Itoa(int(request.Partition))
+		}
+		telemetry.AcknowledgementMs = request.AcknowledgementMs
 		telemetry.MessagesSent = 1
 		telemetry.RequestPayloadKB = bytesToKilobytes(int64(len(request.Value)))
 		telemetry.RequestSizeClass = protocol.ClassifyPayloadSize(int64(len(request.Value)))
 	}
 	if hasResponse {
+		if response.Partition >= 0 {
+			telemetry.PartitionID = strconv.Itoa(int(response.Partition))
+		}
 		telemetry.MessagesReceived = 1
 		telemetry.ResponsePayloadKB = bytesToKilobytes(int64(len(response.Value)))
 		telemetry.ResponseSizeClass = protocol.ClassifyPayloadSize(int64(len(response.Value)))

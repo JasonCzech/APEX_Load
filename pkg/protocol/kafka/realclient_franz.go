@@ -470,16 +470,23 @@ func (c *franzClient) Produce(ctx context.Context, topic string, rec kafkaRecord
 	}
 	defer release()
 	r := resolvedProducerRecord(topic, rec)
+	ackStarted := time.Now()
 	results := cl.ProduceSync(ctx, r)
 	if err := results.FirstErr(); err != nil {
 		return recordMeta{}, err
 	}
+	var ack *float64
+	if strings.TrimSpace(c.cfg.Acks) != "0" && !strings.EqualFold(strings.TrimSpace(c.cfg.Acks), "none") {
+		elapsed := float64(time.Since(ackStarted)) / float64(time.Millisecond)
+		ack = &elapsed
+	}
 	produced := results[0].Record
 	return recordMeta{
-		Topic:     produced.Topic,
-		Partition: produced.Partition,
-		Offset:    produced.Offset,
-		Timestamp: produced.Timestamp,
+		AcknowledgementMs: ack,
+		Topic:             produced.Topic,
+		Partition:         produced.Partition,
+		Offset:            produced.Offset,
+		Timestamp:         produced.Timestamp,
 	}, nil
 }
 

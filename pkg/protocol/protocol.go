@@ -511,6 +511,9 @@ type ClientMetrics struct {
 }
 
 type ServerTelemetry struct {
+	SubscriptionID string `json:"subscription_id,omitempty"`
+	// Successful client publish acknowledgement or settlement duration; unavailable for local/mock acknowledgements.
+	AcknowledgementMs         *float64              `json:"acknowledgement_ms,omitempty"`
 	WebSocket                 *WebSocketDiagnostics `json:"websocket,omitempty"`
 	GRPC                      *GRPCDiagnostics      `json:"grpc,omitempty"`
 	ServerProcessingMs        float64               `json:"server_processing_ms,omitempty"`
@@ -575,7 +578,7 @@ func (t *ServerTelemetry) HasMeasuredSample() bool {
 		t.EnvelopeOverheadKB != 0 || t.RedirectMs != 0 || t.RedirectCount != 0 ||
 		t.FirstEventMs != 0 || t.EventCount != 0 || t.MessageLatencyMs != 0 ||
 		t.MessagesSent != 0 || t.MessagesReceived != 0 || t.MessagesSentPerSec != 0 ||
-		t.MessagesReceivedPerSec != 0 || t.ConsumerLagMs != 0 || t.ConsumerOffsetLag != 0 ||
+		t.MessagesReceivedPerSec != 0 || t.ConsumerLagObserved || t.ConsumerOffsetLagObserved || t.ConsumerLagMs != 0 || t.ConsumerOffsetLag != 0 ||
 		t.ThrottledRequests != 0 || t.ServerBusyCount != 0 || t.QuotaExceededCount != 0 ||
 		t.EventTooLargeCount != 0 || t.EndToEndLatencyMs != 0 ||
 		t.RequestSizeClass != "" || t.ResponseSizeClass != "" || t.ConnectionReused

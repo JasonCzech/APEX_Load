@@ -4483,6 +4483,18 @@ paths:
                           max_response_ms:
                             type: number
                             format: double
+                          messaging:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingDimension'
+                                  additionalProperties: true
+                              incomplete:
+                                type: boolean
+                            nullable: true
                           min_response_ms:
                             type: number
                             format: double
@@ -4865,6 +4877,18 @@ paths:
                           max_response_ms:
                             type: number
                             format: double
+                          messaging:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingDimension'
+                                  additionalProperties: true
+                              incomplete:
+                                type: boolean
+                            nullable: true
                           min_response_ms:
                             type: number
                             format: double
@@ -5247,6 +5271,18 @@ paths:
                           max_response_ms:
                             type: number
                             format: double
+                          messaging:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingDimension'
+                                  additionalProperties: true
+                              incomplete:
+                                type: boolean
+                            nullable: true
                           min_response_ms:
                             type: number
                             format: double
@@ -5629,6 +5665,18 @@ paths:
                           max_response_ms:
                             type: number
                             format: double
+                          messaging:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingDimension'
+                                  additionalProperties: true
+                              incomplete:
+                                type: boolean
+                            nullable: true
                           min_response_ms:
                             type: number
                             format: double
@@ -6011,6 +6059,18 @@ paths:
                           max_response_ms:
                             type: number
                             format: double
+                          messaging:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingDimension'
+                                  additionalProperties: true
+                              incomplete:
+                                type: boolean
+                            nullable: true
                           min_response_ms:
                             type: number
                             format: double
@@ -6393,6 +6453,18 @@ paths:
                           max_response_ms:
                             type: number
                             format: double
+                          messaging:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingDimension'
+                                  additionalProperties: true
+                              incomplete:
+                                type: boolean
+                            nullable: true
                           min_response_ms:
                             type: number
                             format: double
@@ -6785,6 +6857,18 @@ paths:
                           max_response_ms:
                             type: number
                             format: double
+                          messaging:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingDimension'
+                                  additionalProperties: true
+                              incomplete:
+                                type: boolean
+                            nullable: true
                           min_response_ms:
                             type: number
                             format: double
@@ -7167,6 +7251,18 @@ paths:
                           max_response_ms:
                             type: number
                             format: double
+                          messaging:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingDimension'
+                                  additionalProperties: true
+                              incomplete:
+                                type: boolean
+                            nullable: true
                           min_response_ms:
                             type: number
                             format: double
@@ -7549,6 +7645,18 @@ paths:
                           max_response_ms:
                             type: number
                             format: double
+                          messaging:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingDimension'
+                                  additionalProperties: true
+                              incomplete:
+                                type: boolean
+                            nullable: true
                           min_response_ms:
                             type: number
                             format: double
@@ -8795,6 +8903,10 @@ paths:
                           max_response_ms:
                             type: number
                             format: double
+                          messaging:
+                            type: object
+                            additionalProperties: true
+                            nullable: true
                           min_response_ms:
                             type: number
                             format: double
@@ -62228,6 +62340,12 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            messaging:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             native_evidence:
                               type: object
                               properties:
@@ -63269,6 +63387,22 @@ paths:
                                 - stage_index
                                 - started_at
                                 - target_vusers
+                          messaging:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingDimension'
+                                    additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                              required:
+                                - dimensions
+                              nullable: true
                           native_evidence:
                             type: object
                             properties:
@@ -66640,6 +66774,12 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            messaging:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             native_evidence:
                               type: object
                               properties:
@@ -67681,6 +67821,22 @@ paths:
                                 - stage_index
                                 - started_at
                                 - target_vusers
+                          messaging:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingDimension'
+                                    additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                              required:
+                                - dimensions
+                              nullable: true
                           native_evidence:
                             type: object
                             properties:
@@ -71053,6 +71209,12 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            messaging:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             native_evidence:
                               type: object
                               properties:
@@ -72094,6 +72256,22 @@ paths:
                                 - stage_index
                                 - started_at
                                 - target_vusers
+                          messaging:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingDimension'
+                                    additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                              required:
+                                - dimensions
+                              nullable: true
                           native_evidence:
                             type: object
                             properties:
@@ -75478,6 +75656,12 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            messaging:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             native_evidence:
                               type: object
                               properties:
@@ -76519,6 +76703,22 @@ paths:
                                 - stage_index
                                 - started_at
                                 - target_vusers
+                          messaging:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingDimension'
+                                    additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                              required:
+                                - dimensions
+                              nullable: true
                           native_evidence:
                             type: object
                             properties:
@@ -79903,6 +80103,12 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            messaging:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             native_evidence:
                               type: object
                               properties:
@@ -80944,6 +81150,22 @@ paths:
                                 - stage_index
                                 - started_at
                                 - target_vusers
+                          messaging:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingDimension'
+                                    additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                              required:
+                                - dimensions
+                              nullable: true
                           native_evidence:
                             type: object
                             properties:
@@ -84328,6 +84550,12 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            messaging:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             native_evidence:
                               type: object
                               properties:
@@ -85369,6 +85597,22 @@ paths:
                                 - stage_index
                                 - started_at
                                 - target_vusers
+                          messaging:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingDimension'
+                                    additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                              required:
+                                - dimensions
+                              nullable: true
                           native_evidence:
                             type: object
                             properties:
@@ -88753,6 +88997,12 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            messaging:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             native_evidence:
                               type: object
                               properties:
@@ -89794,6 +90044,22 @@ paths:
                                 - stage_index
                                 - started_at
                                 - target_vusers
+                          messaging:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingDimension'
+                                    additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                              required:
+                                - dimensions
+                              nullable: true
                           native_evidence:
                             type: object
                             properties:
@@ -249822,6 +250088,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -250052,6 +250324,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -250501,6 +250777,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -250731,6 +251013,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -252895,6 +253181,22 @@ paths:
                               - stage_index
                               - started_at
                               - target_vusers
+                        messaging:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingDimension'
+                                  additionalProperties: true
+                              incomplete:
+                                type: boolean
+                            required:
+                              - dimensions
+                            nullable: true
                         native_evidence:
                           type: object
                           properties:
@@ -253847,6 +254149,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -254077,6 +254385,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -254581,6 +254893,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -254811,6 +255129,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -255857,6 +256179,21 @@ paths:
                             - stage_index
                             - started_at
                             - target_vusers
+                      messaging:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            incomplete:
+                              type: boolean
+                          required:
+                            - dimensions
+                          nullable: true
                       native_evidence:
                         type: object
                         properties:
@@ -256031,6 +256368,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -256261,6 +256604,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -256722,6 +257069,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -256952,6 +257305,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -257542,6 +257899,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -257772,6 +258135,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -258425,6 +258792,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -258655,6 +259028,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -260900,6 +261277,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -261130,6 +261513,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -261579,6 +261966,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -261809,6 +262202,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -263973,6 +264370,22 @@ paths:
                               - stage_index
                               - started_at
                               - target_vusers
+                        messaging:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingDimension'
+                                  additionalProperties: true
+                              incomplete:
+                                type: boolean
+                            required:
+                              - dimensions
+                            nullable: true
                         native_evidence:
                           type: object
                           properties:
@@ -264925,6 +265338,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -265155,6 +265574,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -265659,6 +266082,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -265889,6 +266318,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -266935,6 +267368,21 @@ paths:
                             - stage_index
                             - started_at
                             - target_vusers
+                      messaging:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            incomplete:
+                              type: boolean
+                          required:
+                            - dimensions
+                          nullable: true
                       native_evidence:
                         type: object
                         properties:
@@ -267109,6 +267557,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -267339,6 +267793,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -267800,6 +268258,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -268030,6 +268494,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -268620,6 +269088,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -268850,6 +269324,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -269503,6 +269981,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -269733,6 +270217,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -278903,6 +279391,19 @@ paths:
                         max_response_ms:
                           type: number
                           format: double
+                        messaging:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            incomplete:
+                              type: boolean
+                          required:
+                            - dimensions
+                          nullable: true
                         min_response_ms:
                           type: number
                           format: double
@@ -279428,6 +279929,19 @@ paths:
                         max_response_ms:
                           type: number
                           format: double
+                        messaging:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            incomplete:
+                              type: boolean
+                          required:
+                            - dimensions
+                          nullable: true
                         min_response_ms:
                           type: number
                           format: double
@@ -279953,6 +280467,19 @@ paths:
                         max_response_ms:
                           type: number
                           format: double
+                        messaging:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            incomplete:
+                              type: boolean
+                          required:
+                            - dimensions
+                          nullable: true
                         min_response_ms:
                           type: number
                           format: double
@@ -280478,6 +281005,19 @@ paths:
                         max_response_ms:
                           type: number
                           format: double
+                        messaging:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            incomplete:
+                              type: boolean
+                          required:
+                            - dimensions
+                          nullable: true
                         min_response_ms:
                           type: number
                           format: double
@@ -281003,6 +281543,19 @@ paths:
                         max_response_ms:
                           type: number
                           format: double
+                        messaging:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            incomplete:
+                              type: boolean
+                          required:
+                            - dimensions
+                          nullable: true
                         min_response_ms:
                           type: number
                           format: double
@@ -281528,6 +282081,19 @@ paths:
                         max_response_ms:
                           type: number
                           format: double
+                        messaging:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            incomplete:
+                              type: boolean
+                          required:
+                            - dimensions
+                          nullable: true
                         min_response_ms:
                           type: number
                           format: double
@@ -282063,6 +282629,19 @@ paths:
                         max_response_ms:
                           type: number
                           format: double
+                        messaging:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            incomplete:
+                              type: boolean
+                          required:
+                            - dimensions
+                          nullable: true
                         min_response_ms:
                           type: number
                           format: double
@@ -282588,6 +283167,19 @@ paths:
                         max_response_ms:
                           type: number
                           format: double
+                        messaging:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            incomplete:
+                              type: boolean
+                          required:
+                            - dimensions
+                          nullable: true
                         min_response_ms:
                           type: number
                           format: double
@@ -283113,6 +283705,19 @@ paths:
                         max_response_ms:
                           type: number
                           format: double
+                        messaging:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            incomplete:
+                              type: boolean
+                          required:
+                            - dimensions
+                          nullable: true
                         min_response_ms:
                           type: number
                           format: double
@@ -285999,6 +286604,20 @@ paths:
                         max_response_ms:
                           type: number
                           format: double
+                        messaging:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: MessagingDimension'
+                                additionalProperties: true
+                            incomplete:
+                              type: boolean
+                          required:
+                            - dimensions
+                          nullable: true
                         min_response_ms:
                           type: number
                           format: double
@@ -292024,6 +292643,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -292254,6 +292879,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -292703,6 +293332,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -292933,6 +293568,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -295097,6 +295736,22 @@ paths:
                               - stage_index
                               - started_at
                               - target_vusers
+                        messaging:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingDimension'
+                                  additionalProperties: true
+                              incomplete:
+                                type: boolean
+                            required:
+                              - dimensions
+                            nullable: true
                         native_evidence:
                           type: object
                           properties:
@@ -296049,6 +296704,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -296279,6 +296940,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -296783,6 +297448,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -297013,6 +297684,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -298059,6 +298734,21 @@ paths:
                             - stage_index
                             - started_at
                             - target_vusers
+                      messaging:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            incomplete:
+                              type: boolean
+                          required:
+                            - dimensions
+                          nullable: true
                       native_evidence:
                         type: object
                         properties:
@@ -298233,6 +298923,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -298463,6 +299159,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -298924,6 +299624,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -299154,6 +299860,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -299744,6 +300454,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -299974,6 +300690,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -300627,6 +301347,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -300857,6 +301583,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -303046,6 +303776,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -303276,6 +304012,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -303725,6 +304465,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -303955,6 +304701,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -306119,6 +306869,22 @@ paths:
                               - stage_index
                               - started_at
                               - target_vusers
+                        messaging:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingDimension'
+                                  additionalProperties: true
+                              incomplete:
+                                type: boolean
+                            required:
+                              - dimensions
+                            nullable: true
                         native_evidence:
                           type: object
                           properties:
@@ -307071,6 +307837,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -307301,6 +308073,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -307805,6 +308581,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -308035,6 +308817,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -309081,6 +309867,21 @@ paths:
                             - stage_index
                             - started_at
                             - target_vusers
+                      messaging:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            incomplete:
+                              type: boolean
+                          required:
+                            - dimensions
+                          nullable: true
                       native_evidence:
                         type: object
                         properties:
@@ -309255,6 +310056,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -309485,6 +310292,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -309946,6 +310757,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -310176,6 +310993,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -310766,6 +311587,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -310996,6 +311823,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64
@@ -311649,6 +312480,12 @@ paths:
                                 connection_reused_pct:
                                   type: number
                                   format: double
+                                consumer_lag_samples:
+                                  type: integer
+                                  format: int64
+                                consumer_offset_lag_samples:
+                                  type: integer
+                                  format: int64
                                 dead_letter_rate_pct:
                                   type: number
                                   format: double
@@ -311879,6 +312716,10 @@ paths:
                                 messages_sent:
                                   type: integer
                                   format: int64
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 out_of_order_count:
                                   type: integer
                                   format: int64

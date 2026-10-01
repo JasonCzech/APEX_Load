@@ -158,6 +158,7 @@ type archiveResourceSample struct {
 }
 
 type archiveIntervalSummary struct {
+	Messaging           map[string]*protocol.MessagingSummary         `json:"messaging,omitempty"`
 	CompletedIterations int64                                         `json:"completed_iterations,omitempty"`
 	Timestamp           time.Time                                     `json:"timestamp"`
 	TestID              string                                        `json:"test_id"`
@@ -671,6 +672,7 @@ type parquetIntervalSummary struct {
 	P99Ms              float64 `parquet:"name=p99_ms, type=DOUBLE"`
 	DurationDigestJSON string  `parquet:"name=duration_digest_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	GroupsJSON         string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	MessagingJSON      string  `parquet:"name=messaging_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	TransactionsJSON   string  `parquet:"name=transactions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	ByRegionJSON       string  `parquet:"name=by_region_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BrowserJSON        string  `parquet:"name=browser_json, type=BYTE_ARRAY, convertedtype=UTF8"`
@@ -1736,6 +1738,7 @@ func toParquetSummaries(items []archiveIntervalSummary) []parquetIntervalSummary
 			P99Ms:              item.P99Ms,
 			DurationDigestJSON: mustJSON(item.DurationDigest),
 			GroupsJSON:         mustJSON(item.Groups),
+			MessagingJSON:      mustJSON(item.Messaging),
 			TransactionsJSON:   mustJSON(item.Transactions),
 			ByRegionJSON:       mustJSON(item.ByRegion),
 			BrowserJSON:        mustJSON(item.Browser),

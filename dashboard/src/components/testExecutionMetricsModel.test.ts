@@ -8,6 +8,7 @@ import {
   mapArchiveResourceSamples,
   mapArchiveSummarySamples,
   mapExecutionHistory,
+  mapExecutionMetricToHistoryPoint,
   markDataGaps,
   mergeArchiveResourceHistory,
   mergeMetricsHistory,
@@ -16,7 +17,7 @@ import {
 } from './testExecutionMetricsModel'
 import { latencySeriesKeyForTarget, routeLatencyDetailSeriesKeyForTarget } from './latencySeries'
 import { transactionChartSeriesKey } from './transactionChartSeries'
-import type { MetricsHistoryPoint } from '../types'
+import type { MetricsHistoryPoint, LiveMetrics } from '../types'
 
 describe('testExecutionMetricsModel', () => {
   it('carries the last positive response time through intervals without samples', () => {
@@ -737,4 +738,10 @@ describe('recentMetricAverages', () => {
     })
     expect(summarizeExecutionChartData([resourceOnlyPoint])).toBeNull()
   })
+})
+
+it('keeps measured zero JMS age with its own denominator', () => {
+ const point = mapExecutionMetricToHistoryPoint({timestamp:'2026-10-01T00:00:00Z',transactions:{receive:{dependency_type:'jms_queue',server_telemetry:{samples:100,consumer_lag_samples:2,avg_consumer_lag_ms:0,max_consumer_lag_ms:0}}}} as unknown as LiveMetrics)
+ expect(point.jmsConsumerLagMs).toBe(0)
+ expect(point.jmsPeakConsumerLagMs).toBe(0)
 })

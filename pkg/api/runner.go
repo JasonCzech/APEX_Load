@@ -816,8 +816,9 @@ type RunLogicGoalSnapshot struct {
 }
 
 type LiveMetrics struct {
-	NativeEvidence      *storage.NativeIntervalEvidence `json:"native_evidence,omitempty"`
-	StatisticalFindings []StatisticalFinding            `json:"statistical_findings,omitempty"`
+	Messaging           map[string]*protocol.MessagingSummary `json:"messaging,omitempty"`
+	NativeEvidence      *storage.NativeIntervalEvidence       `json:"native_evidence,omitempty"`
+	StatisticalFindings []StatisticalFinding                  `json:"statistical_findings,omitempty"`
 	// ObservationState is stale for expired active observations and historical for
 	// terminal projections. Values and sample timestamps remain unchanged.
 	// ObservationValidUntil bounds freshness, including the oldest distributed
@@ -947,6 +948,9 @@ type BrowserDeviceLiveMetrics struct {
 }
 
 type ServerTelemetrySummary struct {
+	Messaging                 *protocol.MessagingSummary   `json:"messaging,omitempty"`
+	ConsumerLagSamples        int64                        `json:"consumer_lag_samples,omitempty"`
+	ConsumerOffsetLagSamples  int64                        `json:"consumer_offset_lag_samples,omitempty"`
 	DiagnosticFindings        []protocol.DiagnosticFinding `json:"diagnostic_findings,omitempty"`
 	FirstEventSamples         int64                        `json:"first_event_samples,omitempty"`
 	WebSocket                 *protocol.WebSocketSummary   `json:"websocket,omitempty"`
@@ -1159,28 +1163,29 @@ type goalControllerUpdate struct {
 }
 
 type TxMetrics struct {
-	DurationDigest   *engine.TDigestSnapshot `json:"-"`
-	Name             string                  `json:"name"`
-	TPS              float64                 `json:"tps"`
-	DependencyType   string                  `json:"dependency_type,omitempty"`
-	DependencyTarget string                  `json:"dependency_target,omitempty"`
-	LastErrorMessage string                  `json:"last_error_message,omitempty"`
-	LastStatusCode   int                     `json:"last_status_code,omitempty"`
-	LastErrorAt      time.Time               `json:"last_error_at,omitempty"`
-	ServerTelemetry  *ServerTelemetrySummary `json:"server_telemetry,omitempty"`
-	AvgDNSMs         float64                 `json:"avg_dns_ms,omitempty"`
-	AvgConnectMs     float64                 `json:"avg_connect_ms,omitempty"`
-	AvgTLSMs         float64                 `json:"avg_tls_ms,omitempty"`
-	AvgTTFBMs        float64                 `json:"avg_ttfb_ms,omitempty"`
-	CorrelationIDs   []string                `json:"correlation_ids,omitempty"`
-	CorrelationCount int64                   `json:"correlation_count,omitempty"`
-	Count            int64                   `json:"count"`
-	Errors           int64                   `json:"errors"`
-	AvgMs            float64                 `json:"avg_ms"`
-	P50Ms            float64                 `json:"p50_ms"`
-	P90Ms            float64                 `json:"p90_ms"`
-	P95Ms            float64                 `json:"p95_ms,omitempty"`
-	P99Ms            float64                 `json:"p99_ms"`
+	messagingAggregate bool
+	DurationDigest     *engine.TDigestSnapshot `json:"-"`
+	Name               string                  `json:"name"`
+	TPS                float64                 `json:"tps"`
+	DependencyType     string                  `json:"dependency_type,omitempty"`
+	DependencyTarget   string                  `json:"dependency_target,omitempty"`
+	LastErrorMessage   string                  `json:"last_error_message,omitempty"`
+	LastStatusCode     int                     `json:"last_status_code,omitempty"`
+	LastErrorAt        time.Time               `json:"last_error_at,omitempty"`
+	ServerTelemetry    *ServerTelemetrySummary `json:"server_telemetry,omitempty"`
+	AvgDNSMs           float64                 `json:"avg_dns_ms,omitempty"`
+	AvgConnectMs       float64                 `json:"avg_connect_ms,omitempty"`
+	AvgTLSMs           float64                 `json:"avg_tls_ms,omitempty"`
+	AvgTTFBMs          float64                 `json:"avg_ttfb_ms,omitempty"`
+	CorrelationIDs     []string                `json:"correlation_ids,omitempty"`
+	CorrelationCount   int64                   `json:"correlation_count,omitempty"`
+	Count              int64                   `json:"count"`
+	Errors             int64                   `json:"errors"`
+	AvgMs              float64                 `json:"avg_ms"`
+	P50Ms              float64                 `json:"p50_ms"`
+	P90Ms              float64                 `json:"p90_ms"`
+	P95Ms              float64                 `json:"p95_ms,omitempty"`
+	P99Ms              float64                 `json:"p99_ms"`
 }
 
 type LiveErrorPattern struct {

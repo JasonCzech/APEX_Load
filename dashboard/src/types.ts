@@ -1366,6 +1366,8 @@ export interface GRPCSummary {
 }
 
 export interface ServerTelemetry {
+  subscription_id?: string
+  acknowledgement_ms?: number
   websocket?: WebSocketDiagnostics
   grpc?: GRPCDiagnostics
   server_processing_ms?: number
@@ -1394,6 +1396,9 @@ export interface ServerTelemetry {
 }
 
 export interface ServerTelemetrySummary {
+  messaging?: MessagingSummary
+  consumer_lag_samples?: number
+  consumer_offset_lag_samples?: number
   websocket?: WebSocketSummary
   diagnostic_findings?: ProtocolDiagnosticFinding[]
   grpc?: GRPCSummary
@@ -1457,6 +1462,7 @@ export interface ArchivePage<T> {
 }
 
 export interface RunArchiveActionStats {
+  messaging?: MessagingSummary
   transactions: number
   errors: number
   error_pct: number
@@ -2060,6 +2066,7 @@ export type TestStatus =
   | 'PAUSED'
 
 export interface LiveMetrics {
+  messaging?: Record<string, MessagingSummary>
   observation_state?: 'historical' | 'stale'
   observation_valid_until?: string
   completed_iterations?: number
@@ -3033,3 +3040,7 @@ export interface ImportedDashboardImportReview {
 // ---------------------------------------------------------------------------
 
 export type { DiagnosticDistribution } from './types/protocolDiagnostics'
+
+export interface MessagingMoments { count: number; sum: number; max: number }
+export interface MessagingDimension { source: string; partition?: string; subscription?: string; operations: number; sent: number; received: number; throttled: number; redelivered: number; age_ms: MessagingMoments; offset_lag: MessagingMoments; ack_ms: MessagingMoments }
+export interface MessagingSummary { dimensions: MessagingDimension[]; incomplete?: boolean }

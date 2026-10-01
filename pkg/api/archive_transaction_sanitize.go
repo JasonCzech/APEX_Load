@@ -156,6 +156,11 @@ func sanitizeArchivedTransaction(item *TransactionEvent) {
 		} else {
 			cloned.GRPC.Method = scrub.ValueLabel(cloned.GRPC.Method, policy)
 		}
+		cloned.SubscriptionID = scrub.ValueLabel(cloned.SubscriptionID, policy)
+		if cloned.AcknowledgementMs != nil {
+			v := *cloned.AcknowledgementMs
+			cloned.AcknowledgementMs = &v
+		}
 		cloned.PartitionID = scrub.ValueLabel(cloned.PartitionID, policy)
 		cloned.SOAPFaultCode = scrub.ValueLabel(cloned.SOAPFaultCode, policy)
 		cloned.SOAPFaultCategory = scrub.ValueLabel(cloned.SOAPFaultCategory, policy)

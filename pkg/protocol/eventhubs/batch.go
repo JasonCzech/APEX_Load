@@ -77,6 +77,7 @@ func (e *EventHubs) produceBatch(ctx context.Context, action *protocol.Action, r
 	sent.Offset = meta.Offset
 	sent.SequenceNum = meta.SequenceNum
 	sent.EnqueuedAt = meta.EnqueuedAt
+	sent.AcknowledgementMs = meta.AcknowledgementMs
 	if meta.PartitionID != "" {
 		sent.PartitionID = meta.PartitionID
 	}

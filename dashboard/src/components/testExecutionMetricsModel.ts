@@ -82,9 +82,9 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     let lagPeak = 0
 
     jmsTransactions.forEach((tx) => {
-      const samples = tx.server_telemetry?.samples ?? 0
+      const samples = tx.server_telemetry?.consumer_lag_samples ?? ((tx.server_telemetry?.avg_consumer_lag_ms ?? 0) > 0 ? tx.server_telemetry?.samples ?? 0 : 0)
       const avgLag = tx.server_telemetry?.avg_consumer_lag_ms ?? 0
-      if (samples > 0 && avgLag > 0) {
+      if (samples > 0 && Number.isFinite(avgLag)) {
         lagSamples += samples
         lagSum += avgLag * samples
       }
@@ -97,7 +97,7 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     if (lagSamples > 0) {
       point.jmsConsumerLagMs = lagSum / lagSamples
     }
-    if (lagPeak > 0) {
+    if (lagSamples > 0) {
       point.jmsPeakConsumerLagMs = lagPeak
     }
   }

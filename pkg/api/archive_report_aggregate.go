@@ -442,6 +442,7 @@ func finalizeArchiveSOAPPayloadTimelineBucket(bucket RunArchiveSOAPPayloadTimeli
 
 func mergeRunArchiveActionStats(stats RunArchiveActionStats, quantiles *archiveQuantileAccumulator, tx TransactionEvent) RunArchiveActionStats {
 	if tx.ServerTelemetry != nil {
+		protocol.MergeMessagingTelemetry(&stats.Messaging, tx.ServerTelemetry, tx.DependencyTarget, tx.DependencyType)
 		protocol.MergeGRPCDiagnostic(&stats.GRPC, tx.ServerTelemetry.GRPC)
 		protocol.MergeWebSocketDiagnostic(&stats.WebSocket, tx.ServerTelemetry.WebSocket)
 	}

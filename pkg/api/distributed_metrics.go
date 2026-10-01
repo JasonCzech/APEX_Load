@@ -805,6 +805,14 @@ func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batc
 	if batch.FleetMetrics == nil || batch.FleetMetrics.Count == 0 {
 		return false
 	}
+	live.Messaging = map[string]*protocol.MessagingSummary{}
+	for _, a := range batch.ActionMetrics {
+		if a.Messaging != nil {
+			live.Messaging[a.Name] = a.Messaging.Clone()
+		}
+	}
+
+	live.Messaging = protocol.CloneMessagingSummaries(live.Messaging)
 	fleet := batch.FleetMetrics
 	live.TotalErrors = boundedMetricErrors(fleet.Count, fleet.Errors)
 	live.TotalTx = successfulMetricCount(fleet.Count, fleet.Errors)
@@ -987,22 +995,24 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 		return nil
 	}
 	return &TxMetrics{
-		DurationDigest:   engine.CloneTDigestSnapshot(aggregate.DurationDigest),
-		Name:             aggregate.Name,
-		TPS:              aggregate.TPS,
-		DependencyType:   aggregate.DependencyType,
-		DependencyTarget: aggregate.DependencyTarget,
-		AvgDNSMs:         aggregate.AvgDNSMs,
-		AvgConnectMs:     aggregate.AvgConnectMs,
-		AvgTLSMs:         aggregate.AvgTLSMs,
-		AvgTTFBMs:        aggregate.AvgTTFBMs,
-		Count:            aggregate.Count,
-		Errors:           aggregate.Errors,
-		AvgMs:            aggregate.AvgMs,
-		P50Ms:            aggregate.P50Ms,
-		P90Ms:            aggregate.P90Ms,
-		P95Ms:            aggregate.P95Ms,
-		P99Ms:            aggregate.P99Ms,
+		DurationDigest:     engine.CloneTDigestSnapshot(aggregate.DurationDigest),
+		messagingAggregate: aggregate.MessagingVersion == 1 || aggregate.Messaging != nil,
+		ServerTelemetry:    apiMessagingSummary(aggregate.Messaging),
+		Name:               aggregate.Name,
+		TPS:                aggregate.TPS,
+		DependencyType:     aggregate.DependencyType,
+		DependencyTarget:   aggregate.DependencyTarget,
+		AvgDNSMs:           aggregate.AvgDNSMs,
+		AvgConnectMs:       aggregate.AvgConnectMs,
+		AvgTLSMs:           aggregate.AvgTLSMs,
+		AvgTTFBMs:          aggregate.AvgTTFBMs,
+		Count:              aggregate.Count,
+		Errors:             aggregate.Errors,
+		AvgMs:              aggregate.AvgMs,
+		P50Ms:              aggregate.P50Ms,
+		P90Ms:              aggregate.P90Ms,
+		P95Ms:              aggregate.P95Ms,
+		P99Ms:              aggregate.P99Ms,
 	}
 }
 
@@ -1110,6 +1120,9 @@ func cloneEngineServerTelemetrySummary(summary *engine.ServerTelemetrySummary) *
 		return nil
 	}
 	return &ServerTelemetrySummary{
+		Messaging:                 summary.Messaging.Clone(),
+		ConsumerLagSamples:        summary.ConsumerLagSamples,
+		ConsumerOffsetLagSamples:  summary.ConsumerOffsetLagSamples,
 		DiagnosticFindings:        protocol.ProtocolDiagnosticFindings(summary.GRPC, summary.WebSocket),
 		FirstEventSamples:         summary.FirstEventSamples,
 		GRPC:                      summary.GRPC.Clone(),
@@ -1166,6 +1179,12 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 	if metrics.ServerTelemetry == nil {
 		metrics.ServerTelemetry = &ServerTelemetrySummary{}
 	}
+	if !metrics.messagingAggregate {
+		protocol.MergeMessagingTelemetry(&metrics.ServerTelemetry.Messaging, telemetry.MessagingTelemetry(), metrics.DependencyTarget, metrics.DependencyType)
+		if metrics.ServerTelemetry.Messaging != nil {
+			metrics.ServerTelemetry.Messaging.Incomplete = true
+		}
+	}
 	protocol.MergeGRPCDiagnostic(&metrics.ServerTelemetry.GRPC, telemetry.GRPC)
 	protocol.MergeWebSocketDiagnostic(&metrics.ServerTelemetry.WebSocket, telemetry.WebSocket)
 	// Reliability counters are run totals and accumulate for every record,
@@ -1210,11 +1229,17 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 	metrics.ServerTelemetry.MessagesReceived += int64(telemetry.MessagesReceived)
 	metrics.ServerTelemetry.AvgMessagesSentPerSec += telemetry.MessagesSentPerSec
 	metrics.ServerTelemetry.AvgMessagesReceivedPerSec += telemetry.MessagesReceivedPerSec
-	metrics.ServerTelemetry.AvgConsumerLagMs += telemetry.ConsumerLagMs
+	if telemetry.ConsumerLagObserved || telemetry.ConsumerLagMs > 0 {
+		metrics.ServerTelemetry.ConsumerLagSamples++
+		metrics.ServerTelemetry.AvgConsumerLagMs += telemetry.ConsumerLagMs
+	}
 	if telemetry.ConsumerLagMs > metrics.ServerTelemetry.MaxConsumerLagMs {
 		metrics.ServerTelemetry.MaxConsumerLagMs = telemetry.ConsumerLagMs
 	}
-	metrics.ServerTelemetry.AvgConsumerOffsetLag += float64(telemetry.ConsumerOffsetLag)
+	if telemetry.ConsumerOffsetLagObserved || telemetry.ConsumerOffsetLag > 0 {
+		metrics.ServerTelemetry.ConsumerOffsetLagSamples++
+		metrics.ServerTelemetry.AvgConsumerOffsetLag += float64(telemetry.ConsumerOffsetLag)
+	}
 	if telemetry.ConsumerOffsetLag > metrics.ServerTelemetry.MaxConsumerOffsetLag {
 		metrics.ServerTelemetry.MaxConsumerOffsetLag = telemetry.ConsumerOffsetLag
 	}
@@ -1248,7 +1273,7 @@ func generatorTelemetryHasMeasuredSample(t *generatorrpc.ServerTelemetry) bool {
 	return t.ServerProcessingMs != 0 || t.TransferMs != 0 || t.RequestPayloadKB != 0 ||
 		t.ResponsePayloadKB != 0 || t.FirstEventMs != 0 || t.EventCount != 0 ||
 		t.MessageLatencyMs != 0 || t.MessagesSent != 0 || t.MessagesReceived != 0 ||
-		t.MessagesSentPerSec != 0 || t.MessagesReceivedPerSec != 0 || t.ConsumerLagMs != 0 ||
+		t.MessagesSentPerSec != 0 || t.MessagesReceivedPerSec != 0 || t.ConsumerLagObserved || t.ConsumerOffsetLagObserved || t.ConsumerLagMs != 0 ||
 		t.ConsumerOffsetLag != 0 || t.ThrottledRequests != 0 || t.ServerBusyCount != 0 ||
 		t.QuotaExceededCount != 0 || t.EventTooLargeCount != 0 || t.EndToEndLatencyMs != 0 ||
 		t.RequestSizeClass != "" || t.ResponseSizeClass != "" || t.ConnectionReused
@@ -1269,8 +1294,12 @@ func finalizeAPIServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	summary.AvgMessageLatencyMs /= divisor
 	summary.AvgMessagesSentPerSec /= divisor
 	summary.AvgMessagesReceivedPerSec /= divisor
-	summary.AvgConsumerLagMs /= divisor
-	summary.AvgConsumerOffsetLag /= divisor
+	if summary.ConsumerLagSamples > 0 {
+		summary.AvgConsumerLagMs /= float64(summary.ConsumerLagSamples)
+	}
+	if summary.ConsumerOffsetLagSamples > 0 {
+		summary.AvgConsumerOffsetLag /= float64(summary.ConsumerOffsetLagSamples)
+	}
 	summary.AvgEndToEndLatencyMs /= divisor
 	// Skew is recomputed POST-merge from the pooled per-partition map, not averaged
 	// from per-generator skews (the min/max may come from different generators).
@@ -1428,6 +1457,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	}
 	if len(values) == 1 && values[0].Count > 0 {
 		copy := values[0]
+		copy.Messaging = copy.Messaging.Clone()
 		return &copy
 	}
 	out := generatorrpc.MetricAggregate{}
@@ -1446,6 +1476,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		count := float64(value.Count)
 		out.Count += value.Count
 		out.Errors += value.Errors
+		protocol.MergeMessagingSummary(&out.Messaging, value.Messaging)
 		avgMsSum += value.AvgMs * count
 		dnsSum += value.AvgDNSMs * count
 		connectSum += value.AvgConnectMs * count
@@ -1465,6 +1496,18 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	}
 	if out.Count == 0 {
 		return nil
+	}
+	out.MessagingVersion = 1
+	for _, v := range values {
+		if v.Count > 0 && v.MessagingVersion != 1 {
+			out.MessagingVersion = 0
+			if out.Messaging != nil {
+				out.Messaging.Incomplete = true
+			}
+		}
+	}
+	if out.Messaging != nil {
+		out.MessagingVersion = 1
 	}
 	divisor := float64(out.Count)
 	out.AvgMs = avgMsSum / divisor

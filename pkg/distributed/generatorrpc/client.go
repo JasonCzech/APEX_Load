@@ -219,6 +219,8 @@ type GroupMetric struct {
 }
 
 type MetricAggregate struct {
+	Messaging        *protocol.MessagingSummary
+	MessagingVersion uint32
 	Name             string
 	DependencyType   string
 	DependencyTarget string
@@ -262,6 +264,8 @@ type BrowserDeviceMetrics struct {
 }
 
 type ServerTelemetry struct {
+	SubscriptionID            string
+	AcknowledgementMs         *float64
 	ConsumerLagObserved       bool
 	ConsumerOffsetLagObserved bool
 	GRPC                      *protocol.GRPCDiagnostics
@@ -1408,6 +1412,8 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		var serverTelemetry *ServerTelemetry
 		if tx.GetServerTelemetry() != nil {
 			serverTelemetry = &ServerTelemetry{
+				SubscriptionID:            tx.GetServerTelemetry().GetSubscriptionId(),
+				AcknowledgementMs:         cloneMessagingAck(tx.GetServerTelemetry().AcknowledgementMs),
 				GRPC:                      grpcDiagnosticsFromProto(tx.GetServerTelemetry().GetGrpc()),
 				WebSocket:                 websocketDiagnosticsFromProto(tx.GetServerTelemetry().GetWebsocket()),
 				ServerProcessingMs:        tx.GetServerTelemetry().GetServerProcessingMs(),
@@ -1726,6 +1732,8 @@ func metricAggregateFromProto(value *pb.MetricAggregate) *MetricAggregate {
 		BytesReceived:    value.GetBytesReceived(),
 		TPS:              value.GetTps(),
 		DurationDigest:   tdigestSnapshotFromProto(value.GetDurationDigest()),
+		Messaging:        messagingSummaryFromJSON(value.GetMessagingSummaryJson(), value.GetMessagingVersion()),
+		MessagingVersion: value.GetMessagingVersion(),
 	}
 }
 
@@ -1734,24 +1742,26 @@ func metricAggregateToProto(value *MetricAggregate) *pb.MetricAggregate {
 		return nil
 	}
 	return &pb.MetricAggregate{
-		Name:             value.Name,
-		DependencyType:   value.DependencyType,
-		DependencyTarget: value.DependencyTarget,
-		Count:            value.Count,
-		Errors:           value.Errors,
-		AvgMs:            value.AvgMs,
-		P50Ms:            value.P50Ms,
-		P90Ms:            value.P90Ms,
-		P95Ms:            value.P95Ms,
-		P99Ms:            value.P99Ms,
-		AvgDnsMs:         value.AvgDNSMs,
-		AvgConnectMs:     value.AvgConnectMs,
-		AvgTlsMs:         value.AvgTLSMs,
-		AvgTtfbMs:        value.AvgTTFBMs,
-		BytesSent:        value.BytesSent,
-		BytesReceived:    value.BytesReceived,
-		Tps:              value.TPS,
-		DurationDigest:   tdigestSnapshotToProto(value.DurationDigest),
+		Name:                 value.Name,
+		DependencyType:       value.DependencyType,
+		DependencyTarget:     value.DependencyTarget,
+		Count:                value.Count,
+		Errors:               value.Errors,
+		AvgMs:                value.AvgMs,
+		P50Ms:                value.P50Ms,
+		P90Ms:                value.P90Ms,
+		P95Ms:                value.P95Ms,
+		P99Ms:                value.P99Ms,
+		AvgDnsMs:             value.AvgDNSMs,
+		AvgConnectMs:         value.AvgConnectMs,
+		AvgTlsMs:             value.AvgTLSMs,
+		AvgTtfbMs:            value.AvgTTFBMs,
+		BytesSent:            value.BytesSent,
+		BytesReceived:        value.BytesReceived,
+		Tps:                  value.TPS,
+		DurationDigest:       tdigestSnapshotToProto(value.DurationDigest),
+		MessagingSummaryJson: messagingSummaryJSON(value.Messaging),
+		MessagingVersion:     value.MessagingVersion,
 	}
 }
 

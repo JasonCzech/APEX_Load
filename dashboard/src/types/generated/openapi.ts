@@ -1607,6 +1607,10 @@ export interface operations {
                 "unavailable_status"?: number;
               }) | null;
               "max_response_ms"?: number;
+              "messaging"?: ({
+                "dimensions"?: Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms"?: number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -1740,6 +1744,10 @@ export interface operations {
                 "unavailable_status"?: number;
               }) | null;
               "max_response_ms"?: number;
+              "messaging"?: ({
+                "dimensions"?: Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms"?: number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -1873,6 +1881,10 @@ export interface operations {
                 "unavailable_status"?: number;
               }) | null;
               "max_response_ms"?: number;
+              "messaging"?: ({
+                "dimensions"?: Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms"?: number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -2006,6 +2018,10 @@ export interface operations {
                 "unavailable_status"?: number;
               }) | null;
               "max_response_ms"?: number;
+              "messaging"?: ({
+                "dimensions"?: Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms"?: number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -2139,6 +2155,10 @@ export interface operations {
                 "unavailable_status"?: number;
               }) | null;
               "max_response_ms"?: number;
+              "messaging"?: ({
+                "dimensions"?: Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms"?: number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -2272,6 +2292,10 @@ export interface operations {
                 "unavailable_status"?: number;
               }) | null;
               "max_response_ms"?: number;
+              "messaging"?: ({
+                "dimensions"?: Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms"?: number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -2407,6 +2431,10 @@ export interface operations {
                 "unavailable_status"?: number;
               }) | null;
               "max_response_ms"?: number;
+              "messaging"?: ({
+                "dimensions"?: Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms"?: number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -2540,6 +2568,10 @@ export interface operations {
                 "unavailable_status"?: number;
               }) | null;
               "max_response_ms"?: number;
+              "messaging"?: ({
+                "dimensions"?: Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms"?: number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -2673,6 +2705,10 @@ export interface operations {
                 "unavailable_status"?: number;
               }) | null;
               "max_response_ms"?: number;
+              "messaging"?: ({
+                "dimensions"?: Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms"?: number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -3131,6 +3167,7 @@ export interface operations {
                 "unavailable_status"?: number;
               }) | null;
               "max_response_ms"?: number;
+              "messaging"?: (Record<string, unknown>) | null;
               "min_response_ms"?: number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -25443,6 +25480,7 @@ export interface operations {
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
+                "messaging"?: Record<string, (Record<string, unknown>) | null>;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -25759,6 +25797,10 @@ export interface operations {
                   "started_at": string;
                   "target_vusers": number;
                 }>;
+                "messaging"?: Record<string, ({
+                  "dimensions": Array<Record<string, unknown>>;
+                  "incomplete"?: boolean;
+                }) | null>;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -31066,6 +31108,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -31130,6 +31174,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -31256,6 +31301,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -31320,6 +31367,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -32008,6 +32056,10 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "messaging"?: Record<string, ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null>;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -32303,6 +32355,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -32367,6 +32421,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -32509,6 +32564,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -32573,6 +32630,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -32897,6 +32955,10 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "messaging"?: Record<string, ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null>;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -32950,6 +33012,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -33014,6 +33078,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -33143,6 +33208,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -33207,6 +33274,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -33376,6 +33444,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -33440,6 +33510,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -33629,6 +33700,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -33693,6 +33766,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -47972,6 +48046,7 @@ export interface operations {
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
+                "messaging"?: Record<string, (Record<string, unknown>) | null>;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -48288,6 +48363,10 @@ export interface operations {
                   "started_at": string;
                   "target_vusers": number;
                 }>;
+                "messaging"?: Record<string, ({
+                  "dimensions": Array<Record<string, unknown>>;
+                  "incomplete"?: boolean;
+                }) | null>;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -51216,6 +51295,10 @@ export interface operations {
                 "unavailable_status": number;
               }) | null;
               "max_response_ms": number;
+              "messaging"?: ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms": number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -51357,6 +51440,10 @@ export interface operations {
                 "unavailable_status": number;
               }) | null;
               "max_response_ms": number;
+              "messaging"?: ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms": number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -51498,6 +51585,10 @@ export interface operations {
                 "unavailable_status": number;
               }) | null;
               "max_response_ms": number;
+              "messaging"?: ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms": number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -51639,6 +51730,10 @@ export interface operations {
                 "unavailable_status": number;
               }) | null;
               "max_response_ms": number;
+              "messaging"?: ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms": number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -51780,6 +51875,10 @@ export interface operations {
                 "unavailable_status": number;
               }) | null;
               "max_response_ms": number;
+              "messaging"?: ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms": number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -51921,6 +52020,10 @@ export interface operations {
                 "unavailable_status": number;
               }) | null;
               "max_response_ms": number;
+              "messaging"?: ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms": number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -52064,6 +52167,10 @@ export interface operations {
                 "unavailable_status": number;
               }) | null;
               "max_response_ms": number;
+              "messaging"?: ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms": number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -52205,6 +52312,10 @@ export interface operations {
                 "unavailable_status": number;
               }) | null;
               "max_response_ms": number;
+              "messaging"?: ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms": number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -52346,6 +52457,10 @@ export interface operations {
                 "unavailable_status": number;
               }) | null;
               "max_response_ms": number;
+              "messaging"?: ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms": number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -53239,6 +53354,10 @@ export interface operations {
                 "unavailable_status": number;
               }) | null;
               "max_response_ms": number;
+              "messaging"?: ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null;
               "min_response_ms": number;
               "p50_ms"?: number;
               "p90_ms"?: number;
@@ -57391,6 +57510,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -57455,6 +57576,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -57581,6 +57703,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -57645,6 +57769,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -58333,6 +58458,10 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "messaging"?: Record<string, ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null>;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -58628,6 +58757,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -58692,6 +58823,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -58834,6 +58966,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -58898,6 +59032,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -59222,6 +59357,10 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "messaging"?: Record<string, ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null>;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -59275,6 +59414,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -59339,6 +59480,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -59468,6 +59610,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -59532,6 +59676,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -59701,6 +59846,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -59765,6 +59912,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -59954,6 +60102,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -60018,6 +60168,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -74508,6 +74659,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -74572,6 +74725,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -74698,6 +74852,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -74762,6 +74918,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -75450,6 +75607,10 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "messaging"?: Record<string, ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null>;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -75745,6 +75906,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -75809,6 +75972,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -75951,6 +76115,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -76015,6 +76181,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -76339,6 +76506,10 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "messaging"?: Record<string, ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null>;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -76392,6 +76563,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -76456,6 +76629,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -76585,6 +76759,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -76649,6 +76825,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -76818,6 +76995,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -76882,6 +77061,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -77071,6 +77251,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -77135,6 +77317,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -86943,6 +87126,7 @@ export interface operations {
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
+                "messaging"?: Record<string, (Record<string, unknown>) | null>;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -87259,6 +87443,10 @@ export interface operations {
                   "started_at": string;
                   "target_vusers": number;
                 }>;
+                "messaging"?: Record<string, ({
+                  "dimensions": Array<Record<string, unknown>>;
+                  "incomplete"?: boolean;
+                }) | null>;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -88388,6 +88576,7 @@ export interface operations {
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
+                "messaging"?: Record<string, (Record<string, unknown>) | null>;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -88704,6 +88893,10 @@ export interface operations {
                   "started_at": string;
                   "target_vusers": number;
                 }>;
+                "messaging"?: Record<string, ({
+                  "dimensions": Array<Record<string, unknown>>;
+                  "incomplete"?: boolean;
+                }) | null>;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -89833,6 +90026,7 @@ export interface operations {
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
+                "messaging"?: Record<string, (Record<string, unknown>) | null>;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -90149,6 +90343,10 @@ export interface operations {
                   "started_at": string;
                   "target_vusers": number;
                 }>;
+                "messaging"?: Record<string, ({
+                  "dimensions": Array<Record<string, unknown>>;
+                  "incomplete"?: boolean;
+                }) | null>;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -91278,6 +91476,7 @@ export interface operations {
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
+                "messaging"?: Record<string, (Record<string, unknown>) | null>;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -91594,6 +91793,10 @@ export interface operations {
                   "started_at": string;
                   "target_vusers": number;
                 }>;
+                "messaging"?: Record<string, ({
+                  "dimensions": Array<Record<string, unknown>>;
+                  "incomplete"?: boolean;
+                }) | null>;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -92723,6 +92926,7 @@ export interface operations {
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
+                "messaging"?: Record<string, (Record<string, unknown>) | null>;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -93039,6 +93243,10 @@ export interface operations {
                   "started_at": string;
                   "target_vusers": number;
                 }>;
+                "messaging"?: Record<string, ({
+                  "dimensions": Array<Record<string, unknown>>;
+                  "incomplete"?: boolean;
+                }) | null>;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -112687,6 +112895,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -112751,6 +112961,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -112877,6 +113088,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -112941,6 +113154,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -113629,6 +113843,10 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "messaging"?: Record<string, ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null>;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -113924,6 +114142,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -113988,6 +114208,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -114130,6 +114351,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -114194,6 +114417,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -114518,6 +114742,10 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "messaging"?: Record<string, ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null>;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -114571,6 +114799,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -114635,6 +114865,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -114764,6 +114995,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -114828,6 +115061,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -114997,6 +115231,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -115061,6 +115297,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;
@@ -115250,6 +115487,8 @@ export interface operations {
                   "commit_count"?: number;
                   "connection_reused_count"?: number;
                   "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
                   "dead_letter_rate_pct"?: number;
                   "dead_lettered_count"?: number;
                   "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -115314,6 +115553,7 @@ export interface operations {
                   "max_message_latency_ms"?: number;
                   "messages_received"?: number;
                   "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "out_of_order_count"?: number;
                   "partition_events"?: Record<string, number>;
                   "partition_skew_pct"?: number;

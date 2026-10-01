@@ -927,6 +927,7 @@ func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConf
 		result.ServerTelemetry.SOAPFaultCode = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPFaultCode, config)
 		result.ServerTelemetry.SOAPFaultCategory = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPFaultCategory, config)
 		result.ServerTelemetry.SOAPNamespaceConflict = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPNamespaceConflict, config)
+		result.ServerTelemetry.SubscriptionID = scrubSensitiveTextWithConfig(result.ServerTelemetry.SubscriptionID, config)
 		result.ServerTelemetry.PartitionID = scrubSensitiveTextWithConfig(result.ServerTelemetry.PartitionID, config)
 	}
 }

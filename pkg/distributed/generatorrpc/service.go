@@ -1524,6 +1524,9 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 		}
 		available = append(available, normalized)
 		features = append(features, normalized)
+		if strings.HasPrefix(normalized, "jms") || normalized == "kafka" || normalized == "eventhubs" {
+			features = append(features, FeatureMessagingRollupV1)
+		}
 		if normalized == "websocket" {
 			features = append(features, FeatureWebSocketDiagnosticsV1)
 		}
@@ -1873,6 +1876,7 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 		avgResponse = totalDuration / float64(totalAttempts)
 	}
 	_ = writer.RecordIntervalSummary(archiveIntervalSummary{
+		Messaging:           archiveMessagingFromBatch(batch),
 		CompletedIterations: batch.GetStats().GetCompletedIterations(),
 		Timestamp:           time.UnixMilli(batch.TimestampUnixMs),
 		ActiveVUsers:        int64(batch.GetStats().GetActiveVusers()),
@@ -2239,6 +2243,8 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		var protoServerTelemetry *pb.ServerTelemetry
 		if tx.ServerTelemetry != nil {
 			protoServerTelemetry = &pb.ServerTelemetry{
+				SubscriptionId:            tx.ServerTelemetry.SubscriptionID,
+				AcknowledgementMs:         cloneMessagingAck(tx.ServerTelemetry.AcknowledgementMs),
 				Grpc:                      grpcDiagnosticsToProto(tx.ServerTelemetry.GRPC),
 				Websocket:                 websocketDiagnosticsToProto(tx.ServerTelemetry.WebSocket),
 				ServerProcessingMs:        tx.ServerTelemetry.ServerProcessingMs,
@@ -2983,6 +2989,8 @@ func engineActionMetricsToAggregates(values map[string]*engine.ActionMetrics) []
 		}
 		out = append(out, MetricAggregate{
 			DurationDigest:   engine.CloneTDigestSnapshot(metrics.DurationDigest),
+			Messaging:        engineMessagingSummary(metrics.ServerTelemetry),
+			MessagingVersion: 1,
 			Name:             firstNonEmptyString(metrics.Name, name),
 			DependencyType:   metrics.DependencyType,
 			DependencyTarget: metrics.DependencyTarget,
@@ -3211,6 +3219,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 		count := float64(value.Count)
 		out.Count += value.Count
 		out.Errors += value.Errors
+		protocol.MergeMessagingSummary(&out.Messaging, value.Messaging)
 		weightedAvgMs += value.AvgMs * count
 		weightedDNSMs += value.AvgDNSMs * count
 		weightedConnectMs += value.AvgConnectMs * count
@@ -3228,6 +3237,18 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	}
 	if out.Count == 0 {
 		return nil
+	}
+	out.MessagingVersion = 1
+	for _, v := range values {
+		if v.Count > 0 && v.MessagingVersion != 1 {
+			out.MessagingVersion = 0
+			if out.Messaging != nil {
+				out.Messaging.Incomplete = true
+			}
+		}
+	}
+	if out.Messaging != nil {
+		out.MessagingVersion = 1
 	}
 	divisor := float64(out.Count)
 	out.AvgMs = weightedAvgMs / divisor

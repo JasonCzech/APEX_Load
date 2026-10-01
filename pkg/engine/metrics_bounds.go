@@ -75,6 +75,11 @@ func compactMetricsResult(input *protocol.Result) *protocol.Result {
 		if !server.GRPC.Valid() {
 			server.GRPC = nil
 		}
+		server.SubscriptionID = boundedMetricString(server.SubscriptionID, maxMetricLabelBytes)
+		if server.AcknowledgementMs != nil {
+			v := *server.AcknowledgementMs
+			server.AcknowledgementMs = &v
+		}
 		server.PartitionID = boundedMetricString(server.PartitionID, maxMetricLabelBytes)
 		server.RequestSizeClass = boundedMetricString(server.RequestSizeClass, maxMetricLabelBytes)
 		server.ResponseSizeClass = boundedMetricString(server.ResponseSizeClass, maxMetricLabelBytes)
@@ -153,6 +158,11 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 					// The distributions and status buckets are inline arrays, so
 					// the pointed-to struct size accounts for the full allocation.
 					bytes += int(unsafe.Sizeof(*telemetry.GRPC))
+				}
+				if telemetry.Messaging != nil {
+					for _, d := range telemetry.Messaging.Dimensions {
+						bytes += 256 + len(d.Source) + len(d.Partition) + len(d.Subscription)
+					}
 				}
 				for partition := range telemetry.PartitionEvents {
 					bytes += len(partition) + 24

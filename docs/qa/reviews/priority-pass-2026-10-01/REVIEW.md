@@ -20,6 +20,14 @@ Review fixes: preserve exact grouped identity through the inspector; return expl
 
 Validation: focused API/storage and schema tests, real PostgreSQL workflow integration, dashboard typecheck/lint/build, inspector/annotation unit tests and all 34 report component tests passed. All seven affected browser workflows passed in both dev-admin and local-auth profiles. Targeted API/storage race tests, regenerated QA artifacts, documentation and whitespace checks passed. The follow-up review found no remaining actionable issues.
 
-## Items 3–5
+## Item 3 — messaging diagnostics
+
+Implemented bounded source/partition/subscription intersections, independent age/offset/acknowledgement moments, typed raw telemetry and versioned generator aggregate transport. Action populations remain available even when business-transaction summaries omit request details. Live snapshots and JSONL/Parquet interval artifacts preserve authoritative rollups; reports describe retained raw observations. Real adapters measure successful client publish/settlement calls; mock and no-ack operations remain unavailable.
+
+Review fixes: prevent raw-sample double counting; preserve zero observations and independent denominators; reject invalid/overflowing moments and counts; bound action maps; deep-clone optional acknowledgements and summaries; avoid classifying gRPC/WebSocket messages as broker evidence; mark mixed legacy archive coverage incomplete; keep missing dimensions renderable; qualify partition-skew goals by source, coverage and capability; label legacy scalar skew unqualified.
+
+Validation: focused protocol/engine/generator/API/storage tests and real Kafka/Event Hubs/Service Bus build-profile tests passed. Dashboard typecheck/lint/build and 76 affected component tests passed. All three diagnostic browser workflows passed in each auth profile. Protocol, engine, generator and API messaging race regressions passed, including legacy archive coverage and capability admission. The final review also fixed the archive fixture timestamp to remove a second-boundary flake. Follow-up review found no remaining actionable issues. Live provider acceptance is not claimed.
+
+## Items 4–5
 
 Pending implementation and individual review.

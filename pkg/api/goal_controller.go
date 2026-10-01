@@ -239,9 +239,7 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		endToEndLatency: hasServerTelemetryBreach(live, config.MaxEndToEndLatencyMs, func(summary *ServerTelemetrySummary) float64 {
 			return summary.AvgEndToEndLatencyMs
 		}),
-		partitionSkew: hasServerTelemetryBreach(live, config.MaxPartitionSkewPct, func(summary *ServerTelemetrySummary) float64 {
-			return summary.PartitionSkewPct
-		}),
+		partitionSkew: hasMessagingPartitionSkewBreach(live, config.MaxPartitionSkewPct),
 		redeliveryRate: hasServerTelemetryBreach(live, config.MaxRedeliveryRatePct, func(summary *ServerTelemetrySummary) float64 {
 			return summary.RedeliveryRatePct
 		}),

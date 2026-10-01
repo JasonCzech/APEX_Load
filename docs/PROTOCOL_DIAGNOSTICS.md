@@ -67,3 +67,11 @@ HTML/PDF/CSV reports and qualified baseline comparisons. Text and binary receive
 waits retain separate distributions. Findings identify observed disconnects,
 timeouts and write pressure without asserting that an idle connection is dead.
 Statistical anomaly delivery and complete dependency intelligence remain open.
+
+## Messaging dimensions and acknowledgements
+
+Messaging action summaries carry optional bounded `messaging` evidence keyed by source, observed partition and subscription. At most 64 intersections per action and 128 action populations are retained. Invalid evidence, overflow and legacy peers mark coverage incomplete. Generator capability `messaging_rollup_v1` carries versioned mergeable sums/counts/maxima through RPC and live snapshots; JSONL and Parquet interval artifacts preserve these summaries. Reports aggregate retained raw observations separately, so report sample counts can differ when raw evidence was sampled or dropped.
+
+Message age, offset backlog and acknowledgement duration each have independent observation counts. Observed zero remains zero; missing measurements remain unavailable. These moments do not produce percentiles. Successful real Kafka publish acknowledgements (except no-ack mode), Event Hubs batch sends and supported JMS settlement calls measure client elapsed time, including client queue/wait. Mock operations and unsupported adapters do not invent acknowledgement measurements. Subscription identity denotes an observed consumer group or subscription, rather than a broker inventory.
+
+Partition-skew goals require the new generator capability and complete known evidence. They score coefficient of variation over at least two observed producer partitions within one source; unknown partitions, mixed source populations, dropped windows and incomplete summaries are unscored. This does not establish broker-wide partition coverage. The existing legacy scalar display is explicitly unqualified. No provider management queue-depth polling or additional target probes are introduced. Live cloud acceptance and Event Hubs processor/checkpoint ownership remain open; IBM MQ remains low priority.

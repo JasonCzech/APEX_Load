@@ -1148,6 +1148,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			continue
 		}
 		if result.client != nil {
+			if capabilityErr := messagingGoalCapabilityError(test.GoalConfig, result.load.CompatibleFeatures); capabilityErr != nil {
+				_ = result.client.Close()
+				discoveryFatal = fmt.Errorf("generator %s: %w", result.target, capabilityErr)
+				continue
+			}
 			if test.preparationID != "" && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeaturePreparationV1) {
 				_ = result.client.Close()
 				discoveryFatal = fmt.Errorf("generator %s lacks prepare_v1", result.target)

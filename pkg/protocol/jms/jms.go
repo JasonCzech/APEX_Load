@@ -288,6 +288,7 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 		result.StatusCode = 400
 		result.ErrorMessage = err.Error()
 		result.Duration = time.Since(start)
+
 		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 		return result, nil
 	}
@@ -348,6 +349,12 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 				result.ServerTelemetry = &protocol.ServerTelemetry{}
 			}
 			result.ServerTelemetry.SendFailureCount++
+		}
+	}
+	if result.ServerTelemetry != nil && hasResponseMsg {
+		result.ServerTelemetry.SubscriptionID = responseMsg.sourceSubscription
+		if result.ServerTelemetry.SubscriptionID == "" {
+			result.ServerTelemetry.SubscriptionID = j.subscriptionName(action)
 		}
 	}
 	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
@@ -933,14 +940,17 @@ func (j *JMS) settleAdvanced(ctx context.Context, action *protocol.Action, resul
 			DeadLetterReason:      paramString(action.Params, "dead_letter_reason", ""),
 			DeadLetterDescription: paramString(action.Params, "dead_letter_description", ""),
 		}
+		started := time.Now()
 		if err := sb.Settle(ctx, token, disposition, opts); err != nil {
 			return err
 		}
+		elapsed := float64(time.Since(started)) / float64(time.Millisecond)
+		result.ServerTelemetry = &protocol.ServerTelemetry{AcknowledgementMs: &elapsed}
 		result.Extractions["jms_operation"] = "settle"
 		result.Extractions["jms_disposition"] = disposition
 		// Dead-lettering is a reliability event; carry the counter (control-op style).
 		if disposition == "dead_letter" {
-			result.ServerTelemetry = &protocol.ServerTelemetry{DeadLetteredCount: 1}
+			result.ServerTelemetry.DeadLetteredCount = 1
 		}
 		return nil
 	}

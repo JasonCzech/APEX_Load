@@ -321,28 +321,29 @@ type ResourceSample struct {
 }
 
 type IntervalSummaryRecord struct {
-	ObservationState         string                             `json:"observation_state,omitempty"`
-	CompletedIterations      int64                              `json:"completed_iterations,omitempty"`
-	Timestamp                time.Time                          `json:"timestamp"`
-	TestID                   string                             `json:"test_id"`
-	TestName                 string                             `json:"test_name"`
-	ActiveVUsers             int64                              `json:"active_vusers"`
-	TPS                      float64                            `json:"tps"`
-	TargetTPS                float64                            `json:"target_tps,omitempty"`
-	ThroughputGapPct         float64                            `json:"throughput_gap_pct,omitempty"`
-	ThroughputTargetMissed   bool                               `json:"throughput_target_missed,omitempty"`
-	AvgResponseMs            float64                            `json:"avg_response_ms"`
-	ErrorPct                 float64                            `json:"error_pct"`
-	TotalTx                  int64                              `json:"total_transactions"`
-	TotalErrors              int64                              `json:"total_errors"`
-	P50Ms                    float64                            `json:"p50_ms"`
-	P90Ms                    float64                            `json:"p90_ms"`
-	P95Ms                    float64                            `json:"p95_ms"`
-	P99Ms                    float64                            `json:"p99_ms"`
-	LoadLevels               []ActiveLoadLevel                  `json:"load_levels,omitempty"`
-	ActiveRuntimeSeconds     *float64                           `json:"active_runtime_seconds,omitempty"`
-	SampleWindowSeconds      float64                            `json:"sample_window_seconds,omitempty"`
-	LoadLevelDurationDigests map[string]*engine.TDigestSnapshot `json:"load_level_duration_digests,omitempty"`
+	Messaging                map[string]*protocol.MessagingSummary `json:"messaging,omitempty"`
+	ObservationState         string                                `json:"observation_state,omitempty"`
+	CompletedIterations      int64                                 `json:"completed_iterations,omitempty"`
+	Timestamp                time.Time                             `json:"timestamp"`
+	TestID                   string                                `json:"test_id"`
+	TestName                 string                                `json:"test_name"`
+	ActiveVUsers             int64                                 `json:"active_vusers"`
+	TPS                      float64                               `json:"tps"`
+	TargetTPS                float64                               `json:"target_tps,omitempty"`
+	ThroughputGapPct         float64                               `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed   bool                                  `json:"throughput_target_missed,omitempty"`
+	AvgResponseMs            float64                               `json:"avg_response_ms"`
+	ErrorPct                 float64                               `json:"error_pct"`
+	TotalTx                  int64                                 `json:"total_transactions"`
+	TotalErrors              int64                                 `json:"total_errors"`
+	P50Ms                    float64                               `json:"p50_ms"`
+	P90Ms                    float64                               `json:"p90_ms"`
+	P95Ms                    float64                               `json:"p95_ms"`
+	P99Ms                    float64                               `json:"p99_ms"`
+	LoadLevels               []ActiveLoadLevel                     `json:"load_levels,omitempty"`
+	ActiveRuntimeSeconds     *float64                              `json:"active_runtime_seconds,omitempty"`
+	SampleWindowSeconds      float64                               `json:"sample_window_seconds,omitempty"`
+	LoadLevelDurationDigests map[string]*engine.TDigestSnapshot    `json:"load_level_duration_digests,omitempty"`
 	// DurationDigest is an optional generator-archive staging field. Distributed
 	// finalization consumes it into fleet scalar percentiles; controller archives
 	// keep the existing scalar reporting contract.
@@ -790,6 +791,7 @@ type RunArchiveTelemetrySummary struct {
 }
 
 type RunArchiveActionStats struct {
+	Messaging          *protocol.MessagingSummary   `json:"messaging,omitempty"`
 	GRPC               *protocol.GRPCSummary        `json:"grpc,omitempty"`
 	WebSocket          *protocol.WebSocketSummary   `json:"websocket,omitempty"`
 	DiagnosticFindings []protocol.DiagnosticFinding `json:"diagnostic_findings,omitempty"`

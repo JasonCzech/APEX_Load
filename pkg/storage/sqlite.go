@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"regexp"
 	"strconv"
 	"strings"
@@ -125,6 +126,7 @@ type NetworkLatencyTargetRecord struct {
 }
 
 type IntervalSummaryRecord struct {
+	Messaging                map[string]*protocol.MessagingSummary  `json:"messaging,omitempty"`
 	NativeEvidence           *NativeIntervalEvidence                `json:"native_evidence,omitempty"`
 	CompletedIterations      int64                                  `json:"completed_iterations,omitempty"`
 	SchemaVersion            string                                 `json:"schema_version,omitempty"`

@@ -152,6 +152,9 @@ type BrowserDeviceMetrics struct {
 }
 
 type ServerTelemetrySummary struct {
+	Messaging                 *protocol.MessagingSummary `json:"messaging,omitempty"`
+	ConsumerLagSamples        int64                      `json:"consumer_lag_samples,omitempty"`
+	ConsumerOffsetLagSamples  int64                      `json:"consumer_offset_lag_samples,omitempty"`
 	FirstEventSamples         int64                      `json:"first_event_samples,omitempty"`
 	WebSocket                 *protocol.WebSocketSummary `json:"websocket,omitempty"`
 	GRPC                      *protocol.GRPCSummary      `json:"grpc,omitempty"`
@@ -1036,7 +1039,7 @@ func mergeActionResult(metrics *ActionMetrics, result *protocol.Result) {
 		if metrics.ServerTelemetry == nil {
 			metrics.ServerTelemetry = &ServerTelemetrySummary{}
 		}
-		mergeServerTelemetrySummary(metrics.ServerTelemetry, result.ServerTelemetry)
+		mergeServerTelemetrySummary(metrics.ServerTelemetry, result.ServerTelemetry, result.DependencyTarget, result.DependencyType)
 	}
 	metrics.BytesSent += result.BytesSent
 	metrics.BytesRecv += result.BytesReceived
@@ -1134,9 +1137,18 @@ func mergeBrowserMetricsSummary(summary *BrowserMetricsSummary, metrics *protoco
 	summary.AvgBrowserProcessMem += metrics.BrowserProcessMemMB
 }
 
-func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *protocol.ServerTelemetry) {
+func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *protocol.ServerTelemetry, sources ...string) {
 	if summary == nil || telemetry == nil {
 		return
+	}
+	source := ""
+	if len(sources) > 0 {
+		source = sources[0]
+	}
+	if len(sources) > 1 {
+		protocol.MergeMessagingTelemetry(&summary.Messaging, telemetry, source, sources[1])
+	} else {
+		protocol.MergeMessagingTelemetry(&summary.Messaging, telemetry, source)
 	}
 	protocol.MergeGRPCDiagnostic(&summary.GRPC, telemetry.GRPC)
 	protocol.MergeWebSocketDiagnostic(&summary.WebSocket, telemetry.WebSocket)
@@ -1182,11 +1194,17 @@ func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *pro
 	summary.MessagesReceived += int64(telemetry.MessagesReceived)
 	summary.AvgMessagesSentPerSec += telemetry.MessagesSentPerSec
 	summary.AvgMessagesReceivedPerSec += telemetry.MessagesReceivedPerSec
-	summary.AvgConsumerLagMs += telemetry.ConsumerLagMs
+	if telemetry.ConsumerLagObserved || telemetry.ConsumerLagMs > 0 {
+		summary.ConsumerLagSamples++
+		summary.AvgConsumerLagMs += telemetry.ConsumerLagMs
+	}
 	if telemetry.ConsumerLagMs > summary.MaxConsumerLagMs {
 		summary.MaxConsumerLagMs = telemetry.ConsumerLagMs
 	}
-	summary.AvgConsumerOffsetLag += float64(telemetry.ConsumerOffsetLag)
+	if telemetry.ConsumerOffsetLagObserved || telemetry.ConsumerOffsetLag > 0 {
+		summary.ConsumerOffsetLagSamples++
+		summary.AvgConsumerOffsetLag += float64(telemetry.ConsumerOffsetLag)
+	}
 	if telemetry.ConsumerOffsetLag > summary.MaxConsumerOffsetLag {
 		summary.MaxConsumerOffsetLag = telemetry.ConsumerOffsetLag
 	}
@@ -1225,8 +1243,12 @@ func finalizeServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	summary.AvgMessageLatencyMs /= divisor
 	summary.AvgMessagesSentPerSec /= divisor
 	summary.AvgMessagesReceivedPerSec /= divisor
-	summary.AvgConsumerLagMs /= divisor
-	summary.AvgConsumerOffsetLag /= divisor
+	if summary.ConsumerLagSamples > 0 {
+		summary.AvgConsumerLagMs /= float64(summary.ConsumerLagSamples)
+	}
+	if summary.ConsumerOffsetLagSamples > 0 {
+		summary.AvgConsumerOffsetLag /= float64(summary.ConsumerOffsetLagSamples)
+	}
 	summary.AvgEndToEndLatencyMs /= divisor
 	summary.PartitionSkewPct = ComputePartitionSkewPct(summary.PartitionEvents)
 	// Reliability rates are derived from pooled counts ÷ messages received (not

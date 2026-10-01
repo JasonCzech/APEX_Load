@@ -233,6 +233,9 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 		err = nil
 	}
 	result.ServerTelemetry = finalizeTelemetry(result, sent, hasSent, received, hasReceived, err)
+	if result.ServerTelemetry != nil && hasReceived {
+		result.ServerTelemetry.SubscriptionID = paramString(action.Params, "consumer_group", e.cfg.ConsumerGroup)
+	}
 	if err != nil {
 		result.Success = false
 		if result.StatusCode == 0 || result.StatusCode == 200 {
@@ -290,6 +293,7 @@ func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result
 		return event{}, err
 	}
 	ev.Offset, ev.SequenceNum, ev.EnqueuedAt = meta.Offset, meta.SequenceNum, meta.EnqueuedAt
+	ev.AcknowledgementMs = meta.AcknowledgementMs
 	if meta.PartitionID != "" {
 		ev.PartitionID = meta.PartitionID
 	}
