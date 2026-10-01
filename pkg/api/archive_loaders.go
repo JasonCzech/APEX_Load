@@ -172,6 +172,12 @@ func readJSONLSortedTransactionPageFrom(ctx context.Context, reader io.Reader, p
 }
 
 func transactionMatchesArchiveFilter(item *TransactionEvent, filter transactionEventFilter) bool {
+	if filter.GroupDimension != "" {
+		value := map[string]string{"region": item.Region, "dependency": item.DependencyTarget, "network_profile": item.NetworkProfile, "hierarchy": item.Hierarchy, "phase": item.Phase}[filter.GroupDimension]
+		if value != filter.GroupValue {
+			return false
+		}
+	}
 	if filter.ActionExact != "" && item.ActionName != filter.ActionExact {
 		return false
 	}

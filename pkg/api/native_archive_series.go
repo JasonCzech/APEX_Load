@@ -156,6 +156,9 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 		if action := q.Filters["action"]; action != "" && tx.ActionName != action {
 			return nil
 		}
+		if !matchesNativeDimensionFilters(tx, q.Filters) {
+			return nil
+		}
 		if q.PropertyName != "" {
 			value, exists := tx.PropertyDimensions[q.PropertyName]
 			if !exists {

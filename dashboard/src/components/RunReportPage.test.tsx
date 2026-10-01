@@ -8,6 +8,8 @@ import type { RunArchiveReport, TestSummary } from '../types'
 import RunReportPage from './RunReportPage'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 
+vi.mock('../hooks/apiClient', () => ({ request: vi.fn().mockResolvedValue({ revision: 0, annotations: [] }) }))
+
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const mocks = vi.hoisted(() => ({

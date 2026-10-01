@@ -1,12 +1,15 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -104,5 +107,45 @@ func TestNativeEvidenceDatasetAssociationCheckedBeforeRead(t *testing.T) {
 	}
 	if err := server.attachNativeOverlay(context.Background(), "foreign", "run", q, &out); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("project guard: %v", err)
+	}
+}
+
+func TestNativeArchiveAdditionalDimensionsAndMatchingInspector(t *testing.T) {
+	record, _ := nativeSeriesFixture(t)
+	body, err := os.ReadFile(filepath.Join(record.ArchivePath, "transactions.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(body)), "\n")
+	var output bytes.Buffer
+	for i, line := range lines {
+		var tx TransactionEvent
+		json.Unmarshal([]byte(line), &tx)
+		tx.NetworkProfile = "mobile"
+		tx.Hierarchy = "Store/Checkout"
+		tx.Phase = "action"
+		if i == 1 {
+			tx.Phase = "init"
+		}
+		json.NewEncoder(&output).Encode(tx)
+	}
+	if err := os.WriteFile(filepath.Join(record.ArchivePath, "transactions.jsonl"), output.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range []string{"network_profile", "hierarchy", "phase"} {
+		q := nativeEvidenceQuery("archive")
+		q.Dimensions = []string{group}
+		q.Filters = map[string]string{"phase": "ACTION", "network_profile": "MOBILE", "hierarchy": "store/checkout"}
+		if err := storage.ValidateNativeEvidenceQuery(q); err != nil {
+			t.Fatal(err)
+		}
+		result, err := buildNativeGroupedArchive(context.Background(), record, q)
+		if err != nil || len(result.Series) != 1 || result.Series[0].Points[0].Count != 2 || *result.Series[0].Points[0].Value != 30 {
+			t.Fatalf("%s %+v %v", group, result, err)
+		}
+		q.EvidenceMode = "live"
+		if err := storage.ValidateNativeEvidenceQuery(q); err == nil {
+			t.Fatal("independent live intersection accepted")
+		}
 	}
 }

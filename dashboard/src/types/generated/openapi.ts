@@ -26760,6 +26760,68 @@ export interface operations {
       };
     };
   };
+  "handleCreateRunAnnotation": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "expected_revision"?: number;
+          "label"?: string;
+          "text"?: string;
+          "timestamp"?: string;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleCreateScenario": {
     parameters?: never;
     requestBody: {
@@ -35697,6 +35759,58 @@ export interface operations {
         };
       };
       "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleDeleteRunAnnotation": {
+    parameters: {
+      "path": {
+        "annotation_id": string;
+        "id": string;
+      };
+      "query"?: {
+        "expected_revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -48825,6 +48939,39 @@ export interface operations {
       };
     };
   };
+  "handleGetRunAnnotations": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetRunArchiveAIRootCause": {
     parameters: {
       "path": {
@@ -48920,6 +49067,8 @@ export interface operations {
         "dependency_type"?: string;
         "error_contains"?: string;
         "group"?: string;
+        "group_dimension"?: string;
+        "group_value"?: string;
         "has_detail"?: string;
         "hierarchy"?: string;
         "limit"?: number;
@@ -53749,6 +53898,8 @@ export interface operations {
         "error_contains"?: string;
         "format"?: string;
         "group"?: string;
+        "group_dimension"?: string;
+        "group_value"?: string;
         "has_detail"?: string;
         "hierarchy"?: string;
         "limit"?: number;
@@ -71486,6 +71637,16 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
+            "annotations"?: Array<{
+              "created_at": string;
+              "created_by": string;
+              "deleted_at"?: (string) | null;
+              "deleted_by"?: string;
+              "id": string;
+              "label": string;
+              "text"?: string;
+              "timestamp": string;
+            }>;
             "correlation"?: Record<string, Array<{
               "coefficient"?: (number) | null;
               "coverage": number;
@@ -71566,6 +71727,11 @@ export interface operations {
         };
       };
       "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -130915,6 +131081,13 @@ export interface paths {
   };
   "/api/v1/tests/{id}/abort": {
     "post": operations["handleAbortTest"];
+  };
+  "/api/v1/tests/{id}/analysis/annotations": {
+    "get": operations["handleGetRunAnnotations"];
+    "post": operations["handleCreateRunAnnotation"];
+  };
+  "/api/v1/tests/{id}/analysis/annotations/{annotation_id}": {
+    "delete": operations["handleDeleteRunAnnotation"];
   };
   "/api/v1/tests/{id}/archive": {
     "get": operations["handleDownloadRunArchive"];

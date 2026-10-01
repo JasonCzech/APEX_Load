@@ -80,7 +80,7 @@ func ValidateNativeEvidenceQuery(q AnalyticsQuery) error {
 		group = q.Dimensions[0]
 	}
 	switch group {
-	case "", "action", "property", "region", "dependency":
+	case "", "action", "property", "region", "dependency", "network_profile", "hierarchy", "phase":
 	default:
 		return errors.New("unsupported grouping")
 	}
@@ -103,6 +103,18 @@ func ValidateNativeEvidenceQuery(q AnalyticsQuery) error {
 		return errors.New("invalid live bucket mode")
 	}
 	if q.EvidenceMode == "live" {
+		if group == "hierarchy" || group == "phase" {
+			return errors.New("hierarchy and phase grouping require raw archive evidence")
+		}
+		for key := range q.Filters {
+			if key != "action" {
+				return errors.New("live dimension filters require joint evidence that is unavailable")
+			}
+		}
+		if group == "network_profile" && (q.Population != "action" || q.Filters["action"] != "" || q.PropertyName != "") {
+			return errors.New("live network profiles describe independent action observations")
+		}
+
 		if q.LiveBucketMode != "merged" && (q.Aggregation == "min" || q.Aggregation == "max") {
 			return errors.New("live evidence does not retain min/max")
 		}

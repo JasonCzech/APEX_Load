@@ -177,7 +177,7 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 			if _, ok := dashboardAggregations[q.Aggregation]; !ok {
 				return fmt.Errorf("dashboard panel %q uses unsupported aggregation %q", panel.ID, q.Aggregation)
 			}
-			if len(q.Dimensions) > 3 || len(q.Filters) > 16 {
+			if len(q.Dimensions) > 3 || len(q.Filters) > 46 {
 				return fmt.Errorf("dashboard panel %q query exceeds dimension/filter limits", panel.ID)
 			}
 			for _, dimension := range q.Dimensions {
@@ -339,11 +339,11 @@ func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
 	if q.Population != "action" && q.Population != "transaction" {
 		return errors.New("select action or transaction population")
 	}
-	if len(q.Dimensions) != 0 || q.Overlay || len(q.Filters) > 1 || q.MaxSeries > 1 || q.MaxSeries < 0 {
-		return errors.New("archive panels support an action identity filter; dimensions and overlays are unavailable")
+	if len(q.Dimensions) != 0 || q.Overlay || len(q.Filters) > 4 || q.MaxSeries > 1 || q.MaxSeries < 0 {
+		return errors.New("archive panels support bounded identity/dimension filters; grouping uses the evidence workflow")
 	}
 	for k, v := range q.Filters {
-		if k != "action" || len(v) > 256 {
+		if (k != "action" && k != "network_profile" && k != "hierarchy" && k != "phase") || v == "" || len(v) > 256 {
 			return errors.New("invalid archive action filter")
 		}
 	}

@@ -11,7 +11,7 @@ import (
 
 func nativeIntervalEvidence(live *LiveMetrics, actions map[string]*TxMetrics, actionsSupported bool, window float64) *storage.NativeIntervalEvidence {
 	out := &storage.NativeIntervalEvidence{Version: 1, WindowSeconds: window, Dimensions: map[string]map[string]storage.NativeIntervalMetric{}}
-	dimensions := map[string]map[string]*TxMetrics{"transaction": live.Transactions, "property": live.Properties, "region": live.ByRegion, "dependency": live.DependencyHealth}
+	dimensions := map[string]map[string]*TxMetrics{"transaction": live.Transactions, "property": live.Properties, "region": live.ByRegion, "dependency": live.DependencyHealth, "network_profile": live.NetworkProfiles}
 	if actionsSupported {
 		dimensions["action"] = actions
 	}
@@ -85,6 +85,7 @@ func nativePublicationEvidence(source string, batch generatorrpc.MetricsBatch, p
 	live.Properties = convert(batch.PropertyMetrics)
 	live.ByRegion = convert(batch.RegionMetrics)
 	live.DependencyHealth = convert(batch.DependencyMetrics)
+	live.NetworkProfiles = convert(batch.NetworkProfileMetrics)
 	if batch.Telemetry != nil {
 		live.Telemetry = &TelemetryHealth{DroppedResults: batch.Telemetry.DroppedResults, DroppedSubscriberBatches: batch.Telemetry.DroppedSubscriberBatches, MissingMetricWindows: batch.Telemetry.MissingMetricWindows}
 	}

@@ -1184,6 +1184,8 @@ func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transa
 	query := r.URL.Query()
 	filter := transactionEventFilter{
 		ActionExact:       query.Get("action_exact"),
+		GroupDimension:    query.Get("group_dimension"),
+		GroupValue:        query.Get("group_value"),
 		TimeToExclusive:   query.Get("time_to_exclusive") == "true",
 		PropertyName:      query.Get("property_name"),
 		PropertyValue:     query.Get("property_value"),
@@ -1293,6 +1295,19 @@ func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transa
 			return transactionEventFilter{}, false
 		}
 	}
+	if filter.GroupDimension != "" || filter.GroupValue != "" {
+		switch filter.GroupDimension {
+		case "region", "dependency", "network_profile", "hierarchy", "phase":
+		default:
+			writeError(w, 400, "invalid exact group dimension")
+			return transactionEventFilter{}, false
+		}
+		if filter.GroupValue == "" || len(filter.GroupValue) > 256 {
+			writeError(w, 400, "invalid exact group identity")
+			return transactionEventFilter{}, false
+		}
+	}
+
 	return filter, true
 }
 

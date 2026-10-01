@@ -26,6 +26,7 @@ type NativeEvidenceSeries struct {
 	Points []NativeEvidencePoint `json:"points"`
 }
 type NativeEvidenceResponse struct {
+	Annotations    []storage.RunAnnotation                `json:"annotations,omitempty"`
 	LiveBucketMode string                                 `json:"live_bucket_mode,omitempty"`
 	Mode           string                                 `json:"mode"`
 	Series         []NativeEvidenceSeries                 `json:"series"`
@@ -95,6 +96,18 @@ func (s *Server) handleNativeEvidenceSeries(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		writeError(w, 422, err.Error())
 		return
+	}
+	if store, ok := s.store.(storage.RunAnnotationStore); ok {
+		annotations, err := store.GetRunAnnotations(run.ProjectID, run.ID)
+		if err != nil {
+			writeError(w, 500, "failed to load annotations")
+			return
+		}
+		for _, a := range annotations.Annotations {
+			if a.DeletedAt == nil && !a.Timestamp.Before(result.From) && a.Timestamp.Before(result.To) {
+				result.Annotations = append(result.Annotations, a)
+			}
+		}
 	}
 	writeJSON(w, 200, result)
 }
@@ -251,6 +264,9 @@ func buildNativeGroupedArchive(ctx context.Context, record *storage.RunArchiveRe
 		if q.Filters["action"] != "" && tx.ActionName != q.Filters["action"] {
 			return nil
 		}
+		if !matchesNativeDimensionFilters(tx, q.Filters) {
+			return nil
+		}
 		if q.PropertyName != "" {
 			v, ok := tx.PropertyDimensions[q.PropertyName]
 			if !ok {
@@ -271,6 +287,12 @@ func buildNativeGroupedArchive(ctx context.Context, record *storage.RunArchiveRe
 			name = tx.Region
 		case "dependency":
 			name = tx.DependencyTarget
+		case "network_profile":
+			name = tx.NetworkProfile
+		case "hierarchy":
+			name = tx.Hierarchy
+		case "phase":
+			name = tx.Phase
 		}
 		if name == "" {
 			missing = true

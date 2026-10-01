@@ -5857,6 +5857,36 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/tests/{id}/analysis/annotations",
+      "operationId": "handleGetRunAnnotations",
+      "summary": "Get Run Annotations",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/analysis/annotations",
+      "operationId": "handleCreateRunAnnotation",
+      "summary": "Create Run Annotation",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/tests/{id}/analysis/annotations/{annotation_id}",
+      "operationId": "handleDeleteRunAnnotation",
+      "summary": "Delete Run Annotation",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/tests/{id}/archive",
       "operationId": "handleDownloadRunArchive",
       "summary": "Download Run Archive",

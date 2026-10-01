@@ -57,6 +57,13 @@ func TestPostgresAnalysisWorkflows(t *testing.T) {
 	if err = s.SaveTest(run); err != nil {
 		t.Fatal(err)
 	}
+	notes := RunAnnotationSet{Revision: 1, Annotations: []RunAnnotation{{ID: "note-pg", Timestamp: now, CreatedAt: now, Label: "Deployment", CreatedBy: "editor"}}}
+	if saved, err := s.SaveRunAnnotations(m.ProjectID, run.ID, notes, 0); err != nil || !saved {
+		t.Fatalf("annotation insert: %v %v", saved, err)
+	}
+	if saved, err := s.SaveRunAnnotations(m.ProjectID, run.ID, notes, 0); err != nil || saved {
+		t.Fatalf("annotation stale insert: %v %v", saved, err)
+	}
 	if err = s.SaveHistory(run.ID, now, map[string]any{"timestamp": now, "native_evidence": &NativeIntervalEvidence{Version: 1, WindowSeconds: 1, Dimensions: map[string]map[string]NativeIntervalMetric{"action": {"Checkout": {Count: 2, P95: 25}}}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -138,6 +145,10 @@ func TestPostgresAnalysisWorkflows(t *testing.T) {
 		t.Fatal(err)
 	}
 	s = pg.SQLiteStore
+	recovered, err := s.GetRunAnnotations(m.ProjectID, run.ID)
+	if err != nil || recovered.Revision != 1 || len(recovered.Annotations) != 1 || recovered.Annotations[0].Label != "Deployment" {
+		t.Fatalf("annotation recovery: %+v %v", recovered, err)
+	}
 	history, err := s.GetHistoryLimit(run.ID, 1)
 	if err != nil || len(history) != 1 {
 		t.Fatalf("native history after reopen: %v %v", history, err)
@@ -161,6 +172,9 @@ func TestPostgresAnalysisWorkflows(t *testing.T) {
 	}
 	if err = s.DeleteProject(m.ProjectID); err != nil {
 		t.Fatal(err)
+	}
+	if removed, err := s.GetRunAnnotations(m.ProjectID, run.ID); err != nil || len(removed.Annotations) != 0 {
+		t.Fatalf("annotation retention: %+v %v", removed, err)
 	}
 	cleanup, err := s.ListAnalysisCleanupJobs(now.Add(time.Hour), 50)
 	if err != nil {

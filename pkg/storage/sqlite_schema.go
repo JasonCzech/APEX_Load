@@ -20,6 +20,11 @@ import (
 func schemaCreateTableStatements() []string {
 	return []string{
 		schemaMigrationLedgerDDL,
+		`CREATE TABLE IF NOT EXISTS run_annotations (
+            test_id TEXT PRIMARY KEY REFERENCES tests(id) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            revision BIGINT NOT NULL, payload TEXT NOT NULL
+        )`,
 		`CREATE TABLE IF NOT EXISTS analysis_cleanup_jobs (
             kind TEXT NOT NULL, project_id TEXT NOT NULL, resource_id TEXT NOT NULL,
             not_before DATETIME NOT NULL, PRIMARY KEY(kind,resource_id)

@@ -105,3 +105,17 @@ func TestPropertyFiltersAreExactAndDoNotMatchMissingEvidence(t *testing.T) {
 		t.Fatal("property categories were case folded")
 	}
 }
+
+func TestExactGroupInspectorFilterPreservesIdentityCase(t *testing.T) {
+	f := transactionEventFilter{GroupDimension: "hierarchy", GroupValue: "Store/Checkout"}
+	if !transactionMatchesArchiveFilter(&TransactionEvent{Hierarchy: "Store/Checkout"}, f) || transactionMatchesArchiveFilter(&TransactionEvent{Hierarchy: "store/checkout"}, f) {
+		t.Fatal("group drill-down merged distinct labels")
+	}
+	for _, query := range []string{"group_dimension=sql&group_value=abc", "group_value=abc", "group_dimension=phase"} {
+		r := httptest.NewRequest(http.MethodGet, "/?"+query, nil)
+		w := httptest.NewRecorder()
+		if _, ok := parseTransactionEventFilter(w, r); ok || w.Code != 400 {
+			t.Fatalf("invalid exact dimension %s", query)
+		}
+	}
+}

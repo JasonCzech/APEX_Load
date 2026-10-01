@@ -271475,6 +271475,201 @@ paths:
       tags:
         - Tests
       x-handler: handleAbortTest
+  /api/v1/tests/{id}/analysis/annotations:
+    get:
+      summary: Get Run Annotations
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleGetRunAnnotations
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                description: Operation-specific JSON response.
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleGetRunAnnotations
+    post:
+      summary: Create Run Annotation
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      operationId: handleCreateRunAnnotation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expected_revision:
+                  type: integer
+                  format: int64
+                label:
+                  type: string
+                text:
+                  type: string
+                timestamp:
+                  type: string
+                  format: date-time
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                description: Operation-specific JSON response.
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleCreateRunAnnotation
+  /api/v1/tests/{id}/analysis/annotations/{annotation_id}:
+    delete:
+      summary: Delete Run Annotation
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      operationId: handleDeleteRunAnnotation
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                description: Operation-specific JSON response.
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: annotation_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: expected_revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleDeleteRunAnnotation
   /api/v1/tests/{id}/archive:
     get:
       summary: Download Run Archive
@@ -271945,6 +272140,18 @@ paths:
           schema:
             type: string
         - name: group
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: group_dimension
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: group_value
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -287655,6 +287862,18 @@ paths:
           schema:
             type: string
         - name: group
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: group_dimension
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: group_value
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -323311,6 +323530,37 @@ paths:
               schema:
                 type: object
                 properties:
+                  annotations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        created_at:
+                          type: string
+                          format: date-time
+                        created_by:
+                          type: string
+                        deleted_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        deleted_by:
+                          type: string
+                        id:
+                          type: string
+                        label:
+                          type: string
+                        text:
+                          type: string
+                        timestamp:
+                          type: string
+                          format: date-time
+                      required:
+                        - created_at
+                        - created_by
+                        - id
+                        - label
+                        - timestamp
                   correlation:
                     type: object
                     additionalProperties:
@@ -323506,6 +323756,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "422":
           description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
