@@ -57,6 +57,9 @@ func TestPostgresAnalysisWorkflows(t *testing.T) {
 	if err = s.SaveTest(run); err != nil {
 		t.Fatal(err)
 	}
+	if err = s.SaveHistory(run.ID, now, map[string]any{"timestamp": now, "native_evidence": &NativeIntervalEvidence{Version: 1, WindowSeconds: 1, Dimensions: map[string]map[string]NativeIntervalMetric{"action": {"Checkout": {Count: 2, P95: 25}}}}}); err != nil {
+		t.Fatal(err)
+	}
 	p, err := s.CreatePreparation(Preparation{ID: "prep-pg", ProjectID: m.ProjectID, TestID: run.ID, ExecutionRevision: strings.Repeat("a", 64), IdempotencyKey: "pg-request", CreatedAt: now, ExpiresAt: now.Add(time.Hour)})
 	if err != nil {
 		t.Fatal(err)
@@ -135,6 +138,14 @@ func TestPostgresAnalysisWorkflows(t *testing.T) {
 		t.Fatal(err)
 	}
 	s = pg.SQLiteStore
+	history, err := s.GetHistoryLimit(run.ID, 1)
+	if err != nil || len(history) != 1 {
+		t.Fatalf("native history after reopen: %v %v", history, err)
+	}
+	evidence := history[0].(IntervalSummaryRecord).NativeEvidence
+	if evidence == nil || evidence.Dimensions["action"]["Checkout"].P95 != 25 {
+		t.Fatalf("native evidence lost: %+v", evidence)
+	}
 	if err = s.EnsureAnalysisStorageIdentity(identity); err != nil {
 		t.Fatal(err)
 	}

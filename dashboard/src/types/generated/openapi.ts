@@ -25443,6 +25443,12 @@ export interface operations {
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
+                "native_evidence"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "incomplete"?: boolean;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "observation_state"?: string;
                 "observation_valid_until"?: (string) | null;
@@ -25752,6 +25758,12 @@ export interface operations {
                   "started_at": string;
                   "target_vusers": number;
                 }>;
+                "native_evidence"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "incomplete"?: boolean;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "network_profiles"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -31932,6 +31944,12 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "native_evidence"?: ({
+                "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                "incomplete"?: boolean;
+                "version": number;
+                "window_seconds": number;
+              }) | null;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -32804,6 +32822,12 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "native_evidence"?: ({
+                "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                "incomplete"?: boolean;
+                "version": number;
+                "window_seconds": number;
+              }) | null;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -47810,6 +47834,12 @@ export interface operations {
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
+                "native_evidence"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "incomplete"?: boolean;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "observation_state"?: string;
                 "observation_valid_until"?: (string) | null;
@@ -48119,6 +48149,12 @@ export interface operations {
                   "started_at": string;
                   "target_vusers": number;
                 }>;
+                "native_evidence"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "incomplete"?: boolean;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "network_profiles"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -58120,6 +58156,12 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "native_evidence"?: ({
+                "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                "incomplete"?: boolean;
+                "version": number;
+                "window_seconds": number;
+              }) | null;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -58992,6 +59034,12 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "native_evidence"?: ({
+                "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                "incomplete"?: boolean;
+                "version": number;
+                "window_seconds": number;
+              }) | null;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -71258,10 +71306,20 @@ export interface operations {
           "comparison_run_id"?: string;
           "dimensions"?: Array<string>;
           "end_seconds"?: number;
+          "evidence_mode"?: string;
           "filters"?: Record<string, string>;
           "max_series"?: number;
           "metric"?: string;
           "overlay"?: boolean;
+          "overlay_selection"?: ({
+            "aggregation"?: string;
+            "dataset_id"?: string;
+            "dimensions"?: Record<string, string>;
+            "host"?: string;
+            "max_lag_seconds"?: number;
+            "metric"?: string;
+            "source_id"?: string;
+          }) | null;
           "population"?: string;
           "property_name"?: string;
           "property_value"?: string;
@@ -71320,6 +71378,132 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleNativeEvidenceSeries": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "aggregation"?: string;
+          "bucket_seconds"?: number;
+          "comparison_run_id"?: string;
+          "dimensions"?: Array<string>;
+          "end_seconds"?: number;
+          "evidence_mode"?: string;
+          "filters"?: Record<string, string>;
+          "max_series"?: number;
+          "metric"?: string;
+          "overlay"?: boolean;
+          "overlay_selection"?: ({
+            "aggregation"?: string;
+            "dataset_id"?: string;
+            "dimensions"?: Record<string, string>;
+            "host"?: string;
+            "max_lag_seconds"?: number;
+            "metric"?: string;
+            "source_id"?: string;
+          }) | null;
+          "population"?: string;
+          "property_name"?: string;
+          "property_value"?: string;
+          "start_seconds"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "correlation"?: Record<string, Array<{
+              "coefficient"?: (number) | null;
+              "coverage": number;
+              "expected_buckets": number;
+              "lag_seconds": number;
+              "pairs": number;
+            }>>;
+            "from": string;
+            "mode": string;
+            "overlay"?: Array<{
+              "active_runtime_ms"?: (number) | null;
+              "dataset_id"?: string;
+              "dimensions"?: Record<string, string>;
+              "host"?: string;
+              "input_kind"?: string;
+              "kind": string;
+              "metric_name": string;
+              "project_id": string;
+              "quality": string;
+              "received_at"?: string;
+              "relative_time_ms"?: (number) | null;
+              "run_id"?: string;
+              "scenario_id"?: string;
+              "schema_version": string;
+              "service"?: string;
+              "source": string;
+              "timestamp_utc": string;
+              "unit"?: string;
+              "value"?: (number) | null;
+            }>;
+            "series": Array<{
+              "name": string;
+              "points": Array<{
+                "count": number;
+                "from": string;
+                "offset_seconds": number;
+                "to": string;
+                "value": (number) | null;
+              }>;
+              "unit": string;
+            }>;
+            "start": string;
+            "to": string;
+            "warnings": Array<string>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -72030,10 +72214,12 @@ export interface operations {
                 "comparison_run_id"?: string;
                 "dimensions"?: Array<string>;
                 "end_seconds"?: number;
+                "evidence_mode"?: string;
                 "filters"?: Record<string, string>;
                 "max_series"?: number;
                 "metric"?: string;
                 "overlay"?: boolean;
+                "overlay_selection"?: (Record<string, unknown>) | null;
                 "population"?: string;
                 "property_name"?: string;
                 "property_value"?: string;
@@ -75045,6 +75231,12 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "native_evidence"?: ({
+                "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                "incomplete"?: boolean;
+                "version": number;
+                "window_seconds": number;
+              }) | null;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -75917,6 +76109,12 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "native_evidence"?: ({
+                "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                "incomplete"?: boolean;
+                "version": number;
+                "window_seconds": number;
+              }) | null;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -86504,6 +86702,12 @@ export interface operations {
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
+                "native_evidence"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "incomplete"?: boolean;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "observation_state"?: string;
                 "observation_valid_until"?: (string) | null;
@@ -86813,6 +87017,12 @@ export interface operations {
                   "started_at": string;
                   "target_vusers": number;
                 }>;
+                "native_evidence"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "incomplete"?: boolean;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "network_profiles"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -87935,6 +88145,12 @@ export interface operations {
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
+                "native_evidence"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "incomplete"?: boolean;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "observation_state"?: string;
                 "observation_valid_until"?: (string) | null;
@@ -88244,6 +88460,12 @@ export interface operations {
                   "started_at": string;
                   "target_vusers": number;
                 }>;
+                "native_evidence"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "incomplete"?: boolean;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "network_profiles"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -89366,6 +89588,12 @@ export interface operations {
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
+                "native_evidence"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "incomplete"?: boolean;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "observation_state"?: string;
                 "observation_valid_until"?: (string) | null;
@@ -89675,6 +89903,12 @@ export interface operations {
                   "started_at": string;
                   "target_vusers": number;
                 }>;
+                "native_evidence"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "incomplete"?: boolean;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "network_profiles"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -90797,6 +91031,12 @@ export interface operations {
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
+                "native_evidence"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "incomplete"?: boolean;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "observation_state"?: string;
                 "observation_valid_until"?: (string) | null;
@@ -91106,6 +91346,12 @@ export interface operations {
                   "started_at": string;
                   "target_vusers": number;
                 }>;
+                "native_evidence"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "incomplete"?: boolean;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "network_profiles"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -92228,6 +92474,12 @@ export interface operations {
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
+                "native_evidence"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "incomplete"?: boolean;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "observation_state"?: string;
                 "observation_valid_until"?: (string) | null;
@@ -92537,6 +92789,12 @@ export interface operations {
                   "started_at": string;
                   "target_vusers": number;
                 }>;
+                "native_evidence"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "incomplete"?: boolean;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
                 "network_profiles"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -113120,6 +113378,12 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "native_evidence"?: ({
+                "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                "incomplete"?: boolean;
+                "version": number;
+                "window_seconds": number;
+              }) | null;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -113992,6 +114256,12 @@ export interface operations {
                 "started_at": string;
                 "target_vusers": number;
               }>;
+              "native_evidence"?: ({
+                "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                "incomplete"?: boolean;
+                "version": number;
+                "window_seconds": number;
+              }) | null;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -130631,6 +130901,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/move": {
     "patch": operations["handleMoveTest"];
+  };
+  "/api/v1/tests/{id}/native-series": {
+    "post": operations["handleNativeEvidenceSeries"];
   };
   "/api/v1/tests/{id}/notes": {
     "get": operations["handleListTestNotes"];

@@ -165,6 +165,11 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		}
 	}
 
+	actions := map[string]*TxMetrics{}
+	for name, am := range snap.ByAction {
+		actions[name] = buildTxMetricsFromAction(name, am, snap.Window)
+	}
+	live.NativeEvidence = nativeIntervalEvidence(live, actions, true, snap.Window.Seconds())
 	return live
 }
 
@@ -558,13 +563,16 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	}
 	artifacts.recordLiveMetrics(test, goalConfig, publishedLive)
 
+	// Detailed native selections travel on the bounded query path, not every websocket tick.
+	broadcastLive := *snapshot.LiveMetrics
+	broadcastLive.NativeEvidence = nil
 	tr.hub.BroadcastScopedJSON(testID, projectID, map[string]any{
 		"type":       "metrics_update",
 		"test_id":    testID,
 		"project_id": projectID,
 		"test_name":  testName,
 		"timestamp":  publishedLive.Timestamp,
-		"data":       snapshot.LiveMetrics,
+		"data":       &broadcastLive,
 	})
 	if publishDiagnostic {
 		tr.hub.BroadcastScopedJSON(testID, projectID, map[string]any{

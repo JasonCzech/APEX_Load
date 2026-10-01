@@ -6186,6 +6186,16 @@
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/native-series",
+      "operationId": "handleNativeEvidenceSeries",
+      "summary": "Native Evidence Series",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/tests/{id}/notes",
       "operationId": "handleListTestNotes",

@@ -15,6 +15,9 @@ export interface DashboardDefinitionPanel {
 }
 
 export interface DashboardAnalyticsQuery {
+  evidence_mode?: 'live' | 'archive'
+  overlay_selection?: { dataset_id?: string; source_id?: string; metric: string; aggregation: string; host?: string; dimensions?: Record<string, string>; max_lag_seconds?: number }
+
   population?: 'action' | 'transaction'
   property_name?: string
   property_value?: string

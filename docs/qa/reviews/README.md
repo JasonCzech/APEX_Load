@@ -10,6 +10,7 @@ Each report merges what used to be separate audit, implementation, code review, 
 
 | File | Date | Status | Purpose |
 | --- | --- | --- | --- |
+| [live-grouped-overlays-2026-10-01/REVIEW.md](live-grouped-overlays-2026-10-01/REVIEW.md) | 2026-10-01 | Implemented and reviewed; validation reruns documented | Durable live selections, grouped archive panels and authorized analytical overlays. |
 | [filtered-native-analytics-2026-10-01/REVIEW.md](filtered-native-analytics-2026-10-01/REVIEW.md) | 2026-10-01 | Implemented and reviewed; broader analytics remains open | Saved archive selections, raw timelines, same-project comparisons and bucket inspection. |
 | [authoring-analytics-cloud-2026-10-01/REVIEW.md](authoring-analytics-cloud-2026-10-01/REVIEW.md) | 2026-10-01 | Implemented slices validated; broader roadmap scope open | Authoring handoffs, native panel creation, cloud collector previews, bounded properties and messaging lag rules. |
 | [import-reviews-2026-09.md](import-reviews-2026-09.md) | 2026-09-12 to 2026-09-24 | Open | Import fixture matrix and broker runbook, LoadRunner missing-producer investigation, importer consistency audit, LoadRunner issue-detail and panel-design reviews, JMeter import fidelity and source-plan batch reviews. Evidence folders: `import-fixture-matrix-2026-09-12/`, `importer-consistency-2026-09-23/`, `jmeter-import-fidelity-2026-09-23/`, `loadrunner-issue-detail-2026-09-23/`, `loadrunner-panel-design-2026-09-23/` |

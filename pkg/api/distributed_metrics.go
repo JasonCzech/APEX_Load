@@ -34,6 +34,8 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	dependencyMetrics := make([]generatorrpc.MetricAggregate, 0)
 	soapMetrics := make([]generatorrpc.MetricAggregate, 0)
 	networkProfileMetrics := make([]generatorrpc.MetricAggregate, 0)
+	actionMetrics := make([]generatorrpc.MetricAggregate, 0)
+	actionsSupported := len(batches) > 0
 	propertyMetrics := make([]generatorrpc.MetricAggregate, 0)
 	regionMetrics := make([]generatorrpc.MetricAggregate, 0)
 	browserMetrics := make([]*generatorrpc.BrowserMetrics, 0)
@@ -112,6 +114,8 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		dependencyMetrics = append(dependencyMetrics, batch.DependencyMetrics...)
 		soapMetrics = append(soapMetrics, batch.SOAPMetrics...)
 		networkProfileMetrics = append(networkProfileMetrics, batch.NetworkProfileMetrics...)
+		actionsSupported = actionsSupported && batch.ActionMetricsVersion == 1
+		actionMetrics = append(actionMetrics, batch.ActionMetrics...)
 		propertyMetrics = append(propertyMetrics, batch.PropertyMetrics...)
 		regionMetrics = append(regionMetrics, batch.RegionMetrics...)
 		if batch.Browser != nil {
@@ -216,6 +220,10 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		}
 	}
 	combined.FleetMetrics = mergeGeneratorMetricAggregates(fleetMetrics)
+	if actionsSupported {
+		combined.ActionMetricsVersion = 1
+		combined.ActionMetrics = mergeGeneratorMetricAggregateSeries(actionMetrics)
+	}
 	combined.TransactionMetrics = mergeGeneratorMetricAggregateSeries(transactionMetrics)
 	combined.DependencyMetrics = mergeGeneratorMetricAggregateSeries(dependencyMetrics)
 	combined.SOAPMetrics = mergeGeneratorMetricAggregateSeries(soapMetrics)
@@ -556,6 +564,19 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	if live.Telemetry.CollectedAt.IsZero() {
 		live.Telemetry.CollectedAt = timestamp
 	}
+	defer func() {
+		actions := map[string]*TxMetrics{}
+		if batch.ActionMetricsVersion == 1 {
+			for _, a := range batch.ActionMetrics {
+				if m := txMetricsFromAggregate(a); m != nil {
+					actions[m.Name] = m
+				}
+			}
+		}
+		if batch.ActionMetricsVersion == 1 {
+			live.NativeEvidence = nativeIntervalEvidence(live, actions, true, batchWindowSeconds(batch.WindowMs))
+		}
+	}()
 	if applyDistributedAggregateMetrics(test, live, batch, fleetTPS, groupTPS) {
 		return live
 	}

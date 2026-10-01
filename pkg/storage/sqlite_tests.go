@@ -1776,6 +1776,10 @@ func (s *SQLiteStore) MoveTest(id string, folderID *string) error {
 func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics any) error {
 	record, err := intervalSummaryRecordFromMetrics(timestamp, metrics)
 	if err == nil {
+		nativeJSON, err := marshalNullableJSON(record.NativeEvidence)
+		if err != nil {
+			return err
+		}
 		transactionsJSON, err := marshalNullableJSON(record.Transactions)
 		if err != nil {
 			return err
@@ -1815,11 +1819,11 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 		_, err = s.db.Exec(`INSERT INTO test_interval_summaries (
 			test_id, schema_version, timestamp, active_vusers, tps, avg_response_ms, error_pct,
 			total_transactions, total_errors, p50_ms, p90_ms, p95_ms, p99_ms,
-			transactions_json, by_region_json, browser_json, browser_by_device_json, latency_json,
+			native_evidence_json, transactions_json, by_region_json, browser_json, browser_by_device_json, latency_json,
 			dropped_results, websocket_clients, websocket_dropped_messages, websocket_dropped_events,
 			generator_published_at, controller_received_at, collected_at, published_at,
 			generator_processing_lag_ms, transport_lag_ms, controller_fanout_lag_ms, sample_age_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			testID,
 			record.SchemaVersion,
 			record.Timestamp,
@@ -1833,6 +1837,7 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 			record.P90Ms,
 			record.P95Ms,
 			record.P99Ms,
+			nativeJSON,
 			transactionsJSON,
 			byRegionJSON,
 			browserJSON,
@@ -1976,6 +1981,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 		p90_ms,
 		p95_ms,
 		p99_ms,
+		native_evidence_json,
 		transactions_json,
 		by_region_json,
 		browser_json,
@@ -2029,6 +2035,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 		var transportLagMs sql.NullFloat64
 		var controllerFanoutLagMs sql.NullFloat64
 		var sampleAgeMs sql.NullFloat64
+		var nativeJSON sql.NullString
 		var schemaVersion sql.NullString
 		if err := rows.Scan(
 			&schemaVersion,
@@ -2043,6 +2050,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 			&record.P90Ms,
 			&record.P95Ms,
 			&record.P99Ms,
+			&nativeJSON,
 			&transactionsJSON,
 			&byRegionJSON,
 			&browserJSON,
@@ -2062,6 +2070,11 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 			&sampleAgeMs,
 		); err != nil {
 			return nil, err
+		}
+		if nativeJSON.Valid && nativeJSON.String != "" {
+			if err := json.Unmarshal([]byte(nativeJSON.String), &record.NativeEvidence); err != nil {
+				return nil, err
+			}
 		}
 		record.SchemaVersion = normalizeTelemetrySchemaVersion(schemaVersion.String, intervalSummarySchemaVersionV1)
 		if transactionsJSON.Valid && strings.TrimSpace(transactionsJSON.String) != "" {
@@ -2176,6 +2189,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
 	}
 	type summaryEnvelope struct {
+		NativeEvidence      *NativeIntervalEvidence               `json:"native_evidence,omitempty"`
 		CompletedIterations int64                                 `json:"completed_iterations,omitempty"`
 		Timestamp           time.Time                             `json:"timestamp"`
 		ActiveVUsers        int64                                 `json:"active_vusers"`
@@ -2205,6 +2219,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		return IntervalSummaryRecord{}, err
 	}
 	record := IntervalSummaryRecord{
+		NativeEvidence:      CloneNativeIntervalEvidence(summary.NativeEvidence),
 		CompletedIterations: summary.CompletedIterations,
 		SchemaVersion:       intervalSummarySchemaVersion,
 		Timestamp:           summary.Timestamp,

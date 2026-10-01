@@ -48,7 +48,20 @@ type DashboardPanel struct {
 	Query  *AnalyticsQuery `json:"query,omitempty"`
 }
 
+type NativeOverlaySelection struct {
+	DatasetID     string            `json:"dataset_id,omitempty"`
+	SourceID      string            `json:"source_id,omitempty"`
+	Metric        string            `json:"metric"`
+	Aggregation   string            `json:"aggregation"`
+	Host          string            `json:"host,omitempty"`
+	Dimensions    map[string]string `json:"dimensions,omitempty"`
+	MaxLagSeconds int               `json:"max_lag_seconds,omitempty"`
+}
+
 type AnalyticsQuery struct {
+	EvidenceMode     string                  `json:"evidence_mode,omitempty"`
+	OverlaySelection *NativeOverlaySelection `json:"overlay_selection,omitempty"`
+
 	Population      string `json:"population,omitempty"`
 	PropertyName    string `json:"property_name,omitempty"`
 	PropertyValue   string `json:"property_value,omitempty"`
@@ -74,7 +87,7 @@ var dashboardAggregations = map[string]struct{}{
 	"avg": {}, "sum": {}, "min": {}, "max": {}, "p50": {}, "p90": {}, "p95": {}, "p99": {}, "stddev": {}, "count": {}, "rate": {},
 }
 var dashboardDimensions = map[string]struct{}{
-	"action": {}, "transaction": {}, "region": {}, "network_profile": {}, "phase": {}, "page": {}, "hierarchy": {},
+	"action": {}, "transaction": {}, "region": {}, "property": {}, "dependency": {}, "network_profile": {}, "phase": {}, "page": {}, "hierarchy": {},
 }
 var dashboardPanelKinds = map[string]struct{}{
 	"line": {}, "stat": {}, "table": {}, "map": {}, "workspace_card": {},
@@ -141,7 +154,13 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 				continue
 			}
 			q := panel.Query
-			if q.Population != "" {
+			if q.EvidenceMode != "" {
+				if err := ValidateNativeEvidenceQuery(*q); err != nil {
+					return err
+				}
+			} else if q.OverlaySelection != nil {
+				return errors.New("overlay selection requires evidence mode")
+			} else if q.Population != "" {
 				if q.MaxSeries == 0 {
 					q.MaxSeries = 1
 				}
@@ -313,6 +332,9 @@ func (s *SQLiteStore) DeleteDashboardDefinitionIfRevision(id, projectID string, 
 
 // ValidateNativeArchiveQuery is shared by saved definitions and query execution.
 func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
+	if q.EvidenceMode != "" || q.OverlaySelection != nil {
+		return errors.New("use the native evidence query for live/grouped overlays")
+	}
 	if q.Population != "action" && q.Population != "transaction" {
 		return errors.New("select action or transaction population")
 	}

@@ -1109,7 +1109,7 @@ export default function TestExecution({
       )}
 
       {archiveReport && <RunOutcomeSummary report={archiveReport} />}
-      {canManageTests && api && test.project_id && <NativePanelAuthoring properties={Object.keys(archiveReport?.by_property || {}).sort()} key={`panels-${testId}`} onSave={async definition => {
+      {canManageTests && api && test.project_id && <NativePanelAuthoring properties={[...new Set([...Object.keys(archiveReport?.by_property || {}), ...Object.keys(test.live_metrics?.properties || {})])].sort()} key={`panels-${testId}`} onSave={async definition => {
         const created = await api.createDashboardDefinition({ ...definition, project_id: test.project_id!, visibility: 'project' })
         setProjectDashboardDefinitions(current => [...current, created])
       }} />}

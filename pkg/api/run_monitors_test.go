@@ -62,7 +62,7 @@ func TestRunMonitoringAPIArtifactsAndRetry(t *testing.T) {
 		t.Fatalf("jobs: %s", polled.Body.String())
 	}
 	v := 3.0
-	p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: "proj-a", RunID: "monitor-run", ScenarioID: "monitor-scenario", Source: source.ID, Host: "monitor-collector", TimestampUTC: now, MetricName: "goroutines", Kind: analysis.KindGauge, Quality: analysis.QualityValid, Value: &v}
+	p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: "proj-a", RunID: "monitor-run", ScenarioID: "monitor-scenario", Source: source.ID, Host: "monitor-collector", TimestampUTC: now, MetricName: "goroutines", Unit: "count", Kind: analysis.KindGauge, Quality: analysis.QualityValid, Value: &v}
 	batch := collectoragent.RunSampleBatch{Job: envelopes[0], Points: []analysis.MetricPoint{p}}
 	path := "/api/v1/monitoring/collectors/monitor-collector/jobs/" + jobs[0].ID + "/samples"
 	for i := 0; i < 2; i++ {
@@ -81,6 +81,21 @@ func TestRunMonitoringAPIArtifactsAndRetry(t *testing.T) {
 	series := timeslotRequest(t, server, http.MethodGet, "/api/v1/tests/monitor-run/monitor-series?source_id="+source.ID+"&metric=goroutines", nil)
 	if series.Code != 200 {
 		t.Fatalf("series: %d %s", series.Code, series.Body.String())
+	}
+	// Native panel overlays reuse durable monitor receipts and shared correlation.
+	q := nativeEvidenceQuery("archive")
+	q.OverlaySelection = &storage.NativeOverlaySelection{SourceID: source.ID, Metric: "goroutines", Aggregation: "avg"}
+	out := nativeEvidenceEnvelope(now, q)
+	value := 12.0
+	out.Series = []NativeEvidenceSeries{{Name: "Checkout", Unit: "ms", Points: []NativeEvidencePoint{{From: now, To: now.Add(10 * time.Second), Value: &value, Count: 1}, {From: now.Add(10 * time.Second), To: now.Add(20 * time.Second)}}}}
+	if err := server.attachNativeOverlay(context.Background(), "proj-a", "monitor-run", q, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Overlay) != 2 || len(out.Correlation["Checkout"]) != 1 || out.Correlation["Checkout"][0].Pairs != 1 {
+		t.Fatalf("overlay coverage: %+v", out)
+	}
+	if err := server.attachNativeOverlay(context.Background(), "proj-b", "monitor-run", q, &out); err == nil {
+		t.Fatal("cross-project overlay accepted")
 	}
 	for _, test := range []struct {
 		query         string

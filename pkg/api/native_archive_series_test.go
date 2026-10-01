@@ -248,10 +248,15 @@ func TestNativeArchiveViewerCanReopenSharedPanelAndQueryOnlyOwnProject(t *testin
 	}{
 		{"second-viewer", "GET", "/api/v1/monitoring/dashboard-definitions/shared", 200},
 		{"second-viewer", "POST", "/api/v1/tests/run/archive/native-series", 200},
+		{"second-viewer", "POST", "/api/v1/tests/run/native-series", 200},
 		{"second-viewer", "POST", "/api/v1/monitoring/dashboard-definitions", 403},
 		{"outsider", "POST", "/api/v1/tests/run/archive/native-series", 403},
+		{"outsider", "POST", "/api/v1/tests/run/native-series", 403},
 	} {
 		var body any = q
+		if tc.path == "/api/v1/tests/run/native-series" {
+			body = nativeEvidenceQuery("archive")
+		}
 		if strings.Contains(tc.path, "dashboard-definitions") {
 			body = definition
 		}

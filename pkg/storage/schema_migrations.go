@@ -48,6 +48,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 21, Name: "pending-archive-source-replica-holds", Fingerprint: "9d57e08247d40080f7d5b168e81036bfbef2021a22bb0fa8ed36836f43bc6302"},
 	{Version: 22, Name: "application-scoped-secrets", Fingerprint: "fb7bef557df89eb2fc02e545fb1685841e1720c5bf2f3dd518682b647da306a3"},
 	{Version: 23, Name: "analysis-workflows", Fingerprint: "1c2768f2c961fa5da1d9340e07c868862433ba4c9012f1212420680aee4aad98"},
+	{Version: 24, Name: "native-interval-evidence", Fingerprint: "6c0d32e793c1de36cc7089696093f731d5ac200e1823f84c90933c96673c43f5"},
 }
 
 type SchemaMigrationRecord struct {

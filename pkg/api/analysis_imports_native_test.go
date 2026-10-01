@@ -125,6 +125,38 @@ func TestAnalysisNativeImportLifecycle(t *testing.T) {
 	if len(compared.Correlation) != 1 || compared.Correlation[0].Pairs != 10 || compared.Correlation[0].Coefficient == nil || *compared.Correlation[0].Coefficient < .999 {
 		t.Fatalf("correlation: %s", r.Body.String())
 	}
+	// A native panel reads the real normalized dataset only after association.
+	start := time.UnixMilli(1700000000000).UTC()
+	if err := store.SaveTest(&storage.TestRecord{ID: "overlay-run", ProjectID: "proj-a", Name: "overlay", Status: "COMPLETE", StartTime: start}); err != nil {
+		t.Fatal(err)
+	}
+	q := nativeEvidenceQuery("archive")
+	q.EndSeconds = 10
+	q.BucketSeconds = 1
+	q.OverlaySelection = &storage.NativeOverlaySelection{DatasetID: in.ID, Metric: "latency", Aggregation: "avg"}
+	out := nativeEvidenceEnvelope(start, q)
+	series := NativeEvidenceSeries{Name: "Checkout", Unit: "ms"}
+	for i := 0; i < 10; i++ {
+		value := float64(i + 1)
+		series.Points = append(series.Points, NativeEvidencePoint{From: start.Add(time.Duration(i) * time.Second), To: start.Add(time.Duration(i+1) * time.Second), Count: 1, Value: &value})
+	}
+	out.Series = []NativeEvidenceSeries{series}
+	if err := server.attachNativeOverlay(context.Background(), "proj-a", "overlay-run", q, &out); err == nil {
+		t.Fatal("unassociated overlay accepted")
+	}
+	if reply := timeslotRequest(t, server, "PUT", dataset+"/association", map[string]any{"revision": updated.Revision, "run_id": "overlay-run"}); reply.Code != 200 {
+		t.Fatalf("association: %d %s", reply.Code, reply.Body.String())
+	}
+	updated, err = store.(storage.AnalysisImportStore).GetAnalysisImport(in.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := server.attachNativeOverlay(context.Background(), "proj-a", "overlay-run", q, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Overlay) != 10 || len(out.Correlation["Checkout"]) != 1 || out.Correlation["Checkout"][0].Pairs != 10 || out.Correlation["Checkout"][0].Coefficient == nil || *out.Correlation["Checkout"][0].Coefficient < .999 {
+		t.Fatalf("native dataset overlay: %+v", out)
+	}
 	// A caller cannot claim an association just by including a run in the query.
 	if r = timeslotRequest(t, server, "PUT", dataset+"/association", map[string]any{"revision": updated.Revision, "run_id": "unknown"}); r.Code != 404 {
 		t.Fatal("associated unowned run")

@@ -125,6 +125,7 @@ type NetworkLatencyTargetRecord struct {
 }
 
 type IntervalSummaryRecord struct {
+	NativeEvidence           *NativeIntervalEvidence                `json:"native_evidence,omitempty"`
 	CompletedIterations      int64                                  `json:"completed_iterations,omitempty"`
 	SchemaVersion            string                                 `json:"schema_version,omitempty"`
 	Timestamp                time.Time                              `json:"timestamp"`

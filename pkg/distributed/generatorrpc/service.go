@@ -254,11 +254,13 @@ type transactionBuffer struct {
 }
 
 type metricsAggregateSet struct {
+	NativeVersion   uint32
 	Fleet           *MetricAggregate
 	Transactions    []MetricAggregate
 	Dependencies    []MetricAggregate
 	SOAP            []MetricAggregate
 	NetworkProfiles []MetricAggregate
+	Actions         []MetricAggregate
 	Properties      []MetricAggregate
 	Regions         []MetricAggregate
 	Browser         *BrowserMetrics
@@ -2330,6 +2332,8 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		DependencyMetrics:     metricAggregatesToProto(aggregates.Dependencies),
 		SoapMetrics:           metricAggregatesToProto(aggregates.SOAP),
 		NetworkProfileMetrics: metricAggregatesToProto(aggregates.NetworkProfiles),
+		ActionMetrics:         metricAggregatesToProto(aggregates.Actions),
+		ActionMetricsVersion:  aggregates.NativeVersion,
 		PropertyMetrics:       metricAggregatesToProto(aggregates.Properties),
 		RegionMetrics:         metricAggregatesToProto(aggregates.Regions),
 		FleetMetrics:          metricAggregateToProto(aggregates.Fleet),
@@ -2716,7 +2720,7 @@ func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapsho
 }
 
 func metricsAggregateSetHasEvidence(aggregates metricsAggregateSet) bool {
-	return aggregates.Fleet != nil || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Properties) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
+	return aggregates.Fleet != nil || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Actions) > 0 || len(aggregates.Properties) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
 }
 
 func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName string, metrics executionMetricsSnapshot) {
@@ -2946,6 +2950,10 @@ func mergeSnapshotSideChannelAggregates(out *metricsAggregateSet, snapshot engin
 		return
 	}
 	out.NetworkProfiles = engineActionMetricsToAggregates(snapshot.ByNetworkProfile)
+	if snapshot.ByAction != nil {
+		out.NativeVersion = 1
+	}
+	out.Actions = engineActionMetricsToAggregates(snapshot.ByAction)
 	out.Properties = engineActionMetricsToAggregates(snapshot.ByProperty)
 	out.Regions = engineActionMetricsToAggregates(snapshot.ByRegion)
 	out.Browser = browserMetricsFromEngine(snapshot.Browser)
@@ -3050,12 +3058,13 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 	if len(values) == 0 {
 		return metricsAggregateSet{}
 	}
-	out := metricsAggregateSet{}
+	out := metricsAggregateSet{NativeVersion: 1}
 	fleet := make([]MetricAggregate, 0, len(values))
 	transactionMetrics := make([]MetricAggregate, 0)
 	dependencyMetrics := make([]MetricAggregate, 0)
 	soapMetrics := make([]MetricAggregate, 0)
 	networkProfileMetrics := make([]MetricAggregate, 0)
+	actionMetrics := make([]MetricAggregate, 0)
 	propertyMetrics := make([]MetricAggregate, 0)
 	regionMetrics := make([]MetricAggregate, 0)
 	groupMetrics := make([]GroupMetric, 0)
@@ -3065,10 +3074,14 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 		if value.Fleet != nil {
 			fleet = append(fleet, *value.Fleet)
 		}
+		if value.NativeVersion != 1 {
+			out.NativeVersion = 0
+		}
 		transactionMetrics = append(transactionMetrics, value.Transactions...)
 		dependencyMetrics = append(dependencyMetrics, value.Dependencies...)
 		soapMetrics = append(soapMetrics, value.SOAP...)
 		networkProfileMetrics = append(networkProfileMetrics, value.NetworkProfiles...)
+		actionMetrics = append(actionMetrics, value.Actions...)
 		propertyMetrics = append(propertyMetrics, value.Properties...)
 		regionMetrics = append(regionMetrics, value.Regions...)
 		groupMetrics = append(groupMetrics, value.Groups...)
@@ -3082,6 +3095,7 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 	out.Dependencies = mergeMetricAggregateSeries(dependencyMetrics)
 	out.SOAP = mergeMetricAggregateSeries(soapMetrics)
 	out.NetworkProfiles = mergeMetricAggregateSeries(networkProfileMetrics)
+	out.Actions = mergeMetricAggregateSeries(actionMetrics)
 	out.Properties = mergeMetricAggregateSeries(propertyMetrics)
 	out.Regions = mergeMetricAggregateSeries(regionMetrics)
 	out.Groups = mergeGroupMetricSeries(groupMetrics)

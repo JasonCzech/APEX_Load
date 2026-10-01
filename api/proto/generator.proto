@@ -450,6 +450,8 @@ message MetricsBatch {
   uint64 batch_sequence = 19;
   repeated MetricAggregate region_metrics = 20;
   repeated MetricAggregate property_metrics = 22;
+  repeated MetricAggregate action_metrics = 23;
+  uint32 action_metrics_version = 24;
   repeated TransactionResponseTimeSLACompliance transaction_response_time_sla = 21;
 }
 

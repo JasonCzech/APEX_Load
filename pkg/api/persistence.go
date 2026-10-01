@@ -1390,6 +1390,7 @@ func compactTerminalLiveMetricsTail(point *LiveMetrics) *LiveMetrics {
 		compacted.slaTelemetryPeaks = peaks
 	}
 	compacted.ErrorBreakdown = nil
+	compacted.NativeEvidence = nil
 	compacted.Transactions = nil
 	compacted.DependencyHealth = nil
 	compacted.DependencyMap = nil
@@ -1512,6 +1513,7 @@ func mapToLiveMetrics(m map[string]any) *LiveMetrics {
 
 func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *LiveMetrics {
 	live := &LiveMetrics{
+		NativeEvidence:      storage.CloneNativeIntervalEvidence(record.NativeEvidence),
 		CompletedIterations: record.CompletedIterations,
 		Timestamp:           record.Timestamp,
 		ActiveVUsers:        record.ActiveVUsers,

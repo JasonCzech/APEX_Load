@@ -168,6 +168,8 @@ type MetricsBatch struct {
 	DependencyMetrics          []MetricAggregate
 	SOAPMetrics                []MetricAggregate
 	NetworkProfileMetrics      []MetricAggregate
+	ActionMetrics              []MetricAggregate
+	ActionMetricsVersion       uint32
 	PropertyMetrics            []MetricAggregate
 	RegionMetrics              []MetricAggregate
 	Browser                    *BrowserMetrics
@@ -1514,6 +1516,8 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		DependencyMetrics:          metricAggregatesFromProto(batch.GetDependencyMetrics()),
 		SOAPMetrics:                metricAggregatesFromProto(batch.GetSoapMetrics()),
 		NetworkProfileMetrics:      metricAggregatesFromProto(batch.GetNetworkProfileMetrics()),
+		ActionMetrics:              metricAggregatesFromProto(batch.GetActionMetrics()),
+		ActionMetricsVersion:       batch.GetActionMetricsVersion(),
 		PropertyMetrics:            metricAggregatesFromProto(batch.GetPropertyMetrics()),
 		RegionMetrics:              metricAggregatesFromProto(batch.GetRegionMetrics()),
 		Browser:                    browserMetricsFromProto(batch.GetBrowserMetrics()),

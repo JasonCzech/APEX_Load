@@ -49346,6 +49346,8 @@ paths:
                                 end_seconds:
                                   type: integer
                                   format: int64
+                                evidence_mode:
+                                  type: string
                                 filters:
                                   type: object
                                   additionalProperties:
@@ -49357,6 +49359,11 @@ paths:
                                   type: string
                                 overlay:
                                   type: boolean
+                                overlay_selection:
+                                  type: object
+                                  description: 'Go type: NativeOverlaySelection'
+                                  additionalProperties: true
+                                  nullable: true
                                 population:
                                   type: string
                                 property_name:
@@ -62219,6 +62226,30 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            native_evidence:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - version
+                                - window_seconds
+                              nullable: true
                             network_profiles:
                               type: object
                               additionalProperties:
@@ -63231,6 +63262,30 @@ paths:
                                 - stage_index
                                 - started_at
                                 - target_vusers
+                          native_evidence:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: NativeIntervalMetric'
+                                    additionalProperties: true
+                              incomplete:
+                                type: boolean
+                              version:
+                                type: integer
+                                format: int64
+                              window_seconds:
+                                type: number
+                                format: double
+                            required:
+                              - dimensions
+                              - version
+                              - window_seconds
+                            nullable: true
                           network_profiles:
                             type: object
                             additionalProperties:
@@ -66574,6 +66629,30 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            native_evidence:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - version
+                                - window_seconds
+                              nullable: true
                             network_profiles:
                               type: object
                               additionalProperties:
@@ -67586,6 +67665,30 @@ paths:
                                 - stage_index
                                 - started_at
                                 - target_vusers
+                          native_evidence:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: NativeIntervalMetric'
+                                    additionalProperties: true
+                              incomplete:
+                                type: boolean
+                              version:
+                                type: integer
+                                format: int64
+                              window_seconds:
+                                type: number
+                                format: double
+                            required:
+                              - dimensions
+                              - version
+                              - window_seconds
+                            nullable: true
                           network_profiles:
                             type: object
                             additionalProperties:
@@ -70930,6 +71033,30 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            native_evidence:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - version
+                                - window_seconds
+                              nullable: true
                             network_profiles:
                               type: object
                               additionalProperties:
@@ -71942,6 +72069,30 @@ paths:
                                 - stage_index
                                 - started_at
                                 - target_vusers
+                          native_evidence:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: NativeIntervalMetric'
+                                    additionalProperties: true
+                              incomplete:
+                                type: boolean
+                              version:
+                                type: integer
+                                format: int64
+                              window_seconds:
+                                type: number
+                                format: double
+                            required:
+                              - dimensions
+                              - version
+                              - window_seconds
+                            nullable: true
                           network_profiles:
                             type: object
                             additionalProperties:
@@ -75298,6 +75449,30 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            native_evidence:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - version
+                                - window_seconds
+                              nullable: true
                             network_profiles:
                               type: object
                               additionalProperties:
@@ -76310,6 +76485,30 @@ paths:
                                 - stage_index
                                 - started_at
                                 - target_vusers
+                          native_evidence:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: NativeIntervalMetric'
+                                    additionalProperties: true
+                              incomplete:
+                                type: boolean
+                              version:
+                                type: integer
+                                format: int64
+                              window_seconds:
+                                type: number
+                                format: double
+                            required:
+                              - dimensions
+                              - version
+                              - window_seconds
+                            nullable: true
                           network_profiles:
                             type: object
                             additionalProperties:
@@ -79666,6 +79865,30 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            native_evidence:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - version
+                                - window_seconds
+                              nullable: true
                             network_profiles:
                               type: object
                               additionalProperties:
@@ -80678,6 +80901,30 @@ paths:
                                 - stage_index
                                 - started_at
                                 - target_vusers
+                          native_evidence:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: NativeIntervalMetric'
+                                    additionalProperties: true
+                              incomplete:
+                                type: boolean
+                              version:
+                                type: integer
+                                format: int64
+                              window_seconds:
+                                type: number
+                                format: double
+                            required:
+                              - dimensions
+                              - version
+                              - window_seconds
+                            nullable: true
                           network_profiles:
                             type: object
                             additionalProperties:
@@ -84034,6 +84281,30 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            native_evidence:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - version
+                                - window_seconds
+                              nullable: true
                             network_profiles:
                               type: object
                               additionalProperties:
@@ -85046,6 +85317,30 @@ paths:
                                 - stage_index
                                 - started_at
                                 - target_vusers
+                          native_evidence:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: NativeIntervalMetric'
+                                    additionalProperties: true
+                              incomplete:
+                                type: boolean
+                              version:
+                                type: integer
+                                format: int64
+                              window_seconds:
+                                type: number
+                                format: double
+                            required:
+                              - dimensions
+                              - version
+                              - window_seconds
+                            nullable: true
                           network_profiles:
                             type: object
                             additionalProperties:
@@ -88402,6 +88697,30 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            native_evidence:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - version
+                                - window_seconds
+                              nullable: true
                             network_profiles:
                               type: object
                               additionalProperties:
@@ -89414,6 +89733,30 @@ paths:
                                 - stage_index
                                 - started_at
                                 - target_vusers
+                          native_evidence:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: NativeIntervalMetric'
+                                    additionalProperties: true
+                              incomplete:
+                                type: boolean
+                              version:
+                                type: integer
+                                format: int64
+                              window_seconds:
+                                type: number
+                                format: double
+                            required:
+                              - dimensions
+                              - version
+                              - window_seconds
+                            nullable: true
                           network_profiles:
                             type: object
                             additionalProperties:
@@ -252487,6 +252830,30 @@ paths:
                               - stage_index
                               - started_at
                               - target_vusers
+                        native_evidence:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: NativeIntervalMetric'
+                                  additionalProperties: true
+                            incomplete:
+                              type: boolean
+                            version:
+                              type: integer
+                              format: int64
+                            window_seconds:
+                              type: number
+                              format: double
+                          required:
+                            - dimensions
+                            - version
+                            - window_seconds
+                          nullable: true
                         network_profiles:
                           type: object
                           additionalProperties:
@@ -255381,6 +255748,29 @@ paths:
                             - stage_index
                             - started_at
                             - target_vusers
+                      native_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                          incomplete:
+                            type: boolean
+                          version:
+                            type: integer
+                            format: int64
+                          window_seconds:
+                            type: number
+                            format: double
+                        required:
+                          - dimensions
+                          - version
+                          - window_seconds
+                        nullable: true
                       network_profiles:
                         type: object
                         additionalProperties:
@@ -263430,6 +263820,30 @@ paths:
                               - stage_index
                               - started_at
                               - target_vusers
+                        native_evidence:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: NativeIntervalMetric'
+                                  additionalProperties: true
+                            incomplete:
+                              type: boolean
+                            version:
+                              type: integer
+                              format: int64
+                            window_seconds:
+                              type: number
+                              format: double
+                          required:
+                            - dimensions
+                            - version
+                            - window_seconds
+                          nullable: true
                         network_profiles:
                           type: object
                           additionalProperties:
@@ -266324,6 +266738,29 @@ paths:
                             - stage_index
                             - started_at
                             - target_vusers
+                      native_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                          incomplete:
+                            type: boolean
+                          version:
+                            type: integer
+                            format: int64
+                          window_seconds:
+                            type: number
+                            format: double
+                        required:
+                          - dimensions
+                          - version
+                          - window_seconds
+                        nullable: true
                       network_profiles:
                         type: object
                         additionalProperties:
@@ -275896,6 +276333,8 @@ paths:
                 end_seconds:
                   type: integer
                   format: int64
+                evidence_mode:
+                  type: string
                 filters:
                   type: object
                   additionalProperties:
@@ -275907,6 +276346,27 @@ paths:
                   type: string
                 overlay:
                   type: boolean
+                overlay_selection:
+                  type: object
+                  properties:
+                    aggregation:
+                      type: string
+                    dataset_id:
+                      type: string
+                    dimensions:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    host:
+                      type: string
+                    max_lag_seconds:
+                      type: integer
+                      format: int64
+                    metric:
+                      type: string
+                    source_id:
+                      type: string
+                  nullable: true
                 population:
                   type: string
                 property_name:
@@ -294175,6 +294635,30 @@ paths:
                               - stage_index
                               - started_at
                               - target_vusers
+                        native_evidence:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: NativeIntervalMetric'
+                                  additionalProperties: true
+                            incomplete:
+                              type: boolean
+                            version:
+                              type: integer
+                              format: int64
+                            window_seconds:
+                              type: number
+                              format: double
+                          required:
+                            - dimensions
+                            - version
+                            - window_seconds
+                          nullable: true
                         network_profiles:
                           type: object
                           additionalProperties:
@@ -297069,6 +297553,29 @@ paths:
                             - stage_index
                             - started_at
                             - target_vusers
+                      native_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                          incomplete:
+                            type: boolean
+                          version:
+                            type: integer
+                            format: int64
+                          window_seconds:
+                            type: number
+                            format: double
+                        required:
+                          - dimensions
+                          - version
+                          - window_seconds
+                        nullable: true
                       network_profiles:
                         type: object
                         additionalProperties:
@@ -305062,6 +305569,30 @@ paths:
                               - stage_index
                               - started_at
                               - target_vusers
+                        native_evidence:
+                          type: object
+                          properties:
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: NativeIntervalMetric'
+                                  additionalProperties: true
+                            incomplete:
+                              type: boolean
+                            version:
+                              type: integer
+                              format: int64
+                            window_seconds:
+                              type: number
+                              format: double
+                          required:
+                            - dimensions
+                            - version
+                            - window_seconds
+                          nullable: true
                         network_profiles:
                           type: object
                           additionalProperties:
@@ -307956,6 +308487,29 @@ paths:
                             - stage_index
                             - started_at
                             - target_vusers
+                      native_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                          incomplete:
+                            type: boolean
+                          version:
+                            type: integer
+                            format: int64
+                          window_seconds:
+                            type: number
+                            format: double
+                        required:
+                          - dimensions
+                          - version
+                          - window_seconds
+                        nullable: true
                       network_profiles:
                         type: object
                         additionalProperties:
@@ -322259,6 +322813,288 @@ paths:
       tags:
         - Tests
       x-handler: handleMoveTest
+  /api/v1/tests/{id}/native-series:
+    post:
+      summary: Native Evidence Series
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleNativeEvidenceSeries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                aggregation:
+                  type: string
+                bucket_seconds:
+                  type: integer
+                  format: int64
+                comparison_run_id:
+                  type: string
+                dimensions:
+                  type: array
+                  items:
+                    type: string
+                end_seconds:
+                  type: integer
+                  format: int64
+                evidence_mode:
+                  type: string
+                filters:
+                  type: object
+                  additionalProperties:
+                    type: string
+                max_series:
+                  type: integer
+                  format: int64
+                metric:
+                  type: string
+                overlay:
+                  type: boolean
+                overlay_selection:
+                  type: object
+                  properties:
+                    aggregation:
+                      type: string
+                    dataset_id:
+                      type: string
+                    dimensions:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    host:
+                      type: string
+                    max_lag_seconds:
+                      type: integer
+                      format: int64
+                    metric:
+                      type: string
+                    source_id:
+                      type: string
+                  nullable: true
+                population:
+                  type: string
+                property_name:
+                  type: string
+                property_value:
+                  type: string
+                start_seconds:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  correlation:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          coefficient:
+                            type: number
+                            format: double
+                            nullable: true
+                          coverage:
+                            type: number
+                            format: double
+                          expected_buckets:
+                            type: integer
+                            format: int64
+                          lag_seconds:
+                            type: integer
+                            format: int64
+                          pairs:
+                            type: integer
+                            format: int64
+                        required:
+                          - coverage
+                          - expected_buckets
+                          - lag_seconds
+                          - pairs
+                  from:
+                    type: string
+                    format: date-time
+                  mode:
+                    type: string
+                  overlay:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        active_runtime_ms:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        dataset_id:
+                          type: string
+                        dimensions:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        host:
+                          type: string
+                        input_kind:
+                          type: string
+                        kind:
+                          type: string
+                        metric_name:
+                          type: string
+                        project_id:
+                          type: string
+                        quality:
+                          type: string
+                        received_at:
+                          type: string
+                          format: date-time
+                        relative_time_ms:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_id:
+                          type: string
+                        scenario_id:
+                          type: string
+                        schema_version:
+                          type: string
+                        service:
+                          type: string
+                        source:
+                          type: string
+                        timestamp_utc:
+                          type: string
+                          format: date-time
+                        unit:
+                          type: string
+                        value:
+                          type: number
+                          format: double
+                          nullable: true
+                      required:
+                        - kind
+                        - metric_name
+                        - project_id
+                        - quality
+                        - schema_version
+                        - source
+                        - timestamp_utc
+                  series:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        points:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              count:
+                                type: integer
+                                format: int64
+                              from:
+                                type: string
+                                format: date-time
+                              offset_seconds:
+                                type: number
+                                format: double
+                              to:
+                                type: string
+                                format: date-time
+                              value:
+                                type: number
+                                format: double
+                                nullable: true
+                            required:
+                              - count
+                              - from
+                              - offset_seconds
+                              - to
+                              - value
+                        unit:
+                          type: string
+                      required:
+                        - name
+                        - points
+                        - unit
+                  start:
+                    type: string
+                    format: date-time
+                  to:
+                    type: string
+                    format: date-time
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - from
+                  - mode
+                  - series
+                  - start
+                  - to
+                  - warnings
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleNativeEvidenceSeries
   /api/v1/tests/{id}/notes:
     get:
       summary: List Test Notes
