@@ -43,6 +43,7 @@ func TestNativeProtocolSupportMatrixEndpointCoversRemainingExecutableProtocols(t
 		"jms-solace":     dsl.SolaceJMSRealAdapterAvailable(),
 		"jms-servicebus": dsl.ServiceBusJMSRealAdapterAvailable(),
 		"kafka":          dsl.KafkaRealAdapterAvailable(),
+		"eventhubs":      dsl.EventHubsRealAdapterAvailable(),
 	} {
 		entry := nativeProtocolMatrixEntry(payload.SupportMatrix, protocol)
 		if entry == nil {
@@ -107,4 +108,21 @@ func nativeProtocolMatrixEntry(entries []NativeProtocolSupportEntry, protocol st
 		}
 	}
 	return nil
+}
+
+func TestNativeProtocolAuthoringCatalogParity(t *testing.T) {
+	for _, entry := range nativeProtocolSupportMatrix() {
+		specs := dsl.ActionSpecsForProtocol(entry.Protocol)
+		if len(specs) != len(entry.ActionTypes) {
+			t.Fatalf("%s catalog mismatch", entry.Protocol)
+		}
+		for i, spec := range specs {
+			if entry.ActionTypes[i] != spec.Type {
+				t.Fatalf("%s stale action %s", entry.Protocol, entry.ActionTypes[i])
+			}
+		}
+		if entry.Protocol == "kafka" && (strings.Contains(strings.Join(entry.ActionEditor, " "), "seek (mock only)") || strings.Contains(strings.Join(entry.Validation, " "), "real seek rejection")) {
+			t.Fatal("stale Kafka guidance")
+		}
+	}
 }

@@ -56430,6 +56430,10 @@ paths:
                           type: array
                           items:
                             type: string
+                        action_types:
+                          type: array
+                          items:
+                            type: string
                         authoring_surface:
                           type: string
                         display_name:

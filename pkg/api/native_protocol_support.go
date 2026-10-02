@@ -26,6 +26,7 @@ type NativeProtocolSupportEntry struct {
 	ExecutionPosture    string   `json:"execution_posture"`
 	AuthoringSurface    string   `json:"authoring_surface"`
 	RuntimeConfig       []string `json:"runtime_config,omitempty"`
+	ActionTypes         []string `json:"action_types,omitempty"`
 	ActionEditor        []string `json:"action_editor,omitempty"`
 	Validation          []string `json:"validation,omitempty"`
 	ReplayEvidence      []string `json:"replay_evidence,omitempty"`
@@ -56,6 +57,7 @@ func nativeProtocolSupportMatrix() []NativeProtocolSupportEntry {
 	solaceStatus, solacePosture := realAdapterSupport(dsl.SolaceJMSRealAdapterAvailable())
 	serviceBusStatus, serviceBusPosture := realAdapterSupport(dsl.ServiceBusJMSRealAdapterAvailable())
 	kafkaStatus, kafkaPosture := realAdapterSupport(dsl.KafkaRealAdapterAvailable())
+	ehStatus, ehPosture := realAdapterSupport(dsl.EventHubsRealAdapterAvailable())
 	entries := []NativeProtocolSupportEntry{
 		{
 			Protocol:            "websocket",
@@ -160,14 +162,27 @@ func nativeProtocolSupportMatrix() []NativeProtocolSupportEntry {
 			ExecutionPosture:    kafkaPosture,
 			AuthoringSurface:    "blank editor, starter template, AsyncAPI import",
 			RuntimeConfig:       []string{"brokers", "security protocol", "SASL mechanism/credentials", "TLS", "consumer group", "topic", "acks", "compression", "partition strategy", "timeout", "mock mode"},
-			ActionEditor:        []string{"produce", "consume", "request/reply", "commit", "seek (mock only)", "key/partition", "headers", "offset/partition extractors", "message/offset/lag assertions"},
-			Validation:          []string{"broker/topic readiness", "real-adapter build availability", "real seek rejection", "security/acks/compression enum validation", "mock broker local replay"},
+			ActionEditor:        []string{"produce", "consume", "request/reply", "commit", "seek (real adapter with explicit partition/offset)", "key/partition", "headers", "offset/partition extractors", "message/offset/lag assertions"},
+			Validation:          []string{"broker/topic readiness", "real-adapter build availability", "real seek capability admission", "consumer transaction coordination admission", "security/acks/compression enum validation", "mock broker local replay"},
 			ReplayEvidence:      []string{"protocol evidence", "partition/offset evidence", "consumer lag", "correlation evidence", "timeout diagnosis"},
 			ReportExport:        []string{"replay JSON", "debug session export", "archive transaction evidence"},
 			ImportSources:       []string{"JSON DSL", "AsyncAPI 2.x/3.x"},
-			RemainingGaps:       []string{realAdapterAvailabilityGap("Kafka franz-go", "kafka_real", dsl.KafkaRealAdapterAvailable()), "kafka_seek is mock-only; Protobuf schema-registry payloads remain review-only while JSON Schema and Avro serde are executable with schema material"},
+			RemainingGaps:       []string{realAdapterAvailabilityGap("Kafka franz-go", "kafka_real", dsl.KafkaRealAdapterAvailable()), "Consumer transactions and real seek require advertised generator capabilities; Protobuf schema-registry payloads remain review-only while JSON Schema and Avro serde are executable with schema material"},
 			RecommendedWorkflow: "Author or import from AsyncAPI, shake out against the in-memory broker, then build with -tags kafka_real and attach real brokers/SASL for live execution.",
 			Evidence:            []string{"pkg/protocol/kafka/kafka_test.go", "/api/v1/scripts/import/asyncapi/support-matrix"},
+		},
+		{
+			Protocol: "eventhubs", DisplayName: "Azure Event Hubs", Status: ehStatus, ExecutionPosture: ehPosture,
+			AuthoringSurface:    "blank editor, starter template, AsyncAPI import",
+			RuntimeConfig:       []string{"namespace", "event hub", "consumer group", "AAD or connection string", "partition", "observer/processor/exclusive mode", "Blob checkpoint store", "owner epoch"},
+			ActionEditor:        []string{"produce", "consume", "batch size", "event properties", "sequence/offset assertions"},
+			Validation:          []string{"real-adapter build availability", "explicit processor checkpoint identity", "exclusive fixed-partition epoch admission", "generator capability negotiation"},
+			ReplayEvidence:      []string{"messaging diagnostics", "partition/sequence evidence", "observed lag availability", "ownership-loss errors"},
+			ReportExport:        []string{"replay JSON", "debug session export", "archive messaging evidence"},
+			ImportSources:       []string{"JSON DSL", "AsyncAPI Event Hubs bindings"},
+			RemainingGaps:       []string{realAdapterAvailabilityGap("Event Hubs AMQP", "eventhubs_real", dsl.EventHubsRealAdapterAvailable()), "live Azure processor rebalance, crash recovery and epoch takeover acceptance remain pending"},
+			RecommendedWorkflow: "Use mock produce/consume for shakeout. Real observer, processor and exclusive modes require explicit project-approved identities; processor/exclusive modes require generator capabilities.",
+			Evidence:            []string{"pkg/protocol/eventhubs", "docs/EVENT_HUBS_HOWTO.md"},
 		},
 		{
 			Protocol:            "jms-ibmmq",
@@ -185,6 +200,11 @@ func nativeProtocolSupportMatrix() []NativeProtocolSupportEntry {
 			RecommendedWorkflow: "Use mock replay only for script review; do not approve real IBM MQ execution until a governed MQI adapter and broker evidence are available.",
 			Evidence:            []string{"pkg/protocol/jms/jms_test.go", "docs/PROTOCOL_SUPPORT.md"},
 		},
+	}
+	for i := range entries {
+		for _, spec := range dsl.ActionSpecsForProtocol(entries[i].Protocol) {
+			entries[i].ActionTypes = append(entries[i].ActionTypes, spec.Type)
+		}
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
 		return entries[i].Protocol < entries[j].Protocol

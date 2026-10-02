@@ -72264,6 +72264,7 @@ export interface operations {
             "status_counts": Record<string, number>;
             "support_matrix": Array<{
               "action_editor"?: Array<string>;
+              "action_types"?: Array<string>;
               "authoring_surface": string;
               "display_name": string;
               "evidence"?: Array<string>;
