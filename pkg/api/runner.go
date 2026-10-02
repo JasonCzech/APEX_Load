@@ -469,6 +469,8 @@ func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
 
 type ManagedTest struct {
 	preparationID string
+	// Protected by tr.mu; checks only generator control-plane reservations.
+	preparationPeerCheck func(context.Context) error
 	// Protected by tr.mu; retained through terminal persistence retries.
 	localArchiveFinalizationFailed bool
 

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -268,6 +269,11 @@ func (tr *TestRunner) awaitPreparedStart(test *ManagedTest) error {
 	if test.preparationID == "" {
 		return tr.validatePreparedMonitorReadiness(test.ID)
 	}
+	defer func() {
+		tr.mu.Lock()
+		test.preparationPeerCheck = nil
+		tr.mu.Unlock()
+	}()
 	store, ok := tr.testStore.(storage.PreparationStore)
 	if !ok {
 		return errors.New("preparation storage unavailable")
@@ -295,6 +301,9 @@ func (tr *TestRunner) awaitPreparedStart(test *ManagedTest) error {
 	}
 	if err := tr.validatePreparedMonitorReadiness(test.ID); err != nil {
 		return err
+	}
+	if !tr.preparationReservationValid(test.ID, p) {
+		return errors.New("prepared reservation unavailable before readiness")
 	}
 	p, err = tr.transitionPreparation(p.ID, "preparing", "ready", p.Revision, p.OwnerFence, allocation)
 	if err != nil {
@@ -363,7 +372,7 @@ func (tr *TestRunner) consumePreparation(id string, opts StartTestOptions) error
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	test := tr.tests[id]
-	if test == nil || test.Status != "INITIALIZING" || test.preparationID != p.ID || test.executionCtx == nil || test.executionCtx.Err() != nil {
+	if test == nil || test.Status != "INITIALIZING" || test.preparationID != p.ID || test.executionFence != p.OwnerFence || test.executionCtx == nil || test.executionCtx.Err() != nil || !preparationAllocationMatches(test, p) {
 		return storage.ErrPreparationConflict
 	}
 	snapshot, _ := applyTestStartedByActor(test, opts.actor)
@@ -378,10 +387,44 @@ func (tr *TestRunner) consumePreparation(id string, opts StartTestOptions) error
 }
 
 func (tr *TestRunner) preparationReservationValid(id string, p *storage.Preparation) bool {
+	if p == nil || !tr.isExecutionLeader() {
+		return false
+	}
+	if tr.durableExecutionFence && tr.currentExecutionFenceToken() != p.OwnerFence {
+		return false
+	}
+	tr.mu.RLock()
+	test := tr.tests[id]
+	if test == nil || test.Status != "INITIALIZING" || test.preparationID != p.ID || test.executionFence != p.OwnerFence || test.executionCtx == nil || test.executionCtx.Err() != nil || !preparationAllocationMatches(test, p) {
+		tr.mu.RUnlock()
+		return false
+	}
+	check, ctx := test.preparationPeerCheck, test.executionCtx
+	_, distributed := tr.resolveBackend(test).(*distributedExecutionBackend)
+	tr.mu.RUnlock()
+	if distributed && check == nil {
+		return false
+	}
+	if check != nil {
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := check(ctx); err != nil || ctx.Err() != nil {
+			return false
+		}
+	}
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
-	test := tr.tests[id]
-	return test != nil && test.Status == "INITIALIZING" && test.preparationID == p.ID && test.executionFence == p.OwnerFence && test.executionCtx != nil && test.executionCtx.Err() == nil
+	return ctx.Err() == nil && tr.tests[id] == test && test.Status == "INITIALIZING" && test.preparationID == p.ID && test.executionFence == p.OwnerFence && preparationAllocationMatches(test, p)
+}
+
+// Preparing has not yet published allocation; ready reservations must exactly
+// match the immutable shard snapshot captured after distributed staging.
+func preparationAllocationMatches(test *ManagedTest, p *storage.Preparation) bool {
+	if p.State == "preparing" {
+		return true
+	}
+	allocation, err := json.Marshal(test.GeneratorShards)
+	return err == nil && bytes.Equal(allocation, p.Allocation)
 }
 
 func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
@@ -437,6 +480,7 @@ func (tr *TestRunner) watchPreparation(preparation, id string) {
 	}
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
+	var nextReadinessCheck time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -453,10 +497,24 @@ func (tr *TestRunner) watchPreparation(preparation, id string) {
 				tr.cancelPreparationExecution(id, preparation)
 				return
 			}
+			if !tr.isExecutionLeader() || (tr.durableExecutionFence && tr.currentExecutionFenceToken() != p.OwnerFence) {
+				tr.cancelPreparationExecution(id, preparation)
+				return
+			}
 			if !p.ExpiresAt.After(time.Now()) {
 				if _, err = tr.transitionPreparation(p.ID, p.State, "expired", p.Revision, p.OwnerFence, nil); err == nil {
 					tr.cancelPreparationExecution(id, preparation)
 					return
+				}
+			}
+			if p.State == "ready" && time.Now().After(nextReadinessCheck) {
+				nextReadinessCheck = time.Now().Add(time.Second)
+				current, revisionErr := tr.preparationRevision(id)
+				if revisionErr != nil || current != p.ExecutionRevision || !tr.preparationReservationValid(id, p) {
+					if _, err = tr.transitionPreparation(p.ID, "ready", "failed", p.Revision, p.OwnerFence, nil); err == nil {
+						tr.cancelPreparationExecution(id, preparation)
+						return
+					}
 				}
 			}
 		}

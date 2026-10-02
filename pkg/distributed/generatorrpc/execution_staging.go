@@ -694,6 +694,14 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 		// engine exists to publish live gauges.
 		next.activeGroups[request.GetGroupName()] += request.GetVuserCount()
 	}
+	if len(next.groupAssignments) == 0 {
+		next.prepareOnly = request.GetPrepareOnly()
+		if claim := service.podCapacityClaims[request.GetTestId()]; claim != nil && next.prepareOnly {
+			next.preparationCapacityClaim = proto.Clone(claim).(*pb.PodCapacityClaim)
+		}
+	} else {
+		next.prepareOnly = next.prepareOnly && request.GetPrepareOnly()
+	}
 	next.groupAssignments[request.GetGroupName()] = plan.validated.fingerprint
 	next.groupSecretBundleIDs[request.GetGroupName()] = request.GetSecretBundleId()
 	next.groupScripts[request.GetGroupName()] = request.GetScriptId()
@@ -759,6 +767,10 @@ func (coordinator *assignmentLifecycleCoordinator) scheduleStageExpiryLocked(ser
 	}
 	token := coordinator.nextStageTimerToken
 	coordinator.stageTokens[testID] = token
+	if coordinator.stageExpiresAt == nil {
+		coordinator.stageExpiresAt = make(map[string]time.Time)
+	}
+	coordinator.stageExpiresAt[testID] = time.Now().Add(coordinator.stageTTL)
 	coordinator.stageTimers[testID] = time.AfterFunc(coordinator.stageTTL, func() {
 		service.expireStagedAssignment(testID, token)
 	})
@@ -769,6 +781,7 @@ func (coordinator *assignmentLifecycleCoordinator) stopStageTimerLocked(testID s
 		return
 	}
 	delete(coordinator.stageTokens, testID)
+	delete(coordinator.stageExpiresAt, testID)
 	timer := coordinator.stageTimers[testID]
 	delete(coordinator.stageTimers, testID)
 	if timer != nil {

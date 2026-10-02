@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +16,7 @@ import (
 )
 
 func TestPreparationLocalZeroTrafficUntilStart(t *testing.T) {
-	for _, action := range []string{"start", "renew", "cancel", "cancel_disabled", "revision"} {
+	for _, action := range []string{"start", "renew", "cancel", "cancel_disabled", "revision", "revision_watch", "reservation_loss", "peer_loss", "expiry"} {
 		t.Run(action, func(t *testing.T) {
 			t.Setenv("APEXLOAD_PREPARATION_PROJECTS", "proj-a")
 			var requests, connections atomic.Int64
@@ -114,6 +116,34 @@ func TestPreparationLocalZeroTrafficUntilStart(t *testing.T) {
 					t.Fatal("cancelled preparation consumed")
 				}
 				backend.wait(t)
+			case "revision_watch", "reservation_loss", "peer_loss":
+				server.runner.mu.Lock()
+				current := server.runner.tests[run.ID]
+				switch action {
+				case "revision_watch":
+					current.DurationStr = "2s"
+				case "reservation_loss":
+					current.GeneratorShards = []GeneratorShardSummary{{Group: "lost", Target: "replacement", VUsers: 1}}
+				case "peer_loss":
+					current.preparationPeerCheck = func(context.Context) error { return errors.New("peer reservation lost") }
+				}
+				server.runner.mu.Unlock()
+				backend.wait(t)
+				if err := server.runner.StartTestWithOptions(run.ID, opts); err == nil {
+					t.Fatal("invalidated preparation consumed")
+				}
+				invalidated, err := durable.(storage.PreparationStore).GetPreparation(p.ID)
+				if err != nil || invalidated.State != "failed" {
+					t.Fatalf("invalidation state: %+v %v", invalidated, err)
+				}
+			case "expiry":
+				if _, err := durable.(storage.PreparationStore).TransitionPreparation(p.ID, "ready", "expired", p.Revision, p.OwnerFence, nil); err != nil {
+					t.Fatal(err)
+				}
+				backend.wait(t)
+				if err := server.runner.StartTestWithOptions(run.ID, opts); err == nil {
+					t.Fatal("expired preparation consumed")
+				}
 			case "revision":
 				server.runner.mu.Lock()
 				server.runner.tests[run.ID].DurationStr = "2s"

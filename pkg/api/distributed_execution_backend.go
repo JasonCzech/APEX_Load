@@ -1153,10 +1153,12 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				discoveryFatal = fmt.Errorf("generator %s: %w", result.target, capabilityErr)
 				continue
 			}
-			if test.preparationID != "" && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeaturePreparationV1) {
-				_ = result.client.Close()
-				discoveryFatal = fmt.Errorf("generator %s lacks prepare_v1", result.target)
-				continue
+			if test.preparationID != "" {
+				if err := preparationCapabilityError(result.load.CompatibleFeatures); err != nil {
+					_ = result.client.Close()
+					discoveryFatal = fmt.Errorf("generator %s: %w", result.target, err)
+					continue
+				}
 			}
 			if test.TerminationMode == "iterations" && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeatureIterationTerminationV1) {
 				_ = result.client.Close()
@@ -1518,6 +1520,12 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		streamsByTarget[target] = stream
 	}
 
+	if test.preparationID != "" {
+		if err := b.installPreparationReadiness(tr, test, activeGroupShards, assignedClients, executionGeneration, runSupervisionTokenBytes); err != nil {
+			failStartup(err.Error())
+			return
+		}
+	}
 	if err := tr.awaitPreparedStart(test); err != nil {
 		failStartup(err.Error())
 		return

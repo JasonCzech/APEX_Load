@@ -28,6 +28,9 @@ service GeneratorControl {
   // complete fleet fan-out.
   rpc CommitWork(WorkCommitRequest) returns (WorkCommitAck);
 
+  // Traffic-free staged reservation check; never starts protocols or user code.
+  rpc CheckPreparation(PreparationCheckRequest) returns (WorkCommitAck);
+
   // AdjustVUsers changes the VUser count for a running test on this generator.
   rpc AdjustVUsers(VUserAdjustment) returns (AdjustmentAck);
 
@@ -60,6 +63,14 @@ service GeneratorControl {
   // first chunk declares total_size and every chunk carries its absolute offset
   // so the controller can reject truncated, duplicated, or reordered streams.
   rpc StreamArchiveArtifact(ArchiveArtifactRequest) returns (stream ArchiveArtifactChunk);
+}
+
+message PreparationCheckRequest {
+  string test_id = 1;
+  uint64 execution_generation = 2;
+  map<string, int32> expected_groups = 3;
+  bytes run_supervision_token = 4;
+  bool renew_staging = 5;
 }
 
 message CapacityVector {

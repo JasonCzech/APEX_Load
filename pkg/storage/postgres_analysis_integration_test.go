@@ -47,6 +47,9 @@ func TestPostgresAnalysisWorkflows(t *testing.T) {
 		}
 	}()
 	s, m, now := seedMonitorFixture(t, pg.SQLiteStore)
+	for _, expired := range []bool{false, true} {
+		t.Run(map[bool]string{false: "preparation takeover", true: "preparation expiry"}[expired], func(t *testing.T) { exercisePreparationAuditRecovery(t, s, expired) })
+	}
 	if _, err = s.SaveMonitorSource(m, 0); err != nil {
 		t.Fatal(err)
 	}

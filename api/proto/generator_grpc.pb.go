@@ -24,6 +24,7 @@ const (
 	GeneratorControl_ClaimRunSupervision_FullMethodName   = "/apexload.v1.GeneratorControl/ClaimRunSupervision"
 	GeneratorControl_AssignWork_FullMethodName            = "/apexload.v1.GeneratorControl/AssignWork"
 	GeneratorControl_CommitWork_FullMethodName            = "/apexload.v1.GeneratorControl/CommitWork"
+	GeneratorControl_CheckPreparation_FullMethodName      = "/apexload.v1.GeneratorControl/CheckPreparation"
 	GeneratorControl_AdjustVUsers_FullMethodName          = "/apexload.v1.GeneratorControl/AdjustVUsers"
 	GeneratorControl_AdjustDuration_FullMethodName        = "/apexload.v1.GeneratorControl/AdjustDuration"
 	GeneratorControl_SetPaused_FullMethodName             = "/apexload.v1.GeneratorControl/SetPaused"
@@ -57,6 +58,8 @@ type GeneratorControlClient interface {
 	// protocol traffic can start before the controller finishes staging the
 	// complete fleet fan-out.
 	CommitWork(ctx context.Context, in *WorkCommitRequest, opts ...grpc.CallOption) (*WorkCommitAck, error)
+	// Traffic-free staged reservation check; never starts protocols or user code.
+	CheckPreparation(ctx context.Context, in *PreparationCheckRequest, opts ...grpc.CallOption) (*WorkCommitAck, error)
 	// AdjustVUsers changes the VUser count for a running test on this generator.
 	AdjustVUsers(ctx context.Context, in *VUserAdjustment, opts ...grpc.CallOption) (*AdjustmentAck, error)
 	// AdjustDuration changes the duration for a running test on this generator.
@@ -135,6 +138,16 @@ func (c *generatorControlClient) CommitWork(ctx context.Context, in *WorkCommitR
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(WorkCommitAck)
 	err := c.cc.Invoke(ctx, GeneratorControl_CommitWork_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *generatorControlClient) CheckPreparation(ctx context.Context, in *PreparationCheckRequest, opts ...grpc.CallOption) (*WorkCommitAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WorkCommitAck)
+	err := c.cc.Invoke(ctx, GeneratorControl_CheckPreparation_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -268,6 +281,8 @@ type GeneratorControlServer interface {
 	// protocol traffic can start before the controller finishes staging the
 	// complete fleet fan-out.
 	CommitWork(context.Context, *WorkCommitRequest) (*WorkCommitAck, error)
+	// Traffic-free staged reservation check; never starts protocols or user code.
+	CheckPreparation(context.Context, *PreparationCheckRequest) (*WorkCommitAck, error)
 	// AdjustVUsers changes the VUser count for a running test on this generator.
 	AdjustVUsers(context.Context, *VUserAdjustment) (*AdjustmentAck, error)
 	// AdjustDuration changes the duration for a running test on this generator.
@@ -316,6 +331,9 @@ func (UnimplementedGeneratorControlServer) AssignWork(context.Context, *WorkAssi
 }
 func (UnimplementedGeneratorControlServer) CommitWork(context.Context, *WorkCommitRequest) (*WorkCommitAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method CommitWork not implemented")
+}
+func (UnimplementedGeneratorControlServer) CheckPreparation(context.Context, *PreparationCheckRequest) (*WorkCommitAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckPreparation not implemented")
 }
 func (UnimplementedGeneratorControlServer) AdjustVUsers(context.Context, *VUserAdjustment) (*AdjustmentAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method AdjustVUsers not implemented")
@@ -451,6 +469,24 @@ func _GeneratorControl_CommitWork_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(GeneratorControlServer).CommitWork(ctx, req.(*WorkCommitRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GeneratorControl_CheckPreparation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreparationCheckRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GeneratorControlServer).CheckPreparation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GeneratorControl_CheckPreparation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GeneratorControlServer).CheckPreparation(ctx, req.(*PreparationCheckRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -614,6 +650,10 @@ var GeneratorControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CommitWork",
 			Handler:    _GeneratorControl_CommitWork_Handler,
+		},
+		{
+			MethodName: "CheckPreparation",
+			Handler:    _GeneratorControl_CheckPreparation_Handler,
 		},
 		{
 			MethodName: "AdjustVUsers",

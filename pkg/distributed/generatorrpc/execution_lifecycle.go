@@ -129,6 +129,7 @@ type assignmentLifecycleCoordinator struct {
 	nextStagePlanToken  uint64
 	nextControlToken    uint64
 	stageTimers         map[string]*time.Timer
+	stageExpiresAt      map[string]time.Time
 	stageTokens         map[string]uint64
 	nextStageTimerToken uint64
 	stageTTL            time.Duration
