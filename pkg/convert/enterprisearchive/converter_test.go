@@ -2911,13 +2911,13 @@ Type="Userid"
 	if got := params["lgname"]; got.Type != "host" || got.Update != "once" || len(got.Values) != 0 {
 		t.Fatalf("LGName = %#v, want native host parameter without forced fallback value", got)
 	}
-	if got := params["reqdatetime"]; got.Type != "time" || got.Format != "2006-01-02T15:04:05Z" || got.Timezone != "UTC" || got.Update != "each_iteration" {
-		t.Fatalf("ReqDateTime = %#v, want mapped UTC time parameter", got)
+	if got := params["reqdatetime"]; got.Type != "time" || got.Format != "%Y-%m-%dT%H:%M:%SZ" || got.FormatDialect != "loadrunner_strftime" || got.Timezone != "" || got.Update != "each_iteration" {
+		t.Fatalf("ReqDateTime = %#v, want literal Z on the source local clock", got)
 	}
-	if got := params["time"]; got.Type != "time" || got.Format != "15:04:05" || got.Update != "each_iteration" {
+	if got := params["time"]; got.Type != "time" || got.Format != "%H:%M:%S" || got.FormatDialect != "loadrunner_strftime" || got.Update != "each_iteration" {
 		t.Fatalf("Time = %#v, want mapped time-only parameter", got)
 	}
-	if got := params["timestamp"]; got.Type != "time" || got.Format != "2006-01-02T15:04:05Z" || got.Timezone != "UTC" {
+	if got := params["timestamp"]; got.Type != "time" || got.Format != "%Y-%m-%dT%H:%M:%SZ" || got.FormatDialect != "loadrunner_strftime" || got.Timezone != "" {
 		t.Fatalf("TimeStamp = %#v, want mapped timestamp-style time parameter", got)
 	}
 	if got := params["sim"]; got.Type != "random_number" || got.Min != 11111 || got.Max != 99999 || got.Update != "each_occurrence" || got.PadWidth != 5 {
@@ -3427,7 +3427,7 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 		"logging":                             RuntimeSettingStatusExecuted,
 		"continue_on_error":                   RuntimeSettingStatusExecuted,
 		"snapshot_on_error":                   RuntimeSettingStatusExecuted,
-		"browser_device_emulation":            RuntimeSettingStatusExecuted,
+		"browser_device_emulation":            RuntimeSettingStatusCompatibilityOnly,
 		"browser_cache_enabled":               RuntimeSettingStatusExecuted,
 		"browser_cache_content_urls":          RuntimeSettingStatusExecuted,
 		"browser_check_newer_versions":        RuntimeSettingStatusExecuted,
@@ -3445,8 +3445,8 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 		assertRuntimeSettingParityEntry(t, parity, id, status)
 	}
 	counts := RuntimeSettingStatusCounts(parity)
-	if counts[string(RuntimeSettingStatusExecuted)] != 24 || counts[string(RuntimeSettingStatusPartial)] != 0 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 3 {
-		t.Fatalf("status counts = %#v, want executed=24 partial=0 compatibility_only=3", counts)
+	if counts[string(RuntimeSettingStatusExecuted)] != 23 || counts[string(RuntimeSettingStatusPartial)] != 0 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 4 {
+		t.Fatalf("status counts = %#v, want executed=23 partial=0 compatibility_only=4", counts)
 	}
 }
 

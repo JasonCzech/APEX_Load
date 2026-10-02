@@ -834,7 +834,7 @@ func fingerprintImportDraftCredentials(
 		))
 		digests[hex.EncodeToString(sum[:])]++
 	}
-	structureDigest, err := canonicalImportDraftStructureDigest(script)
+	structureDigest, err := canonicalImportDraftStructureDigestFromProjection(projectedScript)
 	if err != nil {
 		return importDraftCredentialFingerprint{}, err
 	}
@@ -892,6 +892,14 @@ func opaqueImportSourceProjectionChanged(raw, projected any) bool {
 
 func canonicalImportDraftStructureDigest(script *dsl.Script) (string, error) {
 	projected := maskScriptSecrets(script)
+	return canonicalImportDraftStructureDigestFromProjection(projected)
+}
+
+func canonicalImportDraftStructureDigestFromProjection(projected *dsl.Script) (string, error) {
+	// Fingerprinting already has a private disclosure copy. Clone it before
+	// canonicalization rather than performing the full credential projection a
+	// second time; callers retain ownership of their immutable projection.
+	projected = cloneScriptDefinition(projected)
 	if projected == nil {
 		return "", errors.New("project import draft structure")
 	}

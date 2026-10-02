@@ -158,6 +158,7 @@ func browserActionSpecs() []ActionSpec {
 			Fields: locatorFields(
 				FieldSpec{Name: "value", Kind: FieldKindString, Doc: "Single option value or label to select."},
 				FieldSpec{Name: "params.values", Kind: FieldKindArray, Doc: "Option values or labels to select for a multi-select."},
+				FieldSpec{Name: "params.option_index", Kind: FieldKindInt, Maximum: 999999, Doc: "Zero-based option index, 0–999999. Cannot be combined with value or values."},
 			),
 			Validate: browserValidator(browserRequireElementLocator, browserRequireSelectValue),
 		},
@@ -713,6 +714,19 @@ func browserRequireValue(label string, action Action) []string {
 }
 
 func browserRequireSelectValue(label string, action Action) []string {
+	if _, exists := action.Params["option_index"]; exists {
+		index, ok := actionParamIntValue(action.Params, "option_index")
+		if !ok || index < 0 || index >= 1_000_000 {
+			return []string{label + ": browser_select option_index must be an integer between 0 and 999999"}
+		}
+		if strings.TrimSpace(action.Value) != "" || browserSelectParamsHaveValue(action.Params) {
+			return []string{label + ": browser_select option_index cannot be combined with value or values"}
+		}
+		if value, ok := actionParamStringValue(action.Params, "value"); ok && strings.TrimSpace(value) != "" {
+			return []string{label + ": browser_select option_index cannot be combined with value or values"}
+		}
+		return nil
+	}
 	if strings.TrimSpace(action.Value) != "" {
 		return nil
 	}

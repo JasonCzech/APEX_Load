@@ -992,7 +992,12 @@
 .lr-validation-review-panel .credentials-card-summary span { border: 0; border-radius: 0; background: transparent; padding: 0 12px 0 0; font-size: 13px; }
 .lr-validation-review-panel .import-review-suggestions > summary { padding: 16px; }
 .lr-validation-review-panel .import-review-toolbar :is(input[type=search], select) { min-height: 40px; }
-.lr-validation-review-tabs { position: sticky; top: 64px; z-index: 5; background: var(--bg-card, var(--bg-primary)); }
+.lr-validation-review-navigation { position: sticky; top: 64px; z-index: 5; background: var(--bg-card, var(--bg-primary)); }
+.lr-validation-review-navigation .lr-validation-review-tabs { position: static; background: inherit; }
+.lr-review-project-picker { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text-secondary); }
+.lr-review-project-picker select { min-width: 0; flex: 1; max-width: 650px; min-height: 36px; padding: 6px 10px; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; }
+.lr-review-project-picker select:focus-visible { outline: 2px solid var(--accent-primary, #88b5eb); outline-offset: 3px; }
+@media (max-width: 600px) { .lr-review-project-picker { align-items: stretch; flex-direction: column; gap: 6px; } }
 
 .lr-validation-review-panel .lr-parameter-inventory { margin: 0; }
 .lr-validation-review-panel .source-map-review { padding: 20px; }

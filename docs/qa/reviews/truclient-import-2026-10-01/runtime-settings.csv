@@ -1,0 +1,221 @@
+project,source_file,section,key,disposition,target_paths,reason
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,FILTERS,ExcludeFiltersInList,non_applicable,,disabled_feature: The source filter list is empty.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,FILTERS,FilterType,non_applicable,,"disabled_feature: Inactive, managed, or source-tool-only setting; original evidence remains preserved."
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,FILTERS,IncludeFiltersInList,non_applicable,,disabled_feature: The source filter list is empty.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,General,AccessVTSPortByQueryString,non_applicable,,"disabled_feature: Inactive, managed, or source-tool-only setting; original evidence remains preserved."
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,General,AutomaticTransactions,mapped,config.run_logic.auto_transactions,Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,General,DefaultRunLogic,mapped,,Selects the run-logic (.usp) profile.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,General,UseThreads,non_applicable,,unused_mode_value: mdrv threading model; APEX VUsers are goroutines.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,General,VTSHTTPAccessPort,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,General,VTSHTTPSAccessPort,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,Log,AutoLog,mapped,config.log,Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,Log,AutoLogBufferSize,non_applicable,,"apex_managed_behavior: Inactive, managed, or source-tool-only setting; original evidence remains preserved."
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,Log,IncludeEnvInfo,non_applicable,,"apex_managed_behavior: Inactive, managed, or source-tool-only setting; original evidence remains preserved."
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,Log,LogOptions,mapped,config.log,Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,Log,MsgClassData,mapped,config.log,Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,Log,MsgClassFull,mapped,config.log,Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,Log,MsgClassParameters,mapped,config.log,Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,ModemSpeed,CustomModemSpeed,non_applicable,,unused_mode_value: Custom modem speed is dormant because EnableCustomModemSpeed is off.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,ModemSpeed,EnableCustomModemSpeed,non_applicable,,Source network speed simulation selector is disabled; HTTP engine network shaping is not a browser capability.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,ModemSpeed,EnableModemSpeed,non_applicable,,Source network speed simulation selector is disabled; HTTP engine network shaping is not a browser capability.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,ModemSpeed,ModemSpeed,non_applicable,,unused_mode_value: Preset modem speed is dormant because EnableModemSpeed is off.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,ModemSpeed,ModemSpeedDownload,non_applicable,,disabled_feature: Empty source value with no APEX equivalent defined.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,ModemSpeed,ModemSpeedDownloadAndUpload,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,ModemSpeed,ModemSpeedMode,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,ModemSpeed,ModemSpeedUpload,non_applicable,,disabled_feature: Empty source value with no APEX equivalent defined.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ActionOnError,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,AddingPlugin,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,AlwaysEnableNetTimeout,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ApplyInnerWinSize,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ApplyWinSizeByUser,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ApplyWinSizeInteractive,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,AutoConfigURL,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,AutomaticTransactions,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,BrowserName,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ChromiumCMDToAdd,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ChromiumCMDToRemove,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ComponentBreakdown,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,CustomUserAgent,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,CustomizeKeepAliveTimeout,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,DnsCacheEntries,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,DnsCacheTimeout,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,EnableCDP,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,EnableChromiumLog,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,EnableDynamicAUTView,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,EnableHttp1_1,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,EnableNanny,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,EnableNegotiate,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,EnablePrivateBrowsing,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,EnableVideoRecorder,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,EnforcementVersion,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,EvalJavaScriptTimeout,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ExceptionProxyOverride,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,FTPProxyServer,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,FlushInternalLog,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,FlushUserLog,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,HTTPProxyServer,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,IncludeTimestampsInUserLog,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,KeepAliveTimeout,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,LocalProxyOverride,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,LogAutError,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,LogAutNonError,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,LogErrorsWarningsOnlyInStandard,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,LogHttpRequestBody,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,LogHttpRequestHeaders,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,LogHttpResponseBody,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,LogHttpResponseHeaders,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,LogHttpTrace,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,LogNTLM,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,LogSSL,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,MdrvPriorityInLoad,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,MeasurementLevel,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,MinSecureProtocol,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,MinSecureProtocolTCB,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,MinTimeApplyWaitStep,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,MinTimeEnableRandom,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,MinTimeEnableRandomLimit,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,MinTimeRandomHigh,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,MinTimeRandomLimitValue,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,MinTimeRandomLow,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,NannyAlwaysRestart,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,NannyMaxMemGrowthAfterStable,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,NannyMinIterBeforeRestart,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,NannyMinMemDiffEstToStable,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,NannyNeverRestart,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,NannyRestartRetries,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,NannyRestartTimeout,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,NetworkEndThreshold,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,NotSameProxyForAll,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ObjectTimeout,mapped,actions[].params.timeout_ms; actions[].wait_for.timeout_ms,Source seconds converted to selector/object timeout milliseconds; explicit per-step object timeouts override this value.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,OmitCatchStepErrors,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,OptimizeDiskIO,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,PPIExplicitLoadedDlls,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,PaintWindowsInLoad,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ProxyEnable,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ProxyHttp1.1,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ProxyOverride,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ProxyServer,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ProxyType,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ReplaySnapshotsMode,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ReportBreakdownInterval,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ResetReplayState,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,RunAsAService,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,SecureProtocols,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,SecureProxyServer,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,ServerInfoTimeout,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,SimulateNewUser,mapped,config.browser.new_user_per_iteration,Mapped browser new-user policy; browser identity and exact source reset behavior remain covered by the profile review gate.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,SnapshotsFullPage,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,SnapshotsWatermark,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,SocksProxyServer,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,StartRenderSnapshotsInterval,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,StepPacingInterval,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,StepTimeout,mapped,actions[].timeout_ms; actions[].sync.timeout_ms; actions[].wait_for.timeout_ms,"Source seconds converted to bounded per-step, completion, and duration-wait timeout milliseconds."
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,SupportOption1,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,SupportOption2,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,SupportOption3,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,SupportOption4,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,SupportOption5,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,SyncMode5,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,TC2WebServerPort,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,TC2WebServerUrl,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,TCIEInjectionCheckRequestHeader,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,TCIEInjectionCheckResponse,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,TCIEInjectionStrategy,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,TCIEInputModel,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,TypingInterval,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,UseOIA,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,UseRecordedDuration,non_applicable,,Recorded durations are preserved on source steps but source runtime duration replay is disabled.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,UseSSL2,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,UseSSL3,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,UseTLS1,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,UseTls1_0,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,UseTls1_1,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,UseTls1_2,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,UserLogInteractive,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,UserLogLineLength,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,WindowHeight,non_applicable,,Saved window dimension is inactive because ApplyWinSizeByUser is disabled.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,WindowHeightInteractive,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,WindowWidth,non_applicable,,Saved window dimension is inactive because ApplyWinSizeByUser is disabled.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,WindowWidthInteractive,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,WriteMdrvLog,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClient,config.snapshot_dir,compatibility_only,,Preserved source browser setting; its Go browser equivalence requires source-profile review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClientEx,AllowPipelining,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClientEx,AllowPipeliningProxy,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClientEx,AllowPipeliningSSL,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClientEx,CacheImgSize,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClientEx,CacheMemoryCap,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClientEx,MaxPersistConnsProxy,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClientEx,MaxPersistConnsServer,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClientEx,MaxTotalConns,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClientEx,MaxTotalConnsServer,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClientEx,NetworkBufCache,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClientEx,PipeliningMaxReqs,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClientEx,TCPSendBuf,compatibility_only,,unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClientEx,UserAgent,non_applicable,,disabled_feature: Empty source value with no APEX equivalent defined.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.cfg,TruClientEx,device,non_applicable,,disabled_feature: Empty source value with no APEX equivalent defined.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,Profile Actions,MercIniTreeFather,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,Profile Actions,MercIniTreeSectionName,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,Profile Actions,Profile Actions name,compatibility_only,config.run_logic.action_sequence,unverified_semantics: Source setting remains preserved for compatibility review; exact source behavior is not certified by the native browser preview.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicEndRoot,MercIniTreeFather,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicEndRoot,MercIniTreeSectionName,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicEndRoot,MercIniTreeSons,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicEndRoot,Name,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicEndRoot,RunLogicActionOrder,non_applicable,,source_tool_metadata: Init/end lifecycle groups run once; per-group run-logic knobs have no additional meaning.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicEndRoot,RunLogicActionType,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicEndRoot,RunLogicNumOfIterations,non_applicable,,source_tool_metadata: Init/end lifecycle groups run once; per-group run-logic knobs have no additional meaning.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicEndRoot,RunLogicObjectKind,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicEndRoot,RunLogicRunMode,non_applicable,,source_tool_metadata: Init/end lifecycle groups run once; per-group run-logic knobs have no additional meaning.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicEndRoot:vuser_end,MercIniTreeFather,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicEndRoot:vuser_end,MercIniTreeSectionName,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicEndRoot:vuser_end,Name,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicEndRoot:vuser_end,RunLogicActionType,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicEndRoot:vuser_end,RunLogicObjectKind,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicErrorHandlerRoot,MercIniTreeFather,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicErrorHandlerRoot,MercIniTreeSectionName,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicErrorHandlerRoot,MercIniTreeSons,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicErrorHandlerRoot,Name,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicErrorHandlerRoot,RunLogicActionOrder,non_applicable,,source_tool_metadata: Error-handler run-logic block; accounted for by the run_logic_error_handler finding.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicErrorHandlerRoot,RunLogicActionType,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicErrorHandlerRoot,RunLogicNumOfIterations,non_applicable,,source_tool_metadata: Error-handler run-logic block; accounted for by the run_logic_error_handler finding.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicErrorHandlerRoot,RunLogicObjectKind,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicErrorHandlerRoot,RunLogicRunMode,non_applicable,,source_tool_metadata: Error-handler run-logic block; accounted for by the run_logic_error_handler finding.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicErrorHandlerRoot:vuser_errorhandler,MercIniTreeFather,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicErrorHandlerRoot:vuser_errorhandler,MercIniTreeSectionName,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicErrorHandlerRoot:vuser_errorhandler,Name,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicErrorHandlerRoot:vuser_errorhandler,RunLogicActionType,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicErrorHandlerRoot:vuser_errorhandler,RunLogicObjectKind,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicInitRoot,MercIniTreeFather,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicInitRoot,MercIniTreeSectionName,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicInitRoot,MercIniTreeSons,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicInitRoot,Name,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicInitRoot,RunLogicActionOrder,non_applicable,,source_tool_metadata: Init/end lifecycle groups run once; per-group run-logic knobs have no additional meaning.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicInitRoot,RunLogicActionType,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicInitRoot,RunLogicNumOfIterations,non_applicable,,source_tool_metadata: Init/end lifecycle groups run once; per-group run-logic knobs have no additional meaning.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicInitRoot,RunLogicObjectKind,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicInitRoot,RunLogicRunMode,non_applicable,,source_tool_metadata: Init/end lifecycle groups run once; per-group run-logic knobs have no additional meaning.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicInitRoot:vuser_init,MercIniTreeFather,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicInitRoot:vuser_init,MercIniTreeSectionName,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicInitRoot:vuser_init,Name,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicInitRoot:vuser_init,RunLogicActionType,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicInitRoot:vuser_init,RunLogicObjectKind,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,MercIniTreeFather,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,MercIniTreeSectionName,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,MercIniTreeSons,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,Name,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,RunLogicActionOrder,compatibility_only,config.run_logic.action_sequence,unverified_semantics: Source setting remains preserved for compatibility review; exact source behavior is not certified by the native browser preview.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,RunLogicActionType,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,RunLogicAfterPaceMax,non_applicable,,unused_mode_value: Saved pacing bound is inactive under the selected RunLogicPaceType.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,RunLogicAfterPaceMin,non_applicable,,unused_mode_value: Saved pacing bound is inactive under the selected RunLogicPaceType.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,RunLogicNumOfIterations,mapped,config.run_logic.iterations,Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,RunLogicObjectKind,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,RunLogicPaceConstAfterTime,non_applicable,,unused_mode_value: Saved pacing bound is inactive under the selected RunLogicPaceType.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,RunLogicPaceConstTime,non_applicable,,unused_mode_value: Saved pacing bound is inactive under the selected RunLogicPaceType.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,RunLogicPaceType,mapped,config.pacing,Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,RunLogicRandomPaceMax,non_applicable,,unused_mode_value: Saved pacing bound is inactive under the selected RunLogicPaceType.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,RunLogicRandomPaceMin,non_applicable,,unused_mode_value: Saved pacing bound is inactive under the selected RunLogicPaceType.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot,RunLogicRunMode,compatibility_only,config.run_logic.block_scheduling,unverified_semantics: Source setting remains preserved for compatibility review; exact source behavior is not certified by the native browser preview.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot:Action,MercIniTreeFather,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot:Action,MercIniTreeSectionName,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot:Action,Name,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot:Action,RunLogicActionType,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.
+Prefetch_Wireless_Center_Sep_Truclient_v0.1,default.usp,RunLogicRunRoot:Action,RunLogicObjectKind,non_applicable,,source_tool_metadata: VuGen run-logic tree bookkeeping.

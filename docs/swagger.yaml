@@ -1032,6 +1032,158 @@ components:
         - target_script_id
         - expected_updated_at
         - changes
+    EnterpriseArchiveCollectionMember:
+      type: object
+      description: One independent member. A successful conversion includes response; a failed conversion includes error. Settings, fidelity, and capabilities belong only to this member.
+      properties:
+        error:
+          type: string
+          description: Disclosure-safe per-member import error.
+        response:
+          $ref: '#/components/schemas/EnterpriseArchiveScriptReviewResponse'
+        source_name:
+          type: string
+          description: Exact relative collection member path; reuse as archive_member with the original uploaded package.
+        source_size:
+          type: integer
+          description: Member archive size in bytes.
+      additionalProperties: false
+      required:
+        - source_name
+        - source_size
+    EnterpriseArchiveCollectionResponse:
+      type: object
+      description: A non-recursive package of at most 100 independent script archives, bounded by combined archive entry and decompression limits. Child reviews are not flattened or attributed to a sibling.
+      properties:
+        archive_collection:
+          type: boolean
+          description: Always true for this collection envelope.
+        archives:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnterpriseArchiveCollectionMember'
+        count:
+          type: integer
+        failed_count:
+          type: integer
+        successful_count:
+          type: integer
+        unassigned_files:
+          type: array
+          description: Loose collection files were not applied to any script; select the intended member and attach them as supplemental sources.
+          items:
+            type: string
+          nullable: true
+        warnings:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+      required:
+        - archive_collection
+        - archives
+        - count
+        - successful_count
+        - failed_count
+        - warnings
+        - unassigned_files
+    EnterpriseArchiveReviewResponse:
+      description: Single-project review or a bounded ZIP package of independent ZIP/USZ script projects.
+      oneOf:
+        - $ref: '#/components/schemas/EnterpriseArchiveScriptReviewResponse'
+        - $ref: '#/components/schemas/EnterpriseArchiveCollectionResponse'
+    EnterpriseArchiveScriptReviewResponse:
+      type: object
+      description: One converted script project's drafts, source review, settings parity, fidelity, and optional protected credential migration capabilities. Java drafts retain their governed approval requirement.
+      properties:
+        detected_protocol:
+          type: object
+          additionalProperties: true
+          nullable: true
+        fidelity_report:
+          type: object
+          additionalProperties: true
+          nullable: true
+        import_draft_expires_at:
+          type: string
+          format: date-time
+        parameterization:
+          type: object
+          additionalProperties: true
+          nullable: true
+        preflight:
+          type: object
+          additionalProperties: true
+          nullable: true
+        protocol_compat_report:
+          type: object
+          additionalProperties: true
+          nullable: true
+        repair_suggestions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        review_artifact:
+          type: object
+          additionalProperties: true
+          nullable: true
+        review_sections:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        script:
+          type: object
+          additionalProperties: true
+          nullable: true
+        scripts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        secret_binding_requirements:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        secret_store:
+          type: object
+          additionalProperties: true
+          nullable: true
+        source_review:
+          type: object
+          additionalProperties: true
+          nullable: true
+        source_secret_migration_allowed:
+          type: boolean
+        source_secret_session_expires_at:
+          type: string
+          format: date-time
+        source_secret_session_id:
+          type: string
+          description: Optional opaque capability scoped to this project's retained source credentials.
+        stats:
+          type: object
+          additionalProperties: true
+        summary:
+          type: object
+          additionalProperties: true
+        unsupported_elements:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+      additionalProperties: true
+      required:
+        - script
+        - scripts
+        - warnings
+        - summary
     ErrorResponse:
       type: object
       properties:
@@ -196637,6 +196789,9 @@ paths:
                   type: string
                   description: Deprecated compatibility input; accepted but ignored. Every LoadRunner Java archive produces one combined java_vuser draft regardless of this value.
                   deprecated: true
+                archive_member:
+                  type: string
+                  description: Optional exact source_name of one ZIP/USZ member in an archive collection. Select a member to retry or revalidate that script independently and before attaching supplemental sources or HAR evidence.
                 base_url:
                   type: string
                 expire_draft:
@@ -196659,12 +196814,12 @@ paths:
                   type: string
               additionalProperties: true
       responses:
-        2XX:
-          description: Successful response; exact status is selected by the handler.
+        "200":
+          description: Converted script review, or independent per-member collection reviews. A valid collection returns 200 even when individual members fail; inspect successful_count, failed_count, and each member's error. This does not verify remote execution.
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/EnterpriseArchiveReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -196697,6 +196852,12 @@ paths:
           in: query
           description: Deprecated compatibility input; accepted but ignored. Every LoadRunner Java archive produces one combined java_vuser draft regardless of this value.
           deprecated: true
+          required: false
+          schema:
+            type: string
+        - name: archive_member
+          in: query
+          description: Optional exact source_name of one ZIP/USZ member in an archive collection. Select a member to retry or revalidate that script independently and before attaching supplemental sources or HAR evidence.
           required: false
           schema:
             type: string
@@ -198191,6 +198352,9 @@ paths:
                   type: string
                   description: Deprecated compatibility input; accepted but ignored. Every LoadRunner Java archive produces one combined java_vuser draft regardless of this value.
                   deprecated: true
+                archive_member:
+                  type: string
+                  description: Optional exact source_name of one ZIP/USZ member in an archive collection. Select a member to retry or revalidate that script independently and before attaching supplemental sources or HAR evidence.
                 base_url:
                   type: string
                 expire_draft:
@@ -198213,12 +198377,12 @@ paths:
                   type: string
               additionalProperties: true
       responses:
-        2XX:
-          description: Successful response; exact status is selected by the handler.
+        "200":
+          description: Converted script review, or independent per-member collection reviews. A valid collection returns 200 even when individual members fail; inspect successful_count, failed_count, and each member's error. This does not verify remote execution.
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/EnterpriseArchiveReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -198251,6 +198415,12 @@ paths:
           in: query
           description: Deprecated compatibility input; accepted but ignored. Every LoadRunner Java archive produces one combined java_vuser draft regardless of this value.
           deprecated: true
+          required: false
+          schema:
+            type: string
+        - name: archive_member
+          in: query
+          description: Optional exact source_name of one ZIP/USZ member in an archive collection. Select a member to retry or revalidate that script independently and before attaching supplemental sources or HAR evidence.
           required: false
           schema:
             type: string

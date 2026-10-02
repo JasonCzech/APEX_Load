@@ -339,6 +339,46 @@ export interface components {
       "expected_updated_at": string;
       "target_script_id": string;
     };
+    "EnterpriseArchiveCollectionMember": {
+      "error"?: string;
+      "response"?: components["schemas"]["EnterpriseArchiveScriptReviewResponse"];
+      "source_name": string;
+      "source_size": number;
+    };
+    "EnterpriseArchiveCollectionResponse": {
+      "archive_collection": boolean;
+      "archives": Array<components["schemas"]["EnterpriseArchiveCollectionMember"]>;
+      "count": number;
+      "failed_count": number;
+      "successful_count": number;
+      "unassigned_files": (Array<string>) | null;
+      "warnings": Array<string>;
+    };
+    "EnterpriseArchiveReviewResponse": (components["schemas"]["EnterpriseArchiveScriptReviewResponse"] | components["schemas"]["EnterpriseArchiveCollectionResponse"]);
+    "EnterpriseArchiveScriptReviewResponse": {
+      "detected_protocol"?: (Record<string, unknown>) | null;
+      "fidelity_report"?: (Record<string, unknown>) | null;
+      "import_draft_expires_at"?: string;
+      "parameterization"?: (Record<string, unknown>) | null;
+      "preflight"?: (Record<string, unknown>) | null;
+      "protocol_compat_report"?: (Record<string, unknown>) | null;
+      "repair_suggestions"?: Array<Record<string, unknown>>;
+      "review_artifact"?: (Record<string, unknown>) | null;
+      "review_sections"?: Array<Record<string, unknown>>;
+      "script": (Record<string, unknown>) | null;
+      "scripts": Array<Record<string, unknown>>;
+      "secret_binding_requirements"?: (Array<Record<string, unknown>>) | null;
+      "secret_store"?: (Record<string, unknown>) | null;
+      "source_review"?: (Record<string, unknown>) | null;
+      "source_secret_migration_allowed"?: boolean;
+      "source_secret_session_expires_at"?: string;
+      "source_secret_session_id"?: string;
+      "stats"?: Record<string, unknown>;
+      "summary": Record<string, unknown>;
+      "unsupported_elements"?: Array<string>;
+      "warnings": Array<string>;
+      [key: string]: unknown;
+    };
     "ErrorResponse": {
       "code"?: string;
       "error": string;
@@ -64333,6 +64373,7 @@ export interface operations {
     parameters: {
       "query"?: {
         "allow_java_vuser_runner"?: string;
+        "archive_member"?: string;
         "expire_draft"?: string;
         "salesforce_native"?: boolean;
       };
@@ -64341,6 +64382,7 @@ export interface operations {
       content: {
         "multipart/form-data": {
           "allow_java_vuser_runner"?: string;
+          "archive_member"?: string;
           "base_url"?: string;
           "expire_draft"?: string;
           "file"?: string;
@@ -64355,9 +64397,9 @@ export interface operations {
       };
     };
     responses: {
-      "2XX": {
+      "200": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["EnterpriseArchiveReviewResponse"];
         };
       };
       "400": {
@@ -127517,6 +127559,7 @@ export interface operations {
     parameters: {
       "query"?: {
         "allow_java_vuser_runner"?: string;
+        "archive_member"?: string;
         "expire_draft"?: string;
         "salesforce_native"?: boolean;
       };
@@ -127525,6 +127568,7 @@ export interface operations {
       content: {
         "multipart/form-data": {
           "allow_java_vuser_runner"?: string;
+          "archive_member"?: string;
           "base_url"?: string;
           "expire_draft"?: string;
           "file"?: string;
@@ -127539,9 +127583,9 @@ export interface operations {
       };
     };
     responses: {
-      "2XX": {
+      "200": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["EnterpriseArchiveReviewResponse"];
         };
       };
       "400": {

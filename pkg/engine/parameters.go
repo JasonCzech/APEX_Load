@@ -228,6 +228,10 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState,
 		if !ok {
 			return "", false
 		}
+		if param.FormatDialect == "loadrunner_strftime" {
+			value, err := dsl.FormatLoadRunnerTime(now, param.Format)
+			return value, err == nil
+		}
 		if param.FormatDialect == "java_simple_date_format" {
 			value, err := dsl.FormatJMeterTime(now, param.Format)
 			return value, err == nil
@@ -241,6 +245,10 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState,
 		now, ok := resolveParameterTime(pr.now, param)
 		if !ok {
 			return "", false
+		}
+		if param.FormatDialect == "loadrunner_strftime" {
+			value, err := dsl.FormatLoadRunnerTime(now, param.Format)
+			return value, err == nil
 		}
 		layout := param.Format
 		if layout == "" {
@@ -265,6 +273,9 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState,
 			return now.Format(param.Format), true
 		}
 	case "counter":
+		if param.Selection == "unique" {
+			return pr.generateUniqueCounterValue(param, state)
+		}
 		return generateCounterValue(param, state)
 	case "current_iteration":
 		iterationParam := param

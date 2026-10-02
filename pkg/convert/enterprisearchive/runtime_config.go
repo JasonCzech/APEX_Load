@@ -1611,7 +1611,7 @@ func runtimeConfigOccurrenceIdentity(section, key string) string {
 func runtimeConfigProxySemanticKey(key string) bool {
 	switch key {
 	case "mode", "proxymode", "proxyserver", "proxyuser", "proxypassword",
-		"proxyusebrowser", "proxyuseautoconfigscript", "proxyautoconfigscripturl", "proxyuseproxy", "proxyhttphost", "proxyhttpport",
+		"proxyusebrowser", "proxyuseautoconfigscript", "proxyautoconfigscripturl", "proxyuseproxy", "proxyuseproxyserver", "proxyhttphost", "proxyhttpport",
 		"proxyhttpshost", "proxyhttpsport", "proxyusesame",
 		"proxybypass", "proxynolocal":
 		return true
@@ -1740,7 +1740,7 @@ func runtimeConfigCanonicalKey(section, key string) string {
 		case "mode", "proxymode", "type":
 			return "proxymode"
 		case "proxyuseproxy", "proxyuseproxyserver":
-			return "proxyuseproxy"
+			return compact
 		case "proxyhttphost":
 			return "proxyhttphost"
 		case "proxyhttpport":
@@ -1806,7 +1806,7 @@ func runtimeConfigCanonicalKey(section, key string) string {
 		case "proxypassword", "password":
 			return "proxypassword"
 		case "proxyuseproxy", "proxyuseproxyserver":
-			return "proxyuseproxy"
+			return compact
 		case "proxyhttphost":
 			return "proxyhttphost"
 		case "proxyhttpport":
@@ -2033,12 +2033,12 @@ func runtimeConfigBooleanField(section, key string) bool {
 		case "enablehttp2", "keepalive", "usecustomagent", "touchmode",
 			"clientmetrics", "cacheenabled", "cachecontenturls",
 			"checknewerversions", "newuserperiteration", "simulateprefetch",
-			"downloadnonhtmlresources", "proxyusebrowser", "proxyuseautoconfigscript", "proxyuseproxy", "proxyusesame",
+			"downloadnonhtmlresources", "proxyusebrowser", "proxyuseautoconfigscript", "proxyuseproxy", "proxyuseproxyserver", "proxyusesame",
 			"proxynolocal", "snapshotonerroractive":
 			return true
 		}
 	case "proxy":
-		return key == "proxyusebrowser" || key == "proxyuseautoconfigscript" || key == "proxyuseproxy" || key == "proxyusesame" || key == "proxynolocal"
+		return key == "proxyusebrowser" || key == "proxyuseautoconfigscript" || key == "proxyuseproxy" || key == "proxyuseproxyserver" || key == "proxyusesame" || key == "proxynolocal"
 	case "logging":
 		switch key {
 		case "onerroronly", "parametersubstitution", "datareturned",
@@ -2282,6 +2282,7 @@ func applyRuntimeCfgCaseFoldConflicts(rc *RuntimeConfig, content string) {
 		keepAliveDisabled:       runtimeHTTPFeatureExplicitlyDisabled(sections, "KeepAlive"),
 		proxyMode:               rc.ProxyMode,
 		proxyExplicitlyDisabled: runtimeCfgProxyExplicitlyDisabled(sections),
+		customProxyDisabled:     runtimeCfgCustomProxyExplicitlyDisabled(sections),
 		cacheDisabled:           rc.BESimulateCache != nil && !*rc.BESimulateCache,
 		customUserAgent:         rc.UserAgent != "" && (rc.BEUseCustomUA == nil || *rc.BEUseCustomUA),
 		logLevel:                rc.LogLevel,
@@ -2387,6 +2388,7 @@ type runtimeCfgConflictActivation struct {
 	keepAliveDisabled       bool
 	proxyMode               string
 	proxyExplicitlyDisabled bool
+	customProxyDisabled     bool
 	cacheDisabled           bool
 	customUserAgent         bool
 	logLevel                string
@@ -2394,7 +2396,11 @@ type runtimeCfgConflictActivation struct {
 }
 
 func runtimeCfgProxyExplicitlyDisabled(sections map[string]map[string]string) bool {
-	var flagTrue, flagFalse bool
+	type selectorState struct {
+		enabled, disabled bool
+	}
+	selectors := map[string]selectorState{}
+	var malformedSelector bool
 	var modeActive, modeNone bool
 	for sectionName, section := range sections {
 		if !strings.EqualFold(strings.TrimSpace(sectionName), "Proxy") &&
@@ -2405,13 +2411,17 @@ func runtimeCfgProxyExplicitlyDisabled(sections map[string]map[string]string) bo
 			canonicalSection := runtimeConfigCanonicalSection(sectionName)
 			canonicalKey := runtimeConfigCanonicalKey(canonicalSection, key)
 			switch canonicalKey {
-			case "proxyuseproxy":
+			case "proxyuseproxy", "proxyuseproxyserver", "proxyusebrowser", "proxyuseautoconfigscript":
 				if enabled, ok := parseBoolExplicit(raw); ok {
+					state := selectors[canonicalKey]
 					if enabled {
-						flagTrue = true
+						state.enabled = true
 					} else {
-						flagFalse = true
+						state.disabled = true
 					}
+					selectors[canonicalKey] = state
+				} else {
+					malformedSelector = true
 				}
 			case "mode", "proxymode":
 				if mode, ok := mapRuntimeProxyMode(raw); ok {
@@ -2424,12 +2434,46 @@ func runtimeCfgProxyExplicitlyDisabled(sections map[string]map[string]string) bo
 			}
 		}
 	}
-	// The explicit enable flag is authoritative when present. Contradictory
-	// flags are not a disable; their own conflict remains active and reviewable.
-	if flagTrue || flagFalse {
-		return flagFalse && !flagTrue
+	// Parent enable and the custom/browser/PAC choices are distinct selectors.
+	// Ambiguous selectors remain reviewable, while one disabled custom selector
+	// without a parent or portable selection explicitly leaves its hosts dormant.
+	if malformedSelector {
+		return false
+	}
+	for _, state := range selectors {
+		if state.enabled && state.disabled {
+			return false
+		}
+	}
+	parent, custom := selectors["proxyuseproxy"], selectors["proxyuseproxyserver"]
+	portable := selectors["proxyusebrowser"].enabled || selectors["proxyuseautoconfigscript"].enabled
+	if parent.enabled || parent.disabled {
+		return parent.disabled && !custom.enabled && !portable
+	}
+	if custom.enabled || custom.disabled {
+		return custom.disabled && !portable
 	}
 	return modeNone && !modeActive
+}
+
+func runtimeCfgCustomProxyExplicitlyDisabled(sections map[string]map[string]string) bool {
+	found := false
+	for name, values := range sections {
+		if !strings.EqualFold(strings.TrimSpace(name), "Proxy") && !strings.EqualFold(strings.TrimSpace(name), "WEB") {
+			continue
+		}
+		for key, raw := range values {
+			if runtimeConfigCanonicalKey(runtimeConfigCanonicalSection(name), key) != "proxyuseproxyserver" {
+				continue
+			}
+			enabled, valid := parseBoolExplicit(raw)
+			if !valid || enabled {
+				return false
+			}
+			found = true
+		}
+	}
+	return found
 }
 
 func runtimeSupportedConflictIsActive(
@@ -2446,8 +2490,13 @@ func runtimeSupportedConflictIsActive(
 		// The enable/mode selector is always meaningful. Endpoint, credential,
 		// and bypass rows are dormant when proxying is explicitly disabled.
 		switch key {
-		case "proxyusebrowser", "proxyuseautoconfigscript", "mode", "proxymode", "proxyuseproxy":
+		case "proxyusebrowser", "proxyuseautoconfigscript", "mode", "proxymode", "proxyuseproxy", "proxyuseproxyserver":
 			return true
+		case "proxyserver", "proxyhttphost", "proxyhttpport", "proxyhttpshost", "proxyhttpsport", "proxyuser", "proxypassword", "proxyusesame", "proxypasswordisencrypted":
+			if state.customProxyDisabled {
+				return false
+			}
+			return !state.proxyExplicitlyDisabled && state.proxyMode != "system"
 		default:
 			if state.proxyExplicitlyDisabled {
 				return false

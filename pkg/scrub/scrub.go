@@ -1159,7 +1159,10 @@ func redactSensitiveJSONFallback(value string) string {
 }
 
 func redactJSONFallbackFields(value string, sensitiveName func(string) bool) string {
-	if sensitiveName == nil {
+	// Every JSON-ish field recognizer requires both a quoted key and a colon.
+	// Most review metadata scalars are labels, paths, or plain source lines;
+	// avoid four regexp scans when that syntax cannot occur.
+	if sensitiveName == nil || !strings.Contains(value, `"`) || !strings.Contains(value, ":") {
 		return value
 	}
 	// Handle invalid bare scalars first. The ordinary fallback expression can
@@ -1170,17 +1173,17 @@ func redactJSONFallbackFields(value string, sensitiveName func(string) bool) str
 	// the next non-space byte is a structural delimiter. Redact malformed
 	// suffixes before the ordinary fallback can preserve them.
 	value = redactMalformedJSONStrings(value, sensitiveName)
-	value = jsonFallbackFieldPattern.ReplaceAllStringFunc(value, func(field string) string {
-		matches := jsonFallbackFieldPattern.FindStringSubmatch(field)
-		if len(matches) != 5 {
-			return field
+	// Keep the capture offsets from the first scan. Re-running the complete
+	// field expression inside every replacement callback scans large escaped
+	// source strings twice and allocates a second set of captures per field.
+	spans := make([]redactionSpan, 0, 1)
+	for _, match := range jsonFallbackFieldPattern.FindAllStringSubmatchIndex(value, -1) {
+		name, err := strconv.Unquote(`"` + value[match[4]:match[5]] + `"`)
+		if err == nil && sensitiveName(name) {
+			spans = append(spans, redactionSpan{start: match[6], end: match[7]})
 		}
-		name, err := strconv.Unquote(`"` + matches[2] + `"`)
-		if err != nil || !sensitiveName(name) {
-			return field
-		}
-		return matches[1] + `"` + Redacted + `"` + matches[4]
-	})
+	}
+	value = applyRedactionSpansWithReplacement(value, spans, `"`+Redacted+`"`)
 	return redactJSONCompoundFields(value, sensitiveName)
 }
 

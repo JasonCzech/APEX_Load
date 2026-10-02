@@ -36,4 +36,10 @@ describe('defaultImportSurfaces fallback registry', () => {
     expect(new Set(launchers).size).toBe(launchers.length)
     expect(defaultImportSurfaces.every(surface => surface.visible)).toBe(true)
   })
+
+  it('makes VuGen USZ and multi-project archive import discoverable', () => {
+    const archive = defaultImportSurfaces.find(surface => surface.launcher === 'enterprise_archive')
+    expect(archive?.description).toContain('ZIP or USZ')
+    expect(archive?.description).toContain('several projects')
+  })
 })

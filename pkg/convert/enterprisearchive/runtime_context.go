@@ -126,6 +126,25 @@ func refineRuntimeSettingDispositions(dispositions map[string]map[string]map[str
 						}
 					}
 				}
+				if row.ParityID == "browser_device_emulation" && !strings.EqualFold(strings.TrimSpace(protocol), "browser") {
+					row.Status = RuntimeSettingDispositionCompatibilityOnly
+					row.Note = "This control executes only in the browser runtime; this protocol has no browser DOM."
+					if nativeHTTPCompatibilityProtocol(protocol) && runtimeConfigCanonicalSection(section) == "http" && (strings.EqualFold(key, "ScreenWidth") || strings.EqualFold(key, "ScreenHeight")) {
+						row.Status = RuntimeSettingDispositionNonApplicable
+						row.Note = "Recorded screen dimensions; native HTTP replay has no browser viewport."
+					}
+					keys[key] = row
+				}
+				if row.ParityID == "browser_selection" && rc != nil {
+					if emulation := rc.ToBrowserEmulationConfig(); emulation != nil && emulation.Mode == "custom" {
+						row.Status = RuntimeSettingDispositionNonApplicable
+						row.Note = "Saved browser identity is dormant because the selected custom User-Agent is authoritative."
+						keys[key] = row
+					}
+				}
+				if nativeHTTPCompatibilityProtocol(protocol) && runtimeConfigCanonicalSection(section) == "http" && strings.EqualFold(key, "UseBrowserAgent") && runtimeHTTPFeatureExplicitlyDisabled(ParseConfigSections(source), "UseBrowserAgent") {
+					note = "Recorded-browser User-Agent inheritance is explicitly disabled; the selected custom User-Agent or browser identity is authoritative."
+				}
 				if strings.EqualFold(key, "ProxyPasswordIsEncrypted") && runtimeConfigCanonicalSection(section) == "http" {
 					keys[key] = RuntimeSettingDisposition{Status: RuntimeSettingDispositionMapped, ParityID: "proxy", Fields: []string{"config.http.proxy.password"}, Note: "Credential encoding marker consumed by the importer; provision the protected proxy password through Credentials."}
 					continue

@@ -151,6 +151,51 @@ describe('SecretBindingReview', () => {
     expect(button('Cancel credentials')).toBeDefined()
   })
 
+  it('reports disclosure-safe imperative commit errors and clears them on retry', async () => {
+    const onErrorChange = vi.fn()
+    const onApply = vi.fn()
+      .mockRejectedValueOnce(new Error('Credential preparation failed: password=synthetic-write-only-value'))
+      .mockResolvedValueOnce(undefined)
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    await act(async () => root.render(
+      <SecretBindingReview ref={reviewRef} inlineEditing requirements={requirements} projectId="project-1" onApply={onApply} onErrorChange={onErrorChange} />,
+    ))
+
+    await act(async () => { expect(await reviewRef.current?.commit()).toBe(false) })
+
+    expect(onErrorChange).toHaveBeenLastCalledWith('Credential preparation failed: password=[redacted]')
+    expect(JSON.stringify(onErrorChange.mock.calls)).not.toContain('synthetic-write-only-value')
+    expect(apiMock.createProjectSecrets).not.toHaveBeenCalled()
+    expect(apiMock.migrateImportSecrets).not.toHaveBeenCalled()
+
+    await act(async () => { expect(await reviewRef.current?.commit()).toBe(true) })
+
+    expect(onErrorChange).toHaveBeenLastCalledWith('')
+    expect(onApply).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not publish an imperative commit error after the reviewed scope changes', async () => {
+    let rejectApply!: (reason: Error) => void
+    const onApply = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectApply = reject }))
+    const onErrorChange = vi.fn()
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    const renderReview = (generation: string) => root.render(
+      <SecretBindingReview ref={reviewRef} reviewGeneration={generation} requirements={requirements} projectId="project-1" onApply={onApply} onErrorChange={onErrorChange} />,
+    )
+    await act(async () => renderReview('first-review'))
+    let commitResult: boolean | undefined
+    await act(async () => { void reviewRef.current?.commit().then(result => { commitResult = result }) })
+    expect(onApply).toHaveBeenCalledOnce()
+    onErrorChange.mockClear()
+
+    await act(async () => renderReview('second-review'))
+    await act(async () => rejectApply(new Error('Failure from the previous review')))
+
+    expect(commitResult).toBe(false)
+    expect(onErrorChange).not.toHaveBeenCalled()
+    expect(container.textContent).not.toContain('Failure from the previous review')
+  })
+
   it('filters preserved and setup groups without changing their binding choices', () => {
     act(() => root.render(<SecretBindingReview requirements={[
       { ...requirements[0], destination_value_preserved: true, value_group_id: 'preserved' },

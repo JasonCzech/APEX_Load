@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html"
 	"math"
+	"math/rand/v2"
 	"net/url"
 	"os"
 	"sort"
@@ -1008,7 +1009,13 @@ func (vu *VUser) handleSourceParameterAction(function string, action dsl.Action)
 	switch function {
 	case "lr_save_string", "lr_save_int":
 		if len(args) >= 2 {
-			vu.setSourceVariable(args[1], args[0])
+			if array, ok := action.Params["source_array"].(map[string]any); ok {
+				// Array entries are already runtime values. Interpolating the selected
+				// entry again would treat template-looking response bytes as source.
+				vu.setResolvedSourceVariable(args[1], vu.sourceParameterArrayValue(array))
+			} else {
+				vu.setSourceVariable(args[1], args[0])
+			}
 		}
 	case "lr_save_var":
 		if len(args) >= 4 {
@@ -1040,7 +1047,11 @@ func (vu *VUser) handleSourceParameterAction(function string, action dsl.Action)
 		}
 	case "lr_save_timestamp":
 		name := firstEngineValue("timestamp", args...)
-		vu.setSourceVariable(name, strconv.FormatInt(time.Now().Unix(), 10))
+		options := args
+		if len(options) > 0 {
+			options = options[1:]
+		}
+		vu.setSourceVariable(name, sourceTimestampValue(time.Now(), options))
 	case "lr_save_datetime":
 		name := firstEngineValue("datetime", args...)
 		format := defaultDateTimeLayout
@@ -1065,6 +1076,42 @@ func (vu *VUser) handleSourceParameterAction(function string, action dsl.Action)
 			vu.setSourceVariable(saveName, firstEngineValue("", args...))
 		}
 	}
+}
+
+func (vu *VUser) sourceParameterArrayValue(array map[string]any) string {
+	name, _ := array["name"].(string)
+	selection, _ := array["selection"].(string)
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" || selection != "random" {
+		return ""
+	}
+	count, err := strconv.Atoi(vu.Variables[name+"_count"])
+	if err != nil || count <= 0 {
+		return ""
+	}
+	return vu.Variables[fmt.Sprintf("%s_%d", name, rand.IntN(count)+1)]
+}
+
+// LoadRunner defaults to thirteen epoch digits (milliseconds), with seconds
+// and microseconds at ten and sixteen digits respectively. Other valid widths
+// take the leading digits; invalid widths use the documented default.
+func sourceTimestampValue(now time.Time, args []string) string {
+	digits := 13
+	for _, arg := range args {
+		key, raw, ok := strings.Cut(arg, "=")
+		if !ok || !strings.EqualFold(strings.TrimSpace(key), "DIGITS") {
+			continue
+		}
+		if value, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && value >= 1 && value <= 16 {
+			digits = value
+		}
+		break
+	}
+	value := strconv.FormatInt(now.UnixMicro(), 10)
+	if digits < len(value) {
+		value = value[:digits]
+	}
+	return value
 }
 
 func (vu *VUser) handleWebConvertParamAction(action dsl.Action, args []string) {
@@ -1166,12 +1213,19 @@ func (vu *VUser) ensureVariables() {
 }
 
 func (vu *VUser) setSourceVariable(name string, value string) {
+	if strings.TrimSpace(name) == "" {
+		return
+	}
+	vu.ensureVariables()
+	vu.setResolvedSourceVariable(name, vu.interpolate(value))
+}
+
+func (vu *VUser) setResolvedSourceVariable(name string, resolved string) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return
 	}
 	vu.ensureVariables()
-	resolved := vu.interpolate(value)
 	vu.Variables[name] = resolved
 	vu.Variables[strings.ToLower(name)] = resolved
 	vu.registerSourceVariableRunEvidenceValue(name, resolved)

@@ -22,7 +22,7 @@ func refinePortableProxySelection(rc *RuntimeConfig, sections map[string]map[str
 	custom, customValid := selected("ProxyUseProxyServer")
 	parent, parentValid := selected("ProxyUseProxy")
 	_, parentPresent := sectionValueCaseInsensitive(web, "ProxyUseProxy")
-	conflict := !parentValid || (parentPresent && !parent && (browser || pac)) || !browserValid || !pacValid || !customValid || (browser && (custom || pac)) || (pac && custom)
+	conflict := !parentValid || (parentPresent && !parent && (browser || pac || custom)) || !browserValid || !pacValid || !customValid || (browser && (custom || pac)) || (pac && custom)
 	mode := strings.ToLower(runtimeSectionFirstNonBlank(web, "Mode", "ProxyMode", "Type"))
 	if mode != "" && ((pac && mode != "pac") || (browser && mode != "system")) {
 		conflict = true

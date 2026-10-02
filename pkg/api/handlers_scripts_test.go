@@ -2029,16 +2029,30 @@ func TestHandleImportEnterpriseArchiveGoldenFixtureRuntimeParity(t *testing.T) {
 	if !ok {
 		t.Fatalf("summary.runtime_settings_status_counts = %#v, want map", result.Summary["runtime_settings_status_counts"])
 	}
-	if statusCounts["executed"] != float64(24) || statusCounts["partial"] != nil || statusCounts["compatibility_only"] != float64(3) {
-		t.Fatalf("runtime_settings_status_counts = %#v, want executed=24 compatibility_only=3", statusCounts)
+	if statusCounts["executed"] != float64(23) || statusCounts["partial"] != nil || statusCounts["compatibility_only"] != float64(4) {
+		t.Fatalf("runtime_settings_status_counts = %#v, want executed=23 compatibility_only=4", statusCounts)
 	}
 	runtimeParity, ok := result.Summary["runtime_settings_parity"].([]any)
 	if !ok || len(runtimeParity) != 27 {
 		t.Fatalf("summary.runtime_settings_parity = %#v, want 27 entries", result.Summary["runtime_settings_parity"])
 	}
+	parityStatuses := make(map[string]any, len(runtimeParity))
+	for _, value := range runtimeParity {
+		entry, ok := value.(map[string]any)
+		if !ok {
+			t.Fatalf("runtime parity entry = %#v, want object", value)
+		}
+		id, _ := entry["id"].(string)
+		parityStatuses[id] = entry["status"]
+	}
+	// HTTP retains the fixture's device settings as source evidence, but it
+	// creates no browser DOM. Its explicit custom proxy still executes.
+	if parityStatuses["browser_device_emulation"] != "compatibility_only" || parityStatuses["proxy"] != "executed" {
+		t.Fatalf("device/proxy parity = %v/%v, want compatibility_only/executed", parityStatuses["browser_device_emulation"], parityStatuses["proxy"])
+	}
 	readiness, ok := result.Summary["migration_readiness"].(map[string]any)
-	if !ok || readiness["score_pct"] != float64(92) || readiness["blocked"] != true {
-		t.Fatalf("summary.migration_readiness = %#v, want score=92 blocked=true", result.Summary["migration_readiness"])
+	if !ok || readiness["score_pct"] != float64(89) || readiness["blocked"] != true {
+		t.Fatalf("summary.migration_readiness = %#v, want score=89 blocked=true", result.Summary["migration_readiness"])
 	}
 }
 
@@ -4101,7 +4115,7 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 	if !ok {
 		t.Fatal("expected enterprise_script_archive source map entry")
 	}
-	if !enterpriseArchive.ImportReview || !enterpriseArchive.RepairSuggestions || !enterpriseArchive.SaveHandoff {
+	if !enterpriseArchive.ImportReview || !enterpriseArchive.RepairSuggestions || !enterpriseArchive.SaveHandoff || !enterpriseArchive.MultiScript {
 		t.Fatalf("enterprise archive features = %#v, want shared review/repair/save lifecycle", enterpriseArchive)
 	}
 	jmeter, ok := payload.SourceMap["jmeter"]
@@ -4163,6 +4177,9 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 	}
 	if len(visibleSurfaces) != 17 {
 		t.Fatalf("visible import surfaces = %d, want 17 (%#v)", len(visibleSurfaces), visibleSurfaces)
+	}
+	if description := visibleSurfaces["enterprise_archive"].Description; !strings.Contains(description, "ZIP or USZ") || !strings.Contains(description, "several projects") {
+		t.Fatalf("archive import description = %q, want project formats and collection discovery", description)
 	}
 	expectedSurfaces := map[string]string{
 		"openapi":                 "Contracts & Collections",

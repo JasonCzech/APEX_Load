@@ -144,15 +144,10 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 				if inspectErr != nil {
 					return nil, inspectErr
 				}
-				detected := DetectProtocol(files, projectConfig, nil)
-				detected.ImportMode = ImportModeReviewOnly
-				detected.RequiredEvidence = appendUnique(detected.RequiredEvidence, scope.RequiredEvidence...)
-				detected.Warnings = append(detected.Warnings, fmt.Sprintf("%s import is planned; archive was preserved as a review artifact.", scope.DisplayName))
-				return newEnterpriseArchiveReviewResult(detected, files, nil, map[string]any{
-					"trueclient_archive_inspection": inspection,
-					"source_script_type":            scope.DisplayName,
-					"source_profile":                scope.APEXLoadShape,
-				}), nil
+				// A planned profile may expose a bounded browser authoring draft.
+				// Its classification and durable execution gate remain intact.
+				trueClientScope = &scope
+				trueClientInspection = inspection
 			default:
 				detected := DetectProtocol(files, projectConfig, nil)
 				return newEnterpriseArchiveReviewResult(detected, files, nil, map[string]any{
@@ -200,11 +195,16 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	parameterFileNames := findParameterFiles(files, projectConfig)
 	if trueClientScope != nil {
 		trueClientResult, err := trueclient.ConvertArchive(files, trueclient.ConvertOptions{
-			ScriptName:           opts.ScriptName,
-			BaseURL:              opts.BaseURL,
-			PreserveTransactions: opts.PreserveTransactions,
+			ScriptName:               opts.ScriptName,
+			BaseURL:                  opts.BaseURL,
+			PreserveTransactions:     opts.PreserveTransactions,
+			PreserveUnsupportedSteps: trueClientScope.Status == trueclient.ScopePlanned,
 		})
 		if err != nil {
+			if trueClientScope.Status == trueclient.ScopePlanned {
+				detected := DetectProtocol(files, projectConfig, nil)
+				return newEnterpriseArchiveReviewResult(detected, files, nil, map[string]any{"trueclient_archive_inspection": trueClientInspection, "runtime_files": disclosureSafeRuntimeSections(collectRuntimeSections(files)), "project_settings": disclosureSafeConfigSections(projectSections)}), nil
+			}
 			return nil, err
 		}
 		if opts.RuntimeSettings != nil {
@@ -231,6 +231,15 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			result.ReviewArtifact = NewReviewArtifact(*result.DetectedProtocol, files, nil, map[string]any{
 				"trueclient_archive_inspection": trueClientInspection,
 			})
+		}
+		applyTruClientBrowserRuntimeSettings(result, runtimeFileName, runtimeCfg, files)
+		applyTruClientBrowserProfileReview(result, files)
+		appendTruClientSourceMappings(result, files, trueClientResult.SourceXMLFile)
+		if trueClientScope.Status == trueclient.ScopePlanned {
+			gate := dsl.Action{Name: "Review planned TruClient browser profile", Type: "source_review", Metadata: map[string]any{"source_file": projectFileName}}
+			importreview.ApplyToAction(&gate, []importreview.Finding{{Code: "truclient_planned_profile_requires_review", ReasonCode: "truclient_planned_profile_requires_review", Gate: importreview.GateExecution, Source: "enterprise_script_archive", SourceRef: projectFileName, Detail: "This browser draft preserves a planned source profile. Verify browser identity, source completion rules, selectors, runtime settings, and transaction evidence before promotion."}})
+			result.Script.Init = append(result.Script.Init, gate)
+			result.Warnings = append(result.Warnings, "The planned TruClient profile is preserved as a gated browser authoring draft; replay requires source-contract review.")
 		}
 		if trueClientScope.Status == trueclient.ScopeReviewOnly {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.", trueClientScope.DisplayName))
@@ -2277,6 +2286,11 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 	selectedSections := selectedRuntimeSections(runtimeSections, runtimeFileName, runtimeCfg)
 	dispositions := classifyRuntimeSelectedSections(selectedSections, script.Protocol)
 	refineRuntimeSettingDispositions(dispositions, runtimeCfg, files, script.Protocol)
+	refineTruClientBrowserRuntimeDispositions(dispositions, script)
+	appendTruClientBrowserProfileRuntimeEvidence(preserved, runtimeSections, dispositions)
+	if len(runtimeSections) > 0 {
+		preserved["runtime_files"] = disclosureSafeRuntimeSections(runtimeSections)
+	}
 	if len(dispositions) > 0 {
 		preserved["runtime_setting_dispositions"] = dispositions
 	}

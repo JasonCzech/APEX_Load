@@ -183,7 +183,7 @@ describe('EnterpriseArchiveImport review derivations', () => {
     await act(async () => {
       root.render(<EnterpriseArchiveImport />)
     })
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,

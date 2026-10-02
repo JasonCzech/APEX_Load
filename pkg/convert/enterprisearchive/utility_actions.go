@@ -194,7 +194,19 @@ func convertSourceFunctionAction(fn ParsedFunction) (dsl.Action, SourceFunctionS
 	case "metric":
 		return convertGenericSourceAction(fn, "source_metric", def), def.SupportMode, true
 	case "parameter", "attribute", "info":
-		return convertGenericSourceAction(fn, "source_parameter", def), def.SupportMode, true
+		action := convertGenericSourceAction(fn, "source_parameter", def)
+		if sourceRandomArrayAssignmentRequiresReview(fn) {
+			action.Type = "source_review"
+			makeSourceReviewActionDisclosureSafe(&action, fn, SourceFunctionSupportReviewOnly)
+			importreview.ApplyToAction(&action, []importreview.Finding{{
+				Code: "source_parameter_array_expression_requires_review", ReasonCode: "source_parameter_array_expression_requires_review",
+				Element: fn.Name, Source: "enterprise_script_archive", SourceRef: fn.Filename,
+				Detail: "The source random-array expression requires an exact literal array name and a verified standalone selection call.",
+				Gate:   importreview.GateExecution,
+			}})
+			return action, SourceFunctionSupportReviewOnly, true
+		}
+		return action, def.SupportMode, true
 	case "json":
 		return convertGenericSourceAction(fn, "source_json", def), def.SupportMode, true
 	case "xml":
@@ -434,11 +446,99 @@ func convertGenericSourceAction(fn ParsedFunction, actionType string, def Source
 	if len(fn.CallArgs) > 0 {
 		action.Params["call_args"] = sourceStructuredCallArgs(fn.CallArgs)
 	}
+	if action.Type == "source_parameter" {
+		annotateSourceParameterAssignment(&action, fn)
+	}
 	annotateSourceAction(&action, fn, def)
 	if sourceSupportModeRequiresDisclosureSafePlaceholder(def.SupportMode) {
 		makeSourceReviewActionDisclosureSafe(&action, fn, def.SupportMode)
 	}
 	return action
+}
+
+// Positional parameter functions publish real variables, just like named
+// SaveParam contributors. Expose their executable reads and writes so review
+// does not mistake the diagnostic call_args snapshot for dependency evidence.
+func annotateSourceParameterAssignment(action *dsl.Action, fn ParsedFunction) {
+	args := sourceControlArgs(fn)
+	saveIndex := -1
+	switch fn.Name {
+	case "lr_save_string", "lr_save_int":
+		saveIndex = 1
+		if len(args) > 0 {
+			expression := args[0]
+			if len(fn.CallArgs) > 0 && fn.CallArgs[0].Raw != "" {
+				expression = fn.CallArgs[0].Raw
+			}
+			action.Params["source_string"] = convertSourceMessageExpression(args[0])
+			if literal, ok := decodeAdjacentCStringLiterals(expression); ok {
+				// Authored C strings may contain function-looking text. Decode the
+				// literal before considering executable nested-call syntax.
+				value := convertParamReferences(literal)
+				action.Params["source_string"] = value
+				if executable, ok := action.Params["args"].([]any); ok && len(executable) > 0 {
+					executable[0] = value
+				}
+			} else if array, ok := sourceRandomParameterArray(expression); ok {
+				action.Params["source_array"] = map[string]any{"name": array, "selection": "random"}
+				action.Params["source_string"] = "{{var." + array + "_count}}"
+			}
+		}
+	case "lr_save_var":
+		saveIndex = 3
+		if len(args) > 0 {
+			action.Params["source_string"] = convertSourceMessageExpression(args[0])
+		}
+	case "lr_save_timestamp", "lr_param_sprintf":
+		saveIndex = 0
+	}
+	if saveIndex >= 0 && saveIndex < len(args) && strings.TrimSpace(args[saveIndex]) != "" {
+		action.Params["save_param"] = args[saveIndex]
+	}
+}
+
+func sourceRandomParameterArray(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	open := strings.Index(value, "(")
+	if open <= 0 || strings.TrimSpace(value[:open]) != "lr_paramarr_random" || !strings.HasSuffix(value, ")") {
+		return "", false
+	}
+	args := splitCFunctionArgs(value[open+1 : len(value)-1])
+	if len(args) != 1 {
+		return "", false
+	}
+	literal, ok := decodeAdjacentCStringLiterals(args[0])
+	if !ok {
+		return "", false
+	}
+	name := canonicalSourceParameterName(literal)
+	return name, name != ""
+}
+
+func sourceRandomArrayAssignmentRequiresReview(fn ParsedFunction) bool {
+	if fn.Name != "lr_save_string" && fn.Name != "lr_save_int" {
+		return false
+	}
+	args := sourceControlArgs(fn)
+	if len(args) == 0 {
+		return false
+	}
+	expression := args[0]
+	if len(fn.CallArgs) > 0 {
+		// Use the source token to distinguish an authored literal containing a
+		// function name from an executable C call, before argument cleanup.
+		expression = fn.CallArgs[0].Raw
+	}
+	if _, literal := decodeAdjacentCStringLiterals(expression); literal {
+		return false
+	}
+	expression = strings.TrimSpace(expression)
+	open := strings.Index(expression, "(")
+	if open <= 0 || strings.TrimSpace(expression[:open]) != "lr_paramarr_random" {
+		return false
+	}
+	_, exact := sourceRandomParameterArray(expression)
+	return !exact
 }
 
 // labelSourceTransactionMarker gives the executable start/end markers distinct

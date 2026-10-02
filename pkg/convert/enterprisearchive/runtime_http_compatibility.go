@@ -100,6 +100,14 @@ func nativeHTTPCompatibilityID(id string) bool {
 
 // Avoid claiming native HTTP capabilities for external JVM/browser execution.
 func scopeHTTPCompatibilityParity(entries []RuntimeSettingParityEntry, protocol string) []RuntimeSettingParityEntry {
+	if !strings.EqualFold(strings.TrimSpace(protocol), "browser") {
+		for i := range entries {
+			if entries[i].ID == "browser_device_emulation" {
+				entries[i].Status = RuntimeSettingStatusCompatibilityOnly
+				entries[i].Notes = "Browser engine, device, touch, orientation, metrics, slow motion, and viewport controls execute only in the browser runtime. This protocol does not create a browser DOM."
+			}
+		}
+	}
 	if nativeHTTPCompatibilityProtocol(protocol) {
 		return entries
 	}

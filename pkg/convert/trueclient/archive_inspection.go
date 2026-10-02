@@ -23,6 +23,9 @@ type ArchiveInspection struct {
 	ParameterFiles          []ArchiveFileSummary   `json:"parameter_files,omitempty"`
 	RuntimeFiles            []ArchiveFileSummary   `json:"runtime_files,omitempty"`
 	StepInventory           StepInventory          `json:"step_inventory"`
+	SourceStepNodes         int                    `json:"source_step_nodes,omitempty"`
+	TransactionCount        int                    `json:"transaction_count,omitempty"`
+	TransactionAnchorCount  int                    `json:"transaction_anchor_count,omitempty"`
 	Steps                   []StepInspection       `json:"steps,omitempty"`
 	UnsupportedFragments    []SourceFragment       `json:"unsupported_fragments,omitempty"`
 	PreservedMetadataInputs []string               `json:"preserved_metadata_inputs,omitempty"`
@@ -42,6 +45,7 @@ type StepInventory struct {
 	Supported   map[string]int `json:"supported,omitempty"`
 	ReviewOnly  map[string]int `json:"review_only,omitempty"`
 	Unsupported map[string]int `json:"unsupported,omitempty"`
+	Disabled    map[string]int `json:"disabled,omitempty"`
 }
 
 type StepInspection struct {
@@ -62,6 +66,11 @@ type StepInspection struct {
 	SelectorCandidates []SelectorCandidate `json:"selector_candidates,omitempty"`
 	ReplayDiagnostics  []ReplayDiagnostic  `json:"replay_diagnostics,omitempty"`
 	SourceSnippet      string              `json:"source_snippet,omitempty"`
+	Disabled           bool                `json:"disabled,omitempty"`
+	Optional           bool                `json:"optional,omitempty"`
+	Unfinalized        bool                `json:"unfinalized,omitempty"`
+	EndEvent           string              `json:"end_event,omitempty"`
+	EndEventArguments  string              `json:"end_event_arguments,omitempty"`
 }
 
 type ObjectDescriptor struct {
@@ -150,6 +159,21 @@ func InspectArchive(files map[string]string, scriptType string) (*ArchiveInspect
 		inspection.StepInventory = inventory
 		inspection.Steps = steps
 		inspection.UnsupportedFragments = fragments
+		var sourceDoc truScriptDocument
+		if xml.Unmarshal([]byte(normalizeXMLDeclaration(decodeXMLContent(xmlContent))), &sourceDoc) == nil {
+			var countNodes func([]truXMLStep)
+			countNodes = func(steps []truXMLStep) {
+				for _, step := range steps {
+					inspection.SourceStepNodes++
+					countNodes(step.Steps)
+				}
+			}
+			countNodes(sourceDoc.Steps)
+			inspection.TransactionCount = len(sourceDoc.Transactions)
+			for _, transaction := range sourceDoc.Transactions {
+				inspection.TransactionAnchorCount += len(transaction.Vertices)
+			}
+		}
 	} else {
 		sortObjectDescriptors(inspection.ObjectDescriptors)
 		inspection.Warnings = append(inspection.Warnings, "No TruClient default.xml was found in the archive.")
@@ -170,19 +194,33 @@ func inspectDefaultXML(name string, content string, descriptors []ObjectDescript
 		Supported:   map[string]int{},
 		ReviewOnly:  map[string]int{},
 		Unsupported: map[string]int{},
+		Disabled:    map[string]int{},
 	}
 	steps := make([]StepInspection, 0)
 	fragments := make([]SourceFragment, 0)
-	var inspectSequence func([]truXMLStep)
-	inspectSequence = func(stepsToInspect []truXMLStep) {
+	var inspectSequence func([]truXMLStep, bool)
+	inspectSequence = func(stepsToInspect []truXMLStep, inAlternative bool) {
 		for _, step := range stepsToInspect {
-			inspectStepForInventory(step, descriptors, &inventory, &steps, &fragments)
+			if !isStructuralAction(step.Action) {
+				if inAlternative && !step.Disabled {
+					inventory.Total++
+					inventory.ReviewOnly["alternative_member"]++
+					steps = append(steps, inspectStep(step, ScopeReviewOnly, "alternative_member", descriptors))
+				} else {
+					inspectStepForInventory(step, descriptors, &inventory, &steps, &fragments)
+				}
+			}
 			if len(step.Steps) > 0 {
-				inspectSequence(step.Steps)
+				if step.Disabled {
+					for index := range step.Steps {
+						step.Steps[index].Disabled = true
+					}
+				}
+				inspectSequence(step.Steps, inAlternative || strings.EqualFold(step.Type, "alternative"))
 			}
 		}
 	}
-	inspectSequence(executionSteps(doc.Steps))
+	inspectSequence(executionSteps(doc.Steps), false)
 	return inventory, steps, fragments, nil
 }
 
@@ -192,6 +230,20 @@ func inspectStepForInventory(step truXMLStep, descriptors []ObjectDescriptor, in
 		return
 	}
 	inventory.Total++
+	if step.Disabled {
+		inventory.Disabled[action]++
+		item := inspectStep(step, ScopeReviewOnly, "disabled", descriptors)
+		item.Disabled = true
+		*steps = append(*steps, item)
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(step.Type), "alternative") {
+		inventory.ReviewOnly["alternative"]++
+		item := inspectStep(step, ScopeReviewOnly, "alternative", descriptors)
+		*steps = append(*steps, item)
+		*fragments = append(*fragments, sourceFragment(item, "Alternative-selection semantics require a verified native replacement."))
+		return
+	}
 	scope, ok := LookupStepScope(action)
 	if !ok {
 		inventory.Unsupported[action]++
@@ -306,6 +358,7 @@ func inspectStep(step truXMLStep, status ScopeStatus, scopeName string, descript
 		candidates = append(candidates, objectDescriptor.SelectorCandidates...)
 	}
 	inspection := StepInspection{
+		Disabled: step.Disabled, Optional: step.Optional, Unfinalized: step.Unfinalized, EndEvent: step.EndEvent, EndEventArguments: step.EndEventArgs,
 		StepID:             strings.TrimSpace(step.StepID),
 		Index:              strings.TrimSpace(step.Index),
 		Action:             strings.TrimSpace(step.Action),

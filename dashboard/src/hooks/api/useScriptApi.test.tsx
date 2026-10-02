@@ -40,6 +40,8 @@ describe('useScriptApi import wrappers', () => {
       root.unmount()
     })
     container.remove()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
     vi.clearAllMocks()
   })
 
@@ -49,7 +51,7 @@ describe('useScriptApi import wrappers', () => {
       const har = new File(['{}'], 'recording.har')
       const supplemental = new File(['data'], 'accounts.dat')
       await api[method](archive, { project_id: 'project-1', har_file: har, supplemental_files: [supplemental] })
-      const [, options] = (apiFetch as Mock).mock.calls[0]
+      const [, options] = (request as Mock).mock.calls[0]
       const body = options.body as FormData
       expect(Array.from(body.keys())).toEqual(['project_id', 'file', 'har_file', 'supplemental_file'])
       expect(body.get('project_id')).toBe('project-1')
@@ -58,15 +60,25 @@ describe('useScriptApi import wrappers', () => {
   )
 
   it.each(['importEnterpriseArchive', 'validateEnterpriseArchiveImport'] as const)(
+    '%s selects a nested member while retaining original upload bytes', async method => {
+      const archive = new File(['fixture'], 'collection.zip')
+      await api[method](archive, { project_id: 'project-1', archive_member: 'Project.USZ' })
+      const body = (request as Mock).mock.calls[0][1].body as FormData
+      expect(body.get('file')).toBe(archive)
+      expect(body.get('archive_member')).toBe('Project.USZ')
+    },
+  )
+
+  it.each(['importEnterpriseArchive', 'validateEnterpriseArchiveImport'] as const)(
     '%s sends draft expiration only when explicitly enabled', async method => {
       const archive = new File(['fixture'], 'script.zip')
       await api[method](archive)
-      let body = (apiFetch as Mock).mock.calls[0][1].body as FormData
+      let body = (request as Mock).mock.calls[0][1].body as FormData
       expect(body.has('expire_draft')).toBe(false)
 
-      ;(apiFetch as Mock).mockClear()
+      ;(request as Mock).mockClear()
       await api[method](archive, { expire_draft: true })
-      body = (apiFetch as Mock).mock.calls[0][1].body as FormData
+      body = (request as Mock).mock.calls[0][1].body as FormData
       expect(body.get('expire_draft')).toBe('true')
     },
   )
@@ -78,10 +90,74 @@ describe('useScriptApi import wrappers', () => {
       Object.defineProperty(source, 'webkitRelativePath', { value: 'Demo/Action.c' })
       Object.defineProperty(project, 'webkitRelativePath', { value: 'Demo/Demo.usr' })
       await api[method](new File([], 'Demo'), { project_id: 'project-1', folder_files: [source, project] })
-      const body = (apiFetch as Mock).mock.calls[0][1].body as FormData
+      const body = (request as Mock).mock.calls[0][1].body as FormData
       expect(Array.from(body.keys())).toEqual(['project_id', 'file:Demo%2FAction.c', 'file:Demo%2FDemo.usr'])
       expect(body.has('file')).toBe(false)
       expect((body.get('file:Demo%2FAction.c') as File).name).toBe(source.name)
+    },
+  )
+
+  it.each(['importEnterpriseArchive', 'validateEnterpriseArchiveImport'] as const)(
+    '%s aborts stalled response bodies at its deadline and keeps the upload retryable', async method => {
+      const client = await vi.importActual<typeof import('../apiClient')>('../apiClient')
+      ;(request as Mock).mockImplementationOnce(client.request)
+      vi.useFakeTimers()
+      let signal: AbortSignal | undefined
+      const text = vi.fn(() => new Promise<string>(() => {}))
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, options) => {
+        signal = options?.signal as AbortSignal
+        return { ok: true, status: 200, headers: new Headers({ 'Content-Type': 'application/json' }), text } as unknown as Response
+      })
+      const pending = api[method](new File(['fixture'], 'collection.zip'))
+      const rejection = expect(pending).rejects.toThrow('Your archive remains in the queue. Retry validation.')
+      await vi.advanceTimersByTimeAsync(209_999)
+      expect(text).toHaveBeenCalledTimes(1)
+      expect(signal?.aborted).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      await rejection
+      expect(signal?.aborted).toBe(true)
+      expect(vi.getTimerCount()).toBe(0)
+    },
+  )
+
+  it.each(['importEnterpriseArchive', 'validateEnterpriseArchiveImport'] as const)(
+    '%s rejects a stalled header request even if the transport ignores abort', async method => {
+      const client = await vi.importActual<typeof import('../apiClient')>('../apiClient')
+      ;(request as Mock).mockImplementationOnce(client.request)
+      vi.useFakeTimers()
+      let signal: AbortSignal | undefined
+      vi.spyOn(globalThis, 'fetch').mockImplementation((_input, options) => {
+        signal = options?.signal as AbortSignal
+        return new Promise<Response>(() => {})
+      })
+      const pending = api[method](new File(['fixture'], 'script.zip'))
+      const rejection = expect(pending).rejects.toThrow('Import review timed out after 3 minutes 30 seconds.')
+      await vi.advanceTimersByTimeAsync(210_000)
+      await rejection
+      expect(signal?.aborted).toBe(true)
+      expect(vi.getTimerCount()).toBe(0)
+    },
+  )
+
+  it.each(['importEnterpriseArchive', 'validateEnterpriseArchiveImport'] as const)(
+    '%s clears its deadline after JSON success or server error', async method => {
+      const client = await vi.importActual<typeof import('../apiClient')>('../apiClient')
+      vi.useFakeTimers()
+      const fetchMock = vi.spyOn(globalThis, 'fetch')
+      for (const ok of [true, false]) {
+        ;(request as Mock).mockImplementationOnce(client.request)
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(ok ? { scripts: [] } : { error: 'Invalid script archive' }), {
+          status: ok ? 200 : 422,
+          headers: { 'Content-Type': 'application/json' },
+        }))
+        const pending = api[method](new File(['fixture'], 'script.zip'))
+        if (ok) await expect(pending).resolves.toEqual({ scripts: [] })
+        else await expect(pending).rejects.toThrow('Invalid script archive')
+        const signal = fetchMock.mock.calls[fetchMock.mock.calls.length - 1][1]?.signal as AbortSignal
+        expect(vi.getTimerCount()).toBe(0)
+        await vi.advanceTimersByTimeAsync(210_000)
+        expect(signal.aborted).toBe(false)
+      }
     },
   )
 

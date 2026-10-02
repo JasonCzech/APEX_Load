@@ -27,6 +27,7 @@ const apexloadURLScheme = "apexload"
 var openableFileExtensions = map[string]bool{
 	".json":                     true, // JSON DSL script / import draft
 	".zip":                      true, // enterprise script archive
+	".usz":                      true, // VuGen script archive
 	".har":                      true, // recording capture
 	".jmx":                      true, // JMeter test plan
 	".xml":                      true, // JMeter/XML-backed import formats

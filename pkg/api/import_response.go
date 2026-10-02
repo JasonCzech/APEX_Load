@@ -152,13 +152,26 @@ func importResponseValue[T any](value *T) any {
 }
 
 func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
+	response, _ := newScriptImportResponseWithProjection(opts)
+	return response
+}
+
+// Return the private, read-only disclosure projection separately so source
+// credential discovery can reuse it. It must never be an HTTP response field.
+func newScriptImportResponseWithProjection(opts scriptImportResponseOptions) (map[string]any, any) {
 	// Imported scripts and collections are operator-owned authoring artifacts.
 	// Publish them exactly as converted; redaction belongs only to run/debug
 	// evidence and must never rewrite an import draft or its review material.
 	exactScripts := importResponseRawScriptValue(opts.Scripts)
 	exactScript := importResponseRawScriptValue(opts.Script)
 	scripts := credentialPreservingImportResponseValue(opts.Scripts)
-	script := credentialPreservingImportResponseValue(opts.Script)
+	// The primary convenience field normally repeats a member of scripts. Its
+	// private disclosure projection is read-only, so reuse that member instead
+	// of walking and scrubbing the same source-review tree a second time.
+	script, reused := primaryImportScriptProjection(exactScripts, scripts, exactScript)
+	if !reused {
+		script = credentialPreservingImportResponseValue(opts.Script)
+	}
 	if isNilImportValue(scripts) {
 		if !isNilImportValue(opts.Script) {
 			exactScripts = []any{exactScript}
@@ -278,7 +291,24 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		response["result"] = importResponseReviewValue(opts.Result)
 	}
 
-	return response
+	return response, projectedScripts
+}
+
+func primaryImportScriptProjection(exactScripts, projectedScripts, primary any) (any, bool) {
+	if isNilImportValue(primary) {
+		return nil, true
+	}
+	exact, exactOK := exactScripts.([]any)
+	projected, projectedOK := projectedScripts.([]any)
+	if !exactOK || !projectedOK || len(exact) != len(projected) {
+		return nil, false
+	}
+	for index, candidate := range exact {
+		if reflect.DeepEqual(candidate, primary) {
+			return projected[index], true
+		}
+	}
+	return nil, false
 }
 
 func importResponseReviewValue(value any) any {
@@ -497,6 +527,10 @@ func sanitizeImportCorrelationCollection(value any) any {
 // by Postman and TruClient in addition to ordinary sensitive map keys, while
 // retaining the review structure and non-secret evidence the UI relies on.
 func sanitizeImportReviewEvidence(value any) any {
+	return sanitizeImportReviewEvidenceWithMemo(value, &importProjectionTextMemo{})
+}
+
+func sanitizeImportReviewEvidenceWithMemo(value any, memo *importProjectionTextMemo) any {
 	if value == nil {
 		return nil
 	}
@@ -504,7 +538,7 @@ func sanitizeImportReviewEvidence(value any) any {
 	if !ok {
 		return nil
 	}
-	return sanitizeImportReviewNode(normalized, "", false, true)
+	return sanitizeImportReviewNodeWithMemo(normalized, "", false, true, memo)
 }
 
 // sanitizeImportEmbeddedReviewEvidence preserves ordinary converter/script
@@ -523,6 +557,10 @@ func sanitizeImportEmbeddedReviewEvidence(value any) any {
 }
 
 func sanitizeImportReviewNode(value any, key string, inheritedSensitive bool, reviewEvidence bool) any {
+	return sanitizeImportReviewNodeWithMemo(value, key, inheritedSensitive, reviewEvidence, &importProjectionTextMemo{})
+}
+
+func sanitizeImportReviewNodeWithMemo(value any, key string, inheritedSensitive bool, reviewEvidence bool, memo *importProjectionTextMemo) any {
 	switch typed := value.(type) {
 	case map[string]any:
 		if isScriptJSONObject(typed) {
@@ -539,7 +577,7 @@ func sanitizeImportReviewNode(value any, key string, inheritedSensitive bool, re
 		for childKey, child := range typed {
 			childReviewEvidence := reviewEvidence || isReviewEvidenceSubtreeKey(childKey)
 			if childReviewEvidence && isReviewSemanticNameKey(childKey) {
-				out[childKey] = sanitizeImportReviewNode(child, childKey, false, true)
+				out[childKey] = sanitizeImportReviewNodeWithMemo(child, childKey, false, true, memo)
 				continue
 			}
 			if childReviewEvidence && isSensitiveScriptKey(childKey) && !isSecretReferenceKey(childKey) {
@@ -547,13 +585,13 @@ func sanitizeImportReviewNode(value any, key string, inheritedSensitive bool, re
 				continue
 			}
 			childSensitive := childReviewEvidence && semanticSensitive && (isReviewPayloadKey(childKey) || isReviewPayloadContainerKey(childKey))
-			out[childKey] = sanitizeImportReviewNode(child, childKey, childSensitive, childReviewEvidence)
+			out[childKey] = sanitizeImportReviewNodeWithMemo(child, childKey, childSensitive, childReviewEvidence, memo)
 		}
 		return out
 	case []any:
 		out := make([]any, len(typed))
 		for index, child := range typed {
-			out[index] = sanitizeImportReviewNode(child, key, inheritedSensitive, reviewEvidence)
+			out[index] = sanitizeImportReviewNodeWithMemo(child, key, inheritedSensitive, reviewEvidence, memo)
 		}
 		return out
 	case string:
@@ -569,11 +607,7 @@ func sanitizeImportReviewNode(value any, key string, inheritedSensitive bool, re
 			}
 			return projectSensitiveScriptValue(typed)
 		}
-		redacted, _ := sourceview.Redact(typed)
-		if isReviewFreeTextKey(key) {
-			redacted = scrub.Value(redacted, scrub.Policy{})
-		}
-		return redacted
+		return memo.scrubReviewText(typed, isReviewFreeTextKey(key))
 	case nil:
 		return nil
 	default:
@@ -796,7 +830,7 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 		}
 	}
 
-	response := newScriptImportResponse(opts)
+	response, privateProjection := newScriptImportResponseWithProjection(opts)
 	if !opts.draftAttestationExpiresAt.IsZero() {
 		response["import_draft_expires_at"] = opts.draftAttestationExpiresAt
 	}
@@ -812,7 +846,7 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 		return response
 	}
 
-	values := sourceSecretValuesForImportResponse(opts, requirements)
+	values := sourceSecretValuesForImportResponseWithProjection(opts, requirements, privateProjection)
 	protectedIDs := make(map[string]struct{}, len(protectedCredentialReview))
 	for _, requirement := range protectedCredentialReview {
 		protectedIDs[requirement.ID] = struct{}{}

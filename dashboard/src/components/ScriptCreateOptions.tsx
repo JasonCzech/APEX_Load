@@ -210,7 +210,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
   {
     id: 'enterprise_archive',
     title: 'Import Loadrunner Script Archive',
-    description: 'Convert an enterprise script archive ZIP into an APEX Load script and keep unsupported source functions visible for cleanup.',
+    description: 'Import VuGen ZIP or USZ projects, including a package of several projects, and review each script, its settings, and migration requirements.',
     badge: 'ESA',
     category: 'Legacy & Tool Exports',
     order: 200,

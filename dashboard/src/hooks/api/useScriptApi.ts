@@ -228,6 +228,7 @@ type AuthoringSessionApprovalResponse = {
 }
 
 type EnterpriseArchiveImportOptions = {
+  archive_member?: string
   name?: string
   base_url?: string
   include_assertions?: boolean
@@ -339,6 +340,15 @@ async function errorMessageFromResponse(res: Response): Promise<string> {
     return (body as { error: string }).error
   }
   return res.statusText
+}
+
+const enterpriseArchiveImportTimeoutMs = 210_000
+
+function rethrowEnterpriseArchiveReviewError(error: unknown): never {
+  if (error instanceof Error && error.message === `Request timed out after ${enterpriseArchiveImportTimeoutMs}ms`) {
+    throw new Error('Import review timed out after 3 minutes 30 seconds. Your archive remains in the queue. Retry validation.')
+  }
+  throw error
 }
 
 function buildScriptQuery(projectId?: string, folderId?: string | null, options?: ScriptListOptions) {
@@ -704,17 +714,16 @@ export function useScriptApi() {
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
       if (options?.migration_block_statuses?.length) formData.append('migration_block_statuses', options.migration_block_statuses.join(','))
+      if (options?.archive_member) formData.append('archive_member', options.archive_member)
       if (options?.salesforce_native) formData.append('salesforce_native', 'true')
       if (options?.expire_draft) formData.append('expire_draft', 'true')
 
-      const res = await apiFetch('/scripts/import/enterprise-script-archive', {
+      // request keeps the deadline active through JSON body consumption.
+      return request<EnterpriseArchiveImportResult>('/scripts/import/enterprise-script-archive', {
         method: 'POST',
         body: formData,
-      })
-      if (!res.ok) {
-        throw new Error(await errorMessageFromResponse(res))
-      }
-      return res.json() as Promise<EnterpriseArchiveImportResult>
+        timeoutMs: enterpriseArchiveImportTimeoutMs,
+      }).catch(rethrowEnterpriseArchiveReviewError)
     },
     [],
   )
@@ -740,17 +749,15 @@ export function useScriptApi() {
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
       if (options?.migration_block_statuses?.length) formData.append('migration_block_statuses', options.migration_block_statuses.join(','))
+      if (options?.archive_member) formData.append('archive_member', options.archive_member)
       if (options?.salesforce_native) formData.append('salesforce_native', 'true')
       if (options?.expire_draft) formData.append('expire_draft', 'true')
 
-      const res = await apiFetch('/scripts/import/enterprise-script-archive/validate', {
+      return request<EnterpriseArchiveImportResult>('/scripts/import/enterprise-script-archive/validate', {
         method: 'POST',
         body: formData,
-      })
-      if (!res.ok) {
-        throw new Error(await errorMessageFromResponse(res))
-      }
-      return res.json() as Promise<EnterpriseArchiveImportResult>
+        timeoutMs: enterpriseArchiveImportTimeoutMs,
+      }).catch(rethrowEnterpriseArchiveReviewError)
     },
     [],
   )

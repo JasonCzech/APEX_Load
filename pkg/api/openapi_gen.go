@@ -795,6 +795,9 @@ func openAPIComponentSchemas() map[string]oasSchema {
 	for name, schema := range brunoOpenAPIComponentSchemas() {
 		schemas[name] = schema
 	}
+	for name, schema := range enterpriseArchiveCollectionOpenAPISchemas() {
+		schemas[name] = schema
+	}
 	return schemas
 }
 

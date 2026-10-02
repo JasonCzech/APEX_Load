@@ -263,7 +263,7 @@ func (b *Browser) runPostActionSync(ctx context.Context, action *protocol.Action
 		if value == "" {
 			return fmt.Errorf("sync element_visible requires value, selector, or target")
 		}
-		return b.waitVisibleForAction(waitCtx, action, value)
+		return b.waitVisibleForActionTimeout(waitCtx, action, value, b.waitTimeout(sync.TimeoutMs))
 	case "duration", "sleep":
 		delay, err := parseWaitDelay(sync.Value)
 		if err != nil {

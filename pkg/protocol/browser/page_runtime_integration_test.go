@@ -75,6 +75,10 @@ func TestBrowserProtocolExecutesSelectAction(t *testing.T) {
 	if !strings.Contains(selectResult.HTML, "Selected US") {
 		t.Fatalf("HTML did not reflect selected option: %q", selectResult.HTML)
 	}
+	indexResult, err := b.Execute(context.Background(), &protocol.Action{Name: "Choose by index", Type: "browser_select", Selector: "#country", Params: map[string]any{"option_index": 2}, Assertions: []protocol.Assertion{{Type: "body_contains", Value: "Selected CA"}}})
+	if err != nil || !indexResult.Success || !strings.Contains(indexResult.HTML, "Selected CA") {
+		t.Fatalf("index selection result=%+v err=%v", indexResult, err)
+	}
 }
 
 func TestBrowserProtocolExecutesScrollAction(t *testing.T) {

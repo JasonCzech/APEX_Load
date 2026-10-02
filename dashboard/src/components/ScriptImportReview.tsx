@@ -471,6 +471,7 @@ interface Props {
   sourceMigrationRequirements?: SecretBindingRequirement[]
   preserveSourceSessionAfterApply?: boolean
   onSecretBindingsApply?: (bindings: SecretBindingSelection[]) => void | Promise<void>
+  onSecretBindingsErrorChange?: (message: string) => void
   projectId?: string
   sourceSecretSessionId?: string
   sourceSecretSessionExpiresAt?: string
@@ -536,6 +537,7 @@ export default function ScriptImportReview({
   sourceMigrationRequirements,
   preserveSourceSessionAfterApply = false,
   onSecretBindingsApply,
+  onSecretBindingsErrorChange,
   projectId,
   sourceSecretSessionId,
   sourceSecretSessionExpiresAt,
@@ -1084,6 +1086,7 @@ export default function ScriptImportReview({
           sourceMigrationAllowed={sourceSecretMigrationAllowed}
           onSourceSessionSettled={onSourceSecretSessionSettled}
           onApply={applySecretBindings}
+          onErrorChange={onSecretBindingsErrorChange}
           onPreparedChange={setPreparedSecrets}
           onProjectSecretsConfigured={handleProjectSecretsConfigured}
           disabled={settingsBusy || importDraftExpired || saving || parameterizationApplying || sharedValuesApplying || reviewBusy}

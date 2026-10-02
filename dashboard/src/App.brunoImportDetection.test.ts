@@ -43,6 +43,11 @@ describe('Bruno source auto-detection', () => {
     })
   })
 
+  it('routes VuGen USZ archives to enterprise review', async () => {
+    expect(nativeImportTargetForFileName('Project.USZ')).toEqual({ launcher: 'enterprise_archive' })
+    await expect(nativeImportTargetForFile(new File(['archive'], 'Project.USZ'))).resolves.toEqual({ launcher: 'enterprise_archive' })
+  })
+
   it('keeps unrelated generic ZIP archives on the enterprise archive path', async () => {
     const archive = new File([storedZipFixture(['Action.c'])], 'loadrunner.zip', { type: 'application/zip' })
     await expect(archiveContainsOpenCollectionMarker(archive)).resolves.toBe(false)

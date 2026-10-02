@@ -129,7 +129,7 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 			return nil, failBrowserAction(result, "browser_select requires selector or target")
 		}
 		values := actionSelectValues(action)
-		if len(values) == 0 {
+		if len(values) == 0 && action.Params["option_index"] == nil {
 			return nil, failBrowserAction(result, "browser_select requires value")
 		}
 		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {

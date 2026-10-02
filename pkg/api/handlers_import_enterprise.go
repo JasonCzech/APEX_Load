@@ -69,6 +69,9 @@ func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
+	if s.writeEnterpriseArchiveCollectionResponse(w, r, importReq) {
+		return
+	}
 	// Run the conversion
 	result, err := enterprisearchive.ConvertZip(importReq.Data, importReq.Opts)
 	if err != nil {
@@ -84,6 +87,7 @@ func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Re
 		}
 	}
 	attachSalesforceReviewToEnterpriseArchiveResult(result, importReq)
+	preserveEnterpriseArchiveCollectionMember(result, importReq.ArchiveMember, importReq.ArchiveMemberSize)
 
 	s.writeEnterpriseArchiveImportResponse(w, r, http.StatusOK, result, importReq.ReadinessPolicy, importReq.ExpireDraft)
 }
@@ -95,6 +99,9 @@ func (s *Server) handleValidateEnterpriseArchiveImport(w http.ResponseWriter, r 
 	defer releaseEnterpriseImportSlot()
 	importReq, ok := readEnterpriseArchiveImportRequest(w, r)
 	if !ok {
+		return
+	}
+	if s.writeEnterpriseArchiveCollectionResponse(w, r, importReq) {
 		return
 	}
 
@@ -112,6 +119,7 @@ func (s *Server) handleValidateEnterpriseArchiveImport(w http.ResponseWriter, r 
 		}
 	}
 	attachSalesforceReviewToEnterpriseArchiveResult(result, importReq)
+	preserveEnterpriseArchiveCollectionMember(result, importReq.ArchiveMember, importReq.ArchiveMemberSize)
 
 	s.writeEnterpriseArchiveImportResponse(w, r, http.StatusOK, result, importReq.ReadinessPolicy, importReq.ExpireDraft)
 }
@@ -271,6 +279,17 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("file does not appear to be a valid ZIP archive (magic bytes: %02x %02x); expected PK", data[0], data[1]))
 		return nil, false
 	}
+	archiveMember := firstNonEmpty(r.FormValue("archive_member"), r.URL.Query().Get("archive_member"))
+	archiveMemberSize := 0
+	if archiveMember != "" {
+		selected, err := selectEnterpriseArchiveCollectionMember(data, archiveMember)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return nil, false
+		}
+		data = selected
+		archiveMemberSize = len(selected)
+	}
 
 	supplementalData := make([][]byte, 0)
 	supplementalNames := make([]string, 0)
@@ -320,6 +339,10 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if len(supplementalData) > 0 {
+		if _, collection, _ := readEnterpriseArchiveCollection(data); collection {
+			writeError(w, http.StatusBadRequest, "select an archive_member before attaching supplemental sources to a script archive collection")
+			return nil, false
+		}
 		mergedData, mergeErr := mergeEnterpriseArchiveZipWithSupplementalFiles(data, supplementalNames, supplementalData)
 		if mergeErr != nil {
 			writeError(w, http.StatusBadRequest, "failed to merge supplemental_file entries into archive: "+mergeErr.Error())
@@ -329,13 +352,15 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 	}
 
 	return &enterpriseArchiveImportRequest{
-		Data:             data,
-		HARData:          harData,
-		SupplementalData: supplementalData,
-		SupplementalName: supplementalNames,
-		ProjectID:        authorizedImportProjectID(r),
-		SalesforceNative: parseBoolDefault(firstNonEmpty(r.FormValue("salesforce_native"), r.URL.Query().Get("salesforce_native")), false),
-		ExpireDraft:      parseBoolDefault(firstNonEmpty(r.FormValue("expire_draft"), r.URL.Query().Get("expire_draft")), false),
+		Data:              data,
+		ArchiveMember:     archiveMember,
+		ArchiveMemberSize: archiveMemberSize,
+		HARData:           harData,
+		SupplementalData:  supplementalData,
+		SupplementalName:  supplementalNames,
+		ProjectID:         authorizedImportProjectID(r),
+		SalesforceNative:  parseBoolDefault(firstNonEmpty(r.FormValue("salesforce_native"), r.URL.Query().Get("salesforce_native")), false),
+		ExpireDraft:       parseBoolDefault(firstNonEmpty(r.FormValue("expire_draft"), r.URL.Query().Get("expire_draft")), false),
 		Opts: enterprisearchive.ConvertOptions{
 			ScriptName:           r.FormValue("name"),
 			BaseURL:              r.FormValue("base_url"),
@@ -611,9 +636,12 @@ func mergeEnterpriseArchiveZipWithSupplementalFiles(baseZip []byte, names []stri
 }
 
 func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *http.Request, status int, result *enterprisearchive.ConvertResult, readinessPolicy enterprisearchive.RuntimeSettingMigrationPolicy, expireDraft bool) {
+	writeScriptImportResponse(w, status, s.newEnterpriseArchiveImportResponse(r, result, readinessPolicy, expireDraft))
+}
+
+func (s *Server) newEnterpriseArchiveImportResponse(r *http.Request, result *enterprisearchive.ConvertResult, readinessPolicy enterprisearchive.RuntimeSettingMigrationPolicy, expireDraft bool) map[string]any {
 	if result == nil {
-		s.writeScriptImportResponseWithSourceSecrets(w, r, status, scriptImportResponseOptions{})
-		return
+		return s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{})
 	}
 	protectedRequirements := result.ProtectedRequirements.Take()
 	normalizeCombinedJavaVuserImport(result)
@@ -659,7 +687,7 @@ func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *
 	augmented := draft.augment(r)
 	warnings = augmented.Warnings
 
-	s.writeScriptImportResponseWithSourceSecrets(w, r, status, scriptImportResponseOptions{
+	return s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:                 result,
 		Scripts:                scripts,
 		Script:                 result.Script,

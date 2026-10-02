@@ -140,6 +140,20 @@ export function runtimeSettingRows(script: ScriptDefinition): Record<string, Run
   const protectedValue = isSensitiveCredentialPreviewKey(key) || /\[REDACTED\]|\[MASKED\]|<redacted>/i.test(value)
   groups[group].push({ id: `${file}/${section}/${key}`, category: section, label: key, importedSummary: protectedValue ? 'Protected — manage in Credentials' : value || '(empty)', imported: `${protectedValue ? 'Protected — manage in Credentials' : value === '' ? '(empty)' : value} (${file})`, note: [disposition?.reason?.replace(/_/g, ' '), disposition?.note || sourceFallbackNote(file, section, key, group)].filter(Boolean).join(' — ') })
  }
+ const kafka = metadata?.preserved?.java_kafka_settings as {
+  settings?: Array<{ name: string; value: string; source_file: string; start_line?: number; go_support: string; go_fields?: string[]; notes?: string }>
+  native_migration_blockers?: string[]
+ } | undefined
+ for (const [index, setting] of (kafka?.settings || []).entries()) {
+  const group = setting.go_support === 'non_applicable' ? 'Not applicable' : ['partial', 'unsupported', 'unresolved', 'requires_binding'].includes(setting.go_support) ? 'Requires decision' : 'Preserved only'
+  const protectedValue = isSensitiveCredentialPreviewKey(setting.name) || setting.go_support === 'requires_binding' || /\[REDACTED\]|\[MASKED\]/i.test(setting.value)
+  groups[group].push({ id: `java-kafka:${index}:${setting.name}`, category: 'Kafka producer (Java source)', label: setting.name,
+   importedSummary: protectedValue ? 'Protected — manage in Credentials' : setting.value,
+   imported: `${protectedValue ? 'Protected — manage in Credentials' : setting.value} (${setting.source_file}${setting.start_line ? `:${setting.start_line}` : ''})`,
+   note: [`Go support: ${setting.go_support.replace(/_/g, ' ')}.`, setting.go_fields?.length ? `Equivalent Go fields: ${setting.go_fields.join(', ')}.` : '', setting.notes,
+    'The imported draft retains its Java lifecycle. These are migration references; they are not applied to a native Go Kafka script.', ...(kafka?.native_migration_blockers || [])].filter(Boolean).join(' '),
+  })
+ }
  // Importers without parity show actual settings, never invented mapping evidence.
  const known = new Set(Object.values(groups).flat().map(r => r.path).filter(Boolean))
  const defaults = ['Think time', 'Pacing', 'Error handling', ...(['http', 'http/1.1', 'http/2', 'browser', 'soap', 'java_http'].includes(script.protocol) ? ['HTTP'] : []), ...(script.protocol === 'kafka' ? ['Kafka'] : []), ...(script.protocol?.startsWith('jms') ? ['JMS'] : [])]

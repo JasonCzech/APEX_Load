@@ -872,6 +872,7 @@ export interface ScriptParameterDefinition {
   block_size?: number
   value_for_each_vuser?: boolean
   format?: string
+  format_dialect?: 'java_simple_date_format' | 'loadrunner_strftime'
   timezone?: string
   offset_seconds?: number
   min?: number
