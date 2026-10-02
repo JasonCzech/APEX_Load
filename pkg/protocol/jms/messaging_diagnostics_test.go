@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"testing"
+	"time"
 )
 
 type diagnosticSettlementAdapter struct {
@@ -39,5 +40,29 @@ func TestMessagingSettlementTimingOnlyOnSuccessfulAdapterAcknowledgement(t *test
 				t.Fatal("settlement evidence lost", err, result)
 			}
 		}
+	}
+}
+
+func TestMessagingJMSMessageAgeAvailabilityIncludesObservedZero(t *testing.T) {
+	observedAt := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	for _, sample := range []struct {
+		name      string
+		createdAt time.Time
+		observed  bool
+		lag       float64
+	}{{"zero", observedAt, true, 0}, {"positive", observedAt.Add(-20 * time.Millisecond), true, 20}, {"missing", time.Time{}, false, 0}, {"future", observedAt.Add(time.Second), false, 0}} {
+		t.Run(sample.name, func(t *testing.T) {
+			result := &protocol.Result{StartTime: observedAt.Add(-time.Millisecond), Duration: time.Millisecond, Extractions: map[string]string{}}
+			tel := finalizeJMSServerTelemetry(result, message{}, false, message{CreatedAt: sample.createdAt}, true)
+			if tel.ConsumerLagObserved != sample.observed || tel.ConsumerLagMs != sample.lag {
+				t.Fatalf("age availability: %+v", tel)
+			}
+			var summary *protocol.MessagingSummary
+			protocol.MergeMessagingTelemetry(&summary, tel, "queue", "jms_queue", "group")
+			mean, available := summary.Dimensions[0].Age.Mean()
+			if available != sample.observed || mean != sample.lag {
+				t.Fatalf("observed moments: %+v", summary)
+			}
+		})
 	}
 }

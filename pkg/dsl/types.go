@@ -117,6 +117,9 @@ type GoalConfig struct {
 // archived business-transaction stream. Transaction matching is deliberately
 // exact; patterns would make migrations and automated gates ambiguous.
 type TransactionSLARule struct {
+	Population  string  `json:"population,omitempty"`
+	Protocol    string  `json:"protocol,omitempty"`
+	Group       string  `json:"group,omitempty"`
 	Transaction string  `json:"transaction"`
 	Metric      string  `json:"metric"`
 	Comparator  string  `json:"comparator"`

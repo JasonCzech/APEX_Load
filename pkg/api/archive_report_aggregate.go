@@ -442,7 +442,11 @@ func finalizeArchiveSOAPPayloadTimelineBucket(bucket RunArchiveSOAPPayloadTimeli
 
 func mergeRunArchiveActionStats(stats RunArchiveActionStats, quantiles *archiveQuantileAccumulator, tx TransactionEvent) RunArchiveActionStats {
 	if tx.ServerTelemetry != nil {
-		protocol.MergeMessagingTelemetry(&stats.Messaging, tx.ServerTelemetry, tx.DependencyTarget, tx.DependencyType)
+		// Synthetic business transactions can mirror an action's telemetry.
+		// Count broker observations only in the actual action population.
+		if !tx.BusinessTransaction && tx.Population != "transaction" {
+			protocol.MergeMessagingTelemetry(&stats.Messaging, tx.ServerTelemetry, tx.DependencyTarget, tx.DependencyType, tx.Group)
+		}
 		protocol.MergeGRPCDiagnostic(&stats.GRPC, tx.ServerTelemetry.GRPC)
 		protocol.MergeWebSocketDiagnostic(&stats.WebSocket, tx.ServerTelemetry.WebSocket)
 	}

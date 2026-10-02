@@ -107,7 +107,7 @@ func finalizeTelemetry(result *protocol.Result, sent event, hasSent bool, receiv
 	t := &protocol.ServerTelemetry{TransferMs: durationToMs(result.Duration)}
 	if hasSent {
 		t.AcknowledgementMs = sent.AcknowledgementMs
-		t.MessagesSent = 1
+		t.MessagesSent = max(1, sent.MessageCount)
 		t.RequestPayloadKB = bytesToKB(len(sent.Body))
 		t.RequestSizeClass = protocol.ClassifyPayloadSize(int64(len(sent.Body)))
 		// PartitionID is populated only when the script pins an explicit partition;

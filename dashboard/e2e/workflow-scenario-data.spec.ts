@@ -89,3 +89,54 @@ test('scenario save and reopen preserves both bindings and attaching another poo
  await expect(page.getByLabel('Pool Alias')).toHaveCount(3)
  expect(await page.getByLabel('Pool Alias').evaluateAll(inputs=>inputs.map(input=>(input as HTMLInputElement).value))).toEqual(['addresses','customers','orders'])
 })
+
+test('legacy browser checkpoint migrates a first-pool replacement through save and reopen', async ({ page }) => {
+ if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+ const request = page.context().request
+ const workspace = await createWorkspace(request)
+ const script = await seedScript(request, workspace, 'Legacy pool migration HTTP')
+ const pools = []
+ for (const name of ['Original customers', 'Replacement customers', 'Orders']) pools.push(idOf(await json(await request.post('/api/v1/data-pools', { data: { project_id: workspace.projectId, name } }))))
+ const bindings = [{ pool_id: pools[0], alias: 'customers', access_mode: 'read_only', selection_strategy: 'sequential' }, { pool_id: pools[2], alias: 'orders', access_mode: 'read_only', selection_strategy: 'random' }]
+ const scenario = idOf(await json(await request.post('/api/v1/scenarios', { data: { project_id: workspace.projectId, name: 'Legacy pool migration', duration: '1m', groups: [{ name: 'Load', script_id: script, vusers: 1, initialization: 'at_runtime' }], data_pools: bindings } })))
+ const stored = await json(await request.get(`/api/v1/scenarios/${scenario}`))
+ await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
+ await page.reload()
+ await expect(page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Legacy pool migration' })).toBeVisible()
+ // The pre-migration create action changed the scalar first-slot fields while
+ // retaining the old canonical array. Preserve this real legacy shape.
+ await page.evaluate(({ project, scenarioId, updatedAt, scriptId, originalBindings, replacement }) => {
+  localStorage.setItem(`apexload.scenario.authoring.v1.${encodeURIComponent(project)}`, JSON.stringify({
+   version: 2, projectId: project, savedAt: new Date().toISOString(), editingId: scenarioId, editingUpdatedAt: updatedAt,
+   source: 'existing', startChoice: 'existing', shapeId: '', templateId: '', cloneId: scenarioId, step: 'data', visited: 4,
+   form: { name: 'Legacy pool migration', duration: '1m', start_delay: '', scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false,
+    runtime_pacing_type: '', runtime_ignore_think_time: false, runtime_log_level: '', runtime_auto_transactions: '', assignment_mode: 'auto', assignment_targets: [],
+    groups: [{ name: 'Load', script_id: scriptId, vusers: 1, ramp_up: '', ramp_down: '', start_offset: '', initialization: 'at_runtime', stages: [] }],
+    data_pools: originalBindings, data_pool_id: replacement, data_pool_alias: 'replacement', data_pool_selection_strategy: 'unique' },
+  }))
+ }, { project: workspace.projectId, scenarioId: scenario, updatedAt: String(stored.updated_at || ''), scriptId: script, originalBindings: bindings, replacement: pools[1] })
+ await page.reload()
+ await expect(page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Legacy pool migration' })).toBeVisible()
+ await page.getByRole('region', { name: 'Saved browser draft' }).getByRole('button', { name: 'Resume draft', exact: true }).click()
+ await expect(page.getByLabel('Pool Alias')).toHaveCount(2)
+ expect(await page.getByLabel('Pool Alias').evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value))).toEqual(['replacement', 'orders'])
+ await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Review/ }).click()
+ const saved = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/v1/scenarios/${scenario}`)
+ await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+ const response = await saved
+ expect(response.ok(), await response.text()).toBeTruthy()
+ expect(response.request().postDataJSON().data_pools).toMatchObject([{ pool_id: pools[1], alias: 'replacement', selection_strategy: 'unique' }, bindings[1]])
+ await expect(page.locator('.scenario-save-notice')).toHaveText(/^Saved Legacy pool migration/)
+ await expect(page.getByRole('button', { name: 'Save draft', exact: true })).toBeEnabled()
+ await expect(page.getByRole('region', { name: 'Saved browser draft' })).toHaveCount(0)
+ await expect(page.getByText('Editing · Saved', { exact: true })).toBeVisible()
+ await page.getByRole('group', { name: 'Scenario page view' }).getByRole('button', { name: 'Scenario Library', exact: true }).click()
+ const row = page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Legacy pool migration' })
+ await expect(row).toBeVisible()
+ await page.reload()
+ await expect(row).toBeVisible()
+ await row.getByRole('button', { name: 'Edit', exact: true }).click()
+ await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Data/ }).click()
+ await expect(page.getByLabel('Pool Alias')).toHaveCount(2)
+ expect(await page.getByLabel('Pool Alias').evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value))).toEqual(['orders', 'replacement'])
+})

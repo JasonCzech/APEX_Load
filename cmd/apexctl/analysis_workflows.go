@@ -26,6 +26,10 @@ func analysisCmd() { workflowCommand("analysis") }
 func workflowCommand(kind string) {
 	if err := executeWorkflowCommand(context.Background(), kind, os.Args[2:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		var verdict *baselineVerdictError
+		if errors.As(err, &verdict) {
+			os.Exit(verdict.code)
+		}
 		os.Exit(exitCodeUsageOrConfiguration)
 	}
 }
@@ -49,6 +53,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	floor := flags.Int("on-demand-floor", 0, "minimum on-demand ephemeral generators")
 	ceiling := flags.Int("spot-ceiling", 0, "maximum spot percentage")
 	at := flags.String("at", "", "dependency observation timestamp (RFC3339)")
+	failOnRegression := flags.Bool("fail-on-regression", false, "fail CI for regression or unavailable baseline evidence")
 	ttl := flags.Duration("ttl", 30*time.Minute, "readiness lifetime")
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -58,6 +63,9 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	}
 	if flags.NArg() != 0 {
 		return errors.New("unexpected positional arguments")
+	}
+	if *failOnRegression && (kind != "analysis" || action != "baseline") {
+		return errors.New("--fail-on-regression requires analysis baseline")
 	}
 	client := NewApiClient(*endpoint)
 	client.Client.Timeout = 2 * time.Minute
@@ -160,6 +168,14 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 		}
 	case "analysis":
 		switch action {
+		case "baseline":
+			if err := requireID(); err != nil {
+				return err
+			}
+			if len(body) == 0 {
+				return errors.New("--file JSON baseline request is required")
+			}
+			method, path = http.MethodPost, "/api/v1/tests/"+url.PathEscape(*id)+"/baseline-comparisons"
 		case "list", "create", "capabilities", "compare", "mappings", "save-mapping", "comparisons", "save-comparison":
 			if *project == "" {
 				return errors.New("--project is required")
@@ -221,7 +237,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 					return errors.New("--file JSON query is required")
 				}
 			default:
-				return errors.New("analysis actions: capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison")
+				return errors.New("analysis actions: baseline, capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison")
 			}
 		}
 	default:
@@ -229,12 +245,44 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	}
 	response, err := client.workflowRequest(ctx, method, path, bytes.NewReader(body), "application/json")
 	if err != nil {
+		if *failOnRegression {
+			return &baselineVerdictError{exitCodeControllerOrTransport, err.Error()}
+		}
 		return err
 	}
 	if len(response) > 0 {
 		_, err = fmt.Fprintln(out, string(response))
 	}
+	if err == nil && *failOnRegression {
+		return checkBaselineVerdict(response)
+	}
 	return err
+}
+
+type baselineVerdictError struct {
+	code    int
+	message string
+}
+
+func (e *baselineVerdictError) Error() string { return e.message }
+func checkBaselineVerdict(response []byte) error {
+	var snapshot struct {
+		Verdict *struct {
+			Status      string `json:"status"`
+			Unavailable int    `json:"unavailable"`
+			Evaluated   int    `json:"evaluated"`
+		} `json:"verdict"`
+	}
+	if err := json.Unmarshal(response, &snapshot); err != nil || snapshot.Verdict == nil {
+		return &baselineVerdictError{exitCodeControllerOrTransport, "Baseline verdict unavailable"}
+	}
+	if snapshot.Verdict.Status == "regressed" {
+		return &baselineVerdictError{exitCodeTestFailure, "Baseline regression detected"}
+	}
+	if snapshot.Verdict.Status != "passed" || snapshot.Verdict.Unavailable != 0 || snapshot.Verdict.Evaluated < 1 {
+		return &baselineVerdictError{exitCodeControllerOrTransport, "Baseline evidence not evaluated"}
+	}
+	return nil
 }
 
 func (c *ApiClient) workflowRequest(ctx context.Context, method, path string, body io.Reader, contentType string) ([]byte, error) {

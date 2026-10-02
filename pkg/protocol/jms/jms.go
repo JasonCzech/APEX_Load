@@ -1547,6 +1547,7 @@ func finalizeJMSServerTelemetry(result *protocol.Result, request message, hasReq
 		observedAt := result.StartTime.Add(result.Duration)
 		if !response.CreatedAt.IsZero() && !observedAt.Before(response.CreatedAt) {
 			telemetry.ConsumerLagMs = durationToNonNegativeMilliseconds(observedAt.Sub(response.CreatedAt))
+			telemetry.ConsumerLagObserved = true
 		}
 		if response.Properties[redeliveredProperty] == "true" {
 			telemetry.RedeliveryCount = 1

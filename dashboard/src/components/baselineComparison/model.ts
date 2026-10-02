@@ -1,5 +1,5 @@
 import { apiFetch, request } from '../../hooks/apiClient'
-import type { TransactionResponseTimeSLAResult } from '../../types'
+import type { MessagingSummary, TransactionResponseTimeSLAResult } from '../../types'
 
 export interface ComparisonPolicy {
   revision: number
@@ -24,6 +24,7 @@ export interface RunIdentity {
 export interface MeasurementWindow { start_seconds: number; end_seconds: number }
 export interface LoadWindow extends MeasurementWindow { load: number; total_load: number; group: string; direction: string; mix: Record<string, number> }
 export interface Measurement {
+  messaging?: MessagingSummary
   samples: number; successes: number; errors: number; mean: number; min: number; max: number
   p50: number; p90: number; p95: number; p99: number; throughput: number; successful_throughput: number
   error_pct: number; coverage_pct: number; instances: number
@@ -35,8 +36,9 @@ export interface ComparisonRow {
   id: string; name: string; group: string; protocol?: string; source: string; unit: string
   current?: Measurement; window?: LoadWindow; baselines: Record<string, ComparisonCell>
 }
-export interface ComparisonRequest { minimum_load?: number; maximum_load?: number; baseline_ids: string[]; policy?: ComparisonPolicy; windows?: Record<string, MeasurementWindow>; population: 'transaction' | 'action' | 'unknown'; allow_other_scenarios: boolean }
+export interface ComparisonRequest { regression_identities?: string[]; regression_metrics?: string[]; regression_protocols?: string[]; regression_groups?: string[]; minimum_load?: number; maximum_load?: number; baseline_ids: string[]; policy?: ComparisonPolicy; windows?: Record<string, MeasurementWindow>; population: 'transaction' | 'action' | 'unknown'; allow_other_scenarios: boolean }
 export interface ComparisonSnapshot {
+  verdict?: { status: 'passed' | 'regressed' | 'not_evaluated'; evaluated: number; unavailable: number; metrics: string[]; evidence: { row_id: string; baseline_id: string; metric: string; status: string; reason?: string }[] }
   id: string; project_id: string; current: RunIdentity; baselines: RunIdentity[]; created_at: string; rule_version: string
   request: ComparisonRequest; policy: ComparisonPolicy; transactions: ComparisonRow[]; resources: ComparisonRow[]
   setup: { baseline_id: string; field: string; current: string; baseline: string; status: string }[]
@@ -92,7 +94,7 @@ export function comparisonRequestSignature(request: ComparisonRequest): string {
     group_mappings: Object.keys(request.policy.group_mappings || {}).length ? request.policy.group_mappings : undefined,
     resource_mappings: request.policy.resource_mappings?.length ? request.policy.resource_mappings.map(mapping => ({ ...mapping, group: mapping.group || undefined, absolute_threshold: mapping.absolute_threshold || undefined })) : undefined,
   }
-  return JSON.stringify(canonical([request.baseline_ids, policy, request.windows || {}, request.population, request.allow_other_scenarios, request.minimum_load || 0, request.maximum_load || 0]))
+  return JSON.stringify(canonical([request.baseline_ids, policy, request.windows || {}, request.population, request.allow_other_scenarios, request.minimum_load || 0, request.maximum_load || 0, request.regression_metrics || [], request.regression_protocols || [], request.regression_groups || [], request.regression_identities || []]))
 }
 
 // Missing successful samples and incompatible resource units are not numeric changes.

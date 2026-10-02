@@ -20,7 +20,7 @@ func hasMessagingPartitionSkewBreach(live *LiveMetrics, threshold *float64) bool
 		return false
 	}
 	if len(live.Messaging) > 0 {
-		bySource := map[string]*protocol.MessagingSummary{}
+		bySource := map[[3]string]*protocol.MessagingSummary{}
 		for _, s := range live.Messaging {
 			if s == nil {
 				continue
@@ -29,9 +29,10 @@ func hasMessagingPartitionSkewBreach(live *LiveMetrics, threshold *float64) bool
 				return false
 			}
 			for _, d := range s.Dimensions {
-				merged := bySource[d.Source]
+				key := [3]string{d.Protocol, d.Group, d.Source}
+				merged := bySource[key]
 				protocol.MergeMessagingSummary(&merged, &protocol.MessagingSummary{Dimensions: []protocol.MessagingDimension{d}})
-				bySource[d.Source] = merged
+				bySource[key] = merged
 			}
 		}
 		for _, s := range bySource {
@@ -54,8 +55,12 @@ func hasMessagingPartitionSkewBreach(live *LiveMetrics, threshold *float64) bool
 
 // Explicit skew goals require mergeable evidence from every admitted generator.
 func messagingGoalCapabilityError(goal *GoalConfig, features []string) error {
-	if goal != nil && goal.MaxPartitionSkewPct != nil && !stringSliceContainsEqualFold(features, generatorrpc.FeatureMessagingRollupV1) {
-		return fmt.Errorf("partition skew goal requires %s; no traffic was started", generatorrpc.FeatureMessagingRollupV1)
+	if goal != nil && goal.MaxPartitionSkewPct != nil {
+		for _, feature := range []string{generatorrpc.FeatureMessagingRollupV1, generatorrpc.FeatureMessagingScopeV1} {
+			if !stringSliceContainsEqualFold(features, feature) {
+				return fmt.Errorf("partition skew goal requires %s; no traffic was started", feature)
+			}
+		}
 	}
 	return nil
 }

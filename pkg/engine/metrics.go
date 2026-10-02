@@ -1039,7 +1039,7 @@ func mergeActionResult(metrics *ActionMetrics, result *protocol.Result) {
 		if metrics.ServerTelemetry == nil {
 			metrics.ServerTelemetry = &ServerTelemetrySummary{}
 		}
-		mergeServerTelemetrySummary(metrics.ServerTelemetry, result.ServerTelemetry, result.DependencyTarget, result.DependencyType)
+		mergeServerTelemetrySummary(metrics.ServerTelemetry, result.ServerTelemetry, result.DependencyTarget, result.DependencyType, result.Group)
 	}
 	metrics.BytesSent += result.BytesSent
 	metrics.BytesRecv += result.BytesReceived
@@ -1146,7 +1146,7 @@ func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *pro
 		source = sources[0]
 	}
 	if len(sources) > 1 {
-		protocol.MergeMessagingTelemetry(&summary.Messaging, telemetry, source, sources[1])
+		protocol.MergeMessagingTelemetry(&summary.Messaging, telemetry, source, sources[1:]...)
 	} else {
 		protocol.MergeMessagingTelemetry(&summary.Messaging, telemetry, source)
 	}

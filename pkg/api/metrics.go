@@ -126,9 +126,6 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 
 	for name, am := range snap.ByTransaction {
 		live.Transactions[name] = buildTxMetricsFromAction(name, am, snap.Window)
-		if am != nil && am.ServerTelemetry != nil && am.ServerTelemetry.Messaging != nil {
-			live.Messaging[name] = am.ServerTelemetry.Messaging.Clone()
-		}
 	}
 
 	for name, am := range snap.ByDependencyTarget {

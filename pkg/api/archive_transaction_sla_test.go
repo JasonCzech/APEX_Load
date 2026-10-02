@@ -126,3 +126,42 @@ func TestValidateTransactionSLARulesBoundsContract(t *testing.T) {
 		})
 	}
 }
+
+func TestScopedActionSLAUsesIntersectionAndRequiresCoverage(t *testing.T) {
+	root := t.TempDir()
+	file, err := os.Create(root + "/transactions.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range []TransactionEvent{{ActionName: "Receive", Population: "action", Group: "consumer", Success: true, DurationMs: 10}, {ActionName: "Receive", Population: "action", Group: "other", Success: true, DurationMs: 900}, {ActionName: "Receive", Population: "transaction", BusinessTransaction: true, Group: "consumer", Success: true, DurationMs: 500}} {
+		if err := json.NewEncoder(file).Encode(event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	rule := TransactionSLARule{Population: "action", Protocol: "kafka", Group: "consumer", Transaction: "Receive", Metric: "p99_duration_ms", Comparator: "lte", Threshold: 20}
+	m := RunArchiveManifest{TransactionsFile: "transactions.jsonl", Provenance: RunArchiveProvenance{Groups: []TestGroup{{Name: "consumer", Protocol: "kafka"}, {Name: "other", Protocol: "http"}}, GoalConfig: &GoalConfig{TransactionRules: []TransactionSLARule{rule}}}}
+	if err := applyTransactionSLARules(root, &m); err != nil {
+		t.Fatal(err)
+	}
+	if r := m.TransactionRuleResults[0]; r.Status != "pass" || r.MatchedCount != 1 {
+		t.Fatalf("pooled scopes: %+v", r)
+	}
+	m.SourceCoverage = &RunArchiveSourceCoverage{Sources: []RunArchiveSource{{Collected: false}}}
+	if err := applyTransactionSLARules(root, &m); err != nil {
+		t.Fatal(err)
+	}
+	if r := m.TransactionRuleResults[0]; r.Status != "not_evaluated" || r.Observed != nil {
+		t.Fatalf("missing source scored: %+v", r)
+	}
+	m.SourceCoverage = nil
+	m.Provenance.Groups = nil
+	if err := applyTransactionSLARules(root, &m); err != nil {
+		t.Fatal(err)
+	}
+	if r := m.TransactionRuleResults[0]; r.Status != "not_evaluated" {
+		t.Fatalf("unknown protocol scored: %+v", r)
+	}
+}

@@ -45,7 +45,7 @@ func protocolReportLines(report *RunArchiveReport) []string {
 				lines = append(lines, name+" · Messaging coverage incomplete; partition skew is unscored.")
 			}
 			for _, d := range a.Messaging.Dimensions {
-				lines = append(lines, fmt.Sprintf("%s · source %s / partition %s / subscription %s: %d client operations, %d sent, %d received, %d throttled, %d redelivered", name, d.Source, d.Partition, d.Subscription, d.Operations, d.Sent, d.Received, d.Throttled, d.Redelivered))
+				lines = append(lines, fmt.Sprintf("%s · protocol %s / execution group %s / source %s / partition %s / subscription %s: %d client operations, %d sent, %d received, %d throttled, %d redelivered", name, firstNonEmpty(d.Protocol, "unavailable"), firstNonEmpty(d.Group, "unavailable"), firstNonEmpty(d.Source, "unattributed"), firstNonEmpty(d.Partition, "unavailable"), firstNonEmpty(d.Subscription, "unavailable"), d.Operations, d.Sent, d.Received, d.Throttled, d.Redelivered))
 				for _, measurement := range []struct {
 					name string
 					m    protocol.MessagingMoments

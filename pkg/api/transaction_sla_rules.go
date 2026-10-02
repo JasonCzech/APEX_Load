@@ -15,6 +15,8 @@ var transactionSLAMetrics = map[string]struct{}{
 	"average_duration_ms":     {},
 	"p90_duration_ms":         {},
 	"p95_duration_ms":         {},
+	"p99_duration_ms":         {},
+	"max_acknowledgement_ms":  {},
 	"min_duration_ms":         {},
 	"max_duration_ms":         {},
 	"error_count":             {},
@@ -50,6 +52,14 @@ func ValidateTransactionSLARules(rules []TransactionSLARule) error {
 		}
 		if len(rule.Transaction) > maxTransactionSLANameBytes {
 			return fmt.Errorf("%s.transaction exceeds %d bytes", path, maxTransactionSLANameBytes)
+		}
+		if rule.Population != "" && rule.Population != "transaction" && rule.Population != "action" {
+			return fmt.Errorf("%s.population must be transaction or action", path)
+		}
+		for name, value := range map[string]string{"protocol": rule.Protocol, "group": rule.Group} {
+			if len(value) > 256 || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\r\n\x00") {
+				return fmt.Errorf("%s.%s must be a bounded exact identity", path, name)
+			}
 		}
 		if _, ok := transactionSLAMetrics[rule.Metric]; !ok {
 			return fmt.Errorf("%s.metric %q is not supported", path, rule.Metric)

@@ -3042,5 +3042,5 @@ export interface ImportedDashboardImportReview {
 export type { DiagnosticDistribution } from './types/protocolDiagnostics'
 
 export interface MessagingMoments { count: number; sum: number; max: number }
-export interface MessagingDimension { source: string; partition?: string; subscription?: string; operations: number; sent: number; received: number; throttled: number; redelivered: number; age_ms: MessagingMoments; offset_lag: MessagingMoments; ack_ms: MessagingMoments }
+export interface MessagingDimension { protocol?: string; group?: string; source: string; partition?: string; subscription?: string; operations: number; sent: number; received: number; throttled: number; redelivered: number; age_ms: MessagingMoments; offset_lag: MessagingMoments; ack_ms: MessagingMoments }
 export interface MessagingSummary { dimensions: MessagingDimension[]; incomplete?: boolean }

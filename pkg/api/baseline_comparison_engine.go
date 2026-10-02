@@ -15,6 +15,7 @@ import (
 
 type baselineTransactionKey struct{ group, protocol, name string }
 type baselineTransactionAccumulator struct {
+	messaging       *protocolmetrics.MessagingSummary
 	grpc            *protocolmetrics.GRPCSummary
 	websocket       *protocolmetrics.WebSocketSummary
 	count, errors   int64
@@ -23,6 +24,7 @@ type baselineTransactionAccumulator struct {
 	points          []BaselineMetricPoint
 }
 type baselineComparisonRun struct {
+	incomplete     bool
 	population     string
 	originalGroups map[string]string
 	identity       BaselineRunIdentity
@@ -121,6 +123,9 @@ func (s *Server) readBaselineComparisonRun(ctx context.Context, t *ManagedTest, 
 		return nil, fmt.Errorf("comparison exceeds %d stable windows; narrow the measurement window", maxBaselineComparisonWindows)
 	}
 	for _, summary := range summaries {
+		if summary.Telemetry != nil && (summary.Telemetry.DroppedResults > 0 || summary.Telemetry.DroppedSubscriberBatches > 0 || summary.Telemetry.MissingMetricWindows > 0) {
+			r.incomplete = true
+		}
 		if summary.ActiveVUsers > r.identity.PeakVUsers {
 			r.identity.PeakVUsers = summary.ActiveVUsers
 		}
@@ -172,6 +177,9 @@ func (s *Server) readBaselineComparisonRun(ctx context.Context, t *ManagedTest, 
 			}
 			a.count++
 			if tx.ServerTelemetry != nil {
+				if request.Population == "action" {
+					protocolmetrics.MergeMessagingTelemetry(&a.messaging, tx.ServerTelemetry, tx.DependencyTarget, tx.DependencyType, tx.Group)
+				}
 				protocolmetrics.MergeGRPCDiagnostic(&a.grpc, tx.ServerTelemetry.GRPC)
 				protocolmetrics.MergeWebSocketDiagnostic(&a.websocket, tx.ServerTelemetry.WebSocket)
 			}
@@ -218,6 +226,7 @@ func baselineTransactionMeasurement(r *baselineComparisonRun, k baselineTransact
 	w := r.windows[index]
 	seconds := w.EndSeconds - w.StartSeconds
 	m := &BaselineMeasurement{Samples: a.count, Successes: a.count - a.errors, Errors: a.errors, Throughput: float64(a.count) / seconds, SuccessfulThroughput: float64(a.count-a.errors) / seconds, ErrorPct: 100 * float64(a.errors) / float64(a.count), CoveragePct: 100, Instances: 1}
+	m.Messaging = a.messaging.Clone()
 	m.GRPC = a.grpc.Clone()
 	m.WebSocket = a.websocket.Clone()
 	if a.digest.Count() > 0 {
@@ -277,6 +286,9 @@ func compareBaselineRuns(current *baselineComparisonRun, baselines []*baselineCo
 				qualifications[b.identity.ID] = append(qualifications[b.identity.ID], d.Field+" "+d.Status)
 			}
 		}
+		if current.incomplete || b.incomplete || archiveSLAIncomplete(current.manifest) || archiveSLAIncomplete(b.manifest) {
+			qualifications[b.identity.ID] = append(qualifications[b.identity.ID], "Incomplete archive source coverage")
+		}
 		if b.identity.Status != "COMPLETE" {
 			qualifications[b.identity.ID] = append(qualifications[b.identity.ID], "Baseline run did not complete")
 		}
@@ -284,7 +296,7 @@ func compareBaselineRuns(current *baselineComparisonRun, baselines []*baselineCo
 			keys[k] = true
 		}
 	}
-	if len(keys)*max(1, len(current.windows)) > maxBaselineComparisonCells {
+	if len(keys)*max(1, len(current.windows)) > maxBaselineComparisonCells || len(keys)*max(1, len(current.windows))*len(baselines)*max(3, len(request.RegressionMetrics)) > 20000 {
 		return nil
 	}
 	ordered := make([]baselineTransactionKey, 0, len(keys))
@@ -338,6 +350,7 @@ func compareBaselineRuns(current *baselineComparisonRun, baselines []*baselineCo
 		return nil
 	}
 	buildBaselineFindings(out)
+	out.Verdict = evaluateBaselineRegression(out)
 	return out
 }
 
@@ -476,8 +489,11 @@ func buildBaselineFindings(out *BaselineComparisonSnapshot) {
 						status = "unverified"
 					}
 					unit := row.Unit
-					if metric == "throughput" || metric == "WebSocket message throughput" {
+					if metric == "throughput" || metric == "successful throughput" || metric == "WebSocket message throughput" {
 						unit = "/s"
+					}
+					if metric == "consumer_offset_lag" {
+						unit = "offsets"
 					}
 					if metric == "error percentage points" {
 						unit = "percentage points"
@@ -540,6 +556,18 @@ func buildBaselineFindings(out *BaselineComparisonSnapshot) {
 						add("successful mean", a.Mean, v.Mean, out.Policy.LatencyPct, out.Policy.LatencyMs, enough)
 						add("successful P99", a.P99, v.P99, out.Policy.LatencyPct, out.Policy.LatencyMs, a.Successes >= 1000 && v.Successes >= 1000)
 					}
+					for _, metric := range []string{"consumer_lag_ms", "consumer_offset_lag", "acknowledgement_ms"} {
+						x, okX := baselineRegressionValue(a, metric)
+						y, okY := baselineRegressionValue(v, metric)
+						if okX && okY {
+							absolute := out.Policy.LatencyMs
+							if metric == "consumer_offset_lag" {
+								absolute = 0
+							}
+							add(metric, x, y, out.Policy.LatencyPct, absolute, true)
+						}
+					}
+					add("successful throughput", a.SuccessfulThroughput, v.SuccessfulThroughput, out.Policy.ThroughputPct, 0, a.Samples >= 100 && v.Samples >= 100)
 					add("throughput", a.Throughput, v.Throughput, out.Policy.ThroughputPct, 0, a.Samples >= 100 && v.Samples >= 100)
 					add("error percentage points", a.ErrorPct, v.ErrorPct, 0, out.Policy.ErrorPoints, a.Samples >= 100 && v.Samples >= 100)
 				}

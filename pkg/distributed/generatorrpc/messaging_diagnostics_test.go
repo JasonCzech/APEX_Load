@@ -1,6 +1,7 @@
 package generatorrpc
 
 import (
+	"context"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"strings"
@@ -9,10 +10,10 @@ import (
 
 func TestMessagingAggregateRoundtripAndLegacyCoverage(t *testing.T) {
 	var s *protocol.MessagingSummary
-	protocol.MergeMessagingTelemetry(&s, &protocol.ServerTelemetry{MessagesSent: 9, PartitionID: "0"}, "topic")
+	protocol.MergeMessagingTelemetry(&s, &protocol.ServerTelemetry{MessagesSent: 9, PartitionID: "0"}, "topic", "kafka_topic", "load")
 	a := MetricAggregate{Name: "send", Count: 9, Messaging: s, MessagingVersion: 1}
 	got := metricAggregateFromProto(metricAggregateToProto(&a))
-	if got.MessagingVersion != 1 || got.Messaging == nil || got.Messaging.Dimensions[0].Sent != 9 {
+	if got.MessagingVersion != 1 || got.Messaging == nil || got.Messaging.Dimensions[0].Sent != 9 || got.Messaging.Dimensions[0].Protocol != "kafka" || got.Messaging.Dimensions[0].Group != "load" {
 		t.Fatalf("roundtrip: %+v", got)
 	}
 	merged := mergeMetricAggregates([]MetricAggregate{a, {Name: "send", Count: 1}})
@@ -48,5 +49,19 @@ func TestMessagingEngineProjectionAndAckClone(t *testing.T) {
 	aggregates := engineActionMetricsToAggregates(map[string]*engine.ActionMetrics{"receive": {Name: "receive", Count: 1, ServerTelemetry: &engine.ServerTelemetrySummary{Messaging: s}}})
 	if len(aggregates) != 1 || aggregates[0].Messaging.Dimensions[0].Age.Count != 1 {
 		t.Fatal("engine rollup discarded")
+	}
+}
+
+func TestMessagingScopedCapabilityAdvertisedWithAvailableProtocols(t *testing.T) {
+	protocols, features := runtimeAdvertisement(context.Background(), false)
+	for _, name := range []string{"kafka", "eventhubs"} {
+		if !containsProtocolName(protocols, name) {
+			t.Fatalf("bundled messaging protocol missing: %s in %v", name, protocols)
+		}
+	}
+	for _, name := range []string{FeatureMessagingRollupV1, FeatureMessagingScopeV1} {
+		if !containsProtocolName(features, name) {
+			t.Fatalf("scoped messaging evidence capability missing: %s in %v", name, features)
+		}
 	}
 }

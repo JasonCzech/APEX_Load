@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"net/http"
 	"strconv"
@@ -76,7 +77,7 @@ func (s *Server) handleCreateRunAnnotation(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	_, subject, display := s.resolveAuditActor(r)
-	set.Annotations = append(set.Annotations, storage.RunAnnotation{ID: uuid.NewString(), Timestamp: req.Timestamp.UTC(), Label: req.Label, Text: req.Text, CreatedAt: time.Now().UTC(), CreatedBy: firstNonEmpty(display, subject)})
+	set.Annotations = append(set.Annotations, storage.RunAnnotation{ID: uuid.NewString(), Timestamp: req.Timestamp.UTC(), Label: req.Label, Text: req.Text, CreatedAt: time.Now().UTC(), CreatedBy: boundedtext.TruncateUTF8(firstNonEmpty(display, subject), 256)})
 	set.Revision++
 	saved, err := store.SaveRunAnnotations(run.ProjectID, run.ID, set, req.ExpectedRevision)
 	if err != nil {
@@ -120,7 +121,7 @@ func (s *Server) handleDeleteRunAnnotation(w http.ResponseWriter, r *http.Reques
 			now := time.Now().UTC()
 			a.DeletedAt = &now
 			_, subject, display := s.resolveAuditActor(r)
-			a.DeletedBy = firstNonEmpty(display, subject)
+			a.DeletedBy = boundedtext.TruncateUTF8(firstNonEmpty(display, subject), 256)
 			found = true
 			break
 		}

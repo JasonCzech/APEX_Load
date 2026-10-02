@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const baselineComparisonRuleVersion = "baseline-comparison-v1"
+const baselineComparisonRuleVersion = "baseline-comparison-v2"
 const maxBaselineComparisonWindows = 128
 const maxBaselineComparisonCells = 4096
 
@@ -42,13 +42,17 @@ type BaselineComparisonWindow struct {
 }
 
 type BaselineComparisonRequest struct {
-	MinimumLoad         float64                             `json:"minimum_load,omitempty"`
-	MaximumLoad         float64                             `json:"maximum_load,omitempty"`
-	BaselineIDs         []string                            `json:"baseline_ids"`
-	Policy              *BaselineComparisonPolicy           `json:"policy,omitempty"`
-	Windows             map[string]BaselineComparisonWindow `json:"windows,omitempty"`
-	Population          string                              `json:"population"`
-	AllowOtherScenarios bool                                `json:"allow_other_scenarios"`
+	RegressionIdentities []string                            `json:"regression_identities,omitempty"`
+	RegressionMetrics    []string                            `json:"regression_metrics,omitempty"`
+	RegressionProtocols  []string                            `json:"regression_protocols,omitempty"`
+	RegressionGroups     []string                            `json:"regression_groups,omitempty"`
+	MinimumLoad          float64                             `json:"minimum_load,omitempty"`
+	MaximumLoad          float64                             `json:"maximum_load,omitempty"`
+	BaselineIDs          []string                            `json:"baseline_ids"`
+	Policy               *BaselineComparisonPolicy           `json:"policy,omitempty"`
+	Windows              map[string]BaselineComparisonWindow `json:"windows,omitempty"`
+	Population           string                              `json:"population"`
+	AllowOtherScenarios  bool                                `json:"allow_other_scenarios"`
 }
 
 type BaselineRunIdentity struct {
@@ -66,6 +70,7 @@ type BaselineRunIdentity struct {
 }
 
 type BaselineComparisonSnapshot struct {
+	Verdict      *BaselineRegressionVerdict  `json:"verdict,omitempty"`
 	ID           string                      `json:"id"`
 	ProjectID    string                      `json:"project_id"`
 	Current      BaselineRunIdentity         `json:"current"`
@@ -82,6 +87,7 @@ type BaselineComparisonSnapshot struct {
 }
 
 type BaselineMeasurement struct {
+	Messaging            *protocol.MessagingSummary         `json:"messaging,omitempty"`
 	GRPC                 *protocol.GRPCSummary              `json:"grpc,omitempty"`
 	WebSocket            *protocol.WebSocketSummary         `json:"websocket,omitempty"`
 	Samples              int64                              `json:"samples"`

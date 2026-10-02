@@ -11,18 +11,22 @@ import (
 )
 
 type transactionSLAAccumulator struct {
-	lagSamples    int64
-	offsetSamples int64
-	maxLag        float64
-	maxOffset     float64
-	count         int64
-	errors        int64
-	bytesSent     int64
-	bytesReceived int64
-	durationTotal float64
-	durationMin   float64
-	durationMax   float64
-	durations     *engine.TDigest
+	ackSamples      int64
+	maxAck          float64
+	invalidDuration bool
+	invalidBytes    bool
+	lagSamples      int64
+	offsetSamples   int64
+	maxLag          float64
+	maxOffset       float64
+	count           int64
+	errors          int64
+	bytesSent       int64
+	bytesReceived   int64
+	durationTotal   float64
+	durationMin     float64
+	durationMax     float64
+	durations       *engine.TDigest
 }
 
 // applyTransactionSLARules evaluates exact-name rules only after the complete
@@ -46,11 +50,12 @@ func applyTransactionSLARules(root string, manifest *RunArchiveManifest) error {
 	}
 	defer file.Close()
 
-	requested := make(map[string]struct{}, len(rules))
-	for _, rule := range rules {
-		requested[rule.Transaction] = struct{}{}
+	// Rule indexes keep scope intersections exact and the working set bounded.
+	stats := make([]*transactionSLAAccumulator, len(rules))
+	protocols := map[string]string{}
+	for _, group := range manifest.Provenance.Groups {
+		protocols[group.Name] = group.Protocol
 	}
-	stats := make(map[string]*transactionSLAAccumulator, len(requested))
 	decoder := json.NewDecoder(file)
 	for {
 		var event TransactionEvent
@@ -60,43 +65,65 @@ func applyTransactionSLARules(root string, manifest *RunArchiveManifest) error {
 			}
 			return fmt.Errorf("decode transaction evidence for SLA evaluation: %w", err)
 		}
-		if !event.BusinessTransaction {
-			continue
-		}
-		if _, ok := requested[event.ActionName]; !ok {
-			continue
-		}
-		accumulator := stats[event.ActionName]
-		if accumulator == nil {
-			accumulator = &transactionSLAAccumulator{durationMin: event.DurationMs, durationMax: event.DurationMs, durations: engine.NewTDigest(100)}
-			stats[event.ActionName] = accumulator
-		}
-		accumulator.count++
-		if telemetry := event.ServerTelemetry; telemetry != nil {
-			if telemetry.ConsumerLagObserved && telemetry.ConsumerLagMs >= 0 && !math.IsNaN(telemetry.ConsumerLagMs) && !math.IsInf(telemetry.ConsumerLagMs, 0) {
-				accumulator.lagSamples++
-				accumulator.maxLag = math.Max(accumulator.maxLag, telemetry.ConsumerLagMs)
+		for i, rule := range rules {
+			population := rule.Population
+			if population == "" {
+				population = "transaction"
 			}
-			if telemetry.ConsumerOffsetLagObserved && telemetry.ConsumerOffsetLag >= 0 && telemetry.ConsumerOffsetLag <= 1<<53 {
-				accumulator.offsetSamples++
-				accumulator.maxOffset = math.Max(accumulator.maxOffset, float64(telemetry.ConsumerOffsetLag))
+			if archiveEventPopulation(event) != population || event.ActionName != rule.Transaction || (rule.Group != "" && rule.Group != event.Group) || (rule.Protocol != "" && rule.Protocol != protocols[event.Group]) {
+				continue
 			}
+			a := stats[i]
+			if a == nil {
+				a = &transactionSLAAccumulator{durationMin: math.Inf(1), durations: engine.NewTDigest(100)}
+				stats[i] = a
+			}
+			a.count++
+			if telemetry := event.ServerTelemetry; telemetry != nil {
+				if telemetry.AcknowledgementMs != nil && finiteComparison(*telemetry.AcknowledgementMs) && *telemetry.AcknowledgementMs >= 0 {
+					a.ackSamples++
+					a.maxAck = math.Max(a.maxAck, *telemetry.AcknowledgementMs)
+				}
+				if telemetry.ConsumerLagObserved && finiteComparison(telemetry.ConsumerLagMs) && telemetry.ConsumerLagMs >= 0 {
+					a.lagSamples++
+					a.maxLag = math.Max(a.maxLag, telemetry.ConsumerLagMs)
+				}
+				if telemetry.ConsumerOffsetLagObserved && telemetry.ConsumerOffsetLag >= 0 && telemetry.ConsumerOffsetLag <= 1<<53 {
+					a.offsetSamples++
+					a.maxOffset = math.Max(a.maxOffset, float64(telemetry.ConsumerOffsetLag))
+				}
+			}
+			if !event.Success {
+				a.errors++
+			}
+			if event.BytesSent < 0 || event.BytesReceived < 0 || event.BytesSent > math.MaxInt64-a.bytesSent || event.BytesReceived > math.MaxInt64-a.bytesReceived {
+				a.invalidBytes = true
+			} else {
+				a.bytesSent += event.BytesSent
+				a.bytesReceived += event.BytesReceived
+			}
+			if !finiteComparison(event.DurationMs) || event.DurationMs < 0 {
+				a.invalidDuration = true
+				continue
+			}
+			if !finiteComparison(a.durationTotal + event.DurationMs) {
+				a.invalidDuration = true
+				continue
+			}
+			a.durationTotal += event.DurationMs
+			a.durationMin = math.Min(a.durationMin, event.DurationMs)
+			a.durationMax = math.Max(a.durationMax, event.DurationMs)
+			a.durations.Add(event.DurationMs)
 		}
-		if !event.Success {
-			accumulator.errors++
-		}
-		accumulator.bytesSent += event.BytesSent
-		accumulator.bytesReceived += event.BytesReceived
-		accumulator.durationTotal += event.DurationMs
-		accumulator.durationMin = math.Min(accumulator.durationMin, event.DurationMs)
-		accumulator.durationMax = math.Max(accumulator.durationMax, event.DurationMs)
-		accumulator.durations.Add(event.DurationMs)
 	}
 
 	results := make([]TransactionSLARuleResult, 0, len(rules))
 	allTransactionRulesEvaluated := true
-	for _, rule := range rules {
-		result := evaluateTransactionSLARule(rule, stats[rule.Transaction], transactionSLARunSeconds(manifest))
+	for i, rule := range rules {
+		result := evaluateTransactionSLARule(rule, stats[i], transactionSLARunSeconds(manifest))
+		if archiveSLAIncomplete(manifest) || (rule.Protocol != "" && !transactionSLAProtocolKnown(rule, protocols)) {
+			result.Status, result.Observed, result.Message = "not_evaluated", nil, "Incomplete archive source coverage for "+rule.Transaction
+		}
 		results = append(results, result)
 		if result.Status == "not_evaluated" {
 			allTransactionRulesEvaluated = false
@@ -184,7 +211,7 @@ func evaluateTransactionSLARule(rule TransactionSLARule, stats *transactionSLAAc
 	}
 	observed, ok := transactionSLAMetricValue(rule.Metric, stats, runSeconds)
 	if !ok {
-		result.Message = fmt.Sprintf("transaction %q has insufficient archive evidence for %s", rule.Transaction, rule.Metric)
+		result.Message = fmt.Sprintf("transaction %q%s has insufficient archive evidence for %s", rule.Transaction, transactionSLAScope(rule), rule.Metric)
 		return result
 	}
 	result.Observed = &observed
@@ -215,12 +242,12 @@ func transactionSLAMetricValue(metric string, stats *transactionSLAAccumulator, 
 		if stats == nil {
 			return 0, true
 		}
-		return float64(stats.bytesSent), true
+		return float64(stats.bytesSent), !stats.invalidBytes
 	case "bytes_received":
 		if stats == nil {
 			return 0, true
 		}
-		return float64(stats.bytesReceived), true
+		return float64(stats.bytesReceived), !stats.invalidBytes
 	case "tps":
 		if runSeconds <= 0 {
 			return 0, false
@@ -245,16 +272,20 @@ func transactionSLAMetricValue(metric string, stats *transactionSLAAccumulator, 
 		return stats.maxLag, stats.lagSamples == stats.count
 	case "max_consumer_offset_lag":
 		return stats.maxOffset, stats.offsetSamples == stats.count
+	case "max_acknowledgement_ms":
+		return stats.maxAck, stats.ackSamples == stats.count
 	case "average_duration_ms":
-		return stats.durationTotal / float64(stats.count), true
+		return stats.durationTotal / float64(stats.count), !stats.invalidDuration
 	case "p90_duration_ms":
-		return stats.durations.Quantile(0.90), true
+		return stats.durations.Quantile(0.90), !stats.invalidDuration
 	case "p95_duration_ms":
-		return stats.durations.Quantile(0.95), true
+		return stats.durations.Quantile(0.95), !stats.invalidDuration
+	case "p99_duration_ms":
+		return stats.durations.Quantile(0.99), !stats.invalidDuration
 	case "min_duration_ms":
-		return stats.durationMin, true
+		return stats.durationMin, !stats.invalidDuration
 	case "max_duration_ms":
-		return stats.durationMax, true
+		return stats.durationMax, !stats.invalidDuration
 	case "error_rate_pct":
 		return float64(stats.errors) * 100 / float64(stats.count), true
 	default:
@@ -282,5 +313,39 @@ func compareTransactionSLA(observed float64, comparator string, threshold float6
 }
 
 func formatTransactionSLAResult(rule TransactionSLARule, observed float64, outcome string) string {
-	return fmt.Sprintf("transaction %q %s %s: observed %.6g, expected %s %.6g (%s)", rule.Transaction, rule.Metric, outcome, observed, rule.Comparator, rule.Threshold, transactionSLASeverity(rule))
+	return fmt.Sprintf("transaction %q%s %s %s: observed %.6g, expected %s %.6g (%s)", rule.Transaction, transactionSLAScope(rule), rule.Metric, outcome, observed, rule.Comparator, rule.Threshold, transactionSLASeverity(rule))
+}
+
+func archiveSLAIncomplete(manifest *RunArchiveManifest) bool {
+	if manifest != nil && manifest.SourceCoverage != nil {
+		for _, source := range manifest.SourceCoverage.Sources {
+			if !source.Collected {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func transactionSLAProtocolKnown(rule TransactionSLARule, protocols map[string]string) bool {
+	if rule.Group != "" {
+		return protocols[rule.Group] == rule.Protocol
+	}
+	for _, p := range protocols {
+		if p == rule.Protocol {
+			return true
+		}
+	}
+	return false
+}
+
+func transactionSLAScope(rule TransactionSLARule) string {
+	if rule.Population == "" && rule.Protocol == "" && rule.Group == "" {
+		return ""
+	}
+	population := rule.Population
+	if population == "" {
+		population = "transaction"
+	}
+	return fmt.Sprintf(" [population=%s, protocol=%q, group=%q]", population, rule.Protocol, rule.Group)
 }

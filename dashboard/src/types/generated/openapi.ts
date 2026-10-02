@@ -1018,7 +1018,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -1457,6 +1460,10 @@ export interface operations {
                 "minimum_load"?: number;
                 "policy"?: (Record<string, unknown>) | null;
                 "population"?: string;
+                "regression_groups"?: Array<string>;
+                "regression_identities"?: Array<string>;
+                "regression_metrics"?: Array<string>;
+                "regression_protocols"?: Array<string>;
                 "windows"?: Record<string, Record<string, unknown>>;
               };
               "resources"?: Array<{
@@ -1489,6 +1496,13 @@ export interface operations {
                 "unit"?: string;
                 "window"?: (Record<string, unknown>) | null;
               }>;
+              "verdict"?: ({
+                "evaluated"?: number;
+                "evidence"?: Array<Record<string, unknown>>;
+                "metrics"?: Array<string>;
+                "status"?: string;
+                "unavailable"?: number;
+              }) | null;
               "warnings"?: Array<string>;
             }) | null;
             "browser_by_device"?: Record<string, ({
@@ -3914,7 +3928,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -4672,7 +4689,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -5465,7 +5485,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -6160,7 +6183,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -9745,7 +9771,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -10592,7 +10621,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -11264,7 +11296,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -13046,7 +13081,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -14000,7 +14038,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -14880,7 +14921,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -16263,7 +16307,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -20369,7 +20416,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -21053,7 +21103,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -21346,6 +21399,10 @@ export interface operations {
             "throughput_pct"?: number;
           }) | null;
           "population"?: string;
+          "regression_groups"?: Array<string>;
+          "regression_identities"?: Array<string>;
+          "regression_metrics"?: Array<string>;
+          "regression_protocols"?: Array<string>;
           "windows"?: Record<string, {
             "end_seconds"?: number;
             "start_seconds"?: number;
@@ -21442,6 +21499,10 @@ export interface operations {
                 "throughput_pct": number;
               }) | null;
               "population": string;
+              "regression_groups"?: Array<string>;
+              "regression_identities"?: Array<string>;
+              "regression_metrics"?: Array<string>;
+              "regression_protocols"?: Array<string>;
               "windows"?: Record<string, {
                 "end_seconds": number;
                 "start_seconds": number;
@@ -21513,6 +21574,10 @@ export interface operations {
                 "instances": number;
                 "max": number;
                 "mean": number;
+                "messaging"?: ({
+                  "dimensions": Array<Record<string, unknown>>;
+                  "incomplete"?: boolean;
+                }) | null;
                 "min": number;
                 "p50": number;
                 "p90": number;
@@ -21684,6 +21749,10 @@ export interface operations {
                 "instances": number;
                 "max": number;
                 "mean": number;
+                "messaging"?: ({
+                  "dimensions": Array<Record<string, unknown>>;
+                  "incomplete"?: boolean;
+                }) | null;
                 "min": number;
                 "p50": number;
                 "p90": number;
@@ -21781,6 +21850,21 @@ export interface operations {
                 "total_load": number;
               }) | null;
             }>;
+            "verdict"?: ({
+              "evaluated": number;
+              "evidence": Array<{
+                "baseline"?: (number) | null;
+                "baseline_id": string;
+                "current"?: (number) | null;
+                "metric": string;
+                "reason"?: string;
+                "row_id": string;
+                "status": string;
+              }>;
+              "metrics": Array<string>;
+              "status": string;
+              "unavailable": number;
+            }) | null;
             "warnings": Array<string>;
           }) | null;
         };
@@ -24248,7 +24332,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "transaction_rules"?: Array<{
               "comparator"?: string;
+              "group"?: string;
               "metric"?: string;
+              "population"?: string;
+              "protocol"?: string;
               "severity"?: string;
               "threshold"?: number;
               "transaction"?: string;
@@ -24587,7 +24674,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -25288,7 +25378,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -26928,7 +27021,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "transaction_rules"?: Array<{
               "comparator"?: string;
+              "group"?: string;
               "metric"?: string;
+              "population"?: string;
+              "protocol"?: string;
               "severity"?: string;
               "threshold"?: number;
               "transaction"?: string;
@@ -27628,7 +27724,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator": string;
+                "group"?: string;
                 "metric": string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold": number;
                 "transaction": string;
@@ -29136,7 +29235,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -29892,7 +29994,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -30308,7 +30413,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "transaction_rules"?: Array<{
               "comparator"?: string;
+              "group"?: string;
               "metric"?: string;
+              "population"?: string;
+              "protocol"?: string;
               "severity"?: string;
               "threshold"?: number;
               "transaction"?: string;
@@ -31575,7 +31683,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator": string;
+                "group"?: string;
                 "metric": string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold": number;
                 "transaction": string;
@@ -36488,7 +36599,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -37122,7 +37236,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -37678,7 +37795,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -38312,7 +38432,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -39928,7 +40051,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "transaction_rules"?: Array<{
               "comparator"?: string;
+              "group"?: string;
               "metric"?: string;
+              "population"?: string;
+              "protocol"?: string;
               "severity"?: string;
               "threshold"?: number;
               "transaction"?: string;
@@ -41863,7 +41989,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -43591,7 +43720,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -43934,6 +44066,10 @@ export interface operations {
                 "throughput_pct": number;
               }) | null;
               "population": string;
+              "regression_groups"?: Array<string>;
+              "regression_identities"?: Array<string>;
+              "regression_metrics"?: Array<string>;
+              "regression_protocols"?: Array<string>;
               "windows"?: Record<string, {
                 "end_seconds": number;
                 "start_seconds": number;
@@ -44005,6 +44141,10 @@ export interface operations {
                 "instances": number;
                 "max": number;
                 "mean": number;
+                "messaging"?: ({
+                  "dimensions": Array<Record<string, unknown>>;
+                  "incomplete"?: boolean;
+                }) | null;
                 "min": number;
                 "p50": number;
                 "p90": number;
@@ -44176,6 +44316,10 @@ export interface operations {
                 "instances": number;
                 "max": number;
                 "mean": number;
+                "messaging"?: ({
+                  "dimensions": Array<Record<string, unknown>>;
+                  "incomplete"?: boolean;
+                }) | null;
                 "min": number;
                 "p50": number;
                 "p90": number;
@@ -44273,6 +44417,21 @@ export interface operations {
                 "total_load": number;
               }) | null;
             }>;
+            "verdict"?: ({
+              "evaluated": number;
+              "evidence": Array<{
+                "baseline"?: (number) | null;
+                "baseline_id": string;
+                "current"?: (number) | null;
+                "metric": string;
+                "reason"?: string;
+                "row_id": string;
+                "status": string;
+              }>;
+              "metrics": Array<string>;
+              "status": string;
+              "unavailable": number;
+            }) | null;
             "warnings": Array<string>;
           }) | null;
           "text/csv": string;
@@ -47854,7 +48013,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -49593,7 +49755,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -50259,7 +50424,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -50708,7 +50876,10 @@ export interface operations {
               "observed"?: (number) | null;
               "rule": {
                 "comparator": string;
+                "group"?: string;
                 "metric": string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold": number;
                 "transaction": string;
@@ -50848,6 +51019,10 @@ export interface operations {
                   "throughput_pct": number;
                 }) | null;
                 "population": string;
+                "regression_groups"?: Array<string>;
+                "regression_identities"?: Array<string>;
+                "regression_metrics"?: Array<string>;
+                "regression_protocols"?: Array<string>;
                 "windows"?: Record<string, {
                   "end_seconds": number;
                   "start_seconds": number;
@@ -50912,6 +51087,7 @@ export interface operations {
                   "instances": number;
                   "max": number;
                   "mean": number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "min": number;
                   "p50": number;
                   "p90": number;
@@ -51074,6 +51250,7 @@ export interface operations {
                   "instances": number;
                   "max": number;
                   "mean": number;
+                  "messaging"?: (Record<string, unknown>) | null;
                   "min": number;
                   "p50": number;
                   "p90": number;
@@ -51169,6 +51346,21 @@ export interface operations {
                   "total_load": number;
                 }) | null;
               }>;
+              "verdict"?: ({
+                "evaluated": number;
+                "evidence": Array<{
+                  "baseline"?: (number) | null;
+                  "baseline_id": string;
+                  "current"?: (number) | null;
+                  "metric": string;
+                  "reason"?: string;
+                  "row_id": string;
+                  "status": string;
+                }>;
+                "metrics": Array<string>;
+                "status": string;
+                "unavailable": number;
+              }) | null;
               "warnings": Array<string>;
             }) | null;
             "browser_by_device"?: Record<string, ({
@@ -53287,7 +53479,10 @@ export interface operations {
                 "observed"?: (number) | null;
                 "rule": {
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -54276,7 +54471,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator": string;
+                "group"?: string;
                 "metric": string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold": number;
                 "transaction": string;
@@ -55586,7 +55784,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -57977,7 +58178,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator": string;
+                "group"?: string;
                 "metric": string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold": number;
                 "transaction": string;
@@ -62210,7 +62414,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -62687,7 +62894,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -65963,7 +66173,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -66639,7 +66852,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -75126,7 +75342,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator": string;
+                "group"?: string;
                 "metric": string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold": number;
                 "transaction": string;
@@ -78133,7 +78352,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "transaction_rules"?: Array<{
               "comparator"?: string;
+              "group"?: string;
               "metric"?: string;
+              "population"?: string;
+              "protocol"?: string;
               "severity"?: string;
               "threshold"?: number;
               "transaction"?: string;
@@ -79402,7 +79624,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -80244,7 +80469,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -80929,7 +81157,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -81683,7 +81914,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -82646,7 +82880,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -83318,7 +83555,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -86016,7 +86256,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -86934,7 +87177,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -88384,7 +88630,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -89834,7 +90083,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -91284,7 +91536,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -92734,7 +92989,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -94379,7 +94637,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -95149,7 +95410,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -97621,7 +97885,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -99836,7 +100103,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -101248,7 +101518,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -102243,7 +102516,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -103472,7 +103748,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -104778,7 +105057,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -106083,7 +106365,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -107389,7 +107674,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -108694,7 +108982,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -113362,7 +113653,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator": string;
+                "group"?: string;
                 "metric": string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold": number;
                 "transaction": string;
@@ -116746,7 +117040,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -117429,7 +117726,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -120201,7 +120501,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "transaction_rules"?: Array<{
               "comparator"?: string;
+              "group"?: string;
               "metric"?: string;
+              "population"?: string;
+              "protocol"?: string;
               "severity"?: string;
               "threshold"?: number;
               "transaction"?: string;
@@ -120901,7 +121204,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator": string;
+                "group"?: string;
                 "metric": string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold": number;
                 "transaction": string;
@@ -122509,7 +122815,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -123264,7 +123573,10 @@ export interface operations {
                 "target_average_tps"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
+                  "group"?: string;
                   "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
                   "severity"?: string;
                   "threshold": number;
                   "transaction": string;
@@ -127679,7 +127991,10 @@ export interface operations {
               "target_average_tps"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
+                "group"?: string;
                 "metric"?: string;
+                "population"?: string;
+                "protocol"?: string;
                 "severity"?: string;
                 "threshold"?: number;
                 "transaction"?: string;
@@ -128305,7 +128620,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "transaction_rules"?: Array<{
               "comparator"?: string;
+              "group"?: string;
               "metric"?: string;
+              "population"?: string;
+              "protocol"?: string;
               "severity"?: string;
               "threshold"?: number;
               "transaction"?: string;

@@ -9141,7 +9141,16 @@
         "comparator": {
           "type": "string"
         },
+        "group": {
+          "type": "string"
+        },
         "metric": {
+          "type": "string"
+        },
+        "population": {
+          "type": "string"
+        },
+        "protocol": {
           "type": "string"
         },
         "severity": {

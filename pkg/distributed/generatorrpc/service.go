@@ -1527,7 +1527,7 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 		available = append(available, normalized)
 		features = append(features, normalized)
 		if strings.HasPrefix(normalized, "jms") || normalized == "kafka" || normalized == "eventhubs" {
-			features = append(features, FeatureMessagingRollupV1)
+			features = append(features, FeatureMessagingRollupV1, FeatureMessagingScopeV1)
 		}
 		if normalized == "websocket" {
 			features = append(features, FeatureWebSocketDiagnosticsV1)

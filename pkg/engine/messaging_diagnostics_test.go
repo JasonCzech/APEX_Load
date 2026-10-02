@@ -18,3 +18,24 @@ func TestMessagingLagUsesIndependentObservedDenominators(t *testing.T) {
 		t.Fatal("invalid local rollup")
 	}
 }
+
+func TestMessagingActionRollupRetainsProtocolAndExecutionGroup(t *testing.T) {
+	metrics := &ActionMetrics{}
+	for _, group := range []string{"first", "second"} {
+		mergeActionResult(metrics, &protocol.Result{
+			ActionName: "publish", Group: group, Success: true,
+			DependencyType: "kafka_topic", DependencyTarget: "events",
+			ServerTelemetry: &protocol.ServerTelemetry{MessagesSent: 1, PartitionID: "0"},
+		})
+	}
+	summary := metrics.ServerTelemetry.Messaging
+	if summary == nil || !summary.Valid() || summary.Incomplete || len(summary.Dimensions) != 2 {
+		t.Fatalf("execution groups collapsed: %+v", summary)
+	}
+	for i, group := range []string{"first", "second"} {
+		d := summary.Dimensions[i]
+		if d.Group != group || d.Protocol != "kafka" || d.Source != "events" || d.Sent != 1 {
+			t.Fatalf("rollup lost admitted scope: %+v", d)
+		}
+	}
+}

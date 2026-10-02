@@ -8,6 +8,7 @@ import (
 )
 
 const FeatureMessagingRollupV1 = "messaging_rollup_v1"
+const FeatureMessagingScopeV1 = "messaging_scope_v1"
 const maxMessagingSummaryBytes = 128 << 10
 
 func cloneMessagingAck(v *float64) *float64 {

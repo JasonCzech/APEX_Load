@@ -2063,6 +2063,9 @@ type ActiveLoadLevel struct {
 }
 
 type TransactionSLARule struct {
+	Population  string  `json:"population,omitempty"`
+	Protocol    string  `json:"protocol,omitempty"`
+	Group       string  `json:"group,omitempty"`
 	Transaction string  `json:"transaction"`
 	Metric      string  `json:"metric"`
 	Comparator  string  `json:"comparator"`

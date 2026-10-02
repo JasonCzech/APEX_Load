@@ -29,6 +29,7 @@ test('baseline workspace selects pins, investigates resources, shares and preser
       const refs = baselines.filter(run => body.baseline_ids.includes(run.id))
       const cells = Object.fromEntries(refs.map(run => [run.id, { measurement: measurement(100), window, qualification: [], approximate: true, delta: 50, delta_pct: 50 }]))
       saved = { id: `saved-comparison-${snapshots.size + 1}`,  project_id: workspace.projectId, current, baselines: refs, created_at: '2026-09-25T12:00:00Z', rule_version: 'baseline-comparison-v1', request: body, policy: body.policy || defaultPolicy,
+        verdict: { status: 'not_evaluated', evaluated: 0, unavailable: 1, metrics: body.regression_metrics || ['successful_p95'], evidence: [{row_id:'tx/0',baseline_id:refs[0].id,metric:'successful_p95',status:'not_evaluated',reason:'Workload differs'}] },
         transactions: Array.from({ length: 300 }, (_, i) => ({ id: `tx/${i}`, name: i === 0 ? 'Purchase' : `Transaction ${String(i).padStart(3, '0')}`, group: 'checkout', protocol: 'http', source: 'transaction', unit: 'ms', window, current: measurement(150), baselines: cells })),
         resources: [{ id: 'resource/0', name: 'external/java_heap', group: '', source: 'application', unit: 'bytes', window, current: measurement(150), baselines: cells }],
         setup: [{ baseline_id: refs[0].id, field: 'Think time', current: '1 second', baseline: '2 seconds', status: 'differs' }],
@@ -58,6 +59,11 @@ test('baseline workspace selects pins, investigates resources, shares and preser
   await expect(page.getByText('Java heap +50% at 100 VUsers', { exact: true })).toBeVisible()
   await expect(page).toHaveURL(/comparison_id=saved-comparison-1/)
   await page.getByText('Load alignment, thresholds and mappings', { exact: false }).click()
+  await expect(page.getByRole('region', { name: 'Regression verdict', exact: true })).toContainText('not_evaluated')
+  await page.getByLabel('Acceptance metrics', { exact: true }).selectOption(['consumer_lag_ms', 'error_rate_pct'])
+  await page.getByLabel('Acceptance identities (one per line)', { exact: true }).fill('Purchase')
+  await page.getByLabel('Acceptance protocols (comma separated)', { exact: true }).fill('kafka')
+  await page.getByLabel('Acceptance groups (comma separated)', { exact: true }).fill('consumer')
   await page.getByLabel('Minimum observed VUsers', { exact: true }).fill('90')
   await page.getByLabel('Maximum observed VUsers (0 = all)', { exact: true }).fill('110')
   await page.getByLabel('Load tolerance %', { exact: true }).fill('0')
@@ -69,6 +75,10 @@ test('baseline workspace selects pins, investigates resources, shares and preser
   await expect(page.getByText('Draft changes unapplied', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Apply comparison', exact: true }).click()
   await expect(page.getByText('Saved assessment', { exact: true })).toBeVisible()
+  expect(saved?.request.regression_metrics).toEqual(['error_rate_pct', 'consumer_lag_ms'])
+  expect(saved?.request.regression_identities).toEqual(['Purchase'])
+  expect(saved?.request.regression_protocols).toEqual(['kafka'])
+  expect(saved?.request.regression_groups).toEqual(['consumer'])
   expect(saved?.request.minimum_load).toBe(90)
   expect(saved?.request.maximum_load).toBe(110)
   expect(saved?.policy.load_tolerance_pct).toBe(0)

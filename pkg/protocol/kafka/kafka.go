@@ -913,6 +913,7 @@ func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, resul
 	response.Value = payload
 	request.Partition = meta.Partition
 	request.Offset = meta.Offset
+	request.AcknowledgementMs = meta.AcknowledgementMs
 	result.BytesSent = int64(len(request.Value))
 	result.BytesReceived = int64(len(response.Value))
 	if err := addRecordExtractions(result, response); err != nil {
@@ -1082,8 +1083,12 @@ func finalizeKafkaServerTelemetry(result *protocol.Result, request kafkaRecord, 
 		telemetry.RequestSizeClass = protocol.ClassifyPayloadSize(int64(len(request.Value)))
 	}
 	if hasResponse {
-		if response.Partition >= 0 {
+		if !hasRequest && response.Partition >= 0 {
 			telemetry.PartitionID = strconv.Itoa(int(response.Partition))
+		} else if hasRequest {
+			// Request and reply partitions belong to different topic populations.
+			// A single partition label cannot truthfully represent both directions.
+			telemetry.PartitionID = ""
 		}
 		telemetry.MessagesReceived = 1
 		telemetry.ResponsePayloadKB = bytesToKilobytes(int64(len(response.Value)))

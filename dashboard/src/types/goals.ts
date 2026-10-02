@@ -1,8 +1,11 @@
 export type ScenarioMode = 'vuser_driven' | 'goal_oriented'
 
 export interface TransactionSLARule {
+  population?: 'transaction' | 'action'
+  protocol?: string
+  group?: string
   transaction: string
-  metric: 'average_duration_ms' | 'p90_duration_ms' | 'p95_duration_ms' | 'min_duration_ms' | 'max_duration_ms' | 'error_count' | 'error_rate_pct' | 'minimum_count' | 'bytes_sent' | 'bytes_received' | 'tps' | 'max_consumer_lag_ms' | 'max_consumer_offset_lag'
+  metric: 'average_duration_ms' | 'p90_duration_ms' | 'p95_duration_ms' | 'p99_duration_ms' | 'max_acknowledgement_ms' | 'min_duration_ms' | 'max_duration_ms' | 'error_count' | 'error_rate_pct' | 'minimum_count' | 'bytes_sent' | 'bytes_received' | 'tps' | 'max_consumer_lag_ms' | 'max_consumer_offset_lag'
   comparator: 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'neq'
   threshold: number
   severity?: 'fail' | 'warning'

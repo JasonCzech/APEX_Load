@@ -247,6 +247,9 @@ func csvTransactionSLARules(write reportCSVWriteFunc, section string, results []
 			observed = formatCSVFloat(*result.Observed)
 		}
 		entries := [][2]string{
+			{"population", firstNonEmptyReportText(result.Rule.Population, "transaction")},
+			{"protocol", result.Rule.Protocol},
+			{"group", result.Rule.Group},
 			{"metric", result.Rule.Metric},
 			{"comparator", result.Rule.Comparator},
 			{"threshold", formatCSVFloat(result.Rule.Threshold)},
@@ -257,7 +260,7 @@ func csvTransactionSLARules(write reportCSVWriteFunc, section string, results []
 			{"message", result.Message},
 		}
 		for _, entry := range entries {
-			if err := write(section, result.Rule.Transaction, "transaction_rule_"+entry[0], entry[1]); err != nil {
+			if err := write(section, result.Rule.Transaction+transactionSLAScope(result.Rule), "transaction_rule_"+entry[0], entry[1]); err != nil {
 				return err
 			}
 		}
@@ -322,7 +325,7 @@ func pdfTransactionSLARuleLines(lines *[]string, results []TransactionSLARuleRes
 			observed = fmt.Sprintf("%.6g", *result.Observed)
 		}
 		*lines = append(*lines, fmt.Sprintf("- %s / %s: observed %s, expected %s %.6g [%s] - %s",
-			result.Rule.Transaction, result.Rule.Metric, observed, result.Rule.Comparator, result.Rule.Threshold,
+			result.Rule.Transaction+transactionSLAScope(result.Rule), result.Rule.Metric, observed, result.Rule.Comparator, result.Rule.Threshold,
 			firstNonEmptyReportText(result.Rule.Severity, "fail"), result.Status))
 	}
 }

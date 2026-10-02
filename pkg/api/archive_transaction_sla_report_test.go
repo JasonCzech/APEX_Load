@@ -15,7 +15,7 @@ func TestTransactionSLARuleResultsRenderAcrossReportFormats(t *testing.T) {
 		Manifest: &RunArchiveManifest{
 			SchemaVersion: archiveSchemaVersion, TestID: "run-rules", TestName: "Rules",
 			TransactionRuleResults: []TransactionSLARuleResult{{
-				Rule:   TransactionSLARule{Transaction: "Checkout", Metric: "p95_duration_ms", Comparator: "lte", Threshold: 800, Severity: "fail"},
+				Rule:   TransactionSLARule{Population: "action", Protocol: "kafka", Group: "consumer", Transaction: "Checkout", Metric: "p95_duration_ms", Comparator: "lte", Threshold: 800, Severity: "fail"},
 				Status: "fail", Observed: &observed, MatchedCount: 42, Message: "breached",
 			}},
 		},
@@ -26,7 +26,7 @@ func TestTransactionSLARuleResultsRenderAcrossReportFormats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("html: %v", err)
 	}
-	for _, fragment := range []string{"Exact transaction terminal rules", "Checkout", "p95_duration_ms", "912"} {
+	for _, fragment := range []string{"Exact transaction terminal rules", "Checkout", "p95_duration_ms", "912", "kafka", "consumer", "action"} {
 		if !bytes.Contains(html, []byte(fragment)) {
 			t.Errorf("HTML missing %q", fragment)
 		}
@@ -36,7 +36,7 @@ func TestTransactionSLARuleResultsRenderAcrossReportFormats(t *testing.T) {
 	if err := writeRunArchiveReportCSVWithProfile(report, &csv, "engineer"); err != nil {
 		t.Fatalf("csv: %v", err)
 	}
-	if text := csv.String(); !strings.Contains(text, "transaction_rule_status") || !strings.Contains(text, "Checkout") {
+	if text := csv.String(); !strings.Contains(text, "transaction_rule_status") || !strings.Contains(text, "Checkout") || !strings.Contains(text, "transaction_rule_protocol,kafka") || !strings.Contains(text, "transaction_rule_group,consumer") {
 		t.Fatalf("CSV missing rule evidence: %s", text)
 	}
 

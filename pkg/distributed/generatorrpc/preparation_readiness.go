@@ -54,7 +54,12 @@ func (s *Service) CheckPreparation(ctx context.Context, req *pb.PreparationCheck
 	if _, stopping := s.lifecycleCoordinator.stoppingTests[req.TestId]; stopping || s.lifecycleCoordinator.pendingStages[req.TestId] != nil || s.lifecycleCoordinator.pendingControls[req.TestId] != nil {
 		return nil, status.Error(codes.FailedPrecondition, "prepared assignment is changing")
 	}
-	if err := s.validateLiveRunMutationLocked(req.TestId, req.RunSupervisionToken, s.nowTime()); err != nil {
+	// Preparation retains an uncommitted STAGED supervision claim. Reuse the
+	// read-only pre-commit validator so identity, expiry and restart fences are
+	// checked without arming the claim or crossing the execution boundary.
+	if _, err := s.validateRunSupervisionCommitLocked(&pb.WorkCommitRequest{
+		TestId: req.TestId, ExecutionGeneration: req.ExecutionGeneration, RunSupervisionToken: req.RunSupervisionToken,
+	}, s.nowTime()); err != nil {
 		return nil, err
 	}
 	if assignment.requireTestExecutionLease && !s.testExecutionLeaseCurrentLocked(req.TestId, req.ExecutionGeneration, s.nowTime()) {

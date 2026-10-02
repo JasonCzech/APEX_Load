@@ -51,6 +51,8 @@ func (m MessagingMoments) Mean() (float64, bool) {
 }
 
 type MessagingDimension struct {
+	Protocol     string           `json:"protocol,omitempty"`
+	Group        string           `json:"group,omitempty"`
 	Source       string           `json:"source"`
 	Partition    string           `json:"partition,omitempty"`
 	Subscription string           `json:"subscription,omitempty"`
@@ -79,8 +81,8 @@ func messagingLabel(v string) string {
 	}
 	return v
 }
-func messagingKey(d MessagingDimension) [3]string {
-	return [3]string{d.Source, d.Partition, d.Subscription}
+func messagingKey(d MessagingDimension) [5]string {
+	return [5]string{d.Protocol, d.Group, d.Source, d.Partition, d.Subscription}
 }
 func (s *MessagingSummary) Clone() *MessagingSummary {
 	if s == nil {
@@ -94,7 +96,7 @@ func (s *MessagingSummary) Valid() bool {
 	if s == nil || len(s.Dimensions) > MaxMessagingDimensions {
 		return false
 	}
-	seen := map[[3]string]bool{}
+	seen := map[[5]string]bool{}
 	for _, d := range s.Dimensions {
 		if !d.valid() {
 			return false
@@ -108,7 +110,7 @@ func (s *MessagingSummary) Valid() bool {
 	return true
 }
 func (d MessagingDimension) valid() bool {
-	if messagingLabel(d.Source) != d.Source || messagingLabel(d.Partition) != d.Partition || messagingLabel(d.Subscription) != d.Subscription || !d.Ack.valid() || !d.Age.valid() || !d.Offset.valid() {
+	if (d.Protocol != "" && d.Protocol != "kafka" && d.Protocol != "eventhubs" && d.Protocol != "jms") || messagingLabel(d.Group) != d.Group || messagingLabel(d.Source) != d.Source || messagingLabel(d.Partition) != d.Partition || messagingLabel(d.Subscription) != d.Subscription || !d.Ack.valid() || !d.Age.valid() || !d.Offset.valid() {
 		return false
 	}
 	for _, n := range []int64{d.Operations, d.Sent, d.Received, d.Throttled, d.Redelivered} {
@@ -193,7 +195,28 @@ func MergeMessagingTelemetry(dst **MessagingSummary, t *ServerTelemetry, source 
 		return
 	}
 	d := MessagingDimension{Source: messagingLabel(source), Partition: messagingLabel(t.PartitionID), Subscription: messagingLabel(t.SubscriptionID), Operations: 1, Sent: int64(t.MessagesSent), Received: int64(t.MessagesReceived), Throttled: int64(t.ThrottledRequests), Redelivered: int64(t.RedeliveryCount)}
+	if len(kinds) > 0 {
+		for _, family := range []string{"kafka", "eventhubs", "jms"} {
+			if strings.HasPrefix(kinds[0], family) {
+				d.Protocol = family
+				break
+			}
+		}
+	}
+	if len(kinds) > 1 {
+		d.Group = messagingLabel(kinds[1])
+	}
 	incomplete := d.Source == "" || d.Source != strings.TrimSpace(source) || d.Partition != strings.TrimSpace(t.PartitionID) || d.Subscription != strings.TrimSpace(t.SubscriptionID)
+	if len(kinds) > 1 && d.Group != strings.TrimSpace(kinds[1]) {
+		incomplete = true
+	}
+	if t.MessagesSent > 0 && t.MessagesReceived > 0 {
+		// Request/reply has two sources and directions, while this bounded model
+		// has one identity. Preserve observations without attributing the reply
+		// age or partition to the request source or scoring producer skew.
+		d.Source, d.Partition, d.Subscription = "", "", ""
+		incomplete = true
+	}
 	if t.AcknowledgementMs != nil {
 		d.Ack.add(*t.AcknowledgementMs)
 		incomplete = incomplete || d.Ack.Count == 0
@@ -210,24 +233,27 @@ func MergeMessagingTelemetry(dst **MessagingSummary, t *ServerTelemetry, source 
 }
 
 // ObservedPartitionSkew returns CV for observed producer partitions within one
-// source. Missing broker partitions are unknown. Mixed sources are not pooled.
+// protocol/group/source. Missing broker partitions are unknown. Mixed scopes
+// are not pooled; a fixed execution group carries one admitted runtime config.
 func (s *MessagingSummary) ObservedPartitionSkew() (float64, bool) {
 	if s == nil || s.Incomplete {
 		return 0, false
 	}
 	counts := map[string]int64{}
-	source := ""
+	var identity [3]string
+	hasIdentity := false
 	for _, d := range s.Dimensions {
 		if d.Sent <= 0 {
 			continue
 		}
-		if d.Source == "" || d.Partition == "" {
+		if d.Protocol == "" || d.Source == "" || d.Partition == "" {
 			return 0, false
 		}
-		if source != "" && source != d.Source {
+		current := [3]string{d.Protocol, d.Group, d.Source}
+		if hasIdentity && identity != current {
 			return 0, false
 		}
-		source = d.Source
+		identity, hasIdentity = current, true
 		counts[d.Partition] += d.Sent
 	}
 	if len(counts) < 2 {

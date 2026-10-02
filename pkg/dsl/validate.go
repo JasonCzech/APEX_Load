@@ -1498,7 +1498,7 @@ func validateGoalConfigIssues(goal *GoalConfig) []string {
 		issues = append(issues, "goal_config.transaction_rules cannot contain more than 128 rules")
 	}
 	metrics := map[string]bool{
-		"average_duration_ms": true, "p90_duration_ms": true, "p95_duration_ms": true,
+		"average_duration_ms": true, "p90_duration_ms": true, "p95_duration_ms": true, "p99_duration_ms": true, "max_acknowledgement_ms": true,
 		"min_duration_ms": true, "max_duration_ms": true, "error_count": true,
 		"error_rate_pct": true, "minimum_count": true, "bytes_sent": true,
 		"bytes_received": true, "tps": true,
@@ -1511,6 +1511,14 @@ func validateGoalConfigIssues(goal *GoalConfig) []string {
 			issues = append(issues, path+".transaction must be a non-empty exact name without surrounding whitespace")
 		} else if len(rule.Transaction) > 256 {
 			issues = append(issues, path+".transaction exceeds 256 bytes")
+		}
+		if rule.Population != "" && rule.Population != "transaction" && rule.Population != "action" {
+			issues = append(issues, path+".population must be transaction or action")
+		}
+		for name, value := range map[string]string{"protocol": rule.Protocol, "group": rule.Group} {
+			if len(value) > 256 || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\r\n\x00") {
+				issues = append(issues, path+"."+name+" must be a bounded exact identity")
+			}
 		}
 		if !metrics[rule.Metric] {
 			issues = append(issues, fmt.Sprintf("%s.metric %q is not supported", path, rule.Metric))

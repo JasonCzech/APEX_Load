@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"sync/atomic"
 	"testing"
@@ -131,7 +132,7 @@ func TestDistributedPreparationZeroTrafficAndReadinessLoss(t *testing.T) {
 			server, durable := newTimeslotServer(t)
 			listener := bufconn.Listen(1 << 20)
 			rpcServer := grpc.NewServer()
-			service := generatorrpc.NewService("gen-preparation-"+action, 10, generatorrpc.WithExecution(), generatorrpc.WithAssignmentStageTTL(5*time.Second))
+			service := generatorrpc.NewService("gen-preparation-"+action, 10, generatorrpc.WithExecution(), generatorrpc.WithAssignmentStageTTL(5*time.Second), generatorrpc.WithRunSupervisionRequired(60*time.Second, 0), generatorrpc.WithExecutionEpochStatePath(filepath.Join(t.TempDir(), "epoch.json")))
 			pb.RegisterGeneratorControlServer(rpcServer, service)
 			go func() { _ = rpcServer.Serve(listener) }()
 			t.Cleanup(func() {
@@ -146,6 +147,7 @@ func TestDistributedPreparationZeroTrafficAndReadinessLoss(t *testing.T) {
 			backend := newDistributedExecutionBackend([]string{"prepared-peer"}, 2*time.Second, func(ctx context.Context, target string) (generatorClient, error) {
 				return generatorrpc.Dial(ctx, target, grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 			})
+			backend.enableRunSupervision(60*time.Second, 10*time.Second)
 			WithExecutionBackend(backend)(server.runner)
 			script, err := server.runner.StoreScriptDurable(&dsl.Script{ID: "distributed-prepare-script", Name: "prepare", Version: "1", Protocol: "http", ProjectID: "proj-a", Config: dsl.ScriptConfig{BaseURL: target.URL}, Init: []dsl.Action{{Name: "init", Type: "GET", Target: "/init"}}, Actions: []dsl.Action{{Name: "load", Type: "GET", Target: "/load"}}})
 			if err != nil {

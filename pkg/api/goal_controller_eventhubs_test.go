@@ -48,7 +48,7 @@ func TestEvaluateGoalControllerEventHubsPartitionSkewBreach(t *testing.T) {
 			"eventhubs_produce telemetry": {
 				Name:            "eventhubs_produce telemetry",
 				DependencyType:  "eventhubs",
-				ServerTelemetry: &ServerTelemetrySummary{Messaging: &protocol.MessagingSummary{Dimensions: []protocol.MessagingDimension{{Source: "hub", Partition: "0", Operations: 1, Sent: 9}, {Source: "hub", Partition: "1", Operations: 1, Sent: 1}}}},
+				ServerTelemetry: &ServerTelemetrySummary{Messaging: &protocol.MessagingSummary{Dimensions: []protocol.MessagingDimension{{Protocol: "eventhubs", Group: "load", Source: "hub", Partition: "0", Operations: 1, Sent: 9}, {Protocol: "eventhubs", Group: "load", Source: "hub", Partition: "1", Operations: 1, Sent: 1}}}},
 			},
 		},
 	}, &GoalConfig{

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import MessagingDiagnostics from './MessagingDiagnostics'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 it('shows observed zero separately from unavailable and marks incomplete coverage', async () => {
@@ -16,4 +16,19 @@ it('renders an incomplete placeholder without dimensions', async () => {
   await act(async()=>root.render(<MessagingDiagnostics series={[{name:'legacy',messaging:{incomplete:true,dimensions:[]}}]} />))
   expect(container.textContent).toContain('Coverage incomplete; partition skew is unscored.')
  } finally { act(()=>root.unmount()) }
+})
+
+it('keeps same-named sources distinct across protocols and execution groups', async () => {
+ const container=document.createElement('div');const root=createRoot(container)
+ const error=vi.spyOn(console,'error').mockImplementation(()=>{})
+ const base={source:'events',partition:'0',operations:1,sent:1,received:0,throttled:0,redelivered:0,age_ms:{count:0,sum:0,max:0},offset_lag:{count:0,sum:0,max:0},ack_ms:{count:0,sum:0,max:0}}
+ try {
+  await act(async()=>root.render(<MessagingDiagnostics series={[{name:'publish',messaging:{dimensions:[{...base,protocol:'kafka',group:'orders'},{...base,protocol:'eventhubs',group:'orders'},{...base,protocol:'kafka',group:'audit'}]}}]} />))
+  const rows=container.querySelectorAll('tbody tr')
+  expect(rows).toHaveLength(3)
+  expect(rows[0].textContent).toContain('kafkaordersevents')
+  expect(rows[1].textContent).toContain('eventhubsordersevents')
+  expect(rows[2].textContent).toContain('kafkaauditevents')
+  expect(error).not.toHaveBeenCalled()
+ } finally {act(()=>root.unmount());error.mockRestore()}
 })

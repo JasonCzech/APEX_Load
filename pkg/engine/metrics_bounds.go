@@ -161,7 +161,7 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 				}
 				if telemetry.Messaging != nil {
 					for _, d := range telemetry.Messaging.Dimensions {
-						bytes += 256 + len(d.Source) + len(d.Partition) + len(d.Subscription)
+						bytes += 256 + len(d.Protocol) + len(d.Group) + len(d.Source) + len(d.Partition) + len(d.Subscription)
 					}
 				}
 				for partition := range telemetry.PartitionEvents {

@@ -74,12 +74,16 @@ func (e *EventHubs) produceBatch(ctx context.Context, action *protocol.Action, r
 		return event{}, err
 	}
 	sent := events[len(events)-1]
+	sent.MessageCount = len(events)
 	sent.Offset = meta.Offset
 	sent.SequenceNum = meta.SequenceNum
 	sent.EnqueuedAt = meta.EnqueuedAt
 	sent.AcknowledgementMs = meta.AcknowledgementMs
-	if meta.PartitionID != "" {
-		sent.PartitionID = meta.PartitionID
+	// A provider's final-event metadata cannot establish the placement of
+	// every event in an unpinned sampled list (including split wire batches).
+	// Only an explicit homogeneous partition selection qualifies volume skew.
+	if base.PartitionID == "" || (meta.PartitionID != "" && meta.PartitionID != base.PartitionID) {
+		sent.PartitionID = ""
 	}
 	for _, body := range bodies {
 		result.BytesSent += int64(len(body))

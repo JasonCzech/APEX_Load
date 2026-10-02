@@ -1113,7 +1113,7 @@ func writeMergedRemoteArchiveFilesWithBudget(rootDir string, manifest *RunArchiv
 	if err != nil {
 		return err
 	}
-	count, err := mergeRemoteArchiveIntervalSummariesWithTargets(summariesPath, bundles, targetHistory, budget)
+	count, err := mergeRemoteArchiveIntervalSummariesWithCoverage(summariesPath, bundles, targetHistory, manifest.SourceCoverage, budget)
 	if err != nil {
 		return err
 	}
@@ -1377,6 +1377,10 @@ func mergeRemoteArchiveIntervalSummaries(destinationPath string, bundles []remot
 }
 
 func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bundles []remoteArchiveBundle, targetHistory []remoteArchiveTargetSnapshot, budgets ...*archiveOutputBudget) (count int64, err error) {
+	return mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath, bundles, targetHistory, nil, budgets...)
+}
+
+func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bundles []remoteArchiveBundle, targetHistory []remoteArchiveTargetSnapshot, sourceCoverage *RunArchiveSourceCoverage, budgets ...*archiveOutputBudget) (count int64, err error) {
 	outputBudget, err := mergeBudget(filepath.Dir(destinationPath), budgets)
 	if err != nil {
 		return 0, err
@@ -1446,6 +1450,12 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 
 	windowCapacity := len(cursors)
 	singleGenerator := len(bundles) == 1
+	missingSourceCoverage := false
+	if sourceCoverage != nil {
+		for _, source := range sourceCoverage.Sources {
+			missingSourceCoverage = missingSourceCoverage || !source.Collected
+		}
+	}
 	heap.Init(&cursors)
 
 	output := newArchiveMergeOutput(provisional, outputBudget)
@@ -1538,7 +1548,9 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 		durationDigestComplete := true
 		var sourceThroughputGap float64
 		var sourceThroughputMissed bool
-		messagingIncomplete := false
+		// Missing known peers or their interval rows do not prove zero work.
+		// Retain observed volumes and moments without qualifying fleet skew.
+		messagingIncomplete := missingSourceCoverage || len(windowRecords) < len(bundles)
 		for _, record := range windowRecords {
 			if aggregate.TestID == "" {
 				aggregate.TestID, aggregate.TestName = record.TestID, record.TestName

@@ -209,6 +209,10 @@ func (s *Server) handleCreateBaselineComparison(w http.ResponseWriter, r *http.R
 		writeError(w, 400, "unsupported population")
 		return
 	}
+	if err := validateBaselineRegressionRequest(request); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
 	p, err := s.readBaselinePolicy(store, current.ScenarioID, current.ProjectID)
 	if err != nil {
 		writeError(w, 500, "comparison policy could not be loaded")
@@ -340,7 +344,7 @@ func (s *Server) handleGetBaselineComparison(w http.ResponseWriter, r *http.Requ
 		for _, metadata := range []struct {
 			name  string
 			value any
-		}{{"current_run", result.Current}, {"baseline_runs", result.Baselines}, {"effective_policy", result.Policy}, {"request", result.Request}, {"rule_version", result.RuleVersion}, {"created_at", result.CreatedAt}, {"setup_differences", result.Setup}, {"warnings", result.Warnings}} {
+		}{{"current_run", result.Current}, {"baseline_runs", result.Baselines}, {"effective_policy", result.Policy}, {"request", result.Request}, {"rule_version", result.RuleVersion}, {"created_at", result.CreatedAt}, {"setup_differences", result.Setup}, {"warnings", result.Warnings}, {"verdict", result.Verdict}} {
 			data, _ := json.Marshal(metadata.value)
 			writeRow([]string{result.ID, "context", "", "", metadata.name, string(data), "", "", "", ""})
 		}

@@ -65,6 +65,9 @@ export function validateGoalConfig(goalConfig: GoalConfig): string | null {
 		if (!rule.transaction || rule.transaction.trim() !== rule.transaction || new TextEncoder().encode(rule.transaction).length > 256) {
 			return `Transaction SLA rule ${index + 1} requires an exact name of at most 256 bytes without surrounding whitespace`
 		}
+        if (rule.population && !['transaction', 'action'].includes(rule.population) || [rule.protocol, rule.group].some(v => v !== undefined && (v.trim() !== v || new TextEncoder().encode(v).length > 256 || /[\r\n\0]/.test(v)))) {
+            return `Transaction SLA rule ${index + 1} requires a supported population and bounded exact protocol/group`
+        }
 		if (!Number.isFinite(rule.threshold) || rule.threshold < 0) {
 			return `Transaction SLA rule ${index + 1} requires a finite non-negative threshold`
 		}

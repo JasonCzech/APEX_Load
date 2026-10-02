@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -81,5 +83,79 @@ func TestRunAnnotationEncodedQuotaIsExplicit(t *testing.T) {
 	}
 	if _, err := s.SaveRunAnnotations(DefaultProjectID, "run", set, 0); !errors.Is(err, ErrRunAnnotationLimit) {
 		t.Fatalf("quota error %v", err)
+	}
+}
+
+func TestRunAnnotationNearQuotaLegacyHistoryRemainsDeletable(t *testing.T) {
+	s, err := NewSQLiteStore(t.TempDir() + "/deletion-quota.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	now := time.Now().UTC()
+	if err := s.SaveTest(&TestRecord{ID: "run", ProjectID: DefaultProjectID, Name: "run", Status: "COMPLETE", StartTime: now}); err != nil {
+		t.Fatal(err)
+	}
+	set := RunAnnotationSet{Revision: 1, Annotations: []RunAnnotation{}}
+	var raw []byte
+	for i := 0; i < 200; i++ {
+		set.Annotations = append(set.Annotations, RunAnnotation{ID: fmt.Sprintf("%036d", i), Label: "Note", Timestamp: now, CreatedAt: now, CreatedBy: "editor", Text: strings.Repeat("\n", 2048)})
+		raw, err = json.Marshal(set)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(raw) > maxRunAnnotationContentBytes {
+			last := &set.Annotations[len(set.Annotations)-1]
+			// Newlines encode to two bytes, leaving at most one byte of slack.
+			excess := len(raw) - maxRunAnnotationContentBytes
+			last.Text = last.Text[:len(last.Text)-(excess+1)/2]
+			raw, err = json.Marshal(set)
+			if err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+	if gap := maxRunAnnotationContentBytes - len(raw); gap < 0 || gap > 1 {
+		t.Fatalf("not a near-quota fixture: %d", gap)
+	}
+	// Seed the payload exactly as the old 512KiB admission rule would accept it.
+	if _, err := s.db.Exec(`INSERT INTO run_annotations(test_id, project_id, revision, payload) VALUES (?, ?, ?, ?)`, "run", DefaultProjectID, set.Revision, string(raw)); err != nil {
+		t.Fatal(err)
+	}
+	originalLastText := set.Annotations[len(set.Annotations)-1].Text
+	for i := range set.Annotations {
+		expected := set.Revision
+		set.Revision++
+		set.Annotations[i].DeletedAt = &now
+		set.Annotations[i].DeletedBy = strings.Repeat("<", 256) // Worst-case JSON escaping.
+		if saved, err := s.SaveRunAnnotations(DefaultProjectID, "run", set, expected); err != nil || !saved {
+			t.Fatalf("delete %d: %v %v", i, saved, err)
+		}
+	}
+	got, err := s.GetRunAnnotations(DefaultProjectID, "run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Revision != set.Revision || len(got.Annotations) != len(set.Annotations) || got.Annotations[len(got.Annotations)-1].Text != originalLastText {
+		t.Fatalf("lost history: revision=%d count=%d", got.Revision, len(got.Annotations))
+	}
+	for i, a := range got.Annotations {
+		if a.DeletedAt == nil || a.DeletedBy != strings.Repeat("<", 256) {
+			t.Fatalf("missing tombstone %d", i)
+		}
+	}
+	retained, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(retained) <= maxRunAnnotationContentBytes || len(retained) > maxRunAnnotationHistoryBytes {
+		t.Fatalf("invalid retained history budget: %d", len(retained))
+	}
+	// Deletion cannot free immutable-content quota for additional notes.
+	got.Revision++
+	got.Annotations = append(got.Annotations, RunAnnotation{ID: "extra", Label: "Extra", Timestamp: now, CreatedAt: now, Text: strings.Repeat("x", 2048)})
+	if _, err := s.SaveRunAnnotations(DefaultProjectID, "run", got, set.Revision); !errors.Is(err, ErrRunAnnotationLimit) {
+		t.Fatalf("deleted history bypassed content quota: %v", err)
 	}
 }

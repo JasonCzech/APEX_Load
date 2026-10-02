@@ -535,3 +535,9 @@ Five items are delivered and reviewed independently, with one commit per item. T
 5. Preparation recovery and zero-traffic acceptance: implemented; immutable distributed allocations, bounded traffic-free readiness checks, stage renewal and proactive invalidation are verified with local counters, native protocol staging, SQLite/PostgreSQL recovery and deterministic provider controls. Final full Go and targeted race gates passed; live provider acceptance requires its own evidence.
 
 IBM MQ remains very low priority. The 10 GB import benchmark remains waived, not passed.
+
+The whole-pass review also hardened supervised preparation readiness, legacy browser first-binding migration, annotation deletion at the content quota, and messaging action counts, source scopes, request/reply attribution, batch volume and missing-peer archive coverage. The review record tracks regression verification; live provider acceptance and the benchmark waiver remain separate.
+
+### Next priority pass (2026-10-01)
+
+The next five-item pass is tracked in the [implementation and review record](qa/reviews/next-priority-pass-2026-10-01/REVIEW.md), with one commit per completed item. Scoped action/transaction SLA rules and qualified baseline CI verdicts are implemented; live hierarchy/lifecycle intersections, real Kafka seek/transaction coordination, Event Hubs processor checkpoints, and the remaining chart exports are in progress. Live Azure acceptance remains separate; IBM MQ remains low priority and the 10 GB benchmark is waived by operator instruction.

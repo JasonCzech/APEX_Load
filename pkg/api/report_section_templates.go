@@ -332,7 +332,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <table>
   <caption>Exact transaction terminal rules</caption>
   <thead><tr><th>Transaction</th><th>Metric</th><th>Expectation</th><th class="num">Observed</th><th>Severity</th><th>Result</th></tr></thead>
-  <tbody>{{range .TransactionRuleResults}}<tr><td>{{.Rule.Transaction}}</td><td>{{.Rule.Metric}}</td><td>{{.Rule.Comparator}} {{formatFloat .Rule.Threshold}}</td><td class="num">{{optFloat .Observed}}</td><td>{{.Rule.Severity}}</td><td>{{.Status}}</td></tr>{{end}}</tbody>
+  <tbody>{{range .TransactionRuleResults}}<tr><td>{{.Rule.Transaction}}{{with .Rule.Population}} · {{.}}{{end}}{{with .Rule.Protocol}} · {{.}}{{end}}{{with .Rule.Group}} · {{.}}{{end}}</td><td>{{.Rule.Metric}}</td><td>{{.Rule.Comparator}} {{formatFloat .Rule.Threshold}}</td><td class="num">{{optFloat .Observed}}</td><td>{{.Rule.Severity}}</td><td>{{.Status}}</td></tr>{{end}}</tbody>
 </table>
 {{end}}
 {{with index .Annotations.SectionComments "sla"}}<div class="analyst"><p>{{.}}</p></div>{{end}}
@@ -361,7 +361,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <table>
 <caption>Exact transaction terminal rules</caption>
 <thead><tr><th>Transaction</th><th>Metric</th><th>Expectation</th><th class="num">Observed</th><th>Severity</th><th>Result</th></tr></thead>
-<tbody>{{range .TransactionRuleResults}}<tr><td>{{.Rule.Transaction}}</td><td>{{.Rule.Metric}}</td><td>{{.Rule.Comparator}} {{formatFloat .Rule.Threshold}}</td><td class="num">{{optFloat .Observed}}</td><td>{{.Rule.Severity}}</td><td>{{.Status}}</td></tr>{{end}}</tbody>
+<tbody>{{range .TransactionRuleResults}}<tr><td>{{.Rule.Transaction}}{{with .Rule.Population}} · {{.}}{{end}}{{with .Rule.Protocol}} · {{.}}{{end}}{{with .Rule.Group}} · {{.}}{{end}}</td><td>{{.Rule.Metric}}</td><td>{{.Rule.Comparator}} {{formatFloat .Rule.Threshold}}</td><td class="num">{{optFloat .Observed}}</td><td>{{.Rule.Severity}}</td><td>{{.Status}}</td></tr>{{end}}</tbody>
 </table>
 {{end}}
 {{with index .Annotations.SectionComments "sla"}}<div class="analyst"><p>{{.}}</p></div>{{end}}

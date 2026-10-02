@@ -9,6 +9,12 @@ import (
 )
 
 var baselineComparisonTemplate = template.Must(template.New("baseline-comparison").Funcs(template.FuncMap{
+	"observed": func(v *float64) string {
+		if v == nil {
+			return "Unavailable"
+		}
+		return fmt.Sprintf("%.3g", *v)
+	},
 	"measurement": func(m *BaselineMeasurement) string {
 		if m == nil {
 			return "Unavailable"
@@ -37,6 +43,7 @@ var baselineComparisonTemplate = template.Must(template.New("baseline-comparison
 	"cell": func(row BaselineComparisonRow, id string) BaselineComparisonCell { return row.Baselines[id] },
 }).Parse(`<h2>Baseline comparison</h2>
 {{if .Report.BaselineComparison}}{{$c := .Report.BaselineComparison}}<p>Advisory comparison {{$c.ID}} · rule {{$c.RuleVersion}} · {{$c.CreatedAt}}</p>
+{{with $c.Verdict}}<p><strong>Regression verdict: {{.Status}}</strong> · {{.Evaluated}} evaluated · {{.Unavailable}} unavailable</p>{{range .Evidence}}<p>{{.Metric}}: {{.Status}} · row {{.RowID}} · baseline {{.BaselineID}} · current {{observed .Current}} / baseline {{observed .Baseline}} · {{.Reason}}</p>{{end}}{{end}}
 <p>Current run: {{$c.Current.Name}} · {{$c.Current.ReleaseName}}</p>
 {{range $c.Warnings}}<p>{{.}}</p>{{end}}
 {{range $c.Findings}}<p><strong>{{.Status}} · {{.Category}}</strong> · baseline {{.BaselineID}}: {{.Message}}</p>{{else}}<p>No configured change threshold exceeded.</p>{{end}}
@@ -70,6 +77,9 @@ func baselineComparisonReportRenderer() reportSectionRenderer {
 			}
 			c := d.Report.BaselineComparison
 			*lines = append(*lines, "Snapshot "+c.ID+" / "+c.RuleVersion)
+			if c.Verdict != nil {
+				*lines = append(*lines, "Regression verdict: "+c.Verdict.Status)
+			}
 			for _, f := range c.Findings {
 				*lines = append(*lines, f.Status+": "+f.Message)
 			}
@@ -78,6 +88,12 @@ func baselineComparisonReportRenderer() reportSectionRenderer {
 			c := d.Report.BaselineComparison
 			if c == nil {
 				return write("baseline_comparison", "", "status", "No saved baseline comparison selected")
+			}
+			if c.Verdict != nil {
+				verdict, _ := json.Marshal(c.Verdict)
+				if err := write("baseline_comparison", c.ID, "regression_verdict", string(verdict)); err != nil {
+					return err
+				}
 			}
 			payload, _ := json.Marshal(c.Policy)
 			if err := write("baseline_comparison", c.ID, "effective_policy", string(payload)); err != nil {

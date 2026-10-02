@@ -987,7 +987,7 @@ func mergeDistributedAggregateTransactionDetails(metrics *TxMetrics, tx generato
 		}
 	}
 	mergeTransactionMetricMetadata(metrics, tx.DependencyType, tx.DependencyTarget, tx.CorrelationID)
-	mergeDistributedServerTelemetry(metrics, tx.ServerTelemetry)
+	mergeDistributedServerTelemetry(metrics, tx.ServerTelemetry, tx.Group)
 }
 
 func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
@@ -1074,7 +1074,7 @@ func mergeDistributedTransactionMetrics(metrics *TxMetrics, tx generatorrpc.Tran
 		}
 	}
 	mergeTransactionMetricMetadata(metrics, tx.DependencyType, tx.DependencyTarget, tx.CorrelationID)
-	mergeDistributedServerTelemetry(metrics, tx.ServerTelemetry)
+	mergeDistributedServerTelemetry(metrics, tx.ServerTelemetry, tx.Group)
 	metrics.AvgDNSMs += tx.DNSMs
 	metrics.AvgConnectMs += tx.ConnectMs
 	metrics.AvgTLSMs += tx.TLSMs
@@ -1172,7 +1172,7 @@ func cloneEngineServerTelemetrySummary(summary *engine.ServerTelemetrySummary) *
 	}
 }
 
-func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc.ServerTelemetry) {
+func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc.ServerTelemetry, groups ...string) {
 	if metrics == nil || telemetry == nil {
 		return
 	}
@@ -1180,7 +1180,11 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 		metrics.ServerTelemetry = &ServerTelemetrySummary{}
 	}
 	if !metrics.messagingAggregate {
-		protocol.MergeMessagingTelemetry(&metrics.ServerTelemetry.Messaging, telemetry.MessagingTelemetry(), metrics.DependencyTarget, metrics.DependencyType)
+		group := ""
+		if len(groups) > 0 {
+			group = groups[0]
+		}
+		protocol.MergeMessagingTelemetry(&metrics.ServerTelemetry.Messaging, telemetry.MessagingTelemetry(), metrics.DependencyTarget, metrics.DependencyType, group)
 		if metrics.ServerTelemetry.Messaging != nil {
 			metrics.ServerTelemetry.Messaging.Incomplete = true
 		}

@@ -2863,7 +2863,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -4061,6 +4067,22 @@ paths:
                               nullable: true
                             population:
                               type: string
+                            regression_groups:
+                              type: array
+                              items:
+                                type: string
+                            regression_identities:
+                              type: array
+                              items:
+                                type: string
+                            regression_metrics:
+                              type: array
+                              items:
+                                type: string
+                            regression_protocols:
+                              type: array
+                              items:
+                                type: string
                             windows:
                               type: object
                               additionalProperties:
@@ -4150,6 +4172,28 @@ paths:
                                 description: 'Go type: BaselineLoadWindow'
                                 additionalProperties: true
                                 nullable: true
+                        verdict:
+                          type: object
+                          properties:
+                            evaluated:
+                              type: integer
+                              format: int64
+                            evidence:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: BaselineRegressionEvidence'
+                                additionalProperties: true
+                            metrics:
+                              type: array
+                              items:
+                                type: string
+                            status:
+                              type: string
+                            unavailable:
+                              type: integer
+                              format: int64
+                          nullable: true
                         warnings:
                           type: array
                           items:
@@ -10885,7 +10929,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -12886,7 +12936,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -14883,7 +14939,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -16705,7 +16767,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -58760,7 +58828,13 @@ paths:
                         properties:
                           comparator:
                             type: string
+                          group:
+                            type: string
                           metric:
+                            type: string
+                          population:
+                            type: string
+                          protocol:
                             type: string
                           severity:
                             type: string
@@ -59696,7 +59770,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -61708,7 +61788,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -66142,7 +66228,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -70577,7 +70669,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -75024,7 +75122,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -79471,7 +79575,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -83918,7 +84028,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -88365,7 +88481,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -103105,7 +103227,13 @@ paths:
                         properties:
                           comparator:
                             type: string
+                          group:
+                            type: string
                           metric:
+                            type: string
+                          population:
+                            type: string
+                          protocol:
                             type: string
                           severity:
                             type: string
@@ -104950,7 +105078,13 @@ paths:
                           properties:
                             comparator:
                               type: string
+                            group:
+                              type: string
                             metric:
+                              type: string
+                            population:
+                              type: string
+                            protocol:
                               type: string
                             severity:
                               type: string
@@ -107287,7 +107421,13 @@ paths:
                           properties:
                             comparator:
                               type: string
+                            group:
+                              type: string
                             metric:
+                              type: string
+                            population:
+                              type: string
+                            protocol:
                               type: string
                             severity:
                               type: string
@@ -109535,7 +109675,13 @@ paths:
                         properties:
                           comparator:
                             type: string
+                          group:
+                            type: string
                           metric:
+                            type: string
+                          population:
+                            type: string
+                          protocol:
                             type: string
                           severity:
                             type: string
@@ -111380,7 +111526,13 @@ paths:
                           properties:
                             comparator:
                               type: string
+                            group:
+                              type: string
                             metric:
+                              type: string
+                            population:
+                              type: string
+                            protocol:
                               type: string
                             severity:
                               type: string
@@ -114543,7 +114695,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -117855,7 +118013,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -119619,7 +119783,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -121601,7 +121771,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -123201,7 +123377,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -124965,7 +125147,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -126462,7 +126650,13 @@ paths:
                         properties:
                           comparator:
                             type: string
+                          group:
+                            type: string
                           metric:
+                            type: string
+                          population:
+                            type: string
+                          protocol:
                             type: string
                           severity:
                             type: string
@@ -139971,7 +140165,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -141929,7 +142129,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -143967,7 +144173,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -146028,7 +146240,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -147984,7 +148202,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -149969,7 +150193,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -153636,7 +153866,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -157799,7 +158035,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -159801,7 +160043,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -164740,7 +164988,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -166564,7 +166818,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -168479,7 +168739,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -170296,7 +170562,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -172077,7 +172349,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -175577,7 +175855,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -177705,7 +177989,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -180857,7 +181147,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -182650,7 +182946,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -184672,7 +184974,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -186701,7 +187009,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -189927,7 +190241,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -194303,7 +194623,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -200158,7 +200484,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -203034,7 +203366,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -205311,7 +205649,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -208667,7 +209011,13 @@ paths:
                                   properties:
                                     comparator:
                                       type: string
+                                    group:
+                                      type: string
                                     metric:
+                                      type: string
+                                    population:
+                                      type: string
+                                    protocol:
                                       type: string
                                     severity:
                                       type: string
@@ -210462,7 +210812,13 @@ paths:
                                   properties:
                                     comparator:
                                       type: string
+                                    group:
+                                      type: string
                                     metric:
+                                      type: string
+                                    population:
+                                      type: string
+                                    protocol:
                                       type: string
                                     severity:
                                       type: string
@@ -215601,7 +215957,13 @@ paths:
                                   properties:
                                     comparator:
                                       type: string
+                                    group:
+                                      type: string
                                     metric:
+                                      type: string
+                                    population:
+                                      type: string
+                                    protocol:
                                       type: string
                                     severity:
                                       type: string
@@ -217396,7 +217758,13 @@ paths:
                                   properties:
                                     comparator:
                                       type: string
+                                    group:
+                                      type: string
                                     metric:
+                                      type: string
+                                    population:
+                                      type: string
+                                    protocol:
                                       type: string
                                     severity:
                                       type: string
@@ -222543,7 +222911,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -224311,7 +224685,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -226177,7 +226557,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -229409,7 +229795,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -231399,7 +231791,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -234629,7 +235027,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -236413,7 +236817,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -238460,7 +238870,13 @@ paths:
                             properties:
                               comparator:
                                 type: string
+                              group:
+                                type: string
                               metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
                                 type: string
                               severity:
                                 type: string
@@ -247959,7 +248375,13 @@ paths:
                         properties:
                           comparator:
                             type: string
+                          group:
+                            type: string
                           metric:
+                            type: string
+                          population:
+                            type: string
+                          protocol:
                             type: string
                           severity:
                             type: string
@@ -251720,7 +252142,13 @@ paths:
                           properties:
                             comparator:
                               type: string
+                            group:
+                              type: string
                             metric:
+                              type: string
+                            population:
+                              type: string
+                            protocol:
                               type: string
                             severity:
                               type: string
@@ -262909,7 +263337,13 @@ paths:
                           properties:
                             comparator:
                               type: string
+                            group:
+                              type: string
                             metric:
+                              type: string
+                            population:
+                              type: string
+                            protocol:
                               type: string
                             severity:
                               type: string
@@ -273889,7 +274323,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -275884,7 +276324,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -277169,7 +277615,13 @@ paths:
                           properties:
                             comparator:
                               type: string
+                            group:
+                              type: string
                             metric:
+                              type: string
+                            population:
+                              type: string
+                            protocol:
                               type: string
                             severity:
                               type: string
@@ -277763,6 +278215,22 @@ paths:
                             nullable: true
                           population:
                             type: string
+                          regression_groups:
+                            type: array
+                            items:
+                              type: string
+                          regression_identities:
+                            type: array
+                            items:
+                              type: string
+                          regression_metrics:
+                            type: array
+                            items:
+                              type: string
+                          regression_protocols:
+                            type: array
+                            items:
+                              type: string
                           windows:
                             type: object
                             additionalProperties:
@@ -277998,6 +278466,10 @@ paths:
                                 mean:
                                   type: number
                                   format: double
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 min:
                                   type: number
                                   format: double
@@ -278603,6 +279075,10 @@ paths:
                                 mean:
                                   type: number
                                   format: double
+                                messaging:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 min:
                                   type: number
                                   format: double
@@ -278968,6 +279444,56 @@ paths:
                             - name
                             - source
                             - unit
+                      verdict:
+                        type: object
+                        properties:
+                          evaluated:
+                            type: integer
+                            format: int64
+                          evidence:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                baseline:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                baseline_id:
+                                  type: string
+                                current:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                metric:
+                                  type: string
+                                reason:
+                                  type: string
+                                row_id:
+                                  type: string
+                                status:
+                                  type: string
+                              required:
+                                - baseline_id
+                                - metric
+                                - row_id
+                                - status
+                          metrics:
+                            type: array
+                            items:
+                              type: string
+                          status:
+                            type: string
+                          unavailable:
+                            type: integer
+                            format: int64
+                        required:
+                          - evaluated
+                          - evidence
+                          - metrics
+                          - status
+                          - unavailable
+                        nullable: true
                       warnings:
                         type: array
                         items:
@@ -286354,7 +286880,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -288908,6 +289440,22 @@ paths:
                   nullable: true
                 population:
                   type: string
+                regression_groups:
+                  type: array
+                  items:
+                    type: string
+                regression_identities:
+                  type: array
+                  items:
+                    type: string
+                regression_metrics:
+                  type: array
+                  items:
+                    type: string
+                regression_protocols:
+                  type: array
+                  items:
+                    type: string
                 windows:
                   type: object
                   additionalProperties:
@@ -289198,6 +289746,22 @@ paths:
                         nullable: true
                       population:
                         type: string
+                      regression_groups:
+                        type: array
+                        items:
+                          type: string
+                      regression_identities:
+                        type: array
+                        items:
+                          type: string
+                      regression_metrics:
+                        type: array
+                        items:
+                          type: string
+                      regression_protocols:
+                        type: array
+                        items:
+                          type: string
                       windows:
                         type: object
                         additionalProperties:
@@ -289458,6 +290022,20 @@ paths:
                             mean:
                               type: number
                               format: double
+                            messaging:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingDimension'
+                                    additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                              required:
+                                - dimensions
+                              nullable: true
                             min:
                               type: number
                               format: double
@@ -290094,6 +290672,20 @@ paths:
                             mean:
                               type: number
                               format: double
+                            messaging:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingDimension'
+                                    additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                              required:
+                                - dimensions
+                              nullable: true
                             min:
                               type: number
                               format: double
@@ -290465,6 +291057,56 @@ paths:
                         - name
                         - source
                         - unit
+                  verdict:
+                    type: object
+                    properties:
+                      evaluated:
+                        type: integer
+                        format: int64
+                      evidence:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            baseline:
+                              type: number
+                              format: double
+                              nullable: true
+                            baseline_id:
+                              type: string
+                            current:
+                              type: number
+                              format: double
+                              nullable: true
+                            metric:
+                              type: string
+                            reason:
+                              type: string
+                            row_id:
+                              type: string
+                            status:
+                              type: string
+                          required:
+                            - baseline_id
+                            - metric
+                            - row_id
+                            - status
+                      metrics:
+                        type: array
+                        items:
+                          type: string
+                      status:
+                        type: string
+                      unavailable:
+                        type: integer
+                        format: int64
+                    required:
+                      - evaluated
+                      - evidence
+                      - metrics
+                      - status
+                      - unavailable
+                    nullable: true
                   warnings:
                     type: array
                     items:
@@ -290828,6 +291470,22 @@ paths:
                         nullable: true
                       population:
                         type: string
+                      regression_groups:
+                        type: array
+                        items:
+                          type: string
+                      regression_identities:
+                        type: array
+                        items:
+                          type: string
+                      regression_metrics:
+                        type: array
+                        items:
+                          type: string
+                      regression_protocols:
+                        type: array
+                        items:
+                          type: string
                       windows:
                         type: object
                         additionalProperties:
@@ -291088,6 +291746,20 @@ paths:
                             mean:
                               type: number
                               format: double
+                            messaging:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingDimension'
+                                    additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                              required:
+                                - dimensions
+                              nullable: true
                             min:
                               type: number
                               format: double
@@ -291724,6 +292396,20 @@ paths:
                             mean:
                               type: number
                               format: double
+                            messaging:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingDimension'
+                                    additionalProperties: true
+                                incomplete:
+                                  type: boolean
+                              required:
+                                - dimensions
+                              nullable: true
                             min:
                               type: number
                               format: double
@@ -292095,6 +292781,56 @@ paths:
                         - name
                         - source
                         - unit
+                  verdict:
+                    type: object
+                    properties:
+                      evaluated:
+                        type: integer
+                        format: int64
+                      evidence:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            baseline:
+                              type: number
+                              format: double
+                              nullable: true
+                            baseline_id:
+                              type: string
+                            current:
+                              type: number
+                              format: double
+                              nullable: true
+                            metric:
+                              type: string
+                            reason:
+                              type: string
+                            row_id:
+                              type: string
+                            status:
+                              type: string
+                          required:
+                            - baseline_id
+                            - metric
+                            - row_id
+                            - status
+                      metrics:
+                        type: array
+                        items:
+                          type: string
+                      status:
+                        type: string
+                      unavailable:
+                        type: integer
+                        format: int64
+                    required:
+                      - evaluated
+                      - evidence
+                      - metrics
+                      - status
+                      - unavailable
+                    nullable: true
                   warnings:
                     type: array
                     items:
@@ -294275,7 +295011,13 @@ paths:
                           properties:
                             comparator:
                               type: string
+                            group:
+                              type: string
                             metric:
+                              type: string
+                            population:
+                              type: string
+                            protocol:
                               type: string
                             severity:
                               type: string
@@ -305408,7 +306150,13 @@ paths:
                           properties:
                             comparator:
                               type: string
+                            group:
+                              type: string
                             metric:
+                              type: string
+                            population:
+                              type: string
+                            protocol:
                               type: string
                             severity:
                               type: string
@@ -320223,7 +320971,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -321613,7 +322367,13 @@ paths:
                               properties:
                                 comparator:
                                   type: string
+                                group:
+                                  type: string
                                 metric:
+                                  type: string
+                                population:
+                                  type: string
+                                protocol:
                                   type: string
                                 severity:
                                   type: string
@@ -327157,7 +327917,13 @@ paths:
                         properties:
                           comparator:
                             type: string
+                          group:
+                            type: string
                           metric:
+                            type: string
+                          population:
+                            type: string
+                          protocol:
                             type: string
                           severity:
                             type: string
@@ -330450,7 +331216,13 @@ paths:
                         properties:
                           comparator:
                             type: string
+                          group:
+                            type: string
                           metric:
+                            type: string
+                          population:
+                            type: string
+                          protocol:
                             type: string
                           severity:
                             type: string

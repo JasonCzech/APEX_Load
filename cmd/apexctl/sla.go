@@ -115,10 +115,11 @@ func convertDSLTransactionSLARules(rules []dsl.TransactionSLARule) []api.Transac
 	for index, rule := range rules {
 		converted[index] = api.TransactionSLARule{
 			Transaction: rule.Transaction,
-			Metric:      rule.Metric,
-			Comparator:  rule.Comparator,
-			Threshold:   rule.Threshold,
-			Severity:    rule.Severity,
+			Population:  rule.Population, Protocol: rule.Protocol, Group: rule.Group,
+			Metric:     rule.Metric,
+			Comparator: rule.Comparator,
+			Threshold:  rule.Threshold,
+			Severity:   rule.Severity,
 		}
 	}
 	return converted

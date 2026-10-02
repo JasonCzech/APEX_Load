@@ -87,7 +87,7 @@ test('messaging diagnostics preserves observed zero, missing acknowledgement and
   } })))
   trackRun(id)
   const absent = { count: 0, sum: 0, max: 0 }
-  const messaging = { incomplete: true, dimensions: [{ source: 'orders', partition: '0', subscription: 'checkout', operations: 2, sent: 0, received: 2, throttled: 1, redelivered: 1, age_ms: { count: 2, sum: 0, max: 0 }, offset_lag: absent, ack_ms: absent }] }
+  const messaging = { incomplete: true, dimensions: [{ protocol: 'kafka', group: 'consumer', source: 'orders', partition: '0', subscription: 'checkout', operations: 2, sent: 0, received: 2, throttled: 1, redelivered: 1, age_ms: { count: 2, sum: 0, max: 0 }, offset_lag: absent, ack_ms: absent }] }
   await page.route(`**/api/v1/tests/${id}`, async route => {
     const response = await route.fetch()
     const record = await response.json()
@@ -98,6 +98,8 @@ test('messaging diagnostics preserves observed zero, missing acknowledgement and
   await page.getByText('Messaging partition and subscription diagnostics', { exact: true }).click()
   const evidence = page.getByRole('region', { name: 'Messaging evidence receive' })
   await expect(evidence).toContainText('checkout')
+  await expect(evidence.getByRole('cell', { name: 'kafka', exact: true })).toHaveCount(1)
+  await expect(evidence.getByRole('cell', { name: 'consumer', exact: true })).toHaveCount(1)
   await expect(evidence).toContainText('0.000 ms (max 0.000 ms; 2 observed)')
   await expect(evidence).toContainText('Coverage incomplete; partition skew is unscored.')
   await expect(evidence.getByRole('cell', { name: 'Unavailable', exact: true })).toHaveCount(2)

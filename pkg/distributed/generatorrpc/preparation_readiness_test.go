@@ -197,3 +197,77 @@ func TestPreparationReadinessRenewsStagingWithoutResurrection(t *testing.T) {
 		t.Fatal("expired preparation retained reservations")
 	}
 }
+
+// Production controllers claim STAGED supervision before preparation can become
+// ready. Checking that reservation must neither require ACTIVE nor activate it.
+func TestPreparationReadinessValidatesStagedRunSupervision(t *testing.T) {
+	for _, caseName := range []string{"staged", "unclaimed", "wrong token", "expired", "fenced", "stopping", "wrong generation", "changed claim token", "restart fence"} {
+		t.Run(caseName, func(t *testing.T) {
+			clearTransportEnv(t)
+			s := newIsolatedService(t, 10, WithExecution(), WithRunSupervisionRequired(60*time.Second, 0))
+			t.Cleanup(func() { shutdownSupervisionTestService(t, s) })
+			token := supervisionTestToken(23)
+			assignment := supervisedStageRequest("prepared", "script", 0, token)
+			assignment.GroupName = "load"
+			assignment.PrepareOnly = true
+			if ack, err := s.AssignWork(context.Background(), assignment); err != nil || !ack.GetAccepted() {
+				t.Fatalf("stage: %v %v", ack, err)
+			}
+			if caseName != "unclaimed" {
+				ack, err := s.ClaimRunSupervision(context.Background(), &pb.RunSupervisionClaim{TestId: "prepared", RunSupervisionToken: token, RequestedTtlMilliseconds: 60000})
+				if err != nil || !ack.GetAccepted() || ack.GetState() != pb.RunSupervisionState_RUN_SUPERVISION_STATE_STAGED {
+					t.Fatalf("staged claim: %v %v", ack, err)
+				}
+			}
+			req := &pb.PreparationCheckRequest{TestId: "prepared", ExpectedGroups: map[string]int32{"load": 1}, RunSupervisionToken: token, RenewStaging: true}
+			s.mu.Lock()
+			lease := s.runSupervisions[req.TestId]
+			switch caseName {
+			case "wrong token":
+				req.RunSupervisionToken = supervisionTestToken(24)
+			case "expired":
+				lease.deadline = time.Now().Add(-time.Second)
+			case "fenced":
+				lease.state = pb.RunSupervisionState_RUN_SUPERVISION_STATE_FENCED
+			case "stopping":
+				lease.state = pb.RunSupervisionState_RUN_SUPERVISION_STATE_STOPPING
+			case "wrong generation":
+				lease.generation = 1
+			case "changed claim token":
+				lease.tokenHash = runSupervisionTokenHash(supervisionTestToken(24))
+			case "restart fence":
+				s.executionEpochManager.runSupervisionRestartFenceInherited = true
+			}
+			stageToken := s.lifecycleCoordinator.stageTokens[req.TestId]
+			var deadline time.Time
+			var leaseTimerToken uint64
+			if lease != nil {
+				deadline, leaseTimerToken = lease.deadline, lease.timerToken
+			}
+			s.mu.Unlock()
+			ack, err := s.CheckPreparation(context.Background(), req)
+			if caseName == "staged" {
+				if err != nil || !ack.GetAccepted() {
+					t.Fatalf("valid staged preparation rejected: %v %v", ack, err)
+				}
+			} else if err == nil || ack.GetAccepted() {
+				t.Fatalf("invalid supervised preparation accepted: %v %v", ack, err)
+			}
+			s.mu.RLock()
+			defer s.mu.RUnlock()
+			if s.assignments[req.TestId].committed || s.executions[req.TestId]["load"].started.Load() {
+				t.Fatal("readiness crossed the execution boundary")
+			}
+			if lease != nil && (lease.timerToken != leaseTimerToken || !lease.deadline.Equal(deadline)) {
+				t.Fatal("readiness renewed or armed run supervision")
+			}
+			if caseName == "staged" {
+				if lease.state != pb.RunSupervisionState_RUN_SUPERVISION_STATE_STAGED || s.lifecycleCoordinator.stageTokens[req.TestId] == stageToken {
+					t.Fatal("readiness failed to retain staged supervision and renew staging")
+				}
+			} else if s.lifecycleCoordinator.stageTokens[req.TestId] != stageToken {
+				t.Fatal("invalid readiness renewed staging")
+			}
+		})
+	}
+}

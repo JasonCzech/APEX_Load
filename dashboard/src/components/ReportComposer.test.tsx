@@ -374,7 +374,7 @@ describe('ReportComposer test notes source panel', () => {
 	it('renders exact transaction SLA rule evidence from the archive manifest', async () => {
 		const report = sampleReport()
 		;(report.manifest as typeof report.manifest & { transaction_rule_results: unknown[] }).transaction_rule_results = [{
-			rule: { transaction: 'Checkout', metric: 'p95_duration_ms', comparator: 'lte', threshold: 800, severity: 'fail' },
+			rule: { population: 'action', protocol: 'kafka', group: 'consumer', transaction: 'Checkout', metric: 'p95_duration_ms', comparator: 'lte', threshold: 800, severity: 'fail' },
 			status: 'fail', observed: 912, matched_count: 42, message: 'breached',
 		}]
 		apiMock.getTestArchiveReport.mockResolvedValueOnce(report)
@@ -385,6 +385,7 @@ describe('ReportComposer test notes source panel', () => {
 		expect(container.textContent).toContain('Checkout')
 		expect(container.textContent).toContain('p95_duration_ms')
 		expect(container.textContent).toContain('912')
+		expect(container.textContent).toContain('action · kafka · consumer')
 	})
 
   async function renderComposer(profile: 'executive' | 'engineer' | 'audit' = 'executive', options: { edit?: boolean } = {}) {

@@ -24,3 +24,23 @@ func TestMessagingTransactionSLARulesRequireCompleteObservedEvidence(t *testing.
 		}
 	}
 }
+
+func TestAcknowledgementSLARequiresFullCoverage(t *testing.T) {
+	rule := TransactionSLARule{Population: "action", Protocol: "kafka", Group: "producer", Transaction: "Send", Metric: "max_acknowledgement_ms", Comparator: "lte", Threshold: 5}
+	if err := ValidateTransactionSLARules([]TransactionSLARule{rule}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		stats  *transactionSLAAccumulator
+		status string
+	}{{nil, "not_evaluated"}, {&transactionSLAAccumulator{count: 2, ackSamples: 1}, "not_evaluated"}, {&transactionSLAAccumulator{count: 2, ackSamples: 2}, "pass"}, {&transactionSLAAccumulator{count: 2, ackSamples: 2, maxAck: 10}, "fail"}} {
+		if r := evaluateTransactionSLARule(rule, tc.stats, 1); r.Status != tc.status {
+			t.Fatalf("%+v", r)
+		}
+	}
+	for _, bad := range []TransactionSLARule{{Population: "gauge", Transaction: "Send", Metric: "minimum_count", Comparator: "gte"}, {Protocol: " kafka", Transaction: "Send", Metric: "minimum_count", Comparator: "gte"}} {
+		if ValidateTransactionSLARules([]TransactionSLARule{bad}) == nil {
+			t.Fatalf("accepted %+v", bad)
+		}
+	}
+}

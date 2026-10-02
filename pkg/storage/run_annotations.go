@@ -25,6 +25,14 @@ type RunAnnotationSet struct {
 	Annotations []RunAnnotation `json:"annotations"`
 }
 
+// Immutable note content retains the original quota. A separate bounded audit
+// allowance guarantees that every accepted note (including legacy near-quota
+// histories) can acquire a deletion timestamp and a 256-byte escaped actor.
+const (
+	maxRunAnnotationContentBytes = 512 << 10
+	maxRunAnnotationHistoryBytes = 1 << 20
+)
+
 var ErrRunAnnotationLimit = errors.New("annotation audit history limit reached")
 
 type RunAnnotationStore interface {
@@ -42,7 +50,7 @@ func (s *SQLiteStore) GetRunAnnotations(project, run string) (RunAnnotationSet, 
 	if err != nil {
 		return out, err
 	}
-	if len(raw) > 512<<10 {
+	if len(raw) > maxRunAnnotationHistoryBytes {
 		return out, errors.New("annotation history exceeds limit")
 	}
 	err = json.Unmarshal([]byte(raw), &out)
@@ -60,11 +68,27 @@ func (s *SQLiteStore) SaveRunAnnotations(project, run string, set RunAnnotationS
 			return false, errors.New("invalid annotation")
 		}
 	}
+	// Tombstones never reduce the content quota or count: deleted notes remain
+	// immutable audit history. Use a fixed revision width for the content budget
+	// so ordinary CAS increments cannot consume deletion headroom.
+	content := RunAnnotationSet{Revision: 0, Annotations: make([]RunAnnotation, len(set.Annotations))}
+	copy(content.Annotations, set.Annotations)
+	for i := range content.Annotations {
+		content.Annotations[i].DeletedAt = nil
+		content.Annotations[i].DeletedBy = ""
+	}
+	contentRaw, err := json.Marshal(content)
+	if err != nil {
+		return false, err
+	}
+	if len(contentRaw) > maxRunAnnotationContentBytes {
+		return false, ErrRunAnnotationLimit
+	}
 	raw, err := json.Marshal(set)
 	if err != nil {
 		return false, err
 	}
-	if len(raw) > 512<<10 {
+	if len(raw) > maxRunAnnotationHistoryBytes {
 		return false, ErrRunAnnotationLimit
 	}
 	var result sql.Result

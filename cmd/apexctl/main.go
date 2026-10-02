@@ -422,7 +422,7 @@ Commands:
   library   Export or import portable project library bundles
   prepare   Prepare, inspect, renew, cancel, or start a prepared run
   monitor   Configure run-bound monitoring sources and scenario bindings
-  analysis  Import Parquet datasets and query, compare, or save analysis definitions
+  analysis  Import/query datasets, save analysis definitions, and assess baseline regressions
   version   Print version information
   help      Show this help
 

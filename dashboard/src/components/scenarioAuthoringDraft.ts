@@ -105,12 +105,21 @@ export function readScenarioAuthoringDraft(project: string): ScenarioAuthoringDr
       && typeof g.ramp_up === 'string' && typeof g.ramp_down === 'string' && ['at_runtime', 'at_once'].includes(String(g.initialization))
       && Number.isFinite(g.vusers) && Array.isArray(g.stages) && g.stages.every(stage => record(stage) && typeof stage.duration === 'string' && typeof stage.type === 'string' && Number.isFinite(stage.target_vusers))
       && (g.runtimeSettings === undefined || record(g.runtimeSettings)) && (g.assignment === undefined || record(g.assignment)))) return null
-    // Upgrade first-binding browser checkpoints before removing the form adapter.
-    // Canonical arrays always win; legacy-only attachments become one binding.
-    if ((!Array.isArray(f.data_pools) || f.data_pools.length === 0) && typeof f.data_pool_id === 'string' && f.data_pool_id) {
+    // Legacy checkpoints used the scalar fields as an overlay on the first
+    // retained binding. Field presence distinguishes them from current drafts,
+    // whose canonical-only arrays must remain unchanged.
+    if (Object.prototype.hasOwnProperty.call(f, 'data_pool_id')) {
+      if (typeof f.data_pool_id !== 'string' || (f.data_pools !== undefined && !Array.isArray(f.data_pools))) return null
       const strategy = f.data_pool_selection_strategy ?? 'sequential'
       if (!['sequential', 'random', 'unique'].includes(String(strategy)) || (f.data_pool_alias !== undefined && typeof f.data_pool_alias !== 'string')) return null
-      f.data_pools = [{pool_id:f.data_pool_id, alias:f.data_pool_alias || '', access_mode:'read_only', selection_strategy:strategy}]
+      const retained = Array.isArray(f.data_pools) ? f.data_pools : []
+      f.data_pools = f.data_pool_id ? [{
+        ...(record(retained[0]) ? retained[0] : {}),
+        pool_id: f.data_pool_id,
+        alias: f.data_pool_alias || '',
+        access_mode: 'read_only',
+        selection_strategy: strategy,
+      }, ...retained.slice(1)] : retained.slice(1)
     }
     for (const name of ['data_pool_id','data_pool_alias','data_pool_access_mode','data_pool_selection_strategy']) delete f[name]
     if (f.data_pools !== undefined && (!Array.isArray(f.data_pools) || !f.data_pools.every(binding => record(binding) && typeof binding.pool_id === 'string' && typeof binding.alias === 'string' && ['sequential', 'random', 'unique'].includes(String(binding.selection_strategy))))) return null

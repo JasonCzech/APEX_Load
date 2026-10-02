@@ -51,3 +51,26 @@ The full cycle passed typecheck, lint, build and 4,693 unit tests; dev-admin com
 ## Final pass gate
 
 All five implementation/review cycles are complete. Generated protobuf/API/TypeScript contracts, documentation inventory and whitespace checks passed. The final full Go suite and targeted race gate passed after the freshness/foreign-key review fixes above. The dashboard results and fresh-controller retries are recorded without claiming an uninterrupted full-cycle pass. No live cloud readiness or 10 GB import acceptance is inferred from local tests.
+
+## Whole-pass review follow-up
+
+A fresh review of all five commits found and corrected:
+
+- A local auto-transaction messaging snapshot wrote to a nil map. Action populations now own the live messaging map without synthetic transaction duplication; a new test reproduced the original panic.
+- Raw archive action reports counted mirrored business-transaction messaging evidence twice. Messaging counts now exclude transaction wrappers while preserving existing observation totals.
+- Kafka request/reply attributed the reply partition to the request source and discarded publish acknowledgement metadata. Combined direction identities now remain unavailable/incomplete while independent measurements survive.
+- Bare messaging source names could pool unrelated protocols or execution groups and hide skew. Protocol/group scope now participates in bounded identities, goal pooling, reports and dashboard rows. Explicit goals require the scoped capability; older unscoped evidence stays readable and unscored.
+- Event Hubs sampled batches weighted message volume by action count. Counts now retain actual batch size, with unpinned partition attribution unavailable.
+- JMS measured-zero message age lost its availability flag. Valid timestamps now preserve zero with an independent observation count.
+- Legacy browser checkpoints lost first-binding replacements/removals when an older canonical array remained. Migration now preserves the old overlay semantics and subsequent bindings; current canonical-only drafts remain unchanged.
+- Annotation histories at the original encoded-content quota could no longer be deleted. Immutable content keeps its original quota with bounded additional tombstone space, and actor snapshots are safely bounded.
+- Supervised preparations rejected valid STAGED claims by requiring ACTIVE. Readiness now uses the read-only pre-commit validator without activating execution or renewing supervision.
+- Distributed messaging archive windows could claim complete coverage when a known peer missed the alignment window, had no intervals, or failed archive collection entirely. Accepted observations remain intact, while known gaps now mark the messaging summaries incomplete and unscored.
+
+Validation: the final `GOMAXPROCS=4 go test -p 2 ./...` passed after the archive coverage fix. Targeted race tests passed across API, storage, generator, engine and messaging protocols, covering preparation, annotations, messaging, native analytics, authoring parity and capacity cleanup. The `kafka_real eventhubs_real jms_servicebus_real` build-profile regressions passed. API/DSL freshness tests, the explicit generated TypeScript check, documentation checks for all 83 active Markdown files and whitespace checks passed.
+
+Dashboard typecheck, lint and build passed, along with all 4,694 unit tests in 448 files. All 13 affected analysis/preparation, diagnostics and scenario-data browser workflows passed per auth profile across the reruns: 12 passed together in each profile, and the corrected legacy migration workflow passed separately in both. Initial browser failures came from outdated scoped-messaging fixtures and an incomplete manually seeded legacy form. The legacy fixture now includes a valid legacy source selection and the old builder's `start_offset` default, waits for save/checkpoint completion and `Editing · Saved`, then uses the supported library navigation before a full reload and reopen. Durable binding assertions remain intact. This follow-up does not claim an uninterrupted full browser-suite or full-cycle pass.
+
+The auto-transaction snapshot regression reproduced the original nil-map panic before correction. New archive coverage tests likewise failed before correction for skewed peer windows, empty known peer archives and uncollected sources; their aligned and fully collected best-effort controls passed. All regressions pass after the fixes. Independent final reviews of analytics/preparation, messaging/archive coverage and authoring/annotations/UI found no additional actionable issues.
+
+Follow-up fixes remain uncommitted. Live cloud acceptance and the waived 10 GB benchmark remain unchanged.

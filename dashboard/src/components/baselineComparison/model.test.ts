@@ -43,3 +43,10 @@ it('does not rank unavailable latency or incompatible units as changes', () => {
  row.baselines.b.delta = 100
  expect(comparisonMagnitude(row, 'mean', true)).toBe(1)
 })
+
+it('keeps acceptance scope and measurements in the saved comparison identity', () => {
+ const request: ComparisonRequest = {baseline_ids:['b'],population:'action',allow_other_scenarios:false}
+ for (const selection of [{regression_metrics:['consumer_lag_ms']},{regression_protocols:['kafka']},{regression_groups:['consumer']}, {regression_identities:['Receive']}]) {
+  expect(comparisonRequestSignature({...request,...selection})).not.toBe(comparisonRequestSignature(request))
+ }
+})
