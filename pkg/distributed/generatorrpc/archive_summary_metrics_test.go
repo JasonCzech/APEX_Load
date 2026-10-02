@@ -86,3 +86,56 @@ func TestGeneratorArchiveIntervalSummaryPersistsNestedFleetEvidence(t *testing.T
 		t.Fatalf("parquet duration digest = %#v", parquetRows)
 	}
 }
+
+func TestGeneratorArchiveTelemetryPreservesMeasuredZeroAvailability(t *testing.T) {
+	if got := archiveSummaryTelemetryFromBatch(&pb.MetricsBatch{}); got != nil {
+		t.Fatal("legacy metadata acquired measured counters")
+	}
+	telemetry := archiveSummaryTelemetryFromBatch(&pb.MetricsBatch{Telemetry: &pb.MetricsBatchTelemetry{}})
+	if telemetry == nil || !telemetry.DroppedResultsAvailable || telemetry.DroppedResults != 0 {
+		t.Fatalf("measured zero availability lost: %+v", telemetry)
+	}
+	data, err := json.Marshal(archiveIntervalSummary{Telemetry: telemetry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored archiveIntervalSummary
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.Telemetry == nil || !restored.Telemetry.DroppedResultsAvailable {
+		t.Fatal("JSON archive lost availability")
+	}
+	rows := toParquetSummaries([]archiveIntervalSummary{restored})
+	if len(rows) != 1 || !strings.Contains(rows[0].TelemetryJSON, `"dropped_results_available":true`) {
+		t.Fatalf("Parquet archive lost availability: %+v", rows)
+	}
+}
+
+func TestGeneratorArchiveTelemetryRejectsNegativeCounterAvailability(t *testing.T) {
+	for _, counter := range []int64{-1, -9223372036854775808} {
+		source := &pb.MetricsBatchTelemetry{DroppedResults: counter}
+		telemetry := archiveSummaryTelemetryFromBatch(&pb.MetricsBatch{Telemetry: source})
+		if telemetry == nil || telemetry.DroppedResultsAvailable || telemetry.DroppedResults != counter {
+			t.Fatalf("malformed counter qualified as measured: %+v", telemetry)
+		}
+		if source.GetDroppedResults() != counter {
+			t.Fatal("source counter mutated")
+		}
+		data, err := json.Marshal(archiveIntervalSummary{Telemetry: telemetry})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var restored archiveIntervalSummary
+		if err := json.Unmarshal(data, &restored); err != nil {
+			t.Fatal(err)
+		}
+		if restored.Telemetry == nil || restored.Telemetry.DroppedResultsAvailable || restored.Telemetry.DroppedResults != counter {
+			t.Fatalf("JSON changed malformed evidence: %+v", restored.Telemetry)
+		}
+		rows := toParquetSummaries([]archiveIntervalSummary{restored})
+		if len(rows) != 1 || strings.Contains(rows[0].TelemetryJSON, `"dropped_results_available":true`) {
+			t.Fatalf("Parquet qualified malformed evidence: %+v", rows)
+		}
+	}
+}

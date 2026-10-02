@@ -194,6 +194,10 @@ type TransactionResponseTimeSLACompliance struct {
 }
 
 type MetricsTelemetry struct {
+	// DroppedResultsUnavailable preserves source absence when controller metadata
+	// creates telemetry or merges a cohort containing a legacy peer. It is not
+	// sent over the generator wire protocol.
+	DroppedResultsUnavailable  bool `json:"-"`
 	DroppedResults             int64
 	SheddedArrivals            int64
 	CollectedAtUnixMs          int64

@@ -481,6 +481,7 @@ func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool
 		durationMs = 0
 	}
 	entry := boundBrowserNetworkEntry(protocol.NetworkEntry{
+		FailureKind:          browserNetworkFailureKind(finished, statusCode),
 		URL:                  request.URL(),
 		Method:               request.Method(),
 		StatusCode:           statusCode,
@@ -496,6 +497,21 @@ func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool
 	b.mu.Lock()
 	b.appendNetworkEntryLocked(entry)
 	b.mu.Unlock()
+}
+
+// The failed-request event is the evidence for a transport failure. A missing
+// response/status alone is not proof of failure, and raw browser errors can
+// contain URLs or credentials and must never become a diagnostic label.
+func browserNetworkFailureKind(finished bool, statusCode int) string {
+	// Browsers can fire a failed-request event for rejected HTTP resources too.
+	// Preserve the observed HTTP failure instead of calling it transport-only.
+	if statusCode >= 400 {
+		return "http"
+	}
+	if !finished {
+		return "transport"
+	}
+	return ""
 }
 
 func (b *Browser) appendNetworkEntryLocked(entry protocol.NetworkEntry) {

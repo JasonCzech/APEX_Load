@@ -557,4 +557,6 @@ The [review and validation record](qa/reviews/evidence-expansion-2026-10-02/REVI
 | Browser evidence | Retained top-50 resource inspection, exact action/failure filtering, page/action/method/device context and propagated network failure classification | Individual request-start timings, richer measured transport phases and broader browser acceptance evidence |
 | Telemetry reporting | Saved cross-run whole-run health evidence, classification coverage, missing-versus-zero availability, report exports and cumulative drop-counter correction | Policy/cadence-aligned comparison and telemetry-SLA verdict normalization; no automatic failure from advisory health comparisons |
 
+An additional review fixed replay branch-state restoration on interruption, merged-rate time coverage and precision, durable drop-counter availability across legacy peers/restarts/archives, negative/overflow counter guards, retained browser HTTP/transport failures and explicit scenario reselection naming. Regression tests cover these fixes; exact validation outcomes are recorded in the linked review record.
+
 These slices do not close their parent tracks. IBM MQ remains very low priority; live cloud evidence and the waived scale benchmark are not advertised as passed.

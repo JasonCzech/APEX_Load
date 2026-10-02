@@ -1506,6 +1506,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     runGuarded(() => {
       setScenarioId(nextScenarioId)
       setExpandedScenarioId(nextScenarioId)
+      runNameScenarioRef.current = ''
       runNameEditedRef.current = false
       setRunName('')
     })
@@ -2772,6 +2773,11 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   <select className="settings-input" aria-labelledby="schedule-scenario-label" value={scenarioId} onChange={(event) => {
                     const nextScenarioID = event.target.value
                     runGuarded(() => {
+                      if (nextScenarioID !== scenarioId) {
+                        runNameScenarioRef.current = ''
+                        runNameEditedRef.current = false
+                        setRunName('')
+                      }
                       setScenarioId(nextScenarioID)
                       setEditingScheduleId(null)
                     })

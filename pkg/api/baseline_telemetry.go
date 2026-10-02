@@ -27,10 +27,13 @@ func baselineTelemetryEvidence(runID string, intervals []IntervalSummaryRecord) 
 	previousDrops := int64(-1)
 	reset := false
 	dropsAvailable := false
+	invalidDrops := false
 	for _, p := range intervals {
 		if p.Telemetry != nil {
 			out.MetricIntervals++
-			if p.Telemetry.DroppedResultsAvailable || p.Telemetry.DroppedResults > 0 {
+			if p.Telemetry.DroppedResults < 0 {
+				invalidDrops = true
+			} else if p.Telemetry.DroppedResultsAvailable || p.Telemetry.DroppedResults > 0 {
 				dropsAvailable = true
 				if previousDrops >= 0 && p.Telemetry.DroppedResults < previousDrops {
 					reset = true
@@ -76,6 +79,9 @@ func baselineTelemetryEvidence(runID string, intervals []IntervalSummaryRecord) 
 	}
 	if !dropsAvailable {
 		out.Warnings = append(out.Warnings, "Drop-counter availability was not retained; zero loss cannot be inferred from controller metadata.")
+	}
+	if invalidDrops {
+		out.Warnings = append(out.Warnings, "Some retained drop counters are negative and were excluded as invalid evidence.")
 	}
 	if reset {
 		out.Warnings = append(out.Warnings, "Dropped-result counter decreased; peak observed counters do not represent an exact loss total.")

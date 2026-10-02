@@ -2001,7 +2001,8 @@ func archiveSummaryTelemetryFromBatch(batch *pb.MetricsBatch) *archiveTelemetryH
 	}
 	telemetry := batch.GetTelemetry()
 	out := &archiveTelemetryHealth{
-		DroppedResults: telemetry.GetDroppedResults(), SheddedArrivals: telemetry.GetSheddedArrivals(),
+		DroppedResultsAvailable: telemetry.GetDroppedResults() >= 0,
+		DroppedResults:          telemetry.GetDroppedResults(), SheddedArrivals: telemetry.GetSheddedArrivals(),
 		DroppedSubscriberBatches: telemetry.GetDroppedSubscriberBatches(),
 		GeneratorProcessingLagMs: telemetry.GetGeneratorProcessingLagMs(), TransportLagMs: telemetry.GetTransportLagMs(),
 		SampleAgeMs: telemetry.GetSampleAgeMs(),

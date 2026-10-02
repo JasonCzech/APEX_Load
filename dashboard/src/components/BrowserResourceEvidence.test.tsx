@@ -13,6 +13,16 @@ describe('browser resource evidence', () => {
  expect(node.textContent).toContain('1 of 2 retained');expect(node.textContent).not.toContain('/zero');expect(node.textContent).toContain('timeout')
  } finally {await act(async()=>root.unmount())}
  })
+ it('filters classified transport failures without inventing failure from a zero status', async () => {
+ const node=document.createElement('div'); const root=createRoot(node)
+ try {
+ await act(async()=>root.render(<BrowserResourceEvidence resources={[{timestamp:'now',url:'/aborted',failure_kind:'transport',status_code:0},{timestamp:'now',url:'/unknown',status_code:0},{timestamp:'now',url:'/http-error',status_code:503,failure_kind:'http'}]} />))
+ await act(async()=>node.querySelector('input')!.click())
+ expect(node.querySelectorAll('tbody tr')).toHaveLength(2)
+ expect(node.textContent).toContain('/aborted');expect(node.textContent).toContain('/http-error');expect(node.textContent).not.toContain('/unknown')
+ expect(node.textContent).toContain('503 · http')
+ } finally {await act(async()=>root.unmount())}
+ })
  it('caps visible evidence and does not imply a complete census', async()=>{
  const node=document.createElement('div');const root=createRoot(node)
  try{await act(async()=>root.render(<BrowserResourceEvidence resources={Array.from({length:60},(_,i)=>({timestamp:'now',url:`/${i}`}))}/>));expect(node.querySelectorAll('tbody tr')).toHaveLength(50);expect(node.textContent).toContain('individual request start times');}finally{await act(async()=>root.unmount())}

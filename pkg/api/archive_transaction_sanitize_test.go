@@ -8,6 +8,7 @@ import (
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -388,5 +389,70 @@ func TestIntervalSummaryTransactionNamePreservesAuthoredIdentity(t *testing.T) {
 	const transactionName = "checkout-AbCdEfGh1234567890ijklMN"
 	if got := intervalTransactionName(transactionName); got != transactionName {
 		t.Fatalf("interval transaction identity = %q, want %q", got, transactionName)
+	}
+}
+
+func TestNetworkFailureKindsRemainBoundedThroughArchivesAndReports(t *testing.T) {
+	kinds := []string{"http", "transport", "timeout", "canceled", "body_limit", "", "Authorization: Bearer private-secret", strings.Repeat("x", 65536)}
+	entries := make([]protocol.NetworkEntry, len(kinds))
+	for i, kind := range kinds {
+		entries[i] = protocol.NetworkEntry{URL: fmt.Sprintf("https://example.test/resource-%d", i), FailureKind: kind, Method: "GET"}
+	}
+	for _, mode := range []string{"current writer", "legacy archive"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			manifest := RunArchiveManifest{SchemaVersion: archiveSchemaVersion, TestID: "bounded-failure", TestName: "Browser evidence", TransactionsFile: "transactions.jsonl", ResourceSamplesFile: "resources.jsonl", IntervalSummariesFile: "interval_summaries.jsonl"}
+			manifestPath := filepath.Join(dir, runArchiveManifestFileName)
+			manifestData, err := json.Marshal(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(manifestPath, manifestData, 0600); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{manifest.ResourceSamplesFile, manifest.IntervalSummariesFile} {
+				if err := os.WriteFile(filepath.Join(dir, name), nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == "current writer" {
+				var data bytes.Buffer
+				writer := &runArchiveWriter{manifest: manifest, txEncoder: json.NewEncoder(&data)}
+				if err := writer.RecordResult(&protocol.Result{ActionName: "Navigate", Success: true, NetworkEntries: entries}); err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(data.String(), "private-secret") || strings.Contains(data.String(), strings.Repeat("x", 65536)) {
+					t.Fatal("archive writer disclosed an unknown failure label")
+				}
+				if err := os.WriteFile(filepath.Join(dir, manifest.TransactionsFile), data.Bytes(), 0600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				writeJSONL(t, filepath.Join(dir, manifest.TransactionsFile), TransactionEvent{TestID: manifest.TestID, ActionName: "Navigate", Success: true, NetworkEntries: entries})
+			}
+			report, err := buildRunArchiveReport(&storage.RunArchiveRecord{TestID: manifest.TestID, ArchivePath: dir, ManifestPath: manifestPath})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(report.BrowserResources) != len(kinds) {
+				t.Fatalf("resources = %d, want %d", len(report.BrowserResources), len(kinds))
+			}
+			for i, resource := range report.BrowserResources {
+				want := kinds[i]
+				if i >= 6 {
+					want = ""
+				}
+				if resource.FailureKind != want {
+					t.Fatalf("resource %d classification = %q, want %q", i, resource.FailureKind, want)
+				}
+			}
+			encoded, err := json.Marshal(report)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(encoded, []byte("private-secret")) || bytes.Contains(encoded, []byte(strings.Repeat("x", 65536))) {
+				t.Fatal("report disclosed an unknown failure label")
+			}
+		})
 	}
 }

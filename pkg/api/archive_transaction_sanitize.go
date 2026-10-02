@@ -272,6 +272,7 @@ func sanitizeArchivedConsoleEntries(entries []protocol.ConsoleEntry, policy scru
 func sanitizeArchivedNetworkEntries(entries []protocol.NetworkEntry, policy scrub.Policy) []protocol.NetworkEntry {
 	out := protocol.CloneNetworkEntries(entries)
 	for index := range out {
+		out[index].FailureKind = sanitizeArchivedNetworkFailureKind(out[index].FailureKind)
 		out[index].URL = scrub.ValueURL(out[index].URL, policy)
 		out[index].Method = scrub.ValueLabel(out[index].Method, policy)
 		out[index].ResourceType = scrub.ValueLabel(out[index].ResourceType, policy)
@@ -280,6 +281,17 @@ func sanitizeArchivedNetworkEntries(entries []protocol.NetworkEntry, policy scru
 		out[index].ResponseHeaders = sanitizeArchivedHeaders(out[index].ResponseHeaders, policy)
 	}
 	return out
+}
+
+// Failure kinds are classifications, not user-provided error messages. Reject
+// unknown labels from legacy archives and remote generators before disclosure.
+func sanitizeArchivedNetworkFailureKind(value string) string {
+	switch value {
+	case "http", "transport", "timeout", "canceled", "body_limit":
+		return value
+	default:
+		return ""
+	}
 }
 
 func sanitizeArchivedDOMSummary(summary *protocol.DOMSummary, policy scrub.Policy) *protocol.DOMSummary {

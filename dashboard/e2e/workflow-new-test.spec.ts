@@ -149,6 +149,22 @@ test('New Test saves drafts without execution, retains both tabs and validates r
   expect(mutations).toEqual([])
 })
 
+test('New Test restores the default name after clearing and reselecting the same scenario', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace)
+  const scenarioId = await seedScenario(request, workspace, scriptId, 'Reselected workload')
+  await page.goto(`/#/new-test?${scopeQuery(workspace)}&scenarioId=${scenarioId}`)
+  await page.reload()
+  await expect(page.getByRole('textbox', { name: 'Run Name', exact: true })).toHaveValue('Reselected workload')
+  await page.getByRole('button', { name: 'Schedules', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Scenario', exact: true }).selectOption('')
+  await page.getByRole('button', { name: 'Run Setup', exact: true }).click()
+  await page.locator('.new-test-scenario-table-row').filter({ hasText: 'Reselected workload' }).click()
+  await expect(page.getByRole('textbox', { name: 'Run Name', exact: true })).toHaveValue('Reselected workload')
+})
+
 test('New Test exposes editable groups and saves a paused recurring schedule with visible policies', async ({ page }, testInfo) => {
   test.setTimeout(90_000)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)

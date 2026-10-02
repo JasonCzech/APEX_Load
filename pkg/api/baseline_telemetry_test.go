@@ -1,8 +1,11 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"math"
 	"strings"
 	"testing"
 )
@@ -76,5 +79,59 @@ func TestBaselineTelemetryLegacyMetadataCannotImplyZeroDrops(t *testing.T) {
 	local := buildLiveMetricsFromSnapshot(engine.MetricsSnapshot{Telemetry: &engine.TelemetryMetrics{}}, nil)
 	if !local.Telemetry.DroppedResultsAvailable {
 		t.Fatal("local source availability lost")
+	}
+}
+
+func TestBaselineTelemetryInvalidDropCountersRemainUnavailable(t *testing.T) {
+	for _, tc := range []struct {
+		name                   string
+		counters               []TelemetryHealth
+		wantAvailable          bool
+		wantPeak               int64
+		wantInvalid, wantReset bool
+	}{
+		{name: "negative measured counter", counters: []TelemetryHealth{{DroppedResultsAvailable: true, DroppedResults: -1}}, wantInvalid: true},
+		{name: "negative legacy counter", counters: []TelemetryHealth{{DroppedResults: -1}}, wantInvalid: true},
+		{name: "minimum signed counter", counters: []TelemetryHealth{{DroppedResultsAvailable: true, DroppedResults: math.MinInt64}}, wantInvalid: true},
+		{name: "measured zero", counters: []TelemetryHealth{{DroppedResultsAvailable: true}}, wantAvailable: true},
+		{name: "positive legacy counter", counters: []TelemetryHealth{{DroppedResults: 3}}, wantAvailable: true, wantPeak: 3},
+		{name: "negative then measured zero", counters: []TelemetryHealth{{DroppedResultsAvailable: true, DroppedResults: -1}, {DroppedResultsAvailable: true}}, wantAvailable: true, wantInvalid: true},
+		{name: "negative then positive", counters: []TelemetryHealth{{DroppedResultsAvailable: true, DroppedResults: -1}, {DroppedResultsAvailable: true, DroppedResults: 4}}, wantAvailable: true, wantPeak: 4, wantInvalid: true},
+		{name: "positive then negative", counters: []TelemetryHealth{{DroppedResultsAvailable: true, DroppedResults: 4}, {DroppedResultsAvailable: true, DroppedResults: -1}}, wantAvailable: true, wantPeak: 4, wantInvalid: true},
+		{name: "real decrease around invalid counter", counters: []TelemetryHealth{{DroppedResultsAvailable: true, DroppedResults: 4}, {DroppedResultsAvailable: true, DroppedResults: -1}, {DroppedResultsAvailable: true, DroppedResults: 2}}, wantAvailable: true, wantPeak: 4, wantInvalid: true, wantReset: true},
+		{name: "negative then metadata", counters: []TelemetryHealth{{DroppedResultsAvailable: true, DroppedResults: -1}, {}}, wantInvalid: true},
+		{name: "metadata only", counters: []TelemetryHealth{{}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := make([]IntervalSummaryRecord, len(tc.counters))
+			for i := range tc.counters {
+				rows[i] = IntervalSummaryRecord{Telemetry: &tc.counters[i], TelemetryStatus: &TelemetryRunHealth{Status: "healthy"}}
+			}
+			before, err := json.Marshal(rows)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := baselineTelemetryEvidence("run", rows)
+			if (out.DroppedResults != nil) != tc.wantAvailable || out.DroppedResults != nil && *out.DroppedResults != tc.wantPeak {
+				t.Fatalf("counter availability/peak %+v", out)
+			}
+			warnings := strings.Join(out.Warnings, "\n")
+			if strings.Contains(warnings, "invalid evidence") != tc.wantInvalid || strings.Contains(warnings, "counter decreased") != tc.wantReset {
+				t.Fatalf("warnings %q", warnings)
+			}
+			if strings.Contains(warnings, "availability was not retained") == tc.wantAvailable {
+				t.Fatalf("missing availability qualification %q", warnings)
+			}
+			if out.Summary == nil || out.Summary.DroppedResults != tc.wantPeak {
+				t.Fatalf("summary peak %+v", out.Summary)
+			}
+			after, err := json.Marshal(rows)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Fatalf("source rows mutated: before %s / after %s", before, after)
+			}
+		})
 	}
 }

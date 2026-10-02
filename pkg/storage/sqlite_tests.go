@@ -1820,10 +1820,10 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 			test_id, schema_version, timestamp, active_vusers, tps, avg_response_ms, error_pct,
 			total_transactions, total_errors, p50_ms, p90_ms, p95_ms, p99_ms,
 			native_evidence_json, transactions_json, by_region_json, browser_json, browser_by_device_json, latency_json,
-			dropped_results, websocket_clients, websocket_dropped_messages, websocket_dropped_events,
+			dropped_results_available, dropped_results, websocket_clients, websocket_dropped_messages, websocket_dropped_events,
 			generator_published_at, controller_received_at, collected_at, published_at,
 			generator_processing_lag_ms, transport_lag_ms, controller_fanout_lag_ms, sample_age_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			testID,
 			record.SchemaVersion,
 			record.Timestamp,
@@ -1843,6 +1843,7 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 			browserJSON,
 			browserByDeviceJSON,
 			latencyJSON,
+			record.DroppedResultsAvailable,
 			record.DroppedResults,
 			record.WebsocketClients,
 			record.WebsocketDroppedMessages,
@@ -1987,6 +1988,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 		browser_json,
 		browser_by_device_json,
 		latency_json,
+		dropped_results_available,
 		dropped_results,
 		websocket_clients,
 		websocket_dropped_messages,
@@ -2023,6 +2025,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 		var browserJSON sql.NullString
 		var browserByDeviceJSON sql.NullString
 		var latencyJSON sql.NullString
+		var droppedResultsAvailable sql.NullBool
 		var droppedResults sql.NullInt64
 		var websocketClients sql.NullInt64
 		var websocketDroppedMessages sql.NullInt64
@@ -2056,6 +2059,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 			&browserJSON,
 			&browserByDeviceJSON,
 			&latencyJSON,
+			&droppedResultsAvailable,
 			&droppedResults,
 			&websocketClients,
 			&websocketDroppedMessages,
@@ -2102,6 +2106,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 				return nil, err
 			}
 		}
+		record.DroppedResultsAvailable = droppedResultsAvailable.Valid && droppedResultsAvailable.Bool
 		if droppedResults.Valid {
 			record.DroppedResults = droppedResults.Int64
 		}
@@ -2175,6 +2180,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
 	}
 	type telemetryEnvelope struct {
+		DroppedResultsAvailable  bool      `json:"dropped_results_available,omitempty"`
 		DroppedResults           int64     `json:"dropped_results,omitempty"`
 		WebsocketClients         int       `json:"websocket_clients,omitempty"`
 		WebsocketDroppedMessages int64     `json:"websocket_dropped_messages,omitempty"`
@@ -2285,6 +2291,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		record.Timestamp = timestamp
 	}
 	if summary.Telemetry != nil {
+		record.DroppedResultsAvailable = summary.Telemetry.DroppedResultsAvailable
 		record.DroppedResults = summary.Telemetry.DroppedResults
 		record.WebsocketClients = summary.Telemetry.WebsocketClients
 		record.WebsocketDroppedMessages = summary.Telemetry.WebsocketDroppedMessages

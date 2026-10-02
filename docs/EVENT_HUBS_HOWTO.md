@@ -24,7 +24,7 @@ Consumer age and offset lag carry availability separately from value. A received
 --transaction-rule 'Consume|max_consumer_offset_lag|lte|100|fail'
 ```
 
-Use an automatically measured consume action or a business transaction that actually retains its telemetry. These rules evaluate closed archives and flow through existing JSON/JUnit/report output; they do not add live automatic stop conditions. Provider-wide acknowledgement coverage, epoch-exclusive consumers and live Azure acceptance remain separate work. Mock tests are not evidence of real namespace readiness.
+Use an automatically measured consume action or a business transaction that actually retains its telemetry. These rules evaluate closed archives and flow through existing JSON/JUnit/report output; they do not add live automatic stop conditions. Provider-wide acknowledgement coverage and live Azure acceptance remain separate work. Mock tests are not evidence of real namespace readiness.
 
 ## Durable processor consumers
 

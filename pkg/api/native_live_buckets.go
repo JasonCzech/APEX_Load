@@ -27,10 +27,12 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 	}
 	groups := map[string][]aggregate{}
 	invalid := make([]bool, n)
-	windows := make([]map[string]float64, n)
+	type sourceWindow struct{ from, to time.Time }
+	windows := make([]map[string][]sourceWindow, n)
+	rateUnsafe := make([]bool, n)
 	expected := make([]map[string]bool, n)
 	for i := range windows {
-		windows[i] = map[string]float64{}
+		windows[i] = map[string][]sourceWindow{}
 		expected[i] = map[string]bool{}
 	}
 	dimension := nativeGroup(q)
@@ -152,7 +154,18 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 			continue
 		}
 		supported = true
-		windows[i][source] += e.WindowSeconds
+		window := sourceWindow{from: timestamp.Add(-time.Duration(math.Round(e.WindowSeconds * float64(time.Second)))), to: timestamp}
+		windows[i][source] = append(windows[i][source], window)
+		bucketFrom := out.From.Add(time.Duration(i*q.BucketSeconds) * time.Second)
+		bucketTo := bucketFrom.Add(time.Duration(q.BucketSeconds) * time.Second)
+		if bucketTo.After(out.To) {
+			bucketTo = out.To
+		}
+		// Counts from a whole publication cannot be split across bucket edges.
+		// Such cohorts remain useful for distributions, but not a bucket rate.
+		if window.from.Before(bucketFrom) || window.to.After(bucketTo) {
+			rateUnsafe[i] = true
+		}
 		for key, m := range metrics {
 			name, selected, err := nameFor(key)
 			if err != nil {
@@ -208,15 +221,38 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 			if len(expected[i]) > 0 {
 				coverage = 1
 				for source := range expected[i] {
-					seconds := windows[i][source]
-					if seconds == 0 {
+					intervals := windows[i][source]
+					if len(intervals) == 0 {
 						invalid[i] = true
 					}
-					coverage = math.Min(coverage, math.Min(1, seconds/to.Sub(from).Seconds()))
+					sort.Slice(intervals, func(a, b int) bool { return intervals[a].from.Before(intervals[b].from) })
+					covered := time.Duration(0)
+					coveredTo := from
+					lastEnd := time.Time{}
+					for _, interval := range intervals {
+						if !lastEnd.IsZero() && interval.from.Before(lastEnd) {
+							rateUnsafe[i] = true
+						}
+						if interval.to.After(lastEnd) {
+							lastEnd = interval.to
+						}
+						clippedFrom, clippedTo := interval.from, interval.to
+						if clippedFrom.Before(coveredTo) {
+							clippedFrom = coveredTo
+						}
+						if clippedTo.After(to) {
+							clippedTo = to
+						}
+						if clippedTo.After(clippedFrom) {
+							covered += clippedTo.Sub(clippedFrom)
+							coveredTo = clippedTo
+						}
+					}
+					coverage = math.Min(coverage, math.Min(1, float64(covered)/float64(to.Sub(from))))
 				}
 			}
 			p := NativeEvidencePoint{From: from, To: to, OffsetSeconds: from.Sub(start).Seconds(), Coverage: &coverage}
-			if b.count > 0 && !invalid[i] && !b.invalid && (!storage.IsNativeObservationRate(q.Metric) || coverage >= 1) {
+			if b.count > 0 && !invalid[i] && !b.invalid && (!storage.IsNativeObservationRate(q.Metric) || coverage >= 1 && !rateUnsafe[i]) {
 				value := b.sum / float64(b.count)
 				switch q.Metric {
 				case "observation_rate", "error_observation_rate", "success_observation_rate":
@@ -242,7 +278,7 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 				p.Value = &value
 				p.Count = b.count
 			}
-			if coverage < 1 || invalid[i] || b.invalid {
+			if coverage < 1 || invalid[i] || b.invalid || storage.IsNativeObservationRate(q.Metric) && rateUnsafe[i] {
 				partial = true
 			}
 			series.Points = append(series.Points, p)
@@ -251,6 +287,9 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 	}
 	if partial {
 		out.Warnings = append(out.Warnings, "Collection coverage is partial in some buckets; unsupported, dropped or invalid evidence remains missing. Correlation pair coverage does not establish within-bucket completeness.")
+	}
+	if storage.IsNativeObservationRate(q.Metric) {
+		out.Warnings = append(out.Warnings, "Merged rates require nonoverlapping source windows wholly contained in each bucket and complete collection coverage. Boundary-spanning or overlapping cohorts remain unavailable because their counts cannot be divided by the bucket span.")
 	}
 	out.Warnings = append(out.Warnings, "Completion-cohort buckets merge whole source distributions by publication end time. Source intervals are not split, and boundary attribution is approximate at source-window resolution. Percentiles are estimated from merged distributions, never averaged. History is limited to 1,000 retained publications.")
 	return out, nil

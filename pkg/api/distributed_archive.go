@@ -1551,7 +1551,11 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 		// Missing known peers or their interval rows do not prove zero work.
 		// Retain observed volumes and moments without qualifying fleet skew.
 		messagingIncomplete := missingSourceCoverage || len(windowRecords) < len(bundles)
+		dropCounterAvailable := !messagingIncomplete
 		for _, record := range windowRecords {
+			if record.Telemetry == nil || !record.Telemetry.DroppedResultsAvailable || record.Telemetry.DroppedResults < 0 {
+				dropCounterAvailable = false
+			}
 			if aggregate.TestID == "" {
 				aggregate.TestID, aggregate.TestName = record.TestID, record.TestName
 			}
@@ -1629,6 +1633,9 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 		aggregate.ByRegion = compactIntervalTransactions(aggregate.ByRegion)
 		for _, iterations := range sourceIterations {
 			aggregate.CompletedIterations += iterations
+		}
+		if aggregate.Telemetry != nil {
+			aggregate.Telemetry.DroppedResultsAvailable = dropCounterAvailable && aggregate.Telemetry.DroppedResultsAvailable
 		}
 		aggregate.TotalTx = cumulativeTx
 		aggregate.TotalErrors = cumulativeErrors
@@ -1840,12 +1847,21 @@ func mergeRemoteArchiveSummaryBrowserByDevice(destination, source map[string]*Br
 
 func mergeRemoteArchiveSummaryTelemetry(current, incoming *TelemetryHealth) *TelemetryHealth {
 	if incoming == nil {
+		if current != nil {
+			current.DroppedResultsAvailable = false
+		}
 		return current
 	}
 	if current == nil {
-		return cloneTelemetryHealth(incoming)
+		current = cloneTelemetryHealth(incoming)
+		var validDrops bool
+		current.DroppedResults, validDrops = mergeRetainedDropCounters(0, incoming.DroppedResults)
+		current.DroppedResultsAvailable = current.DroppedResultsAvailable && validDrops
+		return current
 	}
-	current.DroppedResults += incoming.DroppedResults
+	var validDrops bool
+	current.DroppedResults, validDrops = mergeRetainedDropCounters(current.DroppedResults, incoming.DroppedResults)
+	current.DroppedResultsAvailable = current.DroppedResultsAvailable && incoming.DroppedResultsAvailable && validDrops
 	current.SheddedArrivals += incoming.SheddedArrivals
 	current.DroppedSubscriberBatches += incoming.DroppedSubscriberBatches
 	current.MissingMetricWindows += incoming.MissingMetricWindows
@@ -2418,7 +2434,16 @@ func applyRemoteArchiveTargetSnapshot(record *IntervalSummaryRecord, snapshots [
 	}
 	snapshot := snapshots[best]
 	if snapshot.telemetry != nil {
+		archived := record.Telemetry
 		record.Telemetry = cloneTelemetryHealth(snapshot.telemetry)
+		record.Telemetry.DroppedResultsAvailable = snapshot.telemetry.DroppedResultsAvailable && snapshot.telemetry.DroppedResults >= 0
+		// A complete controller cohort supplies independent counter evidence.
+		// Metadata-only snapshots must not erase known archive measurements,
+		// and a skew-tolerant match must not erase a higher observed loss peak.
+		if archived != nil {
+			record.Telemetry.DroppedResultsAvailable = record.Telemetry.DroppedResultsAvailable || (archived.DroppedResultsAvailable && archived.DroppedResults >= 0)
+			record.Telemetry.DroppedResults = max(record.Telemetry.DroppedResults, archived.DroppedResults)
+		}
 	}
 	if snapshot.telemetryStatus != nil {
 		record.TelemetryStatus = cloneTelemetryRunHealth(snapshot.telemetryStatus)

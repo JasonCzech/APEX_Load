@@ -3,6 +3,7 @@ package api
 // distributed_metrics.go — split from distributed_execution_backend.go (same package, behavior-preserving).
 
 import (
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -11,6 +12,19 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
+
+// mergeRetainedDropCounters preserves a nonnegative loss lower bound when an
+// invalid contributor or signed overflow makes the exact fleet counter unknown.
+// Saturation retains observed loss without letting overflow manufacture zero.
+func mergeRetainedDropCounters(current, incoming int64) (int64, bool) {
+	valid := current >= 0 && incoming >= 0
+	current = max(current, 0)
+	incoming = max(incoming, 0)
+	if incoming > math.MaxInt64-current {
+		return math.MaxInt64, false
+	}
+	return current + incoming, valid
+}
 
 // aggregateDistributedMetricsBatches merges per-generator batches into one
 // combined batch. It also returns the fleet TPS and per-(raw-)group TPS computed
@@ -24,6 +38,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	hasCollectedAt := false
 	hasPublishedAt := false
 	hasControllerReceivedAt := false
+	dropCounterUnavailable := false
 	groupsByName := make(map[string]int32)
 	groupMetricsByName := make(map[string][]generatorrpc.MetricAggregate)
 	fleetTPS := 0.0
@@ -51,6 +66,9 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	sort.Strings(targets)
 	for _, target := range targets {
 		batch := batches[target]
+		if batch.Telemetry == nil || batch.Telemetry.DroppedResultsUnavailable || batch.Telemetry.DroppedResults < 0 {
+			dropCounterUnavailable = true
+		}
 		if batch.TimestampUnixMs > combined.TimestampUnixMs {
 			combined.TimestampUnixMs = batch.TimestampUnixMs
 		}
@@ -203,7 +221,11 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			if combined.Telemetry == nil {
 				combined.Telemetry = &generatorrpc.MetricsTelemetry{}
 			}
-			combined.Telemetry.DroppedResults += batch.Telemetry.DroppedResults
+			var validDrops bool
+			combined.Telemetry.DroppedResults, validDrops = mergeRetainedDropCounters(combined.Telemetry.DroppedResults, batch.Telemetry.DroppedResults)
+			if !validDrops {
+				dropCounterUnavailable = true
+			}
 			combined.Telemetry.SheddedArrivals += batch.Telemetry.SheddedArrivals
 			if batch.Telemetry.CollectedAtUnixMs > 0 && (!hasCollectedAt || batch.Telemetry.CollectedAtUnixMs < combined.Telemetry.CollectedAtUnixMs) {
 				combined.Telemetry.CollectedAtUnixMs = batch.Telemetry.CollectedAtUnixMs
@@ -229,6 +251,9 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			combined.Telemetry.DroppedSubscriberBatches += batch.Telemetry.DroppedSubscriberBatches
 			combined.Telemetry.MissingMetricWindows += batch.Telemetry.MissingMetricWindows
 		}
+	}
+	if combined.Telemetry != nil {
+		combined.Telemetry.DroppedResultsUnavailable = dropCounterUnavailable
 	}
 	combined.FleetMetrics = mergeGeneratorMetricAggregates(fleetMetrics)
 	if actionsVersion > 0 {
@@ -554,7 +579,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	live.Resources = resourcesFromGeneratorStats(batch.Stats)
 	if batch.Telemetry != nil {
 		live.Telemetry.DroppedResults = batch.Telemetry.DroppedResults
-		live.Telemetry.DroppedResultsAvailable = true
+		live.Telemetry.DroppedResultsAvailable = !batch.Telemetry.DroppedResultsUnavailable && batch.Telemetry.DroppedResults >= 0
 		live.Telemetry.SheddedArrivals = batch.Telemetry.SheddedArrivals
 		live.Telemetry.DroppedSubscriberBatches = batch.Telemetry.DroppedSubscriberBatches
 		live.Telemetry.MissingMetricWindows = batch.Telemetry.MissingMetricWindows

@@ -50,6 +50,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 23, Name: "analysis-workflows", Fingerprint: "1c2768f2c961fa5da1d9340e07c868862433ba4c9012f1212420680aee4aad98"},
 	{Version: 24, Name: "native-interval-evidence", Fingerprint: "6c0d32e793c1de36cc7089696093f731d5ac200e1823f84c90933c96673c43f5"},
 	{Version: 25, Name: "run-timeline-annotations", Fingerprint: "f4dcd23df64db606ba53343accd751975904ae7eb338eb657342fe72369fb9d2"},
+	{Version: 26, Name: "retained-drop-counter-availability", Fingerprint: "364669cc553fcaa50eb2af5453de91428115c016fa47232c647175808c335dca"},
 }
 
 type SchemaMigrationRecord struct {

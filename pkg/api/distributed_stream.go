@@ -642,6 +642,18 @@ func (b *distributedExecutionBackend) forceStopDistributedTargets(parent context
 	return errors.Join(errs...)
 }
 
+// recordDistributedMetricsReceipt retains peer counter absence while adding
+// controller timing; controller bookkeeping is not a generator measurement.
+func recordDistributedMetricsReceipt(batch *generatorrpc.MetricsBatch, receivedAtUnixMs int64) {
+	if batch.Telemetry == nil {
+		batch.Telemetry = &generatorrpc.MetricsTelemetry{DroppedResultsUnavailable: true}
+	}
+	batch.Telemetry.ControllerReceivedAtUnixMs = receivedAtUnixMs
+	if batch.Telemetry.PublishedAtUnixMs > 0 {
+		batch.Telemetry.TransportLagMs = float64(receivedAtUnixMs - batch.Telemetry.PublishedAtUnixMs)
+	}
+}
+
 func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *TestRunner, test *ManagedTest, target string, stream *generatorrpc.MetricsStream) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -678,14 +690,7 @@ receiveLoop:
 			b.failDistributedTestOnStreamError(tr, test, target, fmt.Errorf("metrics generation %d does not match test generation %d", batch.ExecutionGeneration, executionGeneration))
 			return
 		}
-		if batch.Telemetry == nil {
-			batch.Telemetry = &generatorrpc.MetricsTelemetry{}
-		}
-		receivedAtUnixMs := time.Now().UnixMilli()
-		batch.Telemetry.ControllerReceivedAtUnixMs = receivedAtUnixMs
-		if batch.Telemetry.PublishedAtUnixMs > 0 {
-			batch.Telemetry.TransportLagMs = float64(receivedAtUnixMs - batch.Telemetry.PublishedAtUnixMs)
-		}
+		recordDistributedMetricsReceipt(&batch, time.Now().UnixMilli())
 		var (
 			live        *LiveMetrics
 			finalStatus string
@@ -1278,7 +1283,7 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 		}
 		if missing > 0 {
 			if batch.Telemetry == nil {
-				batch.Telemetry = &generatorrpc.MetricsTelemetry{}
+				batch.Telemetry = &generatorrpc.MetricsTelemetry{DroppedResultsUnavailable: true}
 			}
 			batch.Telemetry.MissingMetricWindows = missing
 		}
@@ -1728,6 +1733,19 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 	aggregated, fleetTPS, groupTPS := aggregateDistributedMetricsBatches(test.ID, batches)
 	tr.mu.Lock()
 	live := buildLiveMetricsFromDistributedBatch(test, aggregated, fleetTPS, groupTPS)
+	if live.Telemetry != nil {
+		// A cold assigned peer is absent from the resident batch map. Its missing
+		// counter must not qualify the observed subset as whole-fleet zero loss.
+		for peer := range test.remoteClientsByTarget {
+			if remoteTargetStateIntentionallyRemoved(test.remoteTargetStates[peer]) {
+				continue
+			}
+			peerBatch, present := batches[peer]
+			if !present || peerBatch.Telemetry == nil || peerBatch.Telemetry.DroppedResultsUnavailable {
+				live.Telemetry.DroppedResultsAvailable = false
+			}
+		}
+	}
 	if live.NativeEvidence != nil {
 		live.NativeEvidence.Publication = nativePublicationEvidence(target, batch, batches)
 		// Include assigned peers before their first metric batch, so cold or lost

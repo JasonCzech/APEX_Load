@@ -146,6 +146,7 @@ type IntervalSummaryRecord struct {
 	Browser                  *BrowserMetricsSummaryRecord           `json:"browser,omitempty"`
 	BrowserByDevice          map[string]*BrowserDeviceMetricsRecord `json:"browser_by_device,omitempty"`
 	Latency                  *NetworkLatencySummaryRecord           `json:"latency,omitempty"`
+	DroppedResultsAvailable  bool                                   `json:"dropped_results_available,omitempty"`
 	DroppedResults           int64                                  `json:"dropped_results,omitempty"`
 	WebsocketClients         int                                    `json:"websocket_clients,omitempty"`
 	WebsocketDroppedMessages int64                                  `json:"websocket_dropped_messages,omitempty"`

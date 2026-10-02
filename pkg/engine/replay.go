@@ -827,8 +827,24 @@ func expandReplayAction(
 			return replayStop, false
 		}
 		parentVariables := cloneStringMap(vu.Variables)
+		if parentVariables == nil {
+			parentVariables = make(map[string]string)
+		}
 		parentExtracted := cloneIntMap(vu.extractedVariables)
 		parentExtractedBytes := vu.extractedVariableBytes
+		parentRestored := false
+		restoreParent := func() {
+			if parentRestored {
+				return
+			}
+			vu.Variables = parentVariables
+			vu.extractedVariables = parentExtracted
+			vu.extractedVariableBytes = parentExtractedBytes
+			parentRestored = true
+		}
+		// Debugger stops and cancellations still run teardown. It must observe
+		// parent state rather than the interrupted branch's private variables.
+		defer restoreParent()
 		type branchExtractions struct {
 			name   string
 			values map[string]string
@@ -837,6 +853,9 @@ func expandReplayAction(
 		success := true
 		for branchIndex, branch := range action.Control.Branches {
 			vu.Variables = cloneStringMap(parentVariables)
+			if vu.Variables == nil {
+				vu.Variables = make(map[string]string)
+			}
 			vu.extractedVariables = make(map[string]int)
 			vu.extractedVariableBytes = 0
 			for stepIndex, child := range branch.Steps {
@@ -867,9 +886,7 @@ func expandReplayAction(
 				break
 			}
 		}
-		vu.Variables = parentVariables
-		vu.extractedVariables = parentExtracted
-		vu.extractedVariableBytes = parentExtractedBytes
+		restoreParent()
 		for _, branch := range merged {
 			for key, value := range branch.values {
 				if err := vu.mergeExtractions(&protocol.Result{Extractions: map[string]string{"parallel." + branch.name + "." + key: value}}); err != nil {

@@ -1534,8 +1534,9 @@ func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *L
 		BrowserByDevice:     browserDeviceSummaryRecordToLiveMetrics(record.BrowserByDevice),
 		Latency:             networkLatencyRecordToLiveMetrics(record.Latency),
 	}
-	if record.DroppedResults > 0 || record.WebsocketClients > 0 || record.WebsocketDroppedMessages > 0 || record.WebsocketDroppedEvents > 0 || !record.CollectedAt.IsZero() || !record.GeneratorPublishedAt.IsZero() || !record.ControllerReceivedAt.IsZero() || !record.PublishedAt.IsZero() || record.SampleAgeMs > 0 || record.GeneratorProcessingLagMs > 0 || record.TransportLagMs > 0 || record.ControllerFanoutLagMs > 0 {
+	if record.DroppedResultsAvailable || record.DroppedResults > 0 || record.WebsocketClients > 0 || record.WebsocketDroppedMessages > 0 || record.WebsocketDroppedEvents > 0 || !record.CollectedAt.IsZero() || !record.GeneratorPublishedAt.IsZero() || !record.ControllerReceivedAt.IsZero() || !record.PublishedAt.IsZero() || record.SampleAgeMs > 0 || record.GeneratorProcessingLagMs > 0 || record.TransportLagMs > 0 || record.ControllerFanoutLagMs > 0 {
 		live.Telemetry = &TelemetryHealth{
+			DroppedResultsAvailable:  record.DroppedResultsAvailable,
 			DroppedResults:           record.DroppedResults,
 			WebsocketClients:         record.WebsocketClients,
 			WebsocketDroppedMessages: record.WebsocketDroppedMessages,

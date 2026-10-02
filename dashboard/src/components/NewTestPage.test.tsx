@@ -628,6 +628,24 @@ describe('NewTestPage', () => {
     expect(container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')?.value).toBe('Operator launch name')
   })
 
+  it('reseeds the run name when explicitly reselecting a cleared scenario', async () => {
+    await act(async () => root.render(<NewTestPage
+      activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+      activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+      releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+      initialScenarioId="scenario-1" onSelectTest={vi.fn()}
+      onCreateRelease={vi.fn().mockResolvedValue(null)}
+    />))
+    await flushPromises()
+    const tab = (name: string) => Array.from(container.querySelectorAll('button')).find(button => button.textContent === name)!
+    await act(async () => tab('Schedules').click())
+    await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-scenario-label"]')!, ''))
+    await act(async () => tab('Run Setup').click())
+    const row = container.querySelector<HTMLTableRowElement>('.new-test-scenario-table-row')!
+    await act(async () => row.click())
+    expect(container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')?.value).toBe('Multi-group (3 groups)')
+  })
+
   it('retains a dirty run setup when switching tabs without creating a test', async () => {
     await act(async () => {
       root.render(
