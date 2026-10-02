@@ -3042,8 +3042,16 @@
             ]
           },
           "then": {
-            "description": "Reads the next event (read-only observer probe for end-to-end latency / backlog).",
+            "description": "Reads the next event using the configured observer, checkpointed processor or exclusive epoch consumer.",
             "properties": {
+              "config.eventhubs.consumer_mode": {
+                "description": "observer (default), processor with durable checkpoints, or exclusive with one fixed partition and explicit owner_level.",
+                "type": "string"
+              },
+              "config.eventhubs.owner_level": {
+                "description": "Explicit exclusive consumer epoch, 0 through 9007199254740991. A higher epoch takes partition ownership; loss is terminal for this client. Not accepted in observer/processor mode.",
+                "type": "integer"
+              },
               "config.eventhubs.start_position": {
                 "description": "Probe start position: latest (default, partition tail — for sustained-load observation) or earliest (partition start — required for produce→consume round-trips so the just-produced event is observed).",
                 "type": "string"
@@ -7433,7 +7441,8 @@
         "consumer_mode": {
           "enum": [
             "observer",
-            "processor"
+            "processor",
+            "exclusive"
           ],
           "type": "string"
         },
@@ -7445,6 +7454,11 @@
         },
         "namespace": {
           "type": "string"
+        },
+        "owner_level": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
         },
         "partition_id": {
           "type": "string"

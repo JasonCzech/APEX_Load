@@ -1,0 +1,7 @@
+# Evidence expansion — 2026-10-02
+
+This pass starts from published main `965675ff` and implements one bounded slice in each requested area: Event Hubs, protocol diagnostics, native analytics, authoring cleanup, composition fidelity, browser evidence, and telemetry reporting. Each slice receives tests and a repeated review/fix pass before its commit. Real Azure acceptance remains separate from offline SDK/contract verification; IBM MQ stays low priority and the 10 GB benchmark stays waived.
+
+## Event Hubs exclusive consumption
+
+Implemented an explicitly scoped fixed-partition consumer with a JSON-safe owner epoch, lazy construction, disabled prefetch, versioned generator capability and terminal SDK ownership-loss fencing. Observer and processor behavior retain their contracts. Review round 1 prevented exclusive mode from inheriting the observer consumer-group environment default. Round 2 prevented malformed internal exclusive configuration from falling back to SDK non-exclusive options and aligned the handwritten nullable TypeScript field with generated contracts. Final review found no further actionable issues. Default Event Hubs/DSL/engine tests, final targeted configuration tests, full real Event Hubs plus identity-policy race tests, dashboard typecheck and four script-contract unit tests passed. DSL/API/TypeScript artifacts were regenerated. API freshness and full repository/browser gates are recorded at pass completion. Live Azure epoch takeover remains an unverified acceptance item.

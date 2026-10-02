@@ -1393,3 +1393,17 @@ func TestBuildProtoConfig_EventHubsProcessor(t *testing.T) {
 		t.Fatal("processor settings lost")
 	}
 }
+
+func TestEventHubsExclusiveOwnerLevelSurvivesRuntimeMapping(t *testing.T) {
+	zero := int64(0)
+	s := &dsl.Script{Config: dsl.ScriptConfig{EventHubs: dsl.EventHubsConfig{ConsumerMode: "exclusive", OwnerLevel: &zero}}}
+	cfg := map[string]any{}
+	appendEventHubsConfig(cfg, s)
+	if value, ok := cfg["eventhubs_owner_level"].(int64); !ok || value != 0 {
+		t.Fatal(cfg)
+	}
+	zero = 1
+	if cfg["eventhubs_owner_level"] != int64(0) {
+		t.Fatal("runtime map retained mutable epoch pointer")
+	}
+}

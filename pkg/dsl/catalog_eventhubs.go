@@ -25,12 +25,14 @@ func eventHubsActionSpecs() []ActionSpec {
 		{
 			Type:      "eventhubs_consume",
 			Protocols: []string{"eventhubs"},
-			Summary:   "Reads the next event (read-only observer probe for end-to-end latency / backlog).",
+			Summary:   "Reads the next event using the configured observer, checkpointed processor or exclusive epoch consumer.",
 			Fields: []FieldSpec{
 				{Name: "target", Kind: FieldKindString, Doc: "Event hub; falls back to config.eventhubs.event_hub or params.event_hub."},
 				{Name: "params.event_hub", Kind: FieldKindString, Doc: "Event hub alternative to target."},
 				{Name: "params.consumer_group", Kind: FieldKindString, Doc: "Consumer group; falls back to config.eventhubs.consumer_group ($Default)."},
 				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Receive timeout in milliseconds; falls back to config.eventhubs.timeout_ms."},
+				{Name: "config.eventhubs.consumer_mode", Kind: FieldKindString, Doc: "observer (default), processor with durable checkpoints, or exclusive with one fixed partition and explicit owner_level."},
+				{Name: "config.eventhubs.owner_level", Kind: FieldKindInt, Doc: "Explicit exclusive consumer epoch, 0 through 9007199254740991. A higher epoch takes partition ownership; loss is terminal for this client. Not accepted in observer/processor mode."},
 				{Name: "config.eventhubs.start_position", Kind: FieldKindString, Doc: "Probe start position: latest (default, partition tail — for sustained-load observation) or earliest (partition start — required for produce→consume round-trips so the just-produced event is observed)."},
 			},
 		},

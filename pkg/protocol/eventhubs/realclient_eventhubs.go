@@ -39,12 +39,13 @@ type realClient struct {
 	processor   *eventHubsProcessor
 	cfg         config
 
-	mu         sync.Mutex
-	cred       azcore.TokenCredential
-	producers  map[string]*azeventhubs.ProducerClient  // keyed by event hub
-	consumers  map[string]*azeventhubs.ConsumerClient  // keyed by hub\x00group
-	partitions map[string]*azeventhubs.PartitionClient // keyed by hub\x00group\x00partition
-	closed     bool
+	mu            sync.Mutex
+	cred          azcore.TokenCredential
+	producers     map[string]*azeventhubs.ProducerClient  // keyed by event hub
+	consumers     map[string]*azeventhubs.ConsumerClient  // keyed by hub\x00group
+	partitions    map[string]*azeventhubs.PartitionClient // keyed by hub\x00group\x00partition
+	ownershipLost error
+	closed        bool
 }
 
 const (
@@ -125,6 +126,9 @@ func (c *realClient) Receive(ctx context.Context, hub, group string, timeout tim
 	if c.cfg.ConsumerMode == "processor" {
 		return c.receiveProcessed(ctx, hub, group, timeout)
 	}
+	if err := c.exclusiveReceiveError(hub, group); err != nil {
+		return event{}, -1, err
+	}
 	partition := c.cfg.PartitionID
 	if partition == "" {
 		partition = "0"
@@ -156,6 +160,7 @@ func (c *realClient) Receive(ctx context.Context, hub, group string, timeout tim
 		},
 	)
 	if err != nil {
+		err = c.recordExclusiveOwnershipLoss(err)
 		if errors.Is(err, errNoEvent) {
 			return event{}, 0, fmt.Errorf("no event received from %q partition %q within %s: %w", hub, partition, timeout, errNoEvent)
 		}
@@ -412,9 +417,11 @@ func (c *realClient) partitionClient(hub, group, partition string) (*azeventhubs
 		latest := true
 		start.Latest = &latest
 	}
-	pc, err := cc.NewPartitionClient(partition, &azeventhubs.PartitionClientOptions{
-		StartPosition: start,
-	})
+	options, err := exclusivePartitionOptions(c.cfg, start)
+	if err != nil {
+		return nil, err
+	}
+	pc, err := cc.NewPartitionClient(partition, options)
 	if err != nil {
 		return nil, err
 	}

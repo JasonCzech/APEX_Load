@@ -518,19 +518,20 @@ type KafkaTLSConfig struct {
 // the Kafka-endpoint profile under config.kafka). The real azeventhubs adapter is
 // opt-in (build -tags eventhubs_real); the default build uses the in-memory mock.
 type EventHubsConfig struct {
-	ConsumerMode           string `json:"consumer_mode,omitempty" jsonschema:"enum=observer,enum=processor"` // observer default; processor owns partitions with durable checkpoints.
-	CheckpointContainerURL string `json:"checkpoint_container_url,omitempty" jsonschema:"maxLength=1024"`    // Operator-approved existing Blob container; processor AAD authentication.
-	Namespace              string `json:"namespace,omitempty"`                                               // <ns>.servicebus.windows.net (AAD auth)
-	EventHub               string `json:"event_hub,omitempty"`                                               // default event hub (the "topic")
-	ConnectionString       string `json:"connection_string,omitempty"`                                       // SAS connection string (inline)
-	ConnectionStringSecret string `json:"connection_string_secret,omitempty"`                                // secret reference resolved at runtime
-	ConsumerGroup          string `json:"consumer_group,omitempty"`                                          // consumer group for the observer probe; defaults to $Default
-	PartitionKey           string `json:"partition_key,omitempty"`                                           // default partition key (hash routing)
-	PartitionID            string `json:"partition_id,omitempty"`                                            // default explicit partition id
-	StartPosition          string `json:"start_position,omitempty"`                                          // observer-probe start: latest (default, tail) | earliest (partition start, for produce→consume round-trips)
-	AuthType               string `json:"auth_type,omitempty"`                                               // connection_string | aad
-	TimeoutMs              int    `json:"timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`       // default send/receive timeout
-	Mock                   bool   `json:"mock,omitempty"`                                                    // use in-memory broker for local shakeout
+	OwnerLevel             *int64 `json:"owner_level,omitempty" jsonschema:"minimum=0,maximum=9007199254740991"`            // Explicit exclusive consumer epoch; absent for observer and processor.
+	ConsumerMode           string `json:"consumer_mode,omitempty" jsonschema:"enum=observer,enum=processor,enum=exclusive"` // observer default; processor checkpoints or explicitly scoped exclusive epoch.
+	CheckpointContainerURL string `json:"checkpoint_container_url,omitempty" jsonschema:"maxLength=1024"`                   // Operator-approved existing Blob container; processor AAD authentication.
+	Namespace              string `json:"namespace,omitempty"`                                                              // <ns>.servicebus.windows.net (AAD auth)
+	EventHub               string `json:"event_hub,omitempty"`                                                              // default event hub (the "topic")
+	ConnectionString       string `json:"connection_string,omitempty"`                                                      // SAS connection string (inline)
+	ConnectionStringSecret string `json:"connection_string_secret,omitempty"`                                               // secret reference resolved at runtime
+	ConsumerGroup          string `json:"consumer_group,omitempty"`                                                         // consumer group for the observer probe; defaults to $Default
+	PartitionKey           string `json:"partition_key,omitempty"`                                                          // default partition key (hash routing)
+	PartitionID            string `json:"partition_id,omitempty"`                                                           // default explicit partition id
+	StartPosition          string `json:"start_position,omitempty"`                                                         // observer-probe start: latest (default, tail) | earliest (partition start, for produce→consume round-trips)
+	AuthType               string `json:"auth_type,omitempty"`                                                              // connection_string | aad
+	TimeoutMs              int    `json:"timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`                      // default send/receive timeout
+	Mock                   bool   `json:"mock,omitempty"`                                                                   // use in-memory broker for local shakeout
 }
 
 // BrowserEmulationConfig selects the browser identity HTTP-transport replay

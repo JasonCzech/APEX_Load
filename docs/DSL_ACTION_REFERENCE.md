@@ -771,7 +771,7 @@ Aliases: `database_rollback`, `rollback`
 
 ### `eventhubs_consume`
 
-Reads the next event (read-only observer probe for end-to-end latency / backlog).
+Reads the next event using the configured observer, checkpointed processor or exclusive epoch consumer.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
@@ -779,6 +779,8 @@ Reads the next event (read-only observer probe for end-to-end latency / backlog)
 | `params.event_hub` | string |  | Event hub alternative to target. |
 | `params.consumer_group` | string |  | Consumer group; falls back to config.eventhubs.consumer_group ($Default). |
 | `params.timeout_ms` | int |  | Receive timeout in milliseconds; falls back to config.eventhubs.timeout_ms. |
+| `config.eventhubs.consumer_mode` | string |  | observer (default), processor with durable checkpoints, or exclusive with one fixed partition and explicit owner_level. |
+| `config.eventhubs.owner_level` | int |  | Explicit exclusive consumer epoch, 0 through 9007199254740991. A higher epoch takes partition ownership; loss is terminal for this client. Not accepted in observer/processor mode. |
 | `config.eventhubs.start_position` | string |  | Probe start position: latest (default, partition tail — for sustained-load observation) or earliest (partition start — required for produce→consume round-trips so the just-produced event is observed). |
 
 ### `eventhubs_produce`

@@ -24,6 +24,9 @@ func validateEventHubsScriptIssues(script *Script) []string {
 	}
 
 	eh := script.Config.EventHubs
+	if err := eventhubsprotocol.ValidateExclusiveSettings(eh.ConsumerMode, eh.EventHub, eh.ConsumerGroup, eh.PartitionID, eh.OwnerLevel, eh.Mock); err != nil {
+		issues = append(issues, err.Error())
+	}
 	if err := eventhubsprotocol.ValidateProcessorSettings(eh.ConsumerMode, eh.CheckpointContainerURL, eh.AuthType, eh.Namespace, eh.ConsumerGroup, eh.PartitionID, eh.Mock); err != nil {
 		issues = append(issues, err.Error())
 	}
@@ -129,6 +132,17 @@ func validateEventHubsActionSemanticIssues(path string, action Action, eh EventH
 		eventHub, _ := action.Params["event_hub"].(string)
 		if strings.TrimSpace(action.Target) == "" && strings.TrimSpace(eventHub) == "" && strings.TrimSpace(eh.EventHub) == "" {
 			issues = append(issues, fmt.Sprintf("%s: missing event hub (set target, params.event_hub, or config.eventhubs.event_hub)", label))
+		}
+	}
+	if eh.ConsumerMode == "exclusive" && action.Type == "eventhubs_consume" {
+		for name, expected := range map[string]string{"event_hub": eh.EventHub, "consumer_group": eh.ConsumerGroup} {
+			value := actionParamString(action.Params, name)
+			if name == "event_hub" && action.Target != "" {
+				value = action.Target
+			}
+			if value != "" && value != expected {
+				issues = append(issues, label+": exclusive consumer cannot override configured "+name)
+			}
 		}
 	}
 	// partition_key and partition_id are mutually exclusive routing controls.

@@ -50,6 +50,7 @@ func init() {
 }
 
 type config struct {
+	OwnerLevel             *int64
 	ConsumerMode           string
 	CheckpointContainerURL string
 	Lifetime               context.Context
@@ -88,8 +89,13 @@ func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 	if err != nil {
 		return fmt.Errorf("eventhubs timeout_ms: %w", err)
 	}
+	ownerLevel, err := parseOwnerLevel(cfg["eventhubs_owner_level"])
+	if err != nil {
+		return err
+	}
 	e.cfg = config{
-		Lifetime: ctx, ConsumerMode: stringValue(cfg, "eventhubs_consumer_mode"), CheckpointContainerURL: stringValue(cfg, "eventhubs_checkpoint_container_url"),
+		OwnerLevel: ownerLevel,
+		Lifetime:   ctx, ConsumerMode: stringValue(cfg, "eventhubs_consumer_mode"), CheckpointContainerURL: stringValue(cfg, "eventhubs_checkpoint_container_url"),
 		ProducerLifecycle:  stringValue(cfg, "eventhubs_producer_lifecycle"),
 		SampleTiming:       stringValue(cfg, "eventhubs_sample_timing"),
 		Namespace:          stringValue(cfg, "eventhubs_namespace"),
@@ -104,6 +110,9 @@ func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 		Mock:               boolValue(cfg, "eventhubs_mock"),
 		AllowedTargetHosts: protocol.TargetPolicyHosts(cfg),
 	}
+	if err := ValidateExclusiveSettings(e.cfg.ConsumerMode, e.cfg.EventHub, e.cfg.ConsumerGroup, e.cfg.PartitionID, e.cfg.OwnerLevel, e.cfg.Mock); err != nil {
+		return err
+	}
 	if e.cfg.AuthType == "" {
 		e.cfg.AuthType = strings.TrimSpace(os.Getenv("APEXLOAD_EVENTHUBS_AUTH"))
 	}
@@ -116,8 +125,8 @@ func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 	if err := ValidateProcessorSettings(e.cfg.ConsumerMode, e.cfg.CheckpointContainerURL, e.cfg.AuthType, e.cfg.Namespace, e.cfg.ConsumerGroup, e.cfg.PartitionID, e.cfg.Mock); err != nil {
 		return err
 	}
-	if e.cfg.ConsumerMode == "processor" && !realEventHubsAvailable {
-		return fmt.Errorf("Event Hubs processor requires an eventhubs_real build")
+	if (e.cfg.ConsumerMode == "processor" || e.cfg.ConsumerMode == "exclusive") && !realEventHubsAvailable {
+		return fmt.Errorf("Event Hubs %s consumer requires an eventhubs_real build", e.cfg.ConsumerMode)
 	}
 	if e.cfg.ConsumerMode == "processor" {
 		if _, err := identitypolicy.ValidateEventHubsCheckpointContainer(e.cfg.CheckpointContainerURL); err != nil {

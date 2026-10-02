@@ -13,13 +13,13 @@ const FeatureProcessorCheckpointsV1 = "eventhubs_processor_checkpoints_v1"
 func (*EventHubs) RuntimeCapabilities() protocol.RuntimeCapabilities {
 	out := protocol.RuntimeCapabilities{Available: true}
 	if realEventHubsAvailable {
-		out.Features = []string{FeatureProcessorCheckpointsV1}
+		out.Features = []string{FeatureProcessorCheckpointsV1, FeatureExclusiveConsumerV1}
 	}
 	return out
 }
 func ValidateProcessorSettings(mode, storage, auth, namespace, group, partition string, mock bool) error {
-	if mode != "" && mode != "observer" && mode != "processor" {
-		return fmt.Errorf("eventhubs consumer_mode must be observer or processor")
+	if mode != "" && mode != "observer" && mode != "processor" && mode != "exclusive" {
+		return fmt.Errorf("eventhubs consumer_mode must be observer, processor or exclusive")
 	}
 	if mode != "processor" {
 		if storage != "" {

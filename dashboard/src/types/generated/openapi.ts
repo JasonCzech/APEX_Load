@@ -780,6 +780,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -4454,6 +4455,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -5253,6 +5255,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -5954,6 +5957,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -9545,6 +9549,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -10398,6 +10403,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -11076,6 +11082,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -11723,6 +11730,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -12260,6 +12268,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -12870,6 +12879,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -13492,6 +13502,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -14716,6 +14727,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -16105,6 +16117,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -17756,6 +17769,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -18419,6 +18433,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -19329,6 +19344,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -20226,6 +20242,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -20916,6 +20933,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -28976,6 +28994,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -29813,6 +29832,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -41811,6 +41831,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -43545,6 +43566,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -55612,6 +55634,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -66006,6 +66029,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -66688,6 +66712,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -79463,6 +79488,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -80311,6 +80337,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -81002,6 +81029,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -81762,6 +81790,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -82731,6 +82760,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -83409,6 +83439,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -84056,6 +84087,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -84593,6 +84625,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -86119,6 +86152,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -94503,6 +94537,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -95279,6 +95314,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -97757,6 +97793,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -99367,6 +99404,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -99981,6 +100019,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -102397,6 +102436,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -103632,6 +103672,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -104944,6 +104985,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -106255,6 +106297,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -107567,6 +107610,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -108878,6 +108922,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -116939,6 +116984,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -117628,6 +117674,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -122645,6 +122692,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;
@@ -123481,6 +123529,7 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "start_position"?: string;
@@ -127827,6 +127876,7 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "start_position"?: string;

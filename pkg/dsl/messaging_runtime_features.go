@@ -32,5 +32,8 @@ func RequiredMessagingRuntimeFeatures(script *Script) []string {
 	if strings.EqualFold(script.Protocol, "eventhubs") && script.Config.EventHubs.ConsumerMode == "processor" {
 		features = append(features, eventhubsprotocol.FeatureProcessorCheckpointsV1)
 	}
+	if strings.EqualFold(script.Protocol, "eventhubs") && script.Config.EventHubs.ConsumerMode == "exclusive" {
+		features = append(features, eventhubsprotocol.FeatureExclusiveConsumerV1)
+	}
 	return features
 }

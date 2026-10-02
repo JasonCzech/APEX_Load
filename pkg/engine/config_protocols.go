@@ -794,6 +794,9 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 
 func appendEventHubsConfig(cfg map[string]any, script *dsl.Script) {
 	ehCfg := script.Config.EventHubs
+	if ehCfg.OwnerLevel != nil {
+		cfg["eventhubs_owner_level"] = *ehCfg.OwnerLevel
+	}
 	if ehCfg.ConsumerMode != "" {
 		cfg["eventhubs_consumer_mode"] = ehCfg.ConsumerMode
 	}
