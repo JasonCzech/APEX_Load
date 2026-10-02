@@ -198,6 +198,8 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 		sort.Float64s(v)
 		var value float64
 		switch q.Metric {
+		case "observation_rate", "error_observation_rate", "success_observation_rate":
+			value = *storage.NativeObservationRate(q.Metric, int64(len(v)), int64(failures[i]), result.Buckets[i].To.Sub(result.Buckets[i].From).Seconds())
 		case "observation_count":
 			value = float64(len(v))
 		case "error_rate":

@@ -300,3 +300,28 @@ test('timestamped run annotations save, reopen and retain delete history', async
   const annotations = stored.annotations as Array<{ label: string; text: string; deleted_at?: string }>
   expect(stored.revision).toBe(2); expect(annotations[0]).toMatchObject({ label: 'Deployment', text: 'Version 2 at execution commit' }); expect(annotations[0].deleted_at).toBeTruthy()
 })
+
+
+test('retained observation rates save and reopen with elapsed-time units', async ({ page, trackRun }) => {
+ if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+ const request = page.context().request
+ const workspace = await createWorkspace(request)
+ const scriptId = await seedScript(request, workspace)
+ const id = idOf(await json(await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, name: 'Retained rates', duration: '1s', groups: [{ name: 'requests', script_id: scriptId, vusers: 1 }] } })))
+ trackRun(id)
+ await page.route(`**/api/v1/tests/${id}/archive/native-series`, route => {
+ expect(route.request().postDataJSON()).toMatchObject({ population: 'action', metric: 'success_observation_rate', aggregation: 'rate' })
+ return route.fulfill({ json: { current: { run_id: id, buckets: [{ from: '2026-10-01T00:00:00Z', to: '2026-10-01T00:00:10Z', offset_seconds: 0, count: 3, value: .2 }], warnings: [], identities: ['Checkout'] }, comparable: false, warnings: [], added: [], removed: [] } })
+ })
+ await page.goto(`/#/test/${id}?${scopeQuery(workspace)}`); await page.reload()
+ await page.getByText('Create project analytics panel', { exact: true }).click()
+ await page.getByLabel('Panel title', { exact: true }).fill('Successful retained rate')
+ await page.getByLabel('Evidence population', { exact: true }).selectOption('action')
+ await page.getByLabel('Metric', { exact: true }).selectOption('success_observation_rate')
+ await expect(page.getByLabel('Measurement', { exact: true })).toHaveValue('rate')
+ await page.getByLabel('Visualization', { exact: true }).selectOption('table')
+ await page.getByRole('button', { name: 'Save project panel', exact: true }).click()
+ const panels = page.getByRole('region', { name: 'Project analytics panels', exact: true })
+ await expect(panels).toContainText('observations/s')
+ await page.reload(); await expect(panels).toContainText('Successful retained rate'); await expect(panels).toContainText('observations/s')
+})

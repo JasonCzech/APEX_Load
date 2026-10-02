@@ -82,6 +82,7 @@ type AnalyticsQuery struct {
 var dashboardMetrics = map[string]struct{}{
 	"tps": {}, "response_time": {}, "error_rate": {}, "active_vusers": {},
 	"throughput": {}, "bytes_sent": {}, "bytes_received": {}, "regional_activity": {},
+	"observation_rate": {}, "error_observation_rate": {}, "success_observation_rate": {},
 	"observation_count": {}, "transaction_duration": {}, "resource_cpu": {}, "resource_memory": {},
 }
 var dashboardAggregations = map[string]struct{}{
@@ -155,6 +156,9 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 				continue
 			}
 			q := panel.Query
+			if IsNativeObservationRate(q.Metric) && q.Population == "" {
+				return errors.New("retained rates require an explicit population")
+			}
 			if q.EvidenceMode != "" {
 				if err := ValidateNativeEvidenceQuery(*q); err != nil {
 					return err
@@ -357,6 +361,10 @@ func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
 		return errors.New("select a window within 24 hours and at most 1000 buckets")
 	}
 	switch q.Metric {
+	case "observation_rate", "error_observation_rate", "success_observation_rate":
+		if q.Aggregation == "rate" {
+			return nil
+		}
 	case "observation_count":
 		if q.Aggregation == "count" {
 			return nil

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { nativePanelRows } from './nativeAnalyticsModel'
+import { nativePanelRows, nativePopulationMetrics } from './nativeAnalyticsModel'
 import type { DashboardDefinitionPanel } from '../hooks/api/useDashboardDefinitionsApi'
 import type { MetricsHistoryPoint } from '../types'
 const panel: DashboardDefinitionPanel = { id: 'p', title: 'Latency', kind: 'line', x: 0, y: 0, w: 24, h: 8, query: { metric: 'response_time', aggregation: 'p95' } }
@@ -20,4 +20,12 @@ describe('native panel evidence', () => {
     expect(nativePanelRows({ ...panel, query: { metric: 'throughput', aggregation: 'avg' } }, [{ time: 'first', tps: 2 }] as MetricsHistoryPoint[])).toEqual([{ time: 'first', value: 2 }])
   })
 
+})
+
+it('limits derived rates to retained population evidence and preserves their unit', () => {
+ for (const metric of ['observation_rate', 'error_observation_rate', 'success_observation_rate']) {
+ expect(nativePopulationMetrics[metric].aggregations).toEqual(['rate'])
+ expect(nativePopulationMetrics[metric].unit).toBe('observations/s')
+ expect(nativePanelRows({ ...panel, query: { metric, aggregation: 'rate' } }, history)).toBeNull()
+ }
 })

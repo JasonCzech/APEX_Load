@@ -40,6 +40,8 @@ type NativeEvidenceResponse struct {
 
 func nativeMetricUnit(q storage.AnalyticsQuery) string {
 	switch q.Metric {
+	case "observation_rate", "error_observation_rate", "success_observation_rate":
+		return "observations/s"
 	case "response_time":
 		return "ms"
 	case "error_rate":
@@ -191,6 +193,12 @@ func buildNativeLiveEvidence(ctx context.Context, start time.Time, history []*Li
 					}
 					value := m.Avg
 					switch q.Metric {
+					case "observation_rate", "error_observation_rate", "success_observation_rate":
+						rate := storage.NativeObservationRate(q.Metric, m.Count, m.Errors, e.WindowSeconds)
+						if rate == nil {
+							return out, errors.New("invalid retained rate denominator")
+						}
+						value = *rate
 					case "observation_count":
 						value = float64(m.Count)
 					case "error_rate":
@@ -343,6 +351,8 @@ func buildNativeGroupedArchive(ctx context.Context, record *storage.RunArchiveRe
 				sort.Float64s(b.values)
 				value := 0.0
 				switch q.Metric {
+				case "observation_rate", "error_observation_rate", "success_observation_rate":
+					value = *storage.NativeObservationRate(q.Metric, int64(len(b.values)), int64(b.errors), to.Sub(from).Seconds())
 				case "observation_count":
 					value = float64(len(b.values))
 				case "error_rate":

@@ -19,3 +19,12 @@ export function nativePanelRows(panel: DashboardDefinitionPanel, history: Metric
   const field = metricName === 'response_time' && query.aggregation !== 'avg' ? query.aggregation : metric.field
   return history.map(point => ({ time: point.time, value: point.isGapBoundary || point.resourceSampleOnly && !query.metric.startsWith('resource_') ? undefined : typeof point[field] === 'number' && Number.isFinite(point[field]) ? point[field] as number : undefined }))
 }
+
+export const nativePopulationMetrics: Record<string, { label: string; aggregations: string[]; unit: string }> = {
+ response_time: { ...nativeMetrics.response_time, unit: 'ms' },
+ error_rate: { ...nativeMetrics.error_rate, unit: '%' },
+ observation_count: { label: 'Observation count', aggregations: ['count'], unit: 'observations' },
+ observation_rate: { label: 'Retained observations / second', aggregations: ['rate'], unit: 'observations/s' },
+ error_observation_rate: { label: 'Failed retained observations / second', aggregations: ['rate'], unit: 'observations/s' },
+ success_observation_rate: { label: 'Successful retained observations / second', aggregations: ['rate'], unit: 'observations/s' },
+}

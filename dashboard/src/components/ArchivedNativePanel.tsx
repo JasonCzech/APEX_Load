@@ -1,3 +1,4 @@
+import { nativePopulationMetrics } from './nativeAnalyticsModel'
 import { useEffect, useState } from 'react'
 import { Line, LineChart, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { request } from '../hooks/apiClient'
@@ -25,7 +26,7 @@ export default function ArchivedNativePanel({ panel, testId }: { panel: Dashboar
   }, [testId, encoded, revision])
   if (error) return <div><p role="alert">Archive panel unavailable: {error}</p><button onClick={() => setRevision(revision + 1)}>Retry archive panel</button></div>
   if (!result) return <p role="status">Loading archived observations…</p>
-  const unit = panel.query?.metric === 'response_time' ? 'ms' : panel.query?.metric === 'error_rate' ? '%' : 'observations'
+  const unit = nativePopulationMetrics[panel.query?.metric || '']?.unit || 'observations'
   const rows = result.current.buckets.map((bucket, i) => ({ ...bucket, baseline: result.baseline?.buckets[i]?.value ?? null }))
   const select = (run: string, bucket: Bucket) => { setSelection({ run, bucket }) }
   return <section aria-label="Filtered archive panel">
