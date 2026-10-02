@@ -15,6 +15,7 @@ func TestIsOpenableFile(t *testing.T) {
 	cases := map[string]bool{
 		"/x/order.json":      true,
 		"/x/archive.zip":     true,
+		"/x/project.USZ":     true,
 		"/x/capture.HAR":     true, // case-insensitive
 		"/x/notes.txt":       false,
 		"/x/script.exe":      false,

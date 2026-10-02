@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	filepath "path"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -18,6 +19,30 @@ func (argument *truArgument) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	argument.Value = truArgumentValueString(raw["value"])
+	argument.Param, _ = raw["param"].(bool)
+	argument.EvalJavaScript, _ = raw["evalJavaScript"].(bool)
+	if argument.Param {
+		name := strings.TrimSpace(trimQuotedValue(argument.Value))
+		name = strings.TrimPrefix(strings.TrimSuffix(name, "}"), "{")
+		if !truParameterNamePattern.MatchString(name) {
+			return fmt.Errorf("TruClient parameter argument requires a parameter name")
+		}
+		canonical := strings.ToLower(name)
+		canonical = strings.Map(func(r rune) rune {
+			if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' {
+				return r
+			}
+			return '_'
+		}, canonical)
+		for strings.Contains(canonical, "__") {
+			canonical = strings.ReplaceAll(canonical, "__", "_")
+		}
+		canonical = strings.Trim(canonical, "_")
+		if canonical == "" {
+			return fmt.Errorf("TruClient parameter argument requires a parameter name")
+		}
+		argument.Value = "{{param." + canonical + "}}"
+	}
 	return nil
 }
 
@@ -43,10 +68,15 @@ func truArgumentValueString(value any) string {
 }
 
 func findDefaultXML(files map[string]string) (string, string, bool) {
-	for name, content := range files {
+	names := make([]string, 0)
+	for name := range files {
 		if strings.EqualFold(filepath.Base(name), "default.xml") {
-			return name, content, true
+			names = append(names, name)
 		}
+	}
+	sort.Strings(names)
+	if len(names) > 0 {
+		return names[0], files[names[0]], true
 	}
 	return "", "", false
 }
@@ -85,6 +115,14 @@ func flattenCandidateSteps(steps []truXMLStep) []truXMLStep {
 	flattened := make([]truXMLStep, 0)
 	var visit func(step truXMLStep)
 	visit = func(step truXMLStep) {
+		if step.Disabled {
+			flattened = append(flattened, step)
+			return
+		}
+		if strings.EqualFold(strings.TrimSpace(step.Type), "alternative") {
+			flattened = append(flattened, step)
+			return
+		}
 		action := strings.TrimSpace(step.Action)
 		if action != "" && !isStructuralAction(action) {
 			if isControlAction(action) {
@@ -93,7 +131,9 @@ func flattenCandidateSteps(steps []truXMLStep) []truXMLStep {
 				flattened = append(flattened, copy)
 				return
 			}
-			flattened = append(flattened, step)
+			copy := step
+			copy.Steps = nil
+			flattened = append(flattened, copy)
 		}
 		for _, child := range step.Steps {
 			visit(child)

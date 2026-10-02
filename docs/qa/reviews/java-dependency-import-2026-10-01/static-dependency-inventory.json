@@ -1,0 +1,531 @@
+{
+  "contract": "apexload.static-java-dependency-review.v1",
+  "archive_sha256": "57da3246409502cbd567f27c1d47eb108862f6d10d1451723aab6fd672e35d91",
+  "archive_size_bytes": 61443208,
+  "outer_regular_files": 9,
+  "outer_jars": 6,
+  "outer_expanded_bytes": 61441886,
+  "top_level_jar_class_count": 33283,
+  "nested_jar_resources": 2,
+  "nested_class_count": 2,
+  "standalone_class_count": 1,
+  "runtime_provisioned": false,
+  "inspected_by": "bounded_static_structural_parser_no_customer_code_execution",
+  "files": [
+    {
+      "source_path": "TLG LR jars/ClientBeans.jar",
+      "role": "java_library",
+      "size_bytes": 308883,
+      "sha256": "a39d44437847ec28f6b1fc2b95c60829adc02fc830381ccd0f8d2c3f95571ed8"
+    },
+    {
+      "source_path": "TLG LR jars/Infra/BasicClient.class",
+      "role": "java_bytecode",
+      "size_bytes": 5311,
+      "sha256": "36c002936bad082aee3c8723956b25c5483cae2bdc8c1521668284c7ebe71b10"
+    },
+    {
+      "source_path": "TLG LR jars/Infra/BasicClient.txt",
+      "role": "supplied_decompiled_helper_text",
+      "size_bytes": 7302,
+      "sha256": "96b06fbeaf552fb499bc64fd7c2d5659a49778959ec130c0aca160573df19810"
+    },
+    {
+      "source_path": "TLG LR jars/Infra/jad.exe",
+      "role": "inspection_tool_not_executed",
+      "size_bytes": 495616,
+      "sha256": "c5f43828592c7a47261b6baf89f13455423f9c528ed1b01e7148ba2475ed6126"
+    },
+    {
+      "source_path": "TLG LR jars/ClientData.jar",
+      "role": "java_library",
+      "size_bytes": 2513161,
+      "sha256": "760c79738a6746c1f6576e3890fb3429281243858f9ef4ae2e0500fbd98b00c2"
+    },
+    {
+      "source_path": "TLG LR jars/sbmsIrdSec.jar",
+      "role": "java_library",
+      "size_bytes": 66437,
+      "sha256": "cdac1240980da0d28671b47b4e95689867925f82ed0c743955d28213574d46a7"
+    },
+    {
+      "source_path": "TLG LR jars/uams.jar",
+      "role": "java_library",
+      "size_bytes": 4092966,
+      "sha256": "99ba2efccaf68148e9ea82379d8b8fd2c53b282ddbf99059f8f75c0164da1bb8"
+    },
+    {
+      "source_path": "TLG LR jars/util.jar",
+      "role": "java_library",
+      "size_bytes": 155423,
+      "sha256": "526936745c029b550a60f95f972b324d88aacc41e7350ca25acd363d72b93f67"
+    },
+    {
+      "source_path": "TLG LR jars/weblogic.jar",
+      "role": "java_library",
+      "size_bytes": 53796787,
+      "sha256": "8565deac9cf9f2f8b2b4650f98dec1820c68ac14b0394a4bc8eee13e96566898"
+    },
+    {
+      "source_path": "weblogic.jar!/schema/weblogic-container-binding.jar",
+      "role": "nested_schema_jar_resource_not_classpath_bound",
+      "size_bytes": 877661,
+      "sha256": "7ecdef88eafe12398ca5238f476ed93cd95d6e0f2185af4b0402f8beb3c748e0"
+    },
+    {
+      "source_path": "weblogic.jar!/schema/weblogic-domain-binding.jar",
+      "role": "nested_schema_jar_resource_not_classpath_bound",
+      "size_bytes": 661820,
+      "sha256": "a77723c100c0bf70ed9389592ea830ab9a285d2f2f22a91f952689aec20d9397"
+    }
+  ],
+  "jars": [
+    {
+      "source_file": "ClientBeans.jar",
+      "entry_count": 148,
+      "expanded_bytes": 279966,
+      "class_count": 140,
+      "class_version_counts": {
+        "49.0": 140
+      },
+      "nested_jar_count": 0,
+      "native_library_count": 0,
+      "signature_file_count": 0,
+      "duplicate_entry_count": 0,
+      "structural_parse_error_count": 0
+    },
+    {
+      "source_file": "ClientData.jar",
+      "entry_count": 1557,
+      "expanded_bytes": 2241410,
+      "class_count": 1545,
+      "class_version_counts": {
+        "49.0": 1545
+      },
+      "nested_jar_count": 0,
+      "native_library_count": 0,
+      "signature_file_count": 0,
+      "duplicate_entry_count": 0,
+      "structural_parse_error_count": 0
+    },
+    {
+      "source_file": "sbmsIrdSec.jar",
+      "entry_count": 18,
+      "expanded_bytes": 63743,
+      "class_count": 14,
+      "class_version_counts": {
+        "49.0": 14
+      },
+      "nested_jar_count": 0,
+      "native_library_count": 0,
+      "signature_file_count": 0,
+      "duplicate_entry_count": 0,
+      "structural_parse_error_count": 0
+    },
+    {
+      "source_file": "uams.jar",
+      "entry_count": 3284,
+      "expanded_bytes": 8205258,
+      "class_count": 2196,
+      "class_version_counts": {
+        "50.0": 711,
+        "52.0": 1483,
+        "45.3": 2
+      },
+      "nested_jar_count": 0,
+      "native_library_count": 0,
+      "signature_file_count": 0,
+      "duplicate_entry_count": 0,
+      "structural_parse_error_count": 0
+    },
+    {
+      "source_file": "util.jar",
+      "entry_count": 61,
+      "expanded_bytes": 146739,
+      "class_count": 46,
+      "class_version_counts": {
+        "45.3": 46
+      },
+      "nested_jar_count": 0,
+      "native_library_count": 0,
+      "signature_file_count": 0,
+      "duplicate_entry_count": 0,
+      "structural_parse_error_count": 0
+    },
+    {
+      "source_file": "weblogic.jar",
+      "entry_count": 34254,
+      "expanded_bytes": 128617963,
+      "class_count": 29342,
+      "class_version_counts": {
+        "48.0": 23378,
+        "49.0": 3220,
+        "45.3": 1804,
+        "46.0": 940
+      },
+      "nested_jar_count": 2,
+      "native_library_count": 0,
+      "signature_file_count": 0,
+      "duplicate_entry_count": 0,
+      "structural_parse_error_count": 0
+    }
+  ],
+  "manifest_classpath": [
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "apache_xbean.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "weblogic-container-binding.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": true,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "weblogic-domain-binding.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": true,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "diagnostics-binding.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "diagnostics-image-binding.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "wlcipher.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "jsafe.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "webservices.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "xmlx.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "ojdbc14.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "jconn2.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "jConnect.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "cssjdkutils.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "cssapi.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "cssimpl.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "engapi.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "engimpl.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "EccpressoAsn1.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "EccpressoCore.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "EccpressoJcae.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "ant.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "jakarta-oro-2.0.7.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "commons-net-1.1.0.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "wlbase.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "wlutil.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "wlsqlserver.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "wldb2.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "wlsybase.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "wloracle.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "wlinformix.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "wlw-langx.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "logkit.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "pdev.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "debugging.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "wlw-system.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "javelinx.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "jcom.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    },
+    {
+      "declaring_jar": "weblogic.jar",
+      "required_basename": "weblogic-L10N.jar",
+      "ordinary_supplied_member": false,
+      "nested_resource_same_basename": false,
+      "runtime_binding": "not_provisioned"
+    }
+  ],
+  "duplicate_class_definition_count": 1,
+  "duplicate_class_definitions_byte_identical": true,
+  "primary_dp_classpath_basename_matches": 6,
+  "primary_dp_classpath_basename_requirements": 6,
+  "earlier_kafka_classpath_basename_matches": 0,
+  "earlier_kafka_classpath_basename_requirements": 11,
+  "conversion_checks": {
+    "standalone": {
+      "script_present": false,
+      "normalized_regular_files": 9,
+      "opaque_assets": 8,
+      "eligible_text_preview_files": 1,
+      "runtime_provisioned": false
+    },
+    "primary": {
+      "normalized_regular_files": 98,
+      "physical_entries": 104,
+      "opaque_assets": 9,
+      "parameters": 17,
+      "data_sources": 5,
+      "data_rows": 7,
+      "expected_functions": 272,
+      "accounted_functions": 272,
+      "skipped_functions": 0,
+      "structural_issues": 0,
+      "fidelity_blockers": 6,
+      "inline_data_total_bytes": 584,
+      "data_rows_per_source": [
+        1,
+        1,
+        1,
+        3,
+        1
+      ]
+    },
+    "paired_static_converter_only": {
+      "normalized_regular_files": 107,
+      "opaque_assets": 17,
+      "parameters": 17,
+      "data_sources": 5,
+      "data_rows": 7,
+      "runtime_keys": 205,
+      "project_keys": 77,
+      "prm_assignments": 221,
+      "expected_functions": 362,
+      "accounted_functions": 362,
+      "native_bridge_functions": 116,
+      "external_java_functions": 246,
+      "skipped_functions": 0,
+      "structural_issues": 0,
+      "fidelity_blockers": 4,
+      "promotion_status": "blocked",
+      "helper_bytecode_equivalence_proven": false,
+      "api_route_provenance_check": "separate",
+      "parsed_classpath_entries": 7,
+      "parsed_jar_classpath_entries": 6,
+      "parsed_directory_classpath_entries": 1,
+      "executable_classpath_assets": 0,
+      "inline_data_total_bytes": 584,
+      "data_rows_per_source": [
+        1,
+        1,
+        1,
+        3,
+        1
+      ],
+      "opaque_asset_scope": "Non-preview source evidence; includes binary/executable assets and encoded prior-run text. Not a semantic binary-file count.",
+      "other_non_preview_support_assets": 8,
+      "other_non_preview_extensions": {
+        ".sdf": 1,
+        ".tmp": 1,
+        ".db": 1,
+        ".ico": 3,
+        ".ini": 1,
+        ".store": 1
+      },
+      "source_mapping_count": 384
+    },
+    "source_vm_parameter_rows": 8,
+    "unclosed_quote_rows": 4
+  },
+  "primary_compiled_evidence": {
+    "source_basename": "Actions.class",
+    "size_bytes": 16907,
+    "sha256": "142ca3a5b4820e6e17be40af6bd5f69cb57e58bd23efe15c9f2e17cc2d0c46ce",
+    "major_version": 52,
+    "minor_version": 0,
+    "source_equivalence_proven": false,
+    "executed": false
+  }
+}

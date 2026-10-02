@@ -46,6 +46,7 @@ interface Props {
   externalSourceMigrationSelected?: boolean
   onExternalSourceMigrationChange?: (selected: boolean) => void
   onApply: (bindings: SecretBindingSelection[]) => void | Promise<void>
+  onErrorChange?: (message: string) => void
   onSourceSessionSettled?: (
     sourceSecretSessionId: string,
     migrationSelections: SecretBindingSelection[],
@@ -498,6 +499,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   externalSourceMigrationSelected = false,
   onExternalSourceMigrationChange,
   onApply,
+  onErrorChange,
   onSourceSessionSettled,
   onPreparedChange,
   onProjectSecretsConfigured,
@@ -1008,6 +1010,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     }
     setApplying(true)
     setError('')
+    onErrorChange?.('')
     try {
       let currentStatuses = new Map(scopedStatuses)
       let currentStoreWritable = scopedStoreWritable
@@ -1300,7 +1303,11 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       }
       return true
     } catch (err: unknown) {
-      if (requestIsCurrent()) setError(getErrorMessage(err, 'Failed to configure credentials'))
+      if (mountedRef.current && requestIsCurrent()) {
+        const message = getErrorMessage(err, 'Failed to configure credentials')
+        setError(message)
+        onErrorChange?.(message)
+      }
       return false
     } finally {
       if (requestIsCurrent()) setApplying(false)

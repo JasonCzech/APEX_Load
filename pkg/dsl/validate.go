@@ -1773,6 +1773,9 @@ func validateParameterIssues(script *Script) []string {
 			if param.Step == 0 {
 				issues = append(issues, fmt.Sprintf("%s %q: step must be non-zero for counter parameters", label, name))
 			}
+			if param.Selection == "unique" && (param.BlockSize <= 0 || param.Step != 1 || param.End != 0 || param.AutoAllocate) {
+				issues = append(issues, fmt.Sprintf("%s %q: unique counter requires an explicit positive block_size, step=1, and no end or automatic allocation", label, name))
+			}
 		case "random_string":
 			if param.Length <= 0 {
 				issues = append(issues, fmt.Sprintf("%s %q: length must be greater than zero for random_string parameters", label, name))

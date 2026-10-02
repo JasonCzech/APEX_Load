@@ -25,6 +25,7 @@ const apiMock = {
   createProjectSecrets: vi.fn(),
   migrateImportSecrets: vi.fn(),
   discardImportSecretSession: vi.fn(),
+  uploadJavaClasspathJar: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -430,7 +431,7 @@ describe('EnterpriseArchiveImport', () => {
     }))
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" folderId="folder-1" onImported={onImported} />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[accept=".zip,.usz"]')!
     const add = async (names: string[]) => {
       await act(async () => {
         Object.defineProperty(fileInput, 'files', { configurable: true, value: names.map(name => new File(['zip'], name)) })
@@ -460,6 +461,82 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('3 scripts saved')
     await clickButton(findButton(container, 'Open one.zip in Visual Editor')!)
     expect(onImported).toHaveBeenLastCalledWith({ scripts: [expect.objectContaining({ id: 'one.zip' })] })
+  })
+
+  it('expands a collection into independent project reviews and revalidates a member from the original upload', async () => {
+    const outer = new File(['archive'], 'collection.zip')
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (_file: File, options: { archive_member?: string }) => {
+      if (options.archive_member) return executableEnterpriseResult({ name: 'Web', protocol: 'http', actions: [{ name: 'Home' }] })
+      return { archive_collection: true, archives: [
+        { source_name: 'Web.USZ', source_size: 1024, response: executableEnterpriseResult({ name: 'Web', protocol: 'http', actions: [{ name: 'Home' }] }) },
+        { source_name: 'Broken.USZ', source_size: 5, error: 'Invalid ZIP archive' },
+      ] }
+    })
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" initialFiles={[outer]} />))
+    await flushPromises()
+    await clickImportAction(container, 'Validate Only')
+    expect(container.querySelectorAll('.lr-file-row')).toHaveLength(2)
+    expect(container.textContent).toContain('Web.USZ')
+    expect(container.textContent).toContain('Broken.USZ')
+    expect(container.textContent).toContain('from collection.zip')
+    expect(container.textContent).toContain('1.0 KB')
+    expect(container.querySelectorAll('.lr-file-row.failed')).toHaveLength(1)
+    apiMock.validateEnterpriseArchiveImport.mockClear()
+    await clickImportAction(container, 'Validate Only')
+    expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledWith(outer, expect.objectContaining({ archive_member: 'Web.USZ' }))
+    expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledWith(outer, expect.objectContaining({ archive_member: 'Broken.USZ' }))
+  })
+
+  it('counts reviewed members alongside standalone archives in a mixed upload batch', async () => {
+    const outer = new File(['archive'], 'collection.zip')
+    const standalone = new File(['archive'], 'Direct.USZ')
+    const result = (name: string) => executableEnterpriseResult({ name, protocol: 'http', actions: [{ name: 'Home' }] })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => file === outer
+      ? { archive_collection: true, archives: [
+          { source_name: 'First.USZ', response: result('First') },
+          { source_name: 'Second.USZ', response: result('Second') },
+          { source_name: 'Broken.USZ', error: 'Invalid ZIP archive' },
+        ] }
+      : result('Direct'))
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" initialFiles={[outer, standalone]} />))
+    await flushPromises()
+    await clickImportAction(container, 'Validate Only')
+
+    expect(container.querySelectorAll('.lr-file-row')).toHaveLength(4)
+    expect(container.textContent).toContain('Validated 3 of 4 enterprise script archives; 1 failed.')
+    const picker = container.querySelector<HTMLSelectElement>('.lr-review-project-picker select')!
+    expect(picker.closest('label')?.textContent).toContain('Review imported project')
+    expect(picker.options).toHaveLength(4)
+    expect(Array.from(picker.options).some(option => option.textContent?.includes('Broken.USZ — Failed'))).toBe(true)
+    await act(async () => {
+      picker.value = Array.from(picker.options).find(option => option.textContent?.startsWith('Second.USZ'))!.value
+      picker.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(container.querySelector('.lr-file-row.active')?.textContent).toContain('Second.USZ')
+    expect(container.querySelector<HTMLSelectElement>('.lr-review-project-picker select')?.value).toBe(picker.value)
+    const secondPicker = container.querySelector<HTMLSelectElement>('.lr-review-project-picker select')!
+    await act(async () => {
+      secondPicker.value = Array.from(secondPicker.options).find(option => option.textContent?.startsWith('Broken.USZ'))!.value
+      secondPicker.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(container.querySelector('.lr-file-row.active')?.textContent).toContain('Broken.USZ')
+    const failedPicker = container.querySelector<HTMLSelectElement>('.lr-review-project-picker select')!
+    expect(failedPicker.options).toHaveLength(4)
+    await act(async () => {
+      failedPicker.value = Array.from(failedPicker.options).find(option => option.textContent?.startsWith('First.USZ'))!.value
+      failedPicker.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(container.querySelector('.lr-file-row.active')?.textContent).toContain('First.USZ')
+  })
+
+  it('accepts a VuGen USZ archive without a ZIP MIME type', async () => {
+    const archive = new File(['archive'], 'Direct.USZ')
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(executableEnterpriseResult({ name: 'Direct', protocol: 'http', actions: [{ name: 'Home' }] }))
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" initialFiles={[archive]} />))
+    await flushPromises()
+    expect(container.querySelector('input[accept=".zip,.usz"]')).not.toBeNull()
+    await clickImportAction(container, 'Validate Only')
+    expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledWith(archive, expect.objectContaining({ project_id: 'project-1' }))
   })
 
   it('places Salesforce options below advanced migration policy inside Conversion Options', async () => {
@@ -498,7 +575,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(expirationInput?.checked).toBe(false)
     await act(async () => expirationInput?.click())
 
-    const fileInput = container.querySelector<HTMLInputElement>('input[accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
@@ -549,7 +626,7 @@ describe('EnterpriseArchiveImport', () => {
     await act(async () => {
       root.render(<EnterpriseArchiveImport projectId="project-1" />)
     })
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -571,7 +648,7 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     const dropzone = container.querySelector<HTMLElement>('.lr-dropzone')
-    const archiveInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')
+    const archiveInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')
     expect(dropzone?.getAttribute('role')).toBe('button')
     expect(dropzone?.tabIndex).toBe(0)
     const clickSpy = archiveInput ? vi.spyOn(archiveInput, 'click') : null
@@ -995,7 +1072,7 @@ describe('EnterpriseArchiveImport', () => {
       root.render(<EnterpriseArchiveImport projectId="project-1" />)
     })
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     const file = new File(['zip-content'], 'parameterized.zip', { type: 'application/zip' })
     await act(async () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
@@ -1037,7 +1114,7 @@ describe('EnterpriseArchiveImport', () => {
     apiMock.applySecretBindings.mockResolvedValueOnce({ script: resolved, secret_binding_requirements: [] })
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
     await flushPromises()
-    const input = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const input = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(input, 'files', { configurable: true, value: [new File(['test'], 'inline.zip', { type: 'application/zip' })] })
       input.dispatchEvent(new Event('change', { bubbles: true }))
@@ -1052,6 +1129,44 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
     expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ actions: resolved.actions }), 'project-1', undefined)
+  })
+
+  it('surfaces credential preparation failures while the credential panel is hidden and permits retry', async () => {
+    const script = {
+      name: 'Reviewed credential failure', version: '1.0.0', protocol: 'http', config: {},
+      actions: [{ name: 'Request', type: 'GET', target: 'https://example.test', headers: { Authorization: '[REDACTED]' } }],
+    }
+    const resolved = { ...script, actions: [{ ...script.actions[0], headers: { Authorization: '{{secret.REVIEW_TOKEN}}' } }] }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(script, {
+      secret_binding_requirements: [{ id: 'token', path: '/actions/0/headers/Authorization', label: 'Token', suggested_name: 'REVIEW_TOKEN', script_index: 0 }],
+    }))
+    apiMock.applySecretBindings.mockRejectedValueOnce(new Error('The protected draft changed; retry credential preparation.'))
+      .mockResolvedValueOnce({ script: resolved, secret_binding_requirements: [] })
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const input = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(input, 'files', { configurable: true, value: [new File(['test'], 'reviewed-failure.zip', { type: 'application/zip' })] })
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    expect(container.querySelector('.secret-binding-review')?.closest('[hidden]')).not.toBeNull()
+
+    await clickButton(findButton(container, 'Save to Script Library')!)
+
+    const visibleError = container.querySelector<HTMLElement>('.lr-error[role="alert"]')
+    expect(visibleError?.textContent).toBe('The protected draft changed; retry credential preparation.')
+    expect(visibleError?.closest('[hidden]')).toBeNull()
+    expect(findButton(container, 'Preparing credentials')).toBeUndefined()
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+    expect(apiMock.createProjectSecrets).not.toHaveBeenCalled()
+    expect(apiMock.migrateImportSecrets).not.toHaveBeenCalled()
+    expect(findButton(container, 'Save to Script Library')?.disabled).toBe(false)
+
+    await clickButton(findButton(container, 'Save to Script Library')!)
+    expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(2)
+    expect(container.querySelector('.lr-error[role="alert"]')).toBeNull()
   })
 
   it('stages a conversion with redacted credentials until its secret binding is applied', async () => {
@@ -1121,7 +1236,7 @@ describe('EnterpriseArchiveImport', () => {
       root.render(<EnterpriseArchiveImport projectId="project-1" />)
     })
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')
     expect(fileInput).not.toBeNull()
     const file = new File(['zip-content'], 'login.zip', { type: 'application/zip' })
     await act(async () => {
@@ -1233,7 +1348,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -1306,7 +1421,7 @@ describe('EnterpriseArchiveImport', () => {
       />,
     ))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -1403,7 +1518,7 @@ describe('EnterpriseArchiveImport', () => {
       <EnterpriseArchiveImport projectId="project-1" onImported={onImported} onClose={onClose} />,
     ))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -1456,7 +1571,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: files })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
@@ -1491,7 +1606,7 @@ describe('EnterpriseArchiveImport', () => {
       <EnterpriseArchiveImport projectId="project-1" onClose={onClose} />,
     ))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -1519,6 +1634,42 @@ describe('EnterpriseArchiveImport', () => {
     expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
   })
 
+  it('continues validating after a queued row is removed while an earlier collection is pending', async () => {
+    const firstFile = new File(['alpha'], 'alpha.zip', { type: 'application/zip' })
+    const removedFile = new File(['beta'], 'beta.zip', { type: 'application/zip' })
+    const lastFile = new File(['gamma'], 'gamma.zip', { type: 'application/zip' })
+    let resolveCollection!: (value: unknown) => void
+    apiMock.validateEnterpriseArchiveImport.mockImplementation((file: File) => {
+      if (file === firstFile) return new Promise(resolve => { resolveCollection = resolve })
+      return Promise.resolve(executableEnterpriseResult({
+        name: file.name,
+        protocol: 'http',
+        actions: [{ name: 'Home' }],
+      }))
+    })
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" initialFiles={[firstFile, removedFile, lastFile]} />))
+    await flushPromises()
+    await clickImportAction(container, 'Validate Only')
+    expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+
+    await clickButton(container.querySelector<HTMLButtonElement>('[aria-label="Remove beta.zip"]')!)
+    expect(container.querySelector<HTMLButtonElement>('.lr-import-action-buttons button')?.disabled).toBe(true)
+    await act(async () => {
+      resolveCollection({ archive_collection: true, archives: [{
+        source_name: 'Alpha.USZ',
+        response: executableEnterpriseResult({ name: 'Alpha', protocol: 'http', actions: [{ name: 'Home' }] }),
+      }] })
+    })
+    await flushPromises()
+
+    expect(apiMock.validateEnterpriseArchiveImport.mock.calls.map(([file]) => file.name)).toEqual(['alpha.zip', 'gamma.zip'])
+    expect(container.querySelectorAll('.lr-file-row')).toHaveLength(2)
+    expect(container.querySelectorAll('.lr-file-row.validated')).toHaveLength(2)
+    expect(container.querySelectorAll('.lr-file-row.validating')).toHaveLength(0)
+    expect(container.textContent).toContain('Alpha.USZ')
+    expect(container.textContent).toContain('gamma.zip')
+  })
+
   it('does not convert another queued archive after Back fences a pending conversion', async () => {
     const onClose = vi.fn()
     const script = {
@@ -1539,7 +1690,7 @@ describe('EnterpriseArchiveImport', () => {
       <EnterpriseArchiveImport projectId="project-1" onClose={onClose} />,
     ))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -1602,7 +1753,7 @@ describe('EnterpriseArchiveImport', () => {
       <EnterpriseArchiveImport projectId="project-1" onImported={onImported} />,
     ))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -1679,7 +1830,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -1744,7 +1895,7 @@ describe('EnterpriseArchiveImport', () => {
       />,
     ))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -1797,7 +1948,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['zip'], 'multi.zip', { type: 'application/zip' })] })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
@@ -1908,7 +2059,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['zip'], 'credentialed.zip', { type: 'application/zip' })] })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
@@ -1959,7 +2110,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['zip'], 'race.zip', { type: 'application/zip' })] })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
@@ -2020,7 +2171,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={onEdit} />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['zip'], 'validation-login.zip')] })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
@@ -2261,6 +2412,7 @@ describe('EnterpriseArchiveImport', () => {
       project_id: 'project-1',
       source: 'source_review_artifact',
       idempotency_key: expect.stringMatching(/^enterprise-archive-review:lr-import-[^:]+:1:0$/),
+      name: combinedJavaDraft.name,
       draft: combinedJavaDraft,
       review_state: expect.objectContaining({
         review_artifact: expect.objectContaining({ id: 'java-combined-review' }),
@@ -2278,6 +2430,145 @@ describe('EnterpriseArchiveImport', () => {
       stayInImportReview: true,
     })
     expect(container.textContent).toContain('Combined Java Vuser draft saved as authoring session')
+    expect(container.textContent).toContain('0 scripts saved · 1 review session saved · 0 drafts awaiting save · 0 archives validated, awaiting save')
+    await clickImportAction(container, 'Validate Only')
+    expect(container.textContent).toContain('0 scripts saved · 0 review sessions saved · 1 draft awaiting save · 1 archive validated, awaiting save')
+  })
+
+  const javaDependencyDraft = () => ({
+    name: 'Java Dependency Review',
+    version: '1.0.0',
+    protocol: 'java_vuser',
+    config: { java_vuser: { enabled: false, classpath: ['client.jar', 'extra.jar'] } },
+    actions: [{ name: 'Java action', type: 'java_vuser_run', params: { method: 'action' } }],
+  })
+  const javaDependencyResult = () => executableEnterpriseResult(javaDependencyDraft(), {
+    detected_protocol: {
+      canonical_source_protocol: 'java_vuser', apexload_protocol: 'java_vuser',
+      import_mode: 'external_runner_required', confidence: 'high',
+    },
+    review_artifact: {
+      id: 'java-dependency-review', title: 'Java dependency review',
+      status: 'external_runner_required', summary: 'Governed source review',
+    },
+    fidelity_report: { promotion_status: 'promotable', blockers: [] },
+  })
+  const uploadedJar = {
+    entry: 'client.jar', file_name: 'client.jar', sha256: 'a'.repeat(64),
+    size_bytes: 14, content_type: 'application/java-archive',
+    storage_ref: 'file:///project-scoped-assets/client.jar',
+  }
+  const attachDependencyJar = async () => {
+    const input = container.querySelector<HTMLInputElement>('.java-classpath-resolver input[type="file"]')!
+    expect(input).not.toBeNull()
+    await act(async () => {
+      Object.defineProperty(input, 'files', { configurable: true, value: [new File(['PK synthetic jar'], 'client.jar')] })
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+  }
+  const reviewJavaDependencies = async (onOperationBusyChange?: (busy: boolean) => void) => {
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(javaDependencyResult())
+    await act(async () => root.render(<EnterpriseArchiveImport
+      projectId="project-1"
+      initialFiles={[new File(['zip-content'], 'java-project.zip')]}
+      onOperationBusyChange={onOperationBusyChange}
+    />))
+    await flushPromises()
+    await clickImportAction(container, 'Validate Only')
+  }
+
+  it('saves uploaded JAR provenance in the authoring draft and changes save identity after removal', async () => {
+    apiMock.uploadJavaClasspathJar.mockResolvedValue(uploadedJar)
+    await reviewJavaDependencies()
+    await attachDependencyJar()
+    expect(apiMock.uploadJavaClasspathJar).toHaveBeenCalledWith(expect.any(String), expect.any(File), {
+      project_id: 'project-1', entry: 'client.jar',
+    })
+    expect(container.textContent).toContain('1/2 attached')
+    await clickButton(findButton(container, 'Save Combined Java Draft for Approval')!)
+    const saved = apiMock.createAuthoringSession.mock.calls[0][0]
+    // These are the exact fields used when the saved session is reopened and
+    // the governed runner materializes its project-scoped JAR capability.
+    expect(saved.draft.config.java_vuser.classpath_assets).toEqual([uploadedJar])
+    expect(saved.draft.config.java_vuser.classpath).toEqual(['client.jar', 'extra.jar'])
+    expect(saved.draft.config.java_vuser.enabled).toBe(false)
+    expect(container.textContent).toContain('1 review session saved')
+    await clickButton(container.querySelector<HTMLButtonElement>('.java-classpath-resolver .chip-remove')!)
+    expect(container.textContent).toContain('0/2 attached')
+    expect(container.textContent).toContain('0 review sessions saved')
+    await clickButton(findButton(container, 'Save Combined Java Draft for Approval')!)
+    const afterRemoval = apiMock.createAuthoringSession.mock.calls[1][0]
+    expect(afterRemoval.draft.config.java_vuser.classpath_assets).toEqual([])
+    expect(afterRemoval.idempotency_key).not.toBe(saved.idempotency_key)
+    await clickButton(findButton(container, 'Save Combined Java Draft for Approval')!)
+    expect(apiMock.createAuthoringSession.mock.calls[2][0]).toEqual(afterRemoval)
+    expect(apiMock.saveEnterpriseArchiveImport).not.toHaveBeenCalled()
+  })
+
+  it('blocks saves and source mutation until a dependency upload settles', async () => {
+    let finishUpload: (value: typeof uploadedJar) => void = () => {}
+    apiMock.uploadJavaClasspathJar.mockImplementationOnce(() => new Promise(resolve => { finishUpload = resolve }))
+    const onBusy = vi.fn()
+    await reviewJavaDependencies(onBusy)
+    await attachDependencyJar()
+    const save = findButton(container, 'Save Combined Java Draft for Approval')!
+    expect(save.disabled).toBe(true)
+    expect(findButton(container, 'Attach Required File(s)')?.disabled).toBe(true)
+    expect(container.querySelector<HTMLInputElement>('.java-classpath-resolver input[type="file"]')?.disabled).toBe(true)
+    expect(onBusy).toHaveBeenLastCalledWith(true)
+    await clickButton(save)
+    expect(apiMock.createAuthoringSession).not.toHaveBeenCalled()
+    await act(async () => finishUpload(uploadedJar))
+    await flushPromises()
+    expect(findButton(container, 'Save Combined Java Draft for Approval')?.disabled).toBe(false)
+    expect(onBusy).toHaveBeenLastCalledWith(false)
+  })
+
+  it('does not attach a stale upload result after switching projects', async () => {
+    let finishUpload: (value: typeof uploadedJar) => void = () => {}
+    apiMock.uploadJavaClasspathJar.mockImplementationOnce(() => new Promise(resolve => { finishUpload = resolve }))
+    await reviewJavaDependencies()
+    await attachDependencyJar()
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-2" />))
+    await flushPromises()
+    await act(async () => finishUpload(uploadedJar))
+    await flushPromises()
+    await clickImportAction(container, 'Validate Only')
+    expect(container.textContent).toContain('0/2 attached')
+    expect(container.textContent).not.toContain('The import review changed during upload')
+    await clickButton(findButton(container, 'Save Combined Java Draft for Approval')!)
+    const saved = apiMock.createAuthoringSession.mock.calls[0][0]
+    expect(saved.project_id).toBe('project-2')
+    expect(saved.draft.config.java_vuser.classpath_assets).toBeUndefined()
+  })
+
+  it('directs a standalone dependency bundle to its Java project and saves review evidence without a library script', async () => {
+    const inventory = {
+      contract: 'apexload.java-dependency-inventory.v1', classification: 'java_dependency_bundle',
+      runtime_provisioned: false, counts: { jars: 1, classes: 1, executables: 1 },
+      files: [{ source_path: 'client.jar', role: 'jar', size_bytes: 12, sha256: 'a'.repeat(64) }],
+    }
+    const artifact = { id: 'dependency-only', title: 'Java dependencies', status: 'review_only',
+      summary: 'Source dependency evidence', metadata: { java_dependency_inventory: inventory } }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue({
+      scripts: [], review_artifact: artifact, warnings: [], unsupported_elements: [], assumptions: [],
+      review_sections: [], repair_suggestions: [], summary: {}, stats: {},
+    })
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1"
+      initialFiles={[new File(['zip-content'], 'dependencies.zip')]} />))
+    await flushPromises()
+    await clickImportAction(container, 'Validate Only')
+    expect(container.textContent).toContain('Java dependencies without a script project')
+    expect(container.textContent).toContain('Attach this ZIP under Required Files')
+    expect(container.textContent).toContain('1 JARs')
+    await clickButton(findButton(container, 'Save Dependency Review')!)
+    const saved = apiMock.createAuthoringSession.mock.calls[0][0]
+    expect(saved.draft.actions).toEqual([])
+    expect(saved.review_state.review_artifact.metadata.java_dependency_inventory).toEqual(inventory)
+    expect(container.textContent).toContain('Dependency review saved as authoring session')
+    expect(container.textContent).toContain('0 scripts saved')
+    expect(apiMock.saveEnterpriseArchiveImport).not.toHaveBeenCalled()
   })
 
   it('saves the credential-bound combined Java draft instead of the stale redacted review', async () => {
@@ -2543,6 +2834,7 @@ describe('EnterpriseArchiveImport', () => {
       stayInImportReview: true,
     })
     expect(container.textContent).not.toContain('Review artifact saved as authoring session')
+    expect(container.textContent).toContain('0 review sessions saved')
   })
 
   it('keeps a converted-script save marked in flight when an unrelated queued archive is removed', async () => {
@@ -2586,7 +2878,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport onImported={onImported} />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -2665,7 +2957,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -3324,7 +3616,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -3569,7 +3861,7 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('3 ZIP files queued')
+    expect(container.textContent).toContain('3 archives queued')
     expect(container.textContent).toContain('alpha.zip')
     expect(container.textContent).toContain('beta.zip')
     expect(container.textContent).toContain('gamma.zip')
@@ -3584,7 +3876,7 @@ describe('EnterpriseArchiveImport', () => {
       removeBeta.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('2 ZIP files queued')
+    expect(container.textContent).toContain('2 archives queued')
     expect(container.textContent).not.toContain('beta.zip')
 
     await clickImportAction(container, 'Validate Only')
@@ -3650,7 +3942,7 @@ describe('EnterpriseArchiveImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('2 ZIP files queued')
+    expect(container.textContent).toContain('2 archives queued')
 
     await clickImportAction(container, 'Validate Only')
     await flushPromises()
@@ -3708,7 +4000,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: files })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
@@ -3775,7 +4067,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: files })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
@@ -3853,7 +4145,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport onImported={onImported} />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -3874,7 +4166,7 @@ describe('EnterpriseArchiveImport', () => {
       scripts: [expect.objectContaining({ name: readyScript.name })],
       stayInImportReview: true,
     }))
-    expect(container.textContent).toContain('2 ZIP files queued')
+    expect(container.textContent).toContain('2 archives queued')
     await clickButton(findButton(container, 'DSL Preview')!)
     expect(container.querySelector('.script-import-review-preview pre')?.textContent).toContain(reviewedScript.name)
     expect(findButton(container, 'Save to Script Library')).toBeDefined()
@@ -3940,7 +4232,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport onImported={onImported} />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -4017,7 +4309,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -4057,7 +4349,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={onEdit} />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -5752,7 +6044,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
     await flushPromises()
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,

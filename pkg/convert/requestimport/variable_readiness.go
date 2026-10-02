@@ -24,7 +24,7 @@ type VariableReadiness struct {
 }
 
 // AnalyzeVariableReadiness finds references that are not supplied by explicit
-// replay seeds, script parameters, or an extractor that executes earlier on
+// replay seeds, script parameters, or an output that executes earlier on
 // the same path. Save-all extractors publish name_N and name_count, not name.
 func AnalyzeVariableReadiness(script *dsl.Script, seeded map[string]string) VariableReadiness {
 	if script == nil {
@@ -273,6 +273,18 @@ func analyzeVariableActions(actions []dsl.Action, prefix string, state *variable
 }
 
 func (state *variableState) registerActionOutputs(action dsl.Action) {
+	if state != nil && dsl.CanonicalActionType(action.Type) == "source_parameter" {
+		_, outputs, removed := sourceParameterReadiness(action)
+		for _, name := range removed {
+			delete(state.available, name)
+			delete(state.available, strings.ToLower(name))
+		}
+		for _, name := range outputs {
+			state.available[name] = struct{}{}
+			state.available[strings.ToLower(name)] = struct{}{}
+		}
+		return
+	}
 	if state != nil && dsl.CanonicalActionType(action.Type) == "browser_evaluate_js" {
 		state.available["result"] = struct{}{}
 		return
@@ -407,6 +419,13 @@ func absoluteHTTPActionTarget(target string) bool {
 }
 
 func actionVariableReferences(action dsl.Action) []string {
+	if dsl.CanonicalActionType(action.Type) == "source_parameter" {
+		inputs, _, _ := sourceParameterReadiness(action)
+		// Source snapshots and call_args preserve the imported expression. Only
+		// the values read by the native parameter handler are dependencies; for
+		// example, random array selection reads name_count and name_N, not name.
+		action = dsl.Action{Params: map[string]any{"inputs": inputs}}
+	}
 	payload, err := json.Marshal(action)
 	if err != nil {
 		return nil
@@ -420,6 +439,143 @@ func actionVariableReferences(action dsl.Action) []string {
 		collectVariableReferences(string(decoded), set)
 	}
 	return sortedStringSet(set)
+}
+
+// sourceParameterReadiness mirrors the native source-parameter handler's
+// positional reads and writes. Output names are literal and publish exact and
+// lowercase aliases; the input expressions are checked before those writes.
+func sourceParameterReadiness(action dsl.Action) (inputs []string, outputs []string, removed []string) {
+	function, _ := action.Params["function"].(string)
+	function = strings.TrimSpace(function)
+	if function == "" {
+		function, _ = action.Metadata["source_function"].(string)
+	}
+	var args []string
+	switch raw := action.Params["args"].(type) {
+	case []string:
+		for _, value := range raw {
+			args = append(args, strings.TrimSpace(value))
+		}
+	case []any:
+		for _, value := range raw {
+			args = append(args, strings.TrimSpace(fmt.Sprint(value)))
+		}
+	default:
+		if raw != nil {
+			args = append(args, strings.TrimSpace(fmt.Sprint(raw)))
+		}
+	}
+	outputAt := func(index int) {
+		if index < len(args) && strings.TrimSpace(args[index]) != "" {
+			outputs = append(outputs, strings.TrimSpace(args[index]))
+		}
+	}
+	outputDefault := func(fallback string) {
+		for _, arg := range args {
+			if arg != "" {
+				outputs = append(outputs, arg)
+				return
+			}
+		}
+		outputs = append(outputs, fallback)
+	}
+	switch function {
+	case "lr_save_string", "lr_save_int":
+		if len(args) >= 2 {
+			if array, ok := action.Params["source_array"].(map[string]any); ok {
+				name, _ := array["name"].(string)
+				selection, _ := array["selection"].(string)
+				if name = strings.ToLower(strings.TrimSpace(name)); name != "" && selection == "random" {
+					inputs = append(inputs, "{{var."+name+"_count}}")
+				}
+			} else {
+				inputs = append(inputs, args[0])
+			}
+			outputAt(1)
+		}
+	case "lr_save_var":
+		if len(args) >= 4 {
+			inputs = append(inputs, args[0])
+			outputAt(3)
+		}
+	case "lr_param_sprintf":
+		if len(args) >= 2 {
+			inputs = append(inputs, args[1:]...)
+			outputAt(0)
+		}
+	case "lr_param_increment":
+		outputAt(0)
+	case "lr_free_parameter":
+		if len(args) > 0 {
+			removed = append(removed, strings.TrimSpace(args[0]))
+		}
+	case "lr_save_timestamp", "lr_get_host_name", "lr_get_master_host_name", "lr_get_vuser_ip":
+		defaults := map[string]string{"lr_save_timestamp": "timestamp", "lr_get_host_name": "host_name", "lr_get_master_host_name": "host_name", "lr_get_vuser_ip": "vuser_ip"}
+		outputDefault(defaults[function])
+	case "lr_save_datetime":
+		if len(args) > 1 {
+			inputs = append(inputs, args[0])
+			outputAt(len(args) - 1)
+		} else {
+			outputDefault("datetime")
+		}
+	case "lr_whoami":
+		outputs = append(outputs, "vuser_id", "vuser_group")
+	case "web_convert_param":
+		name, _ := action.Params["save_param"].(string)
+		name = strings.TrimSpace(name)
+		if name != "" {
+			outputs = append(outputs, strings.TrimSpace(name))
+		} else {
+			outputAt(0)
+		}
+		if len(outputs) == 0 {
+			break // The native handler returns before reading the source.
+		}
+		if source, ok := action.Params["source_string"].(string); ok && strings.TrimSpace(source) != "" {
+			inputs = append(inputs, strings.TrimSpace(source))
+		} else if len(args) > 1 {
+			for _, arg := range args[1:] {
+				key, value, ok := strings.Cut(arg, "=")
+				if ok && strings.EqualFold(strings.TrimSpace(key), "SourceString") {
+					inputs = append(inputs, value)
+					break
+				}
+			}
+		}
+	default:
+		// The native fallback only writes when a named SaveParam exists.
+		if name := sourceParameterSaveName(action); name != "" {
+			outputs = append(outputs, name)
+			for _, arg := range args {
+				if strings.TrimSpace(arg) != "" {
+					inputs = append(inputs, arg)
+					break
+				}
+			}
+		}
+	}
+	return inputs, outputs, removed
+}
+
+func sourceParameterSaveName(action dsl.Action) string {
+	for _, key := range []string{"save_param", "saveparam", "save_param_name", "param", "parameter", "name"} {
+		if name, ok := action.Params[key].(string); ok && strings.TrimSpace(name) != "" {
+			return strings.TrimSpace(name)
+		}
+	}
+	payload, _ := json.Marshal(action.Params["call_args"])
+	var entries []map[string]any
+	_ = json.Unmarshal(payload, &entries)
+	for _, entry := range entries {
+		name, _ := entry["name"].(string)
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "saveparam", "save_param", "param", "parameter", "name":
+			value, _ := entry["value"].(string)
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func collectVariableReferences(value string, set map[string]struct{}) {

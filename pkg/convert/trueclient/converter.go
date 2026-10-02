@@ -8,12 +8,14 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 )
 
 type ConvertOptions struct {
-	ScriptName           string
-	BaseURL              string
-	PreserveTransactions bool
+	ScriptName               string
+	BaseURL                  string
+	PreserveTransactions     bool
+	PreserveUnsupportedSteps bool
 }
 
 type ConvertStats struct {
@@ -31,26 +33,37 @@ type ConvertStats struct {
 }
 
 type ConvertResult struct {
-	Script   *dsl.Script
-	Warnings []string
-	Stats    ConvertStats
+	Script        *dsl.Script
+	SourceXMLFile string
+	Warnings      []string
+	Stats         ConvertStats
 }
 
 type truScriptDocument struct {
-	XMLName     xml.Name           `xml:"truScript"`
-	Steps       []truXMLStep       `xml:"step"`
-	TestObjects []truXMLTestObject `xml:"testObjects>testObject"`
+	XMLName      xml.Name            `xml:"truScript"`
+	Steps        []truXMLStep        `xml:"step"`
+	TestObjects  []truXMLTestObject  `xml:"testObjects>testObject"`
+	Transactions []truXMLTransaction `xml:"transactions>transaction"`
 }
 
 type truXMLStep struct {
-	Type       string       `xml:"type,attr"`
-	StepID     string       `xml:"stepId,attr"`
-	Action     string       `xml:"action,attr"`
-	ActionName string       `xml:"actionName,attr"`
-	TestObject string       `xml:"testObject,attr"`
-	Arguments  string       `xml:"arguments,attr"`
-	Index      string       `xml:"index,attr"`
-	Steps      []truXMLStep `xml:"step"`
+	Type                 string       `xml:"type,attr"`
+	StepID               string       `xml:"stepId,attr"`
+	Action               string       `xml:"action,attr"`
+	ActionName           string       `xml:"actionName,attr"`
+	TestObject           string       `xml:"testObject,attr"`
+	Arguments            string       `xml:"arguments,attr"`
+	Index                string       `xml:"index,attr"`
+	Steps                []truXMLStep `xml:"step"`
+	Disabled             bool         `xml:"disabled,attr"`
+	Optional             bool         `xml:"optional,attr"`
+	Unfinalized          bool         `xml:"unfinalized,attr"`
+	EndEvent             string       `xml:"endEvent,attr"`
+	EndEventArgs         string       `xml:"endEventArgs,attr"`
+	ObjectTimeout        string       `xml:"objectTimeout,attr"`
+	ManualDuration       string       `xml:"manualDuration,attr"`
+	RecordedDuration     string       `xml:"recDuration,attr"`
+	AdditionalAttributes []xml.Attr   `xml:",any,attr"`
 }
 
 type truXMLTestObject struct {
@@ -67,7 +80,9 @@ type truXMLObjectID struct {
 }
 
 type truArgument struct {
-	Value string `json:"value"`
+	Value          string `json:"value"`
+	Param          bool   `json:"param,omitempty"`
+	EvalJavaScript bool   `json:"evalJavaScript,omitempty"`
 }
 
 var (
@@ -112,6 +127,7 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 	}
 
 	result := &ConvertResult{
+		SourceXMLFile: xmlName,
 		Script: &dsl.Script{
 			Name:          opts.ScriptName,
 			Version:       "1.0.0",
@@ -137,6 +153,7 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 		return nil, err
 	}
 	result.Script.Actions = append(result.Script.Actions, actions...)
+	applyXMLAnchoredTransactions(result, doc.Transactions, opts.PreserveTransactions)
 	baseURL = state.baseURL
 
 	if len(result.Script.Actions) == 0 {
@@ -144,6 +161,24 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 	}
 
 	result.Script.Config.BaseURL = baseURL
+	_ = dslwalk.WalkActions(result.Script, func(ref dslwalk.ActionRef) error {
+		if ref.Action.Metadata == nil {
+			ref.Action.Metadata = map[string]any{}
+		}
+		ref.Action.Metadata["source_file"] = xmlName
+		return nil
+	})
+	count := 0
+	for name := range files {
+		if strings.EqualFold(filepath.Base(name), "default.xml") {
+			count++
+		}
+	}
+	if count > 1 {
+		gate := dsl.Action{Name: "Select source TruClient XML", Type: "source_review", Metadata: map[string]any{"source_file": xmlName}}
+		applyTruClientSemanticGate(&gate, "truclient_ambiguous_source_xml_requires_review", "Multiple source default.xml documents are present; the deterministic authoring draft requires an explicit source-project selection.")
+		result.Script.Init = append(result.Script.Init, gate)
+	}
 	return result, nil
 }
 
@@ -192,6 +227,9 @@ func collectActionSequence(steps []truXMLStep) []string {
 	sequence := make([]string, 0)
 	var visit func(step truXMLStep)
 	visit = func(step truXMLStep) {
+		if step.Disabled {
+			return
+		}
 		// Calls inside action definitions are expanded when their owning action is
 		// flattened. Treating them as top-level run-logic references executes the
 		// called action a second time.
@@ -218,6 +256,9 @@ func collectActionSequence(steps []truXMLStep) []string {
 }
 
 func flattenActionBlock(step truXMLStep, definitions map[string]truXMLStep, stack map[string]bool) []truXMLStep {
+	if step.Disabled {
+		return []truXMLStep{step}
+	}
 	name := strings.TrimSpace(step.ActionName)
 	if stack == nil {
 		stack = make(map[string]bool)
@@ -238,6 +279,12 @@ func flattenActionBlock(step truXMLStep, definitions map[string]truXMLStep, stac
 }
 
 func flattenExecutableSteps(step truXMLStep, definitions map[string]truXMLStep, stack map[string]bool) []truXMLStep {
+	if step.Disabled {
+		return []truXMLStep{step}
+	}
+	if strings.EqualFold(strings.TrimSpace(step.Type), "alternative") {
+		return []truXMLStep{step}
+	}
 	if strings.EqualFold(strings.TrimSpace(step.Action), "Call Action") {
 		actionName, err := parseArgumentValue(step.Arguments, "Action Name")
 		if err == nil {
@@ -257,7 +304,9 @@ func flattenExecutableSteps(step truXMLStep, definitions map[string]truXMLStep, 
 			copy.Steps = flattenExecutableChildren(step.Steps, definitions, stack)
 			return []truXMLStep{copy}
 		}
-		flattened = append(flattened, step)
+		copy := step
+		copy.Steps = nil // Children are expanded below; inspection must not count them twice.
+		flattened = append(flattened, copy)
 	}
 	for _, child := range step.Steps {
 		flattened = append(flattened, flattenExecutableSteps(child, definitions, stack)...)
@@ -302,11 +351,28 @@ func convertStepSequence(steps []truXMLStep, result *ConvertResult, state *truCo
 	actions := make([]dsl.Action, 0, len(steps))
 	for i := 0; i < len(steps); i++ {
 		step := steps[i]
+		if step.Disabled {
+			count := countDisabledExecutableSteps(step)
+			result.Stats.TotalSteps += count
+			result.Stats.Skipped += count
+			continue
+		}
 		actionName := strings.TrimSpace(step.Action)
 		if actionName == "" {
 			continue
 		}
 		result.Stats.TotalSteps++
+		if strings.EqualFold(strings.TrimSpace(step.Type), "alternative") {
+			count := countDisabledExecutableSteps(step)
+			marker := reviewOnlyStepAction(step, StepScope{Status: ScopeReviewOnly, DisplayName: "Review source alternatives", CanonicalName: "alternative"})
+			attachSourceStepMetadata(&marker, step, state.currentTransaction, state.descriptors)
+			marker.Metadata["source_step_graph"] = step
+			applyTruClientSemanticGate(&marker, "truclient_alternative_selection_requires_review", "The source alternative-selection graph and active-step contract require an explicit native replacement.")
+			actions = append(actions, marker)
+			result.Stats.TotalSteps += count - 1
+			result.Stats.ReviewOnlySteps += count
+			continue
+		}
 		switch kind := controlKind(actionName); kind {
 		case truControlIf:
 			thenSteps, childElseSteps := splitControlElseChildren(step.Steps)
@@ -314,7 +380,7 @@ func convertStepSequence(steps []truXMLStep, result *ConvertResult, state *truCo
 			consumeNextElse := false
 			if len(elseSteps) == 0 && i+1 < len(steps) {
 				nextKind := controlKind(steps[i+1].Action)
-				if nextKind == truControlElse || nextKind == truControlElseIf {
+				if !steps[i+1].Disabled && (nextKind == truControlElse || nextKind == truControlElseIf) {
 					elseStep := steps[i+1]
 					if nextKind == truControlElseIf {
 						elseStep.Action = "If"
@@ -328,6 +394,17 @@ func convertStepSequence(steps []truXMLStep, result *ConvertResult, state *truCo
 			action, err := convertControlIfStep(step, thenSteps, elseSteps, result, state)
 			if err != nil {
 				return nil, err
+			}
+			if consumeNextElse {
+				applyTruClientStepContract(&action, steps[i+1])
+				action.Metadata["source_else_step"] = steps[i+1]
+			}
+			for _, child := range step.Steps {
+				kind := controlKind(child.Action)
+				if !child.Disabled && (kind == truControlElse || kind == truControlElseIf) {
+					applyTruClientStepContract(&action, child)
+					action.Metadata["source_else_step"] = child
+				}
 			}
 			actions = append(actions, action)
 			result.Stats.ConvertedActions++
@@ -387,8 +464,20 @@ func convertExecutableStep(step truXMLStep, result *ConvertResult, state *truCon
 	}
 	if strings.EqualFold(strings.TrimSpace(step.Action), "Verify") {
 		assertion, ok, err := convertVerifyStep(step)
-		if err != nil {
+		if err != nil && !state.opts.PreserveUnsupportedSteps {
 			return nil, err
+		}
+		if state.opts.PreserveUnsupportedSteps {
+			marker := reviewOnlyStepAction(step, StepScope{Status: ScopeReviewOnly, DisplayName: "Review verification", CanonicalName: "verify"})
+			attachSourceStepMetadata(&marker, step, state.currentTransaction, state.descriptors)
+			// Retain exact assertion evidence on a marker. Source Verify is a
+			// separate step; attaching it to a predecessor cannot prove its timing.
+			if err == nil && ok {
+				marker.Metadata["source_assertion"] = assertion
+			}
+			applyTruClientSemanticGate(&marker, "truclient_verification_step_requires_review", "Source verification timing, assertion target, and optional behavior require an explicit native verification step.")
+			result.Stats.ReviewOnlySteps++
+			return []dsl.Action{marker}, nil
 		}
 		if !ok {
 			result.Warnings = append(result.Warnings, "TruClient step \"Verify\" could not be mapped to an assertion and was skipped")
@@ -408,7 +497,12 @@ func convertExecutableStep(step truXMLStep, result *ConvertResult, state *truCon
 
 	actions, warnings, unsupported, err := convertStep(step, state.descriptors)
 	if err != nil {
-		return nil, err
+		if !state.opts.PreserveUnsupportedSteps {
+			return nil, err
+		}
+		actions = []dsl.Action{unresolvedBrowserStepAction(step, step.Action, "invalid_step_arguments")}
+		applyTruClientSemanticGate(&actions[0], "truclient_step_arguments_require_review", "The recorded browser step arguments require an explicit replacement.")
+		warnings = []string{"TruClient step arguments were preserved for review instead of guessing executable behavior."}
 	}
 	if len(warnings) > 0 {
 		result.Warnings = append(result.Warnings, warnings...)
@@ -418,11 +512,16 @@ func convertExecutableStep(step truXMLStep, result *ConvertResult, state *truCon
 		}
 	}
 	if unsupported {
-		result.Stats.Skipped++
 		if actionName := strings.TrimSpace(step.Action); actionName != "" {
 			result.Stats.UnsupportedSteps = appendIfMissing(result.Stats.UnsupportedSteps, actionName)
 		}
-		return nil, nil
+		if !state.opts.PreserveUnsupportedSteps {
+			result.Stats.Skipped++
+			return nil, nil
+		}
+		marker := reviewOnlyStepAction(step, StepScope{CanonicalName: stableActionToken(step.Action), Status: ScopeReviewOnly})
+		applyTruClientSemanticGate(&marker, "truclient_unsupported_step_requires_review", "The source step has no verified native browser equivalent.")
+		actions = []dsl.Action{marker}
 	}
 	if len(actions) == 0 {
 		return nil, nil
@@ -434,6 +533,7 @@ func convertExecutableStep(step truXMLStep, result *ConvertResult, state *truCon
 			action.Name = sanitizeTransactionActionName(state.currentTransaction, action.Name)
 		}
 		attachSourceStepMetadata(&action, step, state.currentTransaction, state.descriptors)
+		applyTruClientCompletionContract(&action, step, state.descriptors)
 		promoteFrameContext(&action)
 		if switchAction, ok := switchWindowForAction(&action, state); ok {
 			out = append(out, switchAction)

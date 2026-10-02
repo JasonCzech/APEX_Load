@@ -798,6 +798,12 @@ func projectScriptRequestBodies(script *dsl.Script) (map[string]string, bool) {
 		if !ok {
 			return nil
 		}
+		// A whole governed body reference resolves to its structured wire
+		// document only at runtime. Its authoring token must not be parsed as
+		// literal JSON/form/XML and replaced with a new body sentinel.
+		if _, governed := credential.ParseReference(body.stored); governed {
+			return nil
+		}
 		projected, result, err := credentialpolicy.ProjectRequestBody(
 			body.wire,
 			importCommitSurfaceContentType(ref),
@@ -1007,6 +1013,7 @@ func projectAuthoringReviewState(state map[string]any) map[string]any {
 }
 
 type scriptProjectionContext struct {
+	textMemo            *importProjectionTextMemo
 	transactionParams   bool
 	transactionFunction string
 	label               bool
@@ -1019,6 +1026,9 @@ type scriptProjectionContext struct {
 }
 
 func projectScriptNode(value any, ctx scriptProjectionContext) any {
+	if ctx.textMemo == nil {
+		ctx.textMemo = &importProjectionTextMemo{}
+	}
 	switch typed := value.(type) {
 	case map[string]any:
 		if ctx.headerList {
@@ -1118,7 +1128,7 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 			// script projection cannot associate. Apply the import-specific,
 			// recursive disclosure boundary before this metadata can be persisted.
 			if isReviewEvidenceSubtreeKey(key) {
-				out[key] = sanitizeImportReviewEvidence(child)
+				out[key] = sanitizeImportReviewEvidenceWithMemo(child, ctx.textMemo)
 				continue
 			}
 			if credentialValue && strings.EqualFold(key, "value") {
@@ -1157,6 +1167,7 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 				}
 			}
 			childCtx := scriptProjectionContext{
+				textMemo:          ctx.textMemo,
 				transactionParams: key == "params" && typed["type"] == "source_transaction",
 				label:             ctx.label && (key == "value" || key == "raw"),
 				key:               key,
@@ -1450,7 +1461,7 @@ func projectScriptString(value string, ctx scriptProjectionContext) string {
 		return scrub.ValueLabel(value, scrub.Policy{})
 	}
 	if ctx.opaqueMap || isScriptFreeTextKey(ctx.key) {
-		return scrubScriptText(value, false)
+		return ctx.textMemo.scrubScriptText(value)
 	}
 	return value
 }

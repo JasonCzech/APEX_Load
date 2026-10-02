@@ -161,3 +161,41 @@ func TestBuildLimitsSourceFiles(t *testing.T) {
 		t.Fatalf("first omitted source file = %q, want deterministic sorted boundary", review.OmittedSourceFiles[0])
 	}
 }
+
+func TestBuildPrioritizesMappedSourceWithinUnchangedDisplayBudget(t *testing.T) {
+	files := map[string]string{"z/user_modified_perfs.json": `{"security.csp.enable":{"value":true}}`}
+	for index := 0; index < MaxFiles+3; index++ {
+		files[fmt.Sprintf("aux-%02d.json", index)] = "{}"
+	}
+	for repeat := 0; repeat < 20; repeat++ {
+		review := Build(files, []Mapping{{SourceFile: "z/user_modified_perfs.json", StartLine: 1, TargetPath: "metadata.import.preserved.browser_preferences", Status: "review_only"}})
+		if len(review.SourceFiles) != MaxFiles || review.TotalSourceFiles != MaxFiles+4 || len(review.OmittedSourceFiles) != 4 {
+			t.Fatal("prioritization changed the bounded display accounting")
+		}
+		if review.SourceFiles[0].Path != "z/user_modified_perfs.json" {
+			t.Fatal("mapped source was omitted behind auxiliary files")
+		}
+		if review.OmittedSourceFiles[0] != "aux-19.json" {
+			t.Fatal("bounded source selection is not deterministic")
+		}
+	}
+}
+
+func TestBuildExactMappingPathsTakePriorityOverBasenameAliases(t *testing.T) {
+	files := map[string]string{"F01.c": "unused alias"}
+	mappings := make([]Mapping, 0, MaxFiles)
+	for index := 1; index <= MaxFiles; index++ {
+		name := fmt.Sprintf("nested/F%02d.c", index)
+		files[name] = "mapped source"
+		mappings = append(mappings, Mapping{SourceFile: name, TargetPath: fmt.Sprintf("actions[%d]", index-1)})
+	}
+	review := Build(files, mappings)
+	if len(review.SourceFiles) != MaxFiles || len(review.OmittedSourceFiles) != 1 || review.OmittedSourceFiles[0] != "F01.c" {
+		t.Fatal("basename alias displaced an exactly mapped source file")
+	}
+	for _, file := range review.SourceFiles {
+		if !strings.HasPrefix(file.Path, "nested/") {
+			t.Fatal("unreferenced basename alias received exact mapping priority")
+		}
+	}
+}

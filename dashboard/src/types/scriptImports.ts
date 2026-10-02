@@ -840,7 +840,10 @@ export interface RecorderCorrelation {
   reasons?: string[]
 }
 
-export type EnterpriseArchiveImportResult = ScriptImportResult<EnterpriseArchiveConvertStats, unknown, ScriptDefinition, unknown, EnterpriseArchiveImportSummary>
+export type EnterpriseArchiveImportResult = ScriptImportResult<EnterpriseArchiveConvertStats, unknown, ScriptDefinition, unknown, EnterpriseArchiveImportSummary> & {
+  archive_collection?: boolean
+  archives?: Array<{ source_name: string; source_size?: number; response?: EnterpriseArchiveImportResult; error?: string }>
+}
 export interface JMeterBatchIdentity { id: string; revision: string }
 export interface JMeterBatchOperation {
   type: string

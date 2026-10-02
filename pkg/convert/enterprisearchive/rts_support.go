@@ -745,6 +745,14 @@ func buildRTSParityReportForProtocol(runtimeSections map[string]map[string]map[s
 		definitions = allImportedRuntimeSettingSupportDefinitions()
 	}
 	entries := scopeHTTPCompatibilityParity(buildRTSParityReport(runtimeSections, definitions), protocol)
+	if nativeHTTPCompatibilityProtocol(protocol) && runtimeDeviceRowsAreRecordedScreens(runtimeSections) {
+		for i := range entries {
+			if entries[i].ID == "browser_device_emulation" {
+				entries[i].Status = RuntimeSettingStatusNonApplicable
+				entries[i].Notes = "Only recorded ScreenWidth/ScreenHeight rows are present. Native HTTP replay has no browser viewport."
+			}
+		}
+	}
 	if strings.EqualFold(strings.TrimSpace(protocol), "java_vuser") {
 		for _, sections := range runtimeSections {
 			think := findMergedSection(sections, "Think Time", "ThinkTime")
@@ -754,6 +762,33 @@ func buildRTSParityReportForProtocol(runtimeSections map[string]map[string]map[s
 		}
 	}
 	return entries
+}
+
+func runtimeDeviceRowsAreRecordedScreens(runtimeSections map[string]map[string]map[string]string) bool {
+	found := false
+	for _, sections := range runtimeSections {
+		for section, keys := range sections {
+			for key := range keys {
+				for _, definition := range sourceRTSSupportDefinitions {
+					if definition.entry.ID != "browser_device_emulation" {
+						continue
+					}
+					matches := false
+					for _, matcher := range definition.matchers {
+						matches = matches || (matcher.matchesSection(section) && matcher.matchesKey(key) && matcher.matchesValue(keys[key]))
+					}
+					if !matches {
+						continue
+					}
+					if runtimeConfigCanonicalSection(section) != "http" || (!strings.EqualFold(key, "ScreenWidth") && !strings.EqualFold(key, "ScreenHeight")) {
+						return false
+					}
+					found = true
+				}
+			}
+		}
+	}
+	return found
 }
 
 func buildRTSParityReport(runtimeSections map[string]map[string]map[string]string, definitions []runtimeSettingSupportDefinition) []RuntimeSettingParityEntry {

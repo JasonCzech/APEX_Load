@@ -15,11 +15,17 @@ import (
 // their original source values without ever serializing those values. Script
 // ordering mirrors secretBindingRequirementsForImportScripts.
 func sourceSecretValuesForImportResponse(opts scriptImportResponseOptions, requirements []SecretBindingRequirement) map[string]string {
+	return sourceSecretValuesForImportResponseWithProjection(opts, requirements, nil)
+}
+
+func sourceSecretValuesForImportResponseWithProjection(opts scriptImportResponseOptions, requirements []SecretBindingRequirement, projectedValue any) map[string]string {
 	rawValue := importResponseRawScriptValue(opts.Scripts)
 	if !hasScriptJSONNode(rawValue) {
 		rawValue = importResponseRawScriptValue(opts.Script)
 	}
-	projectedValue := maskScriptResponseValue(rawValue)
+	if projectedValue == nil {
+		projectedValue = maskScriptResponseValue(rawValue)
+	}
 	return sourceSecretValuesForImportNodes(rawValue, projectedValue, requirements)
 }
 

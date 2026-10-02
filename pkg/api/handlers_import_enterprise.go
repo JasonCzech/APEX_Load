@@ -69,6 +69,9 @@ func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
+	if s.writeEnterpriseArchiveCollectionResponse(w, r, importReq) {
+		return
+	}
 	// Run the conversion
 	result, err := enterprisearchive.ConvertZip(importReq.Data, importReq.Opts)
 	if err != nil {
@@ -84,6 +87,8 @@ func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Re
 		}
 	}
 	attachSalesforceReviewToEnterpriseArchiveResult(result, importReq)
+	preserveEnterpriseArchiveCollectionMember(result, importReq.ArchiveMember, importReq.ArchiveMemberSize)
+	preserveEnterpriseSupplementalArchiveManifest(result, importReq.SupplementalManifest)
 
 	s.writeEnterpriseArchiveImportResponse(w, r, http.StatusOK, result, importReq.ReadinessPolicy, importReq.ExpireDraft)
 }
@@ -95,6 +100,9 @@ func (s *Server) handleValidateEnterpriseArchiveImport(w http.ResponseWriter, r 
 	defer releaseEnterpriseImportSlot()
 	importReq, ok := readEnterpriseArchiveImportRequest(w, r)
 	if !ok {
+		return
+	}
+	if s.writeEnterpriseArchiveCollectionResponse(w, r, importReq) {
 		return
 	}
 
@@ -112,6 +120,8 @@ func (s *Server) handleValidateEnterpriseArchiveImport(w http.ResponseWriter, r 
 		}
 	}
 	attachSalesforceReviewToEnterpriseArchiveResult(result, importReq)
+	preserveEnterpriseArchiveCollectionMember(result, importReq.ArchiveMember, importReq.ArchiveMemberSize)
+	preserveEnterpriseSupplementalArchiveManifest(result, importReq.SupplementalManifest)
 
 	s.writeEnterpriseArchiveImportResponse(w, r, http.StatusOK, result, importReq.ReadinessPolicy, importReq.ExpireDraft)
 }
@@ -271,6 +281,17 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("file does not appear to be a valid ZIP archive (magic bytes: %02x %02x); expected PK", data[0], data[1]))
 		return nil, false
 	}
+	archiveMember := firstNonEmpty(r.FormValue("archive_member"), r.URL.Query().Get("archive_member"))
+	archiveMemberSize := 0
+	if archiveMember != "" {
+		selected, err := selectEnterpriseArchiveCollectionMember(data, archiveMember)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return nil, false
+		}
+		data = selected
+		archiveMemberSize = len(selected)
+	}
 
 	supplementalData := make([][]byte, 0)
 	supplementalNames := make([]string, 0)
@@ -319,23 +340,32 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 			supplementalNames = append(supplementalNames, name)
 		}
 	}
+	var supplementalManifest *enterpriseSupplementalArchiveManifest
 	if len(supplementalData) > 0 {
-		mergedData, mergeErr := mergeEnterpriseArchiveZipWithSupplementalFiles(data, supplementalNames, supplementalData)
+		if _, collection, _ := readEnterpriseArchiveCollection(data); collection {
+			writeError(w, http.StatusBadRequest, "select an archive_member before attaching supplemental sources to a script archive collection")
+			return nil, false
+		}
+		mergedData, manifest, mergeErr := mergeEnterpriseArchiveZipWithSupplementalEvidence(data, supplementalNames, supplementalData)
 		if mergeErr != nil {
 			writeError(w, http.StatusBadRequest, "failed to merge supplemental_file entries into archive: "+mergeErr.Error())
 			return nil, false
 		}
 		data = mergedData
+		supplementalManifest = manifest
 	}
 
 	return &enterpriseArchiveImportRequest{
-		Data:             data,
-		HARData:          harData,
-		SupplementalData: supplementalData,
-		SupplementalName: supplementalNames,
-		ProjectID:        authorizedImportProjectID(r),
-		SalesforceNative: parseBoolDefault(firstNonEmpty(r.FormValue("salesforce_native"), r.URL.Query().Get("salesforce_native")), false),
-		ExpireDraft:      parseBoolDefault(firstNonEmpty(r.FormValue("expire_draft"), r.URL.Query().Get("expire_draft")), false),
+		Data:                 data,
+		ArchiveMember:        archiveMember,
+		ArchiveMemberSize:    archiveMemberSize,
+		HARData:              harData,
+		SupplementalData:     supplementalData,
+		SupplementalName:     supplementalNames,
+		SupplementalManifest: supplementalManifest,
+		ProjectID:            authorizedImportProjectID(r),
+		SalesforceNative:     parseBoolDefault(firstNonEmpty(r.FormValue("salesforce_native"), r.URL.Query().Get("salesforce_native")), false),
+		ExpireDraft:          parseBoolDefault(firstNonEmpty(r.FormValue("expire_draft"), r.URL.Query().Get("expire_draft")), false),
 		Opts: enterprisearchive.ConvertOptions{
 			ScriptName:           r.FormValue("name"),
 			BaseURL:              r.FormValue("base_url"),
@@ -436,6 +466,23 @@ func zipEnterpriseFolderUpload(fields map[string][]*multipart.FileHeader) ([]byt
 // supplemental file routes an upload through an unguarded path and a ~100 MiB
 // body can expand to ~100 GiB before ConvertZip ever sees it.
 func mergeEnterpriseArchiveZipWithSupplementalFiles(baseZip []byte, names []string, contents [][]byte) ([]byte, error) {
+	merged, _, err := mergeEnterpriseArchiveZipWithSupplementalEvidence(baseZip, names, contents)
+	return merged, err
+}
+
+func mergeEnterpriseArchiveZipWithSupplementalEvidence(baseZip []byte, names []string, contents [][]byte) ([]byte, *enterpriseSupplementalArchiveManifest, error) {
+	merged, manifest, err := prepareEnterpriseSupplementalArchives(baseZip, names, contents)
+	if err != nil {
+		return nil, nil, err
+	}
+	data, err := mergeEnterpriseArchiveZipWithPreparedFiles(baseZip, merged)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, manifest, nil
+}
+
+func mergeEnterpriseArchiveZipWithPreparedFiles(baseZip []byte, supplemental []enterpriseSupplementalArchiveFile) ([]byte, error) {
 	reader, err := zip.NewReader(bytes.NewReader(baseZip), int64(len(baseZip)))
 	if err != nil {
 		return nil, err
@@ -465,15 +512,11 @@ func mergeEnterpriseArchiveZipWithSupplementalFiles(baseZip []byte, names []stri
 		}
 	}
 
-	overrides := make(map[string][]byte, len(names))
-	for idx, name := range names {
-		if idx >= len(contents) {
-			break
-		}
-		if name == "" {
-			continue
-		}
-		overrides[name] = contents[idx]
+	overrides := make(map[string][]byte, len(supplemental))
+	protected := make(map[string]bool, len(supplemental))
+	for _, file := range supplemental {
+		overrides[file.Name] = file.Data
+		protected[file.Name] = file.FromBundle
 	}
 
 	// Browser multipart always reduces a filename to its base name, so a
@@ -504,6 +547,9 @@ func mergeEnterpriseArchiveZipWithSupplementalFiles(baseZip []byte, names []stri
 	replacements := make(map[string][]byte, len(overrides))
 	claimedBy := map[string]string{}
 	for _, name := range supplementalNamesSorted {
+		if protected[name] {
+			continue // Bundle members are additions; they never replace primary source.
+		}
 		target := ""
 		for _, file := range reader.File {
 			if file == nil || file.FileInfo().IsDir() {
@@ -611,9 +657,12 @@ func mergeEnterpriseArchiveZipWithSupplementalFiles(baseZip []byte, names []stri
 }
 
 func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *http.Request, status int, result *enterprisearchive.ConvertResult, readinessPolicy enterprisearchive.RuntimeSettingMigrationPolicy, expireDraft bool) {
+	writeScriptImportResponse(w, status, s.newEnterpriseArchiveImportResponse(r, result, readinessPolicy, expireDraft))
+}
+
+func (s *Server) newEnterpriseArchiveImportResponse(r *http.Request, result *enterprisearchive.ConvertResult, readinessPolicy enterprisearchive.RuntimeSettingMigrationPolicy, expireDraft bool) map[string]any {
 	if result == nil {
-		s.writeScriptImportResponseWithSourceSecrets(w, r, status, scriptImportResponseOptions{})
-		return
+		return s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{})
 	}
 	protectedRequirements := result.ProtectedRequirements.Take()
 	normalizeCombinedJavaVuserImport(result)
@@ -659,7 +708,7 @@ func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *
 	augmented := draft.augment(r)
 	warnings = augmented.Warnings
 
-	s.writeScriptImportResponseWithSourceSecrets(w, r, status, scriptImportResponseOptions{
+	return s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:                 result,
 		Scripts:                scripts,
 		Script:                 result.Script,

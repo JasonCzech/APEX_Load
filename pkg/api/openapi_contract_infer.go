@@ -139,6 +139,7 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		applySystemSettingsConcurrencyContract(route, &contract)
 		applyDataPoolImportExportContract(route, &contract)
 		applyGenericImportBatchContract(route, &contract)
+		applyEnterpriseArchiveCollectionContract(route, &contract)
 		contracts[route.Method+" "+route.Path] = contract
 	}
 	return contracts, nil

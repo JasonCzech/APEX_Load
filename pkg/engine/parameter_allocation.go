@@ -52,6 +52,19 @@ func CompileParameterAllocation(params []dsl.Parameter, d *DataProvider, a Param
 	out := append([]dsl.Parameter(nil), params...)
 	var preview []ParameterAllocationPreview
 	for i, p := range out {
+		if dsl.CanonicalParameterType(p.Type) == "counter" && p.Selection == "unique" {
+			if a.Population <= 0 || a.Offset < 0 || a.Offset >= a.Population {
+				return nil, nil, fmt.Errorf("parameter %q requires a valid logical VUser allocation", p.Name)
+			}
+			if _, err := uniqueCounterBlockStart(p, a.Population-1); err != nil {
+				return nil, nil, err
+			}
+			if effectiveOnExhaustion(p) == "error" && a.Iterations > p.BlockSize && effectiveParameterUpdate(p) == "each_iteration" {
+				return nil, nil, fmt.Errorf("parameter %q has a number block smaller than the planned iteration requirement", p.Name)
+			}
+			preview = append(preview, ParameterAllocationPreview{Name: p.Name, BlockSize: p.BlockSize, Population: a.Population})
+			continue
+		}
 		if p.Selection != "unique" || (!p.AutoAllocate && p.BlockSize == 0) {
 			continue
 		}

@@ -194,7 +194,7 @@ func validateJMeterCompatibility(s *Script, execution bool) []string {
 		if p.RandomAlgorithm != "" && (p.RandomAlgorithm != "java48" || p.Type != "random_number") {
 			issues = append(issues, "parameter random algorithm is unsupported")
 		}
-		if p.FormatDialect != "" && p.FormatDialect != "java_simple_date_format" {
+		if p.FormatDialect != "" && p.FormatDialect != "java_simple_date_format" && p.FormatDialect != "loadrunner_strftime" {
 			issues = append(issues, "parameter format dialect is unsupported")
 		}
 		if p.FormatDialect == "java_simple_date_format" && p.Type != "date_time" {
@@ -203,6 +203,14 @@ func validateJMeterCompatibility(s *Script, execution bool) []string {
 		if p.FormatDialect == "java_simple_date_format" {
 			if _, err := FormatJMeterTime(time.Now(), p.Format); err != nil {
 				issues = append(issues, "unsupported JMeter date format")
+			}
+		}
+		if p.FormatDialect == "loadrunner_strftime" {
+			if p.Type != "time" && p.Type != "date_time" {
+				issues = append(issues, "LoadRunner date format requires time or date_time parameter")
+			}
+			if _, err := FormatLoadRunnerTime(time.Now(), p.Format); err != nil {
+				issues = append(issues, "unsupported LoadRunner date format")
 			}
 		}
 	}

@@ -1,0 +1,251 @@
+{
+  "generation_context": "Inert inspection of all27 ZIP entries.25 regular files and2 directory entries were examined; raw contents,source values,hosts,identifiers and customer paths are omitted. The dispositions record import review scope, not remote execution or source-runtime conformance.",
+  "archive_entries": 27,
+  "regular_files": 25,
+  "directory_entries": 2,
+  "rows": [
+    {
+      "archive_entry": 1,
+      "source_file": "Action.c",
+      "entry_type": "file",
+      "source_bytes": 5650,
+      "role": "generated_step_and_transaction_dispatch",
+      "disposition": "source_dispatch_evidence",
+      "reason": "44 generated step dispatches match selected XML top-level preorder, including disabled steps and alternative parents.22 transaction anchors remain source evidence; reachable graph proof controls native reconstruction."
+    },
+    {
+      "archive_entry": 2,
+      "source_file": "Breakpoints.xml",
+      "entry_type": "file",
+      "source_bytes": 31,
+      "role": "authoring_breakpoint_metadata",
+      "disposition": "non_applicable",
+      "reason": "One root element and zero breakpoint entries; preserved source authoring metadata."
+    },
+    {
+      "archive_entry": 3,
+      "source_file": "C-functions.c",
+      "entry_type": "file",
+      "source_bytes": 241,
+      "role": "empty_user_helper_template",
+      "disposition": "non_applicable",
+      "reason": "One empty helper definition; no recognized runtime calls or assignments."
+    },
+    {
+      "archive_entry": 4,
+      "source_file": "combined_Prefetch_Wireless_Center_Truclient_v0.1.c",
+      "entry_type": "file",
+      "source_bytes": 97,
+      "role": "generated_include_translation_unit",
+      "disposition": "source_support_asset",
+      "reason": "Four include directives; no runtime calls."
+    },
+    {
+      "archive_entry": 5,
+      "source_file": "default.cfg",
+      "entry_type": "file",
+      "source_bytes": 3316,
+      "role": "selected_runtime_configuration",
+      "disposition": "runtime_settings_review",
+      "reason": "154 distinct selected CFG settings; see runtime-settings appendix."
+    },
+    {
+      "archive_entry": 6,
+      "source_file": "default.usp",
+      "entry_type": "file",
+      "source_bytes": 2263,
+      "role": "selected_run_logic_configuration",
+      "disposition": "runtime_settings_review",
+      "reason": "66 distinct selected USP settings; see runtime-settings appendix."
+    },
+    {
+      "archive_entry": 7,
+      "source_file": "default.xml",
+      "entry_type": "file",
+      "source_bytes": 230340,
+      "role": "selected_truclient_step_graph",
+      "disposition": "native_preview_and_source_gate",
+      "reason": "67 physical step nodes,36 object descriptors,11 transaction definitions. The whole source profile remains gated; enabled and alternative semantics are reviewed independently."
+    },
+    {
+      "archive_entry": 8,
+      "source_file": "globals.h",
+      "entry_type": "file",
+      "source_bytes": 26,
+      "role": "source_sdk_header_include",
+      "disposition": "source_support_asset",
+      "reason": "Source SDK include; no runtime calls or settings assignments."
+    },
+    {
+      "archive_entry": 9,
+      "source_file": "JS-functions.js",
+      "entry_type": "file",
+      "source_bytes": 174,
+      "role": "empty_javascript_helper_template",
+      "disposition": "non_applicable",
+      "reason": "Comments only; zero executable JavaScript statements."
+    },
+    {
+      "archive_entry": 10,
+      "source_file": "Lib-View.c",
+      "entry_type": "file",
+      "source_bytes": 432,
+      "role": "source_view_comments",
+      "disposition": "non_applicable",
+      "reason": "Comments only; zero executable C statements."
+    },
+    {
+      "archive_entry": 11,
+      "source_file": "OutputColoringDatabase.json",
+      "entry_type": "file",
+      "source_bytes": 270,
+      "role": "authoring_output_coloring_metadata",
+      "disposition": "non_applicable",
+      "reason": "Five root fields for output hash,conversion,modification and coloring types; retained editor support metadata."
+    },
+    {
+      "archive_entry": 12,
+      "source_file": "Prefetch_Wireless_Center_Sep_Truclient_v0.1.usr",
+      "entry_type": "file",
+      "source_bytes": 2404,
+      "role": "project_configuration",
+      "disposition": "project_settings_preserved",
+      "reason": "67 distinct project section/key settings across 15 nonempty sections remain preserved; legacy native-profile parity is not certified."
+    },
+    {
+      "archive_entry": 13,
+      "source_file": "Prefetch_Wireless_Center_Sep_Truclient_v0.prm",
+      "entry_type": "file",
+      "source_bytes": 634,
+      "role": "parameter_definitions",
+      "disposition": "parameter_settings_review",
+      "reason": "26 distinct parameter rows across2 definitions; parameter and data-source accounting remains scoped separately from runtime and browser-profile settings."
+    },
+    {
+      "archive_entry": 14,
+      "source_file": "p_BAN.dat",
+      "entry_type": "file",
+      "source_bytes": 371,
+      "role": "parameter_data_asset",
+      "disposition": "protected_parameter_asset",
+      "reason": "Protected source parameter data asset; no data values included in this inventory."
+    },
+    {
+      "archive_entry": 15,
+      "source_file": "p_Username.dat",
+      "entry_type": "file",
+      "source_bytes": 86,
+      "role": "parameter_data_asset",
+      "disposition": "protected_parameter_asset",
+      "reason": "Protected source parameter data asset; no data values included in this inventory."
+    },
+    {
+      "archive_entry": 16,
+      "source_file": "ScriptUploadMetadata.xml",
+      "entry_type": "file",
+      "source_bytes": 1631,
+      "role": "source_upload_manifest",
+      "disposition": "non_applicable",
+      "reason": "29 XML nodes including24 file entries; source upload/protocol inventory, with no manifest values copied."
+    },
+    {
+      "archive_entry": 17,
+      "source_file": "TC.xsl",
+      "entry_type": "file",
+      "source_bytes": 3782,
+      "role": "source_view_stylesheet",
+      "disposition": "source_support_asset",
+      "reason": "19 XML nodes including1 inert view script and zero XSL imports/includes; retained source viewing asset."
+    },
+    {
+      "archive_entry": 18,
+      "source_file": "TCIEAuthenticationFilters.ini",
+      "entry_type": "file",
+      "source_bytes": 162,
+      "role": "source_browser_authentication_filter_configuration",
+      "disposition": "compatibility_only",
+      "reason": "One General.FilterType selector and six bare allow/deny list entries remain source-only behind the browser-profile gate; list grammar and native browser authentication-policy equivalence are unverified. See auxiliary-settings appendix."
+    },
+    {
+      "archive_entry": 19,
+      "source_file": "TruClientScriptMetadata.xml",
+      "entry_type": "file",
+      "source_bytes": 268,
+      "role": "source_identity_metadata",
+      "disposition": "non_applicable",
+      "reason": "Two XML nodes with1 script-identity entry; identifier value remains omitted."
+    },
+    {
+      "archive_entry": 20,
+      "source_file": "UserTasks.xml",
+      "entry_type": "file",
+      "source_bytes": 99,
+      "role": "authoring_task_metadata",
+      "disposition": "non_applicable",
+      "reason": "Two XML nodes with zero task entries; retained source authoring metadata."
+    },
+    {
+      "archive_entry": 21,
+      "source_file": "user_modified_perfs.json",
+      "entry_type": "file",
+      "source_bytes": 87,
+      "role": "source_browser_preference_override_record",
+      "disposition": "compatibility_only",
+      "reason": "One preference override record already declared in user.js; source loading order and native browser parity remain unverified. See browser-profile-settings appendix."
+    },
+    {
+      "archive_entry": 22,
+      "source_file": "vuser_end.c",
+      "entry_type": "file",
+      "source_bytes": 465,
+      "role": "empty_generated_teardown_wrapper",
+      "disposition": "non_applicable",
+      "reason": "Empty generated lifecycle wrapper; no runtime operations."
+    },
+    {
+      "archive_entry": 23,
+      "source_file": "vuser_init.c",
+      "entry_type": "file",
+      "source_bytes": 466,
+      "role": "empty_generated_init_wrapper",
+      "disposition": "non_applicable",
+      "reason": "Empty generated lifecycle wrapper; no runtime operations."
+    },
+    {
+      "archive_entry": 24,
+      "source_file": "directory entry 1",
+      "entry_type": "directory",
+      "source_bytes": 0,
+      "role": "directory_container",
+      "disposition": "non_applicable",
+      "reason": "Source archive container entry; no settings or executable content."
+    },
+    {
+      "archive_entry": 25,
+      "source_file": "directory entry 2",
+      "entry_type": "directory",
+      "source_bytes": 0,
+      "role": "directory_container",
+      "disposition": "non_applicable",
+      "reason": "Source archive container entry; no settings or executable content."
+    },
+    {
+      "archive_entry": 26,
+      "source_file": "user.js",
+      "entry_type": "file",
+      "source_bytes": 50894,
+      "role": "source_browser_profile_preferences",
+      "disposition": "compatibility_only",
+      "reason": "495 active literal preference declarations across490 keys;5 identical duplicate declarations and zero commented preferences or other code. See browser-profile-settings appendix."
+    },
+    {
+      "archive_entry": 27,
+      "source_file": "version.txt",
+      "entry_type": "file",
+      "source_bytes": 15,
+      "role": "source_version_marker",
+      "disposition": "non_applicable",
+      "reason": "One version-marker line; no assignments or settings policy."
+    }
+  ]
+}

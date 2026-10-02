@@ -73,6 +73,8 @@ type projector struct {
 	knownComparisonRemaining int64
 	credentialParameterNames map[string]struct{}
 	sensitiveSourceColumns   map[string][]string
+	textScrubCache           map[string]string
+	textScrubCacheBytes      int
 }
 
 // Project returns a detached script whose credential material has been
@@ -400,7 +402,7 @@ func (p *projector) projectHeaderValue(name string, value any) any {
 	if structuralDisclosureMIMEHeader(name) {
 		return credentialpolicy.RedactKnownMIMEHeader(
 			name,
-			scrubText(text),
+			p.scrubText(text),
 			func(value string) bool {
 				return p.replaceKnown(value) != value
 			},
@@ -418,7 +420,7 @@ func (p *projector) projectHeaderValue(name string, value any) any {
 	if isNonSecretIdentifierHeader(name) {
 		return p.replaceKnown(projectURL(text))
 	}
-	return p.replaceKnown(scrubText(text))
+	return p.replaceKnown(p.scrubText(text))
 }
 
 func structuralDisclosureMIMEHeader(name string) bool {
@@ -463,7 +465,7 @@ func (p *projector) projectString(value string, ctx projectionContext) string {
 		return p.replaceKnown(scrub.ValueLabel(value, scrub.Policy{}))
 	}
 	if ctx.opaque || isFreeTextKey(ctx.key) {
-		return p.replaceKnown(scrubText(value))
+		return p.replaceKnown(p.scrubText(value))
 	}
 	return p.replaceKnown(value)
 }
@@ -839,12 +841,7 @@ func scrubWithTemplateProjector(value string, urlValue bool, projectText func(st
 		protected, separatorReplacements = protectAdditionalURLSeparators(protected)
 		protected, bindingReplacements = protectURLBindings(protected)
 	}
-	replacements := make(map[string]string)
-	for _, reference := range portableTemplatePattern.FindAllString(value, -1) {
-		placeholder := uniquePlaceholder(value, "template", len(replacements))
-		protected = strings.Replace(protected, reference, placeholder, 1)
-		replacements[placeholder] = reference
-	}
+	protected, replacements := protectTemplateReferences(protected)
 	if urlValue {
 		protected = scrub.ValueURL(protected, scrub.Policy{})
 	} else if projectText != nil {
@@ -852,9 +849,7 @@ func scrubWithTemplateProjector(value string, urlValue bool, projectText func(st
 	} else {
 		protected = scrub.Value(protected, scrub.Policy{})
 	}
-	for placeholder, reference := range replacements {
-		protected = strings.ReplaceAll(protected, placeholder, reference)
-	}
+	protected = restoreTextPlaceholders(protected, replacements)
 	for placeholder, binding := range bindingReplacements {
 		protected = strings.ReplaceAll(protected, placeholder, binding)
 	}
@@ -862,6 +857,41 @@ func scrubWithTemplateProjector(value string, urlValue bool, projectText func(st
 		protected = strings.ReplaceAll(protected, placeholder, separator)
 	}
 	return protected
+}
+
+// Protect and restore all template spans in one pass each. Source-review text
+// can repeat thousands of references; copying the entire string once per
+// reference makes that otherwise bounded projection quadratic.
+func protectTemplateReferences(value string) (string, map[string]string) {
+	matches := portableTemplatePattern.FindAllStringIndex(value, -1)
+	if len(matches) == 0 {
+		return value, nil
+	}
+	prefix := uniquePlaceholder(value, "template", 0) + "~"
+	replacements := make(map[string]string, len(matches))
+	var protected strings.Builder
+	protected.Grow(len(value))
+	cursor := 0
+	for index, match := range matches {
+		placeholder := prefix + strconv.Itoa(index) + "~safe"
+		protected.WriteString(value[cursor:match[0]])
+		protected.WriteString(placeholder)
+		replacements[placeholder] = value[match[0]:match[1]]
+		cursor = match[1]
+	}
+	protected.WriteString(value[cursor:])
+	return protected.String(), replacements
+}
+
+func restoreTextPlaceholders(value string, replacements map[string]string) string {
+	if len(replacements) == 0 {
+		return value
+	}
+	pairs := make([]string, 0, len(replacements)*2)
+	for placeholder, reference := range replacements {
+		pairs = append(pairs, placeholder, reference)
+	}
+	return strings.NewReplacer(pairs...).Replace(value)
 }
 
 func protectAdditionalURLSeparators(value string) (string, map[string]string) {

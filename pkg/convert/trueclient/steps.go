@@ -139,14 +139,37 @@ func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action,
 		if value == "" {
 			return nil, nil, false, fmt.Errorf("TruClient Set / Type step is missing a value")
 		}
-		return []dsl.Action{{
+		action := dsl.Action{
 			Name:     stepDisplayName(step, "Set / Type"),
 			Type:     "browser_fill",
 			Target:   selector,
 			Selector: selector,
 			Value:    value,
-		}}, nil, false, nil
+		}
+		if strings.EqualFold(strings.TrimSpace(step.Action), "Type") {
+			action.Params = map[string]any{"input_mode": "type"}
+			if clear, _ := parseFirstArgumentValue(step.Arguments, "Clear"); strings.EqualFold(trimQuotedValue(clear), "false") || trimQuotedValue(clear) == "0" {
+				applyTruClientSemanticGate(&action, "truclient_append_typing_requires_review", "The source requests typing without clearing; the native typing draft clears the field and requires an explicit append replacement.")
+			}
+			if interval, err := parseFirstArgumentValue(step.Arguments, "Typing Interval"); err != nil {
+				return nil, nil, false, err
+			} else if strings.TrimSpace(interval) != "" {
+				if n, err := strconv.Atoi(trimQuotedValue(interval)); err == nil && n >= 0 && n <= 1000 {
+					action.Params["typing_delay_ms"] = n
+					if n > 0 {
+						applyTruClientSemanticGate(&action, "truclient_average_typing_interval_requires_review", "The source interval is an average; the native fixed per-character delay is a review draft approximation.")
+					}
+				} else {
+					applyTruClientSemanticGate(&action, "truclient_typing_interval_requires_review", "The recorded typing interval is outside the supported 0..1000 millisecond range.")
+				}
+			}
+		}
+		return []dsl.Action{action}, nil, false, nil
 	case "Select":
+		ordinal, ordinalErr := parseFirstArgumentValue(step.Arguments, "Ordinal")
+		if ordinalErr != nil {
+			return nil, nil, false, ordinalErr
+		}
 		selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
 		if err != nil {
 			return nil, nil, false, fmt.Errorf("parse TruClient Select step selector arguments: %w", err)
@@ -162,17 +185,27 @@ func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action,
 			return []dsl.Action{action}, []string{reviewGatedStepWarning(step, action.Metadata)}, false, nil
 		}
 		if value == "" {
+			if strings.TrimSpace(ordinal) == "" {
+				ordinal = "1"
+			}
+			if n, err := strconv.Atoi(trimQuotedValue(ordinal)); err == nil && n > 0 && n <= 1_000_000 {
+				return []dsl.Action{{Name: stepDisplayName(step, "Select"), Type: "browser_select", Target: selector, Selector: selector, Params: map[string]any{"option_index": n - 1}}}, nil, false, nil
+			}
 			action := unresolvedBrowserStepAction(step, "Select", "missing_select_value")
 			action.Metadata["source_selector"] = selector
 			return []dsl.Action{action}, []string{reviewGatedStepWarning(step, action.Metadata)}, false, nil
 		}
-		return []dsl.Action{{
+		action := dsl.Action{
 			Name:     stepDisplayName(step, "Select"),
 			Type:     "browser_select",
 			Target:   selector,
 			Selector: selector,
 			Value:    value,
-		}}, nil, false, nil
+		}
+		if strings.TrimSpace(ordinal) != "" {
+			applyTruClientSemanticGate(&action, "truclient_mixed_select_ordinal_requires_review", "Text plus ordinal selects a matching occurrence in the source; native value/label selection cannot prove the same occurrence.")
+		}
+		return []dsl.Action{action}, nil, false, nil
 	case "Press Key":
 		action, err := convertPressKeyStep(step, descriptors)
 		if err != nil {
@@ -229,7 +262,11 @@ func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action,
 		}
 		action := switchWindowAction(trimQuotedValue(context), stepDisplayName(step, step.Action))
 		var warnings []string
+		if strings.TrimSpace(context) == "" {
+			applyTruClientSemanticGate(&action, "truclient_window_identity_requires_review", "The source tab/window identity requires explicit native browser context.")
+		}
 		if name := strings.TrimSpace(step.Action); strings.EqualFold(name, "Add Tab") || strings.EqualFold(name, "Close Tab") {
+			applyTruClientSemanticGate(&action, "truclient_tab_lifecycle_requires_review", "The source tab open/close lifecycle requires an explicit native replacement.")
 			action.Metadata["review_reason"] = "tab_lifecycle_not_replayed"
 			warnings = append(warnings, fmt.Sprintf("TruClient %q switches browser focus, but tab open/close lifecycle is not replayed", name))
 		}
@@ -387,7 +424,7 @@ func unresolvedClickAction(step truXMLStep, actionName string) dsl.Action {
 
 func unresolvedBrowserStepAction(step truXMLStep, fallback string, reason string) dsl.Action {
 	actionName := firstNonEmptyString(strings.TrimSpace(step.Action), fallback)
-	return dsl.Action{
+	action := dsl.Action{
 		Name:   stepDisplayName(step, fallback),
 		Type:   "browser_evaluate_js",
 		Target: "(() => null)()",
@@ -397,6 +434,8 @@ func unresolvedBrowserStepAction(step truXMLStep, fallback string, reason string
 			"review_reason":   reason,
 		},
 	}
+	applyTruClientSemanticGate(&action, "truclient_unresolved_step_requires_review", "The source browser step requires a verified native selector or argument replacement.")
+	return action
 }
 
 func reviewGatedClickWarning(step truXMLStep, metadata map[string]any) string {
@@ -539,6 +578,7 @@ func attachSourceStepMetadata(action *dsl.Action, step truXMLStep, transaction s
 	if action.Metadata == nil {
 		action.Metadata = make(map[string]any)
 	}
+	applyTruClientStepContract(action, step)
 	if _, ok := action.Metadata["source"]; !ok {
 		action.Metadata["source"] = "truclient_" + stableActionToken(step.Action)
 	}
@@ -613,10 +653,21 @@ func convertWaitStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.Actio
 			},
 		}, true, nil
 	}
-	if delay, err := parseFirstArgumentValue(step.Arguments, "Duration", "duration", "Time", "time", "Timeout", "timeout"); err != nil {
+	if delay, err := parseFirstArgumentValue(step.Arguments, "Duration", "duration", "Time", "time", "Timeout", "timeout", "Interval"); err != nil {
 		return dsl.Action{}, false, fmt.Errorf("parse TruClient Wait step duration arguments: %w", err)
 	} else if delay = trimQuotedValue(delay); delay != "" {
-		return dsl.Action{
+		unit, unitErr := parseFirstArgumentValue(step.Arguments, "Unit")
+		if unitErr != nil {
+			return dsl.Action{}, false, unitErr
+		}
+		switch strings.ToLower(trimQuotedValue(unit)) {
+		case "", "s", "sec", "second", "seconds":
+		case "ms", "millisecond", "milliseconds":
+			delay += "ms"
+		default:
+			return dsl.Action{}, false, fmt.Errorf("TruClient Wait interval has an unsupported unit")
+		}
+		action := dsl.Action{
 			Name: stepDisplayName(step, "Wait"),
 			Type: "browser_wait",
 			WaitFor: &dsl.WaitCondition{
@@ -624,7 +675,14 @@ func convertWaitStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.Actio
 				Value:     delay,
 				TimeoutMs: timeoutMs,
 			},
-		}, true, nil
+		}
+		if interval, _ := parseFirstArgumentValue(step.Arguments, "Interval"); strings.TrimSpace(interval) != "" {
+			thinkTime, _ := parseFirstArgumentValue(step.Arguments, "Think Time", "ThinkTime")
+			if !strings.EqualFold(trimQuotedValue(thinkTime), "false") && trimQuotedValue(thinkTime) != "0" {
+				applyTruClientSemanticGate(&action, "truclient_wait_think_time_requires_review", "Source Wait intervals default to think-time behavior; the native fixed wait requires verification against source think-time policy.")
+			}
+		}
+		return action, true, nil
 	}
 	return dsl.Action{}, false, nil
 }

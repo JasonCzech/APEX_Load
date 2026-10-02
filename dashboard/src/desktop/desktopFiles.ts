@@ -194,6 +194,7 @@ export async function pickFilesViaBridge(
 const IMPORTABLE_DROP_EXTENSIONS = [
   ".json",
   ".zip",
+  ".usz",
   ".har",
   ".jmx",
   ".xml",

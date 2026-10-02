@@ -518,6 +518,7 @@ Requires one of: `target`, `selector`, `object_ref`
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `value` | string |  | Single option value or label to select. |
 | `params.values` | array |  | Option values or labels to select for a multi-select. |
+| `params.option_index` | int |  | Zero-based option index, 0–999999. Cannot be combined with value or values. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 

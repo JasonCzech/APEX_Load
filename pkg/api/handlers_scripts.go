@@ -35,15 +35,18 @@ type jmeterImportDocument struct {
 }
 
 type enterpriseArchiveImportRequest struct {
-	Data             []byte
-	HARData          []byte
-	SupplementalData [][]byte
-	SupplementalName []string
-	ProjectID        string
-	Opts             enterprisearchive.ConvertOptions
-	ReadinessPolicy  enterprisearchive.RuntimeSettingMigrationPolicy
-	SalesforceNative bool
-	ExpireDraft      bool
+	Data                 []byte
+	ArchiveMember        string
+	ArchiveMemberSize    int
+	HARData              []byte
+	SupplementalData     [][]byte
+	SupplementalName     []string
+	SupplementalManifest *enterpriseSupplementalArchiveManifest
+	ProjectID            string
+	Opts                 enterprisearchive.ConvertOptions
+	ReadinessPolicy      enterprisearchive.RuntimeSettingMigrationPolicy
+	SalesforceNative     bool
+	ExpireDraft          bool
 }
 
 type devWebImportRequest struct {

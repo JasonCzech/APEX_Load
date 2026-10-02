@@ -377,6 +377,20 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 		}
 		rawType := strings.ToLower(convertutil.FirstNonEmpty(lower["type"], lower["valuetype"], lower["datatype"], lower["paramtype"]))
 		switch {
+		case isSourceUniqueNumberType(rawType):
+			param.Type = "counter"
+			param.Selection = "unique"
+			param.Step = 1
+			param.Start, _ = strconv.Atoi(convertutil.FirstNonEmpty(lower["startvalue"], lower["start"]))
+			param.BlockSize, _ = strconv.Atoi(convertutil.FirstNonEmpty(lower["blocksize"], lower["block_size"]))
+			param.PadWidth = sourceIntegerFormatPadWidth(lower["format"])
+			if !sourceUniqueNumberSettingsValid(lower, param) {
+				result.Warnings = append(result.Warnings, "parameter "+name+" has invalid or unsupported Unique number settings; block allocation requires review")
+				result.AllocationBlockers = append(result.AllocationBlockers, name)
+				// Retain a structurally valid blocked definition, rather than
+				// dropping the source parameter or enabling a guessed range.
+				param.Start, param.BlockSize, param.PadWidth, param.AutoAllocate = 0, 1, 0, false
+			}
 		case isSourceVUserIDType(rawType):
 			param.Type = "vuser_id"
 			param.Update = "once"
@@ -463,6 +477,7 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 			}
 		}
 
+		preserveSourceTimeParameterFormat(&param, lower)
 		if param.Update == "" {
 			param.Update = "each_iteration"
 		}
@@ -917,6 +932,33 @@ func isSourceTimeType(rawType string) bool {
 	normalized := normalizeParameterType(rawType)
 	return normalized == "time" || normalized == "datetime"
 }
+
+func isSourceUniqueNumberType(rawType string) bool {
+	normalized := normalizeParameterType(rawType)
+	return normalized == "unique" || normalized == "uniquenumber"
+}
+
+func sourceUniqueNumberSettingsValid(values map[string]string, param dsl.Parameter) bool {
+	if _, err := strconv.Atoi(convertutil.FirstNonEmpty(values["startvalue"], values["start"])); err != nil {
+		return false
+	}
+	if param.BlockSize <= 0 || param.BlockSize > dsl.MaxParameterRowIndex || param.PadWidth < 0 || param.PadWidth > dsl.MaxGeneratedParameterBytes {
+		return false
+	}
+	format := strings.TrimSpace(values["format"])
+	if format != "" && format != "%d" && format != "%u" && !(sourceUniquePaddedFormatPattern.MatchString(format) && param.PadWidth > 0) {
+		return false
+	}
+	if raw := convertutil.FirstNonEmpty(values["updatevalueon"], values["generatenewval"]); raw != "" && mapParameterUpdate(raw) == "" {
+		return false
+	}
+	if raw := convertutil.FirstNonEmpty(values["outofvalues"], values["whenoutofvalues"], values["outofrangepolicy"]); raw != "" && mapParameterExhaustion(raw) == "" {
+		return false
+	}
+	return values["increment"] == "" && values["endvalue"] == "" && !param.AutoAllocate
+}
+
+var sourceUniquePaddedFormatPattern = regexp.MustCompile(`^%0[0-9]+d$`)
 
 func normalizeParameterType(rawType string) string {
 	return strings.Map(func(r rune) rune {

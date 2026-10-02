@@ -786,7 +786,7 @@ func TestConvertArchiveMapsSelectStep(t *testing.T) {
 	}
 }
 
-func TestConvertArchiveReviewGatesSelectWithoutValue(t *testing.T) {
+func TestConvertArchiveMapsDocumentedDefaultSelectOrdinal(t *testing.T) {
 	result, err := ConvertArchive(map[string]string{
 		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
 <truScript>
@@ -799,11 +799,11 @@ func TestConvertArchiveReviewGatesSelectWithoutValue(t *testing.T) {
 		t.Fatalf("ConvertArchive returned error: %v", err)
 	}
 	action := result.Script.Actions[0]
-	if action.Type != "browser_evaluate_js" || action.Metadata["review_reason"] != "missing_select_value" || action.Metadata["source_selector"] != "#quantity" {
-		t.Fatalf("action = %#v, want review placeholder for missing select value", action)
+	if action.Type != "browser_select" || action.Params["option_index"] != 0 {
+		t.Fatalf("action = %#v, want documented first-option default", action)
 	}
-	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "selected value") {
-		t.Fatalf("warnings = %#v, want selected value warning", result.Warnings)
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none for documented default", result.Warnings)
 	}
 }
 

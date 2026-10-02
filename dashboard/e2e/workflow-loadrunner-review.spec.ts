@@ -36,7 +36,7 @@ for (const scenario of [
       await expireDraft.check()
       await expect(expireDraft).toBeChecked()
     }
-    await page.locator('input[type=file][accept=".zip"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures', scenario.file))
+    await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures', scenario.file))
     await expect(page.getByRole('button', { name: 'Add archives', exact: true })).toBeVisible()
     const validated = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
     await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
@@ -183,7 +183,7 @@ test('LoadRunner batch saves ready scripts, stays on import, and accepts another
   for (let index = 0; index < 3; index += 1) await expect(policy.nth(index)).not.toBeChecked()
   const { readFile } = await import('node:fs/promises')
   const buffer = await readFile(path.join(process.cwd(), 'e2e/fixtures/transaction-labels.zip'))
-  const archiveInput = page.locator('input[type=file][accept=".zip"]')
+  const archiveInput = page.locator('input[type=file][accept=".zip,.usz"]')
   await archiveInput.setInputFiles([
     { name: 'first.zip', mimeType: 'application/zip', buffer },
     { name: 'second.zip', mimeType: 'application/zip', buffer },
@@ -260,7 +260,7 @@ test('LoadRunner guided repair previews redacted changes before applying', async
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /Import Loadrunner Script Archive/ }).click()
-  await page.locator('input[type=file][accept=".zip"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/guided-repair.zip'))
+  await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/guided-repair.zip'))
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   const repair = page.getByRole('region', { name: 'Guided import repair' })
   await expect(repair).toBeVisible()
@@ -310,7 +310,7 @@ test('LoadRunner private acceptance archive groups repeated findings without hid
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /Import Loadrunner Script Archive/ }).click()
-  await page.locator('input[type=file][accept=".zip"]').setInputFiles(archive!)
+  await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(archive!)
   const validated = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/scripts/import/enterprise-script-archive/validate', { timeout: 120_000 })
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   expect((await validated).ok()).toBe(true)
@@ -350,7 +350,7 @@ test('LoadRunner settings apply inline, retain source evidence, and survive draf
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /Import Loadrunner Script Archive/ }).click()
-  await page.locator('input[type=file][accept=".zip"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/runtime-settings.zip'))
+  await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/runtime-settings.zip'))
   const validation = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   expect((await validation).ok()).toBeTruthy()
@@ -507,7 +507,7 @@ test('LoadRunner credentials edit and apply in place while preserving protected 
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /Import Loadrunner Script Archive/ }).click()
-  await page.locator('input[type=file][accept=".zip"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/credential-groups.zip'))
+  await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/credential-groups.zip'))
   const validated = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   const validatedResponse = await validated
@@ -564,7 +564,7 @@ test('LoadRunner percentage think time shows source bounds and saves edited perc
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /Import Loadrunner Script Archive/ }).click()
-  await page.locator('input[type=file][accept=".zip"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/runtime-percentages.zip'))
+  await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/runtime-percentages.zip'))
   const validation = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   expect((await validation).ok()).toBeTruthy()
@@ -609,7 +609,7 @@ test('LoadRunner runtime context explains inactive settings and repairs an overs
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /Import Loadrunner Script Archive/ }).click()
-  await page.locator('input[type=file][accept=".zip"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/runtime-context.zip'))
+  await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/runtime-context.zip'))
   const validation = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   expect((await validation).ok()).toBeTruthy()
@@ -702,7 +702,7 @@ test('LoadRunner run-logic sections share one category and retain searchable sou
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /Import Loadrunner Script Archive/ }).click()
-  await page.locator('input[type=file][accept=".zip"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/runtime-family.zip'))
+  await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/runtime-family.zip'))
   const validation = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   expect((await validation).ok()).toBeTruthy()
@@ -726,7 +726,7 @@ test('unique allocation preview appears only when relevant and explains unavaila
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /Import Loadrunner Script Archive/ }).click()
-  await page.locator('input[type=file][accept=".zip"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/runtime-settings.zip'))
+  await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/runtime-settings.zip'))
   const validation = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   expect((await validation).ok()).toBeTruthy()
@@ -758,7 +758,7 @@ test('fresh runtime diagnostic import separates capture from dormant source valu
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /Import Loadrunner Script Archive/ }).click()
-  await page.locator('input[type=file][accept=".zip"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/runtime-diagnostics.zip'))
+  await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/runtime-diagnostics.zip'))
   const response = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   await json(await response)
@@ -790,7 +790,7 @@ test('issue details retain concrete evidence, focus source and apply runtime cha
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /Import Loadrunner Script Archive/ }).click()
-  await page.locator('input[type=file][accept=".zip"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/issue-details.zip'))
+  await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/issue-details.zip'))
   const validation = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
   await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
   expect((await validation).ok()).toBeTruthy()
@@ -853,4 +853,60 @@ test('issue details retain concrete evidence, focus source and apply runtime cha
   expect(await issue.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
   await issue.scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath('issue-narrow.png'), fullPage: true })
+})
+
+// The ordinary CI controller leaves uploads disabled. A focused disposable
+// controller can opt in together with this expectation flag; no runner starts.
+test('LoadRunner Java JAR attachment follows policy and survives review-session reopen', async ({ page }) => {
+  test.setTimeout(120_000)
+  const uploadsEnabled = process.env.APEXLOAD_E2E_JAVA_CLASSPATH_UPLOAD_ENABLED === 'true'
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('button', { name: /Import Loadrunner Script Archive/ }).click()
+  await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/java-classpath-review.zip'))
+  await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
+  const resolver = page.locator('.lr-java-classpath-resolver-section')
+  await expect(resolver).toContainText('client.jar')
+  const uploadResponse = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/java-classpath/upload'))
+  await resolver.getByLabel('Attach JAR for client.jar', { exact: true }).setInputFiles(path.join(process.cwd(), 'e2e/fixtures/java-classpath-dependency.jar'))
+  const uploaded = await uploadResponse
+  let binding: Record<string, unknown> | undefined
+  if (uploadsEnabled) {
+    expect(uploaded.status()).toBe(201)
+    const asset = await uploaded.json()
+    binding = {
+      entry: 'client.jar', file_name: asset.file_name, content_type: asset.content_type,
+      size_bytes: asset.size_bytes, sha256: asset.sha256, storage_ref: asset.storage_ref,
+    }
+    await expect(resolver).toContainText('1/1 attached')
+  } else {
+    expect(uploaded.status()).toBe(404)
+    await expect(resolver.getByRole('alert')).toContainText('APEXLOAD_JAVA_VUSER_CLASSPATH_UPLOAD_ENABLED')
+    await expect(resolver).toContainText('0/1 attached')
+  }
+  const savedResponse = mutation(page, 'POST', '/api/v1/scripts/authoring/sessions')
+  await page.getByRole('button', { name: /^Save (Combined Java Draft for Approval|Review Artifact Instead)$/ }).click()
+  const saved = await json(await savedResponse)
+  const reopened = await json(await request.get(`/api/v1/scripts/authoring/sessions/${saved.id}`))
+  const reopenedJava = (reopened.draft as ScriptDefinition).config.java_vuser
+  expect(reopenedJava?.enabled ?? false).toBe(false) // Go omits the disabled zero value.
+  expect(reopenedJava?.classpath).toEqual(['client.jar'])
+  if (binding) expect(reopenedJava?.classpath_assets).toEqual([binding])
+  else expect(reopenedJava?.classpath_assets ?? []).toEqual([])
+  // Reload the library so Resume consumes durable session data, not import state.
+  await page.goto(`/#/scripts?${scopeQuery(workspace)}`)
+  await page.locator('.ux-review-queue > summary').click()
+  const sessionCard = page.locator('.authoring-session-card').filter({ has: page.getByRole('heading', { name: String(saved.name), exact: true }) })
+  await sessionCard.getByRole('button', { name: 'Resume', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Author center workbench' })).toBeVisible()
+  const resumedName = page.getByRole('textbox', { name: 'Script Name', exact: true })
+  if (!await resumedName.isVisible()) {
+    await page.getByRole('group', { name: 'Author panes' }).getByRole('button', { name: 'Outline', exact: true }).click()
+  }
+  await expect(resumedName).toHaveValue(String(saved.name))
+  expect((await json(await request.get(`/api/v1/scripts?project_id=${workspace.projectId}`))).scripts).toHaveLength(0)
 })

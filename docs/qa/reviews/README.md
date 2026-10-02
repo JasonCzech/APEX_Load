@@ -10,6 +10,9 @@ Each report merges what used to be separate audit, implementation, code review, 
 
 | File | Date | Status | Purpose |
 | --- | --- | --- | --- |
+| [java-dependency-import-2026-10-01/import-review.md](java-dependency-import-2026-10-01/import-review.md) | 2026-10-01 to 2026-10-02 | Import/save/reopen complete; replay gated | Java VuGen settings, supplemental dependency provenance, stored JAR binding fidelity, independent code review and durable review navigation. |
+| [clm-import-2026-10-01/import-review.md](clm-import-2026-10-01/import-review.md) | 2026-10-01 | Import/save/reopen complete; original replay prerequisites remain | ZIP/USZ collection fidelity, governed Java/Kafka settings, independent code review, and durable native-script navigation. |
+| [truclient-import-2026-10-01/import-review.md](truclient-import-2026-10-01/import-review.md) | 2026-10-01 | Import/save/reopen complete; replay gated | Source settings, browser-profile policy, parameter/data and transaction accounting, with saved authoring-review evidence. |
 | [live-grouped-overlays-2026-10-01/REVIEW.md](live-grouped-overlays-2026-10-01/REVIEW.md) | 2026-10-01 | Implemented and reviewed; validation reruns documented | Durable live selections, grouped archive panels and authorized analytical overlays. |
 | [filtered-native-analytics-2026-10-01/REVIEW.md](filtered-native-analytics-2026-10-01/REVIEW.md) | 2026-10-01 | Implemented and reviewed; broader analytics remains open | Saved archive selections, raw timelines, same-project comparisons and bucket inspection. |
 | [authoring-analytics-cloud-2026-10-01/REVIEW.md](authoring-analytics-cloud-2026-10-01/REVIEW.md) | 2026-10-01 | Implemented slices validated; broader roadmap scope open | Authoring handoffs, native panel creation, cloud collector previews, bounded properties and messaging lag rules. |

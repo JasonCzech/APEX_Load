@@ -66,6 +66,10 @@ type importDraftAttestationClaim struct {
 	// the submitted draft. Commit/mutation callers must use it instead of the
 	// browser-visible projection.
 	Script *dsl.Script
+	// JavaClasspathReviewChecked records the authoring-only trusted Java
+	// baseline check, including the unchanged-evidence exception when uploads
+	// are disabled. Other claims cannot waive final attachment validation.
+	JavaClasspathReviewChecked bool
 	// ExpirationDisabled follows the original draft through server-owned
 	// mutations so applying a repair or binding cannot silently change policy.
 	ExpirationDisabled bool
@@ -359,6 +363,16 @@ func (s *Server) claimImportDraftAttestation(
 	r *http.Request,
 	script *dsl.Script,
 ) (*importDraftAttestationClaim, error) {
+	return s.claimImportDraftAttestationWithJavaReview(r, script, false)
+}
+
+// Java asset verification and baseline reconciliation are available only to
+// authoring-session create. Other callers retain their existing claim contract.
+func (s *Server) claimImportDraftAttestationWithJavaReview(
+	r *http.Request,
+	script *dsl.Script,
+	javaReview bool,
+) (*importDraftAttestationClaim, error) {
 	if s == nil || r == nil || script == nil {
 		return nil, errImportDraftAttestationInvalid
 	}
@@ -367,7 +381,7 @@ func (s *Server) claimImportDraftAttestation(
 		return nil, errImportDraftAttestationInvalid
 	}
 	if strings.HasPrefix(token, importDraftProtectedTokenPrefix) {
-		return s.claimProtectedImportDraftAttestation(r, script, token)
+		return s.claimProtectedImportDraftAttestationWithJavaReview(r, script, token, javaReview)
 	}
 	_, actor, _ := s.resolveAuditActor(r)
 	now := time.Now().UTC()
@@ -384,10 +398,24 @@ func (s *Server) claimImportDraftAttestation(
 		!strings.EqualFold(strings.TrimSpace(script.Metadata.Import.Source), record.Profile) {
 		return nil, errImportDraftAttestationInvalid
 	}
+	javaReviewDraft := javaReview && strings.EqualFold(strings.TrimSpace(record.Protocol), "java_vuser")
+	var requestedAssets []dsl.JavaClasspathAsset
+	if javaReviewDraft {
+		var err error
+		script, requestedAssets, err = s.prepareAuthoringJavaClasspathAttestation(script, record.Script)
+		if err != nil {
+			return nil, err
+		}
+	}
 	restored := cloneScriptDefinition(script)
 	if restored == nil || record.Script == nil ||
 		reconcileMaskedScriptSecrets(restored, record.Script) != nil {
 		return nil, errImportDraftAttestationInvalid
+	}
+	if javaReviewDraft {
+		if err := verifyAuthoringJavaClasspathBaseline(restored, record.Script); err != nil {
+			return nil, err
+		}
 	}
 	fingerprint, err := fingerprintImportDraftCredentials(restored)
 	if err != nil {
@@ -410,6 +438,9 @@ func (s *Server) claimImportDraftAttestation(
 	if !credentialAllowed && !lineageAllowed {
 		return nil, errImportDraftAttestationInvalid
 	}
+	if javaReviewDraft {
+		restored.Config.JavaVuser.ClasspathAssets = requestedAssets
+	}
 	record.Claimed = true
 	claim := &importDraftAttestationClaim{
 		Token:                         token,
@@ -418,6 +449,7 @@ func (s *Server) claimImportDraftAttestation(
 		AttestedExecutionGraphDigest:  record.ExecutionGraphDigest,
 		SubmittedExecutionGraphDigest: fingerprint.ExecutionGraphDigest,
 		Script:                        restored,
+		JavaClasspathReviewChecked:    javaReviewDraft,
 	}
 	if lineageAllowed {
 		claim.RecordingSessionID = record.RecordingSessionID
@@ -430,6 +462,15 @@ func (s *Server) claimProtectedImportDraftAttestation(
 	r *http.Request,
 	script *dsl.Script,
 	token string,
+) (*importDraftAttestationClaim, error) {
+	return s.claimProtectedImportDraftAttestationWithJavaReview(r, script, token, false)
+}
+
+func (s *Server) claimProtectedImportDraftAttestationWithJavaReview(
+	r *http.Request,
+	script *dsl.Script,
+	token string,
+	javaReview bool,
 ) (*importDraftAttestationClaim, error) {
 	sessionID := strings.TrimSpace(strings.TrimPrefix(token, importDraftProtectedTokenPrefix))
 	if sessionID == "" || script == nil || script.Metadata == nil ||
@@ -466,6 +507,16 @@ func (s *Server) claimProtectedImportDraftAttestation(
 			return nil, errImportDraftAttestationInvalid
 		}
 	}
+	// Select the exception from the trusted source, not a submitted protocol
+	// spelling or family that could skip its capability and baseline checks.
+	javaReviewDraft := javaReview && candidate.Script != nil && strings.EqualFold(strings.TrimSpace(candidate.Script.Protocol), "java_vuser")
+	var requestedAssets []dsl.JavaClasspathAsset
+	if javaReviewDraft {
+		script, requestedAssets, err = s.prepareAuthoringJavaClasspathAttestation(script, candidate.Script)
+		if err != nil {
+			return nil, err
+		}
+	}
 	attestedFingerprint, err := fingerprintImportDraftCredentials(candidate.Script)
 	if err != nil {
 		return nil, errImportDraftAttestationInvalid
@@ -495,6 +546,11 @@ func (s *Server) claimProtectedImportDraftAttestation(
 	}
 	if restored == nil || reconcileMaskedScriptSecrets(restored, candidate.Script) != nil {
 		return nil, errImportDraftAttestationInvalid
+	}
+	if javaReviewDraft {
+		if err := verifyAuthoringJavaClasspathBaseline(restored, candidate.Script); err != nil {
+			return nil, err
+		}
 	}
 	submittedFingerprint, err := fingerprintImportDraftCredentials(restored)
 	if err != nil {
@@ -530,6 +586,9 @@ func (s *Server) claimProtectedImportDraftAttestation(
 	if !credentialAllowed && !lineageAllowed {
 		return nil, errImportDraftAttestationInvalid
 	}
+	if javaReviewDraft {
+		restored.Config.JavaVuser.ClasspathAssets = requestedAssets
+	}
 	lease := s.startImportCandidateClaimLease(protectedClaim)
 	if err := lease.assertOwned(); err != nil {
 		lease.stop()
@@ -551,6 +610,7 @@ func (s *Server) claimProtectedImportDraftAttestation(
 		ProtectedLease:                lease,
 		RawSource:                     rawSource,
 		Script:                        restored,
+		JavaClasspathReviewChecked:    javaReviewDraft,
 		AttestedExecutionGraphDigest:  attestedFingerprint.ExecutionGraphDigest,
 		SubmittedExecutionGraphDigest: submittedFingerprint.ExecutionGraphDigest,
 	}
@@ -834,7 +894,7 @@ func fingerprintImportDraftCredentials(
 		))
 		digests[hex.EncodeToString(sum[:])]++
 	}
-	structureDigest, err := canonicalImportDraftStructureDigest(script)
+	structureDigest, err := canonicalImportDraftStructureDigestFromProjection(projectedScript)
 	if err != nil {
 		return importDraftCredentialFingerprint{}, err
 	}
@@ -892,6 +952,14 @@ func opaqueImportSourceProjectionChanged(raw, projected any) bool {
 
 func canonicalImportDraftStructureDigest(script *dsl.Script) (string, error) {
 	projected := maskScriptSecrets(script)
+	return canonicalImportDraftStructureDigestFromProjection(projected)
+}
+
+func canonicalImportDraftStructureDigestFromProjection(projected *dsl.Script) (string, error) {
+	// Fingerprinting already has a private disclosure copy. Clone it before
+	// canonicalization rather than performing the full credential projection a
+	// second time; callers retain ownership of their immutable projection.
+	projected = cloneScriptDefinition(projected)
 	if projected == nil {
 		return "", errors.New("project import draft structure")
 	}

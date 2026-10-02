@@ -19,6 +19,7 @@ import type {
   ScriptDefinition,
   ScriptImportMetadata,
   ScriptMetadata,
+  ScriptParameterDefinition,
   ScriptRuntimePolicy,
 } from './scripts'
 
@@ -49,6 +50,7 @@ type GeneratedRunLogic = NonNullable<GeneratedConfig['run_logic']>
 type GeneratedMetadata = NonNullable<GeneratedScript['metadata']>
 type GeneratedRuntimePolicy = NonNullable<GeneratedMetadata['runtime_policy']>
 type GeneratedImportMetadata = NonNullable<GeneratedMetadata['import']>
+type GeneratedParameter = NonNullable<GeneratedScript['parameters']>[number]
 
 describe('ScriptDefinition runtime contract', () => {
   it('keeps handwritten editor keys aligned with the generated create-script contract', () => {
@@ -126,6 +128,17 @@ describe('ScriptDefinition runtime contract', () => {
         staged_asset: 'asset/customers.csv',
         strategy: 'sequential',
       }],
+      parameters: [{
+        name: 'source_time',
+        type: 'time',
+        format: '%Y-%m-%dT%H:%M:%S.000Z',
+        format_dialect: 'loadrunner_strftime',
+      }, {
+        name: 'java_time',
+        type: 'date_time',
+        format: 'HH:mm:ss.S',
+        format_dialect: 'java_simple_date_format',
+      }],
       actions: [{
         name: 'publish',
         type: 'eventhubs_produce',
@@ -148,7 +161,15 @@ describe('ScriptDefinition runtime contract', () => {
     expect(roundTrip.config.eventhubs?.event_hub).toBe('orders')
     expect(roundTrip.metadata?.runtime_policy?.allowed_target_hosts).toEqual(['orders.example.com'])
     expect(roundTrip.data_sources?.[0].staged_asset).toBe('asset/customers.csv')
+    expect(roundTrip.parameters?.[0].format_dialect).toBe('loadrunner_strftime')
+    expect(roundTrip.parameters?.[0].format).toBe('%Y-%m-%dT%H:%M:%S.000Z')
+    expect(roundTrip.parameters?.[1].format_dialect).toBe('java_simple_date_format')
     expect(roundTrip.actions[0].body_file).toBe('payload.json')
     expect(roundTrip.actions[0].control?.do_while).toBe(true)
+  })
+
+  it('models the supported parameter time dialects within the generated contract', () => {
+    expectTypeOf<ScriptParameterDefinition['format_dialect']>().toEqualTypeOf<'java_simple_date_format' | 'loadrunner_strftime' | undefined>()
+    expectTypeOf<ScriptParameterDefinition['format_dialect']>().toExtend<GeneratedParameter['format_dialect']>()
   })
 })

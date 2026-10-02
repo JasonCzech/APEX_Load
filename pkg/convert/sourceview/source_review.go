@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
@@ -174,7 +175,7 @@ func Language(path string) string {
 		return "yaml"
 	case ".xml", ".jmx", ".wsdl":
 		return "xml"
-	case ".usr", ".cfg", ".ini":
+	case ".usr", ".cfg", ".usp", ".ini":
 		return "ini"
 	case ".prm", ".dat", ".csv":
 		return "data"
@@ -259,21 +260,32 @@ func buildFiles(files map[string]string, mappings []Mapping) ([]SourceFile, int,
 		return nil, 0, nil
 	}
 	referenced := make(map[string]struct{})
+	exactReferenced := make(map[string]struct{})
 	for _, mapping := range mappings {
 		if mapping.SourceFile == "" {
 			continue
 		}
 		referenced[strings.ToLower(mapping.SourceFile)] = struct{}{}
+		exactReferenced[strings.ToLower(mapping.SourceFile)] = struct{}{}
 		referenced[strings.ToLower(archiveingest.LogicalBase(mapping.SourceFile))] = struct{}{}
 	}
 
 	names := make([]string, 0, len(files))
 	for name := range files {
-		if shouldIncludeFile(name, referenced) {
+		if shouldIncludeFile(name, referenced) && !IsOpaqueAsset(name, files[name]) {
 			names = append(names, name)
 		}
 	}
-	sort.Strings(names)
+	// Spend the bounded display budget on files that a review mapping opens
+	// before auxiliary source. Keep deterministic order within both groups.
+	sort.Slice(names, func(i, j int) bool {
+		_, left := exactReferenced[strings.ToLower(names[i])]
+		_, right := exactReferenced[strings.ToLower(names[j])]
+		if left != right {
+			return left
+		}
+		return names[i] < names[j]
+	})
 	totalSourceFiles := len(names)
 	var omittedSourceFiles []string
 	if len(names) > MaxFiles {
@@ -285,9 +297,16 @@ func buildFiles(files map[string]string, mappings []Mapping) ([]SourceFile, int,
 	for _, name := range names {
 		raw := files[name]
 		content := raw
+		if decoded, ok := decodeReviewSourceText(name, raw); ok {
+			content = decoded
+		}
 		truncated := false
 		if len(content) > MaxFileChars {
-			content = content[:MaxFileChars] + "\n\n[truncated for source review]"
+			end := MaxFileChars
+			for end > 0 && !utf8.RuneStart(content[end]) {
+				end--
+			}
+			content = content[:end] + "\n\n[truncated for source review]"
 			truncated = true
 		}
 		out = append(out, SourceFile{
@@ -314,7 +333,7 @@ func shouldIncludeFile(name string, referenced map[string]struct{}) bool {
 		return true
 	}
 	switch archiveingest.LogicalExt(lower) {
-	case ".c", ".h", ".usr", ".cfg", ".prm", ".dat", ".xml", ".jmx", ".wsdl", ".js", ".java", ".json", ".har", ".yaml", ".yml", ".http", ".txt":
+	case ".c", ".h", ".usr", ".cfg", ".usp", ".prm", ".dat", ".xml", ".jmx", ".wsdl", ".js", ".java", ".json", ".har", ".yaml", ".yml", ".http", ".txt":
 		return true
 	default:
 		return len(referenced) == 0

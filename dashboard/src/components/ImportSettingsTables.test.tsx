@@ -658,3 +658,26 @@ it('routes unresolved TLS migration to guided repair and re-enables settings aft
   expect(container.textContent).not.toContain('Review TLS migration')
  } finally { await act(async () => root.unmount()) }
 })
+
+
+it('shows Java Kafka source settings as migration evidence without claiming native replay mapping', () => {
+ const draft = script()
+ draft.protocol = 'java_vuser'
+ draft.metadata = { import: { source: 'enterprise_script_archive', preserved: { java_kafka_settings: {
+  settings: [
+   { name: 'acks', value: 'all', source_file: 'Actions.java', start_line: 12, go_support: 'supported', go_fields: ['config.kafka.acks'], notes: 'Equivalent acknowledgement policy.' },
+   { name: 'sasl.jaas.config', value: 'never-display-test-credential', source_file: 'Actions.java', start_line: 13, go_support: 'requires_binding', notes: 'Credential binding required.' },
+   { name: 'group.id', value: 'consumer-only', source_file: 'Actions.java', start_line: 14, go_support: 'non_applicable', notes: 'Producer does not consume.' },
+  ], native_migration_blockers: ['Source creates and closes its producer each iteration.'],
+ } } } }
+ const groups = runtimeSettingRows(draft)
+ const acks = groups['Preserved only'].find(row => row.label === 'acks')!
+ expect(acks.imported).toContain('Actions.java:12')
+ expect(acks.path).toBeUndefined()
+ expect(acks.note).toContain('config.kafka.acks')
+ expect(acks.note).toContain('not applied to a native Go Kafka script')
+ const credential = groups['Requires decision'].find(row => row.label === 'sasl.jaas.config')!
+ expect(credential.imported).not.toContain('never-display-test-credential')
+ expect(credential.importedSummary).toBe('Protected — manage in Credentials')
+ expect(groups['Not applicable'].some(row => row.label === 'group.id')).toBe(true)
+})

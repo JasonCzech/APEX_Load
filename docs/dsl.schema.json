@@ -1605,6 +1605,11 @@
               },
               "params": {
                 "properties": {
+                  "option_index": {
+                    "description": "Zero-based option index, 0–999999. Cannot be combined with value or values.",
+                    "maximum": 999999,
+                    "type": "integer"
+                  },
                   "values": {
                     "description": "Option values or labels to select for a multi-select.",
                     "type": "array"

@@ -1,0 +1,62 @@
+{
+  "generation_context": "Source browser authentication-filter selector inspection. No filter or source values are copied and no browser execution was performed.",
+  "row_count": 1,
+  "rows": [
+    {
+      "source_file": "TCIEAuthenticationFilters.ini",
+      "section": "General",
+      "key": "FilterType",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "source_refs": [
+        "TCIEAuthenticationFilters.ini:3"
+      ],
+      "reason": "Source Internet Explorer authentication filter selector and six bare allow/deny list entries remain in protected original source for compatibility review. List grammar and native browser authentication-policy equivalence are unverified; source values are omitted."
+    }
+  ],
+  "source_only_list_entry_count": 6,
+  "source_only_list_entries": [
+    {
+      "source_file": "TCIEAuthenticationFilters.ini",
+      "section": "AllowList",
+      "source_line": 5,
+      "disposition": "compatibility_only",
+      "reason": "Original source list entry remains protected and unparsed; source grammar and native authentication-policy parity are unverified."
+    },
+    {
+      "source_file": "TCIEAuthenticationFilters.ini",
+      "section": "AllowList",
+      "source_line": 6,
+      "disposition": "compatibility_only",
+      "reason": "Original source list entry remains protected and unparsed; source grammar and native authentication-policy parity are unverified."
+    },
+    {
+      "source_file": "TCIEAuthenticationFilters.ini",
+      "section": "AllowList",
+      "source_line": 7,
+      "disposition": "compatibility_only",
+      "reason": "Original source list entry remains protected and unparsed; source grammar and native authentication-policy parity are unverified."
+    },
+    {
+      "source_file": "TCIEAuthenticationFilters.ini",
+      "section": "AllowList",
+      "source_line": 8,
+      "disposition": "compatibility_only",
+      "reason": "Original source list entry remains protected and unparsed; source grammar and native authentication-policy parity are unverified."
+    },
+    {
+      "source_file": "TCIEAuthenticationFilters.ini",
+      "section": "DenyList",
+      "source_line": 10,
+      "disposition": "compatibility_only",
+      "reason": "Original source list entry remains protected and unparsed; source grammar and native authentication-policy parity are unverified."
+    },
+    {
+      "source_file": "TCIEAuthenticationFilters.ini",
+      "section": "DenyList",
+      "source_line": 11,
+      "disposition": "compatibility_only",
+      "reason": "Original source list entry remains protected and unparsed; source grammar and native authentication-policy parity are unverified."
+    }
+  ]
+}

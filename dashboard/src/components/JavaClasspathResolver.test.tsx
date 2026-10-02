@@ -204,6 +204,29 @@ describe('JavaClasspathResolver', () => {
     expect(onChange).toHaveBeenCalledWith([{ entry: 'a.jar', file_name: 'a.jar', sha256: 'sha000aa' }])
   })
 
+  it('disables both removal and file input while the parent saves the draft', () => {
+    const onChange = vi.fn()
+    const onUpload = vi.fn()
+    render({ classpath: ['a.jar', 'b.jar'], assets: [{ entry: 'a.jar', sha256: 'a'.repeat(64) }], onChange, onUpload, disabled: true })
+    const remove = container.querySelector<HTMLButtonElement>('.chip-remove')!
+    expect(remove.disabled).toBe(true)
+    expect(container.querySelector<HTMLInputElement>('input[type="file"]')?.disabled).toBe(true)
+    act(() => remove.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('ignores a pending upload after the review resolver is unmounted', async () => {
+    let finishUpload: (asset: JavaClasspathAsset) => void = () => {}
+    const onUpload = vi.fn().mockImplementation(() => new Promise<JavaClasspathAsset>(resolve => { finishUpload = resolve }))
+    const onChange = vi.fn()
+    render({ classpath: ['a.jar'], assets: [], onChange, onUpload })
+    setFile(container.querySelector<HTMLInputElement>('input[type="file"]')!, new File(['bytes'], 'a.jar'))
+    act(() => root.render(<div>Another review</div>))
+    await act(async () => finishUpload({ entry: 'a.jar', sha256: 'a'.repeat(64) }))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(container.textContent).toBe('Another review')
+  })
+
   it('surfaces an upload error via role=alert and does not call onChange', async () => {
     const onChange = vi.fn()
     const onUpload = vi.fn().mockRejectedValue(new Error('boom: upload rejected'))

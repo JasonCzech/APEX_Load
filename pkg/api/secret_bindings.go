@@ -1064,6 +1064,9 @@ func applyRedactedSecretBindings(script *dsl.Script, scriptIndex int, bindings [
 	if err := json.Unmarshal(payload, &result); err != nil {
 		return nil, nil, err
 	}
+	if err := reconcileWholeBodySecretBindingLocators(&result); err != nil {
+		return nil, nil, err
+	}
 	// Compute remaining requirements from the same disclosure-safe projection
 	// returned to the client. This catches any other inline credential that the
 	// caller submitted unmasked and prevents a response from claiming resolution
@@ -1174,6 +1177,9 @@ func applyPreservedRedactedSecretBindings(
 	}
 	var result dsl.Script
 	if err := json.Unmarshal(payload, &result); err != nil {
+		return nil, nil, err
+	}
+	if err := reconcileWholeBodySecretBindingLocators(&result); err != nil {
 		return nil, nil, err
 	}
 	projectedResult := maskScriptSecrets(&result)
@@ -1334,7 +1340,16 @@ func annotateSecretBindingDestinationValuesWithPolicy(requirements []SecretBindi
 		}
 		sourceValue := values[requirement.Occurrence]
 		status := credentialpolicy.ClassifySourceCredentialValue(sourceValue)
-		requirement.DestinationValuePreserved = status.Available() || (preserveExact && sourceValue != "")
+		// An aligned empty source field remains exactly empty in the imported
+		// destination. It is unavailable for migration, but requires no invented
+		// credential during import. A whole structured body's scalar encoding
+		// classification likewise cannot replace independently proven source
+		// credential fields with a fabricated full-body reference.
+		exactBody := status == credentialpolicy.SourceCredentialValueUnsafeEncoding &&
+			structuredImportBodyCanRemainExact(rawNodes[scriptIndex], requirement.Path, sourceValue)
+		requirement.DestinationValuePreserved = status.Available() ||
+			status == credentialpolicy.SourceCredentialValueMissing || exactBody ||
+			(preserveExact && sourceValue != "")
 		if status.Available() {
 			if valueGroups[scriptIndex] == nil {
 				valueGroups[scriptIndex] = make(map[string]string)
@@ -1391,6 +1406,10 @@ func replaceUnavailableImportCredentialValues(script *dsl.Script) (*dsl.Script, 
 		}
 		value := values[requirement.Occurrence]
 		status := credentialpolicy.ClassifySourceCredentialValue(value)
+		if status == credentialpolicy.SourceCredentialValueUnsafeEncoding &&
+			structuredImportBodyCanRemainExact(rawRoot, requirement.Path, value) {
+			continue
+		}
 		if status == credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
 			status == credentialpolicy.SourceCredentialValueUnsafeEncoding {
 			bindings = append(bindings, secretBindingSelection{

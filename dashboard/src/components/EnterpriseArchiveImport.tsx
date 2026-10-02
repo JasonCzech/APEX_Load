@@ -21,6 +21,9 @@ import DropIngestOverlay from './DropIngestOverlay'
 import { describeAccepted, describeReading, useDropIngestFeedback } from './dropIngestFeedback'
 import ImportCoverageButton from './ImportCoverageButton'
 import { JavaClasspathResolver } from './JavaClasspathResolver'
+import { JavaDependencyInventory } from './JavaDependencyInventory'
+import { javaDependencyInventory } from './javaDependencyInventoryModel'
+import { bindJavaClasspathAssets, javaClasspathReviewKey } from './javaClasspathBindings'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { buildReplayStartPayload, createReplaySessionId, isDefiniteReplayStartRejection, summarizeInlineData } from './scriptEditorUtils'
@@ -74,7 +77,7 @@ function isBrowserImport(script: ScriptDefinition | null): boolean {
 
 function isEnterpriseArchiveZipFile(file: File) {
   const lowerName = file.name.toLowerCase()
-  return lowerName.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
+  return lowerName.endsWith('.zip') || lowerName.endsWith('.usz') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
 }
 
 function isHARFile(file: File) {
@@ -563,6 +566,9 @@ interface EnterpriseArchiveImportQueueItem {
   id: string
   file: File
   folderFiles?: File[]
+  archiveFile?: File
+  archiveMember?: string
+  sourceSize?: number
   harFile: File | null
   supplementalFiles: File[]
   lastRequiredFileCandidates: RequiredFileCandidate[]
@@ -918,12 +924,14 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const [selectedItemId, setSelectedItemId] = useState('')
   const queueItemButtonRefs = useRef(new Map<string, HTMLButtonElement>())
   const pendingQueueItemFocusRef = useRef<string | null>(null)
-  // User-uploaded classpath JAR bindings, keyed by `${itemId}:${scriptIndex}` so
+  // User-uploaded classpath JAR bindings, keyed by project/item/script so
   // each imported Java script keeps its own attachments. Merged into the script
   // config at save time. A ref mirrors it for the async save handler.
   const [classpathAssetsByKey, setClasspathAssetsByKey] = useState<Record<string, JavaClasspathAsset[]>>({})
   const classpathAssetsByKeyRef = useRef(classpathAssetsByKey)
   classpathAssetsByKeyRef.current = classpathAssetsByKey
+  const [classpathUploadInProgress, setClasspathUploadInProgress] = useState(false)
+  const classpathUploadInFlightRef = useRef<object | null>(null)
   const [dragOver, setDragOver] = useState(false)
   // Destructured for stable callback identity — the native drop handler is a
   // useDesktopFileDrop dependency and must not change every render.
@@ -944,6 +952,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const runtimeCoverageCloseButtonRef = useRef<HTMLButtonElement | null>(null)
   const [reviewArtifactSaving, setReviewArtifactSaving] = useState(false)
   const [reviewArtifactPersistenceInProgress, setReviewArtifactPersistenceInProgress] = useState(false)
+  const [savedReviewSessions, setSavedReviewSessions] = useState<Record<string, number>>({})
   const [selectedResultScriptIndex, setSelectedResultScriptIndex] = useState(0)
   const resultScriptButtonRefs = useRef(new Map<number, HTMLButtonElement>())
   const pendingResultScriptFocusRef = useRef<number | null>(null)
@@ -972,7 +981,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const atomicSaveInFlightRef = useRef<{ operationKey: string; operationId: string } | null>(null)
   const [atomicSaveInProgress, setAtomicSaveInProgress] = useState(false)
   const [scriptSaveInProgress, setScriptSaveInProgress] = useState(false)
-  const operationBusy = workingMode !== null
+  const operationBusy = classpathUploadInProgress || workingMode !== null
     || reviewArtifactSaving
     || reviewArtifactPersistenceInProgress
     || editorActionPreparing
@@ -980,7 +989,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     || guidedRepairBusy
     || scriptSaveInProgress
     || atomicSaveInProgress
-  const sourceMutationLocked = settingsEditing || reviewArtifactPersistenceInProgress || scriptSaveInProgress || atomicSaveInProgress
+  const sourceMutationLocked = classpathUploadInProgress || settingsEditing || reviewArtifactPersistenceInProgress || scriptSaveInProgress || atomicSaveInProgress
   const sourceMutationLockedRef = useRef(sourceMutationLocked)
   sourceMutationLockedRef.current = sourceMutationLocked
   useEffect(() => {
@@ -1159,6 +1168,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     if (previousProjectIdRef.current === projectId) return
     previousProjectIdRef.current = projectId
     invalidateOperationScopes()
+    classpathAssetsByKeyRef.current = {}
+    setClasspathAssetsByKey({})
     setSelectedResultScriptIndex(0)
     setImportItems(items => items.map(item => ({
       ...item,
@@ -1207,9 +1218,21 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const validatedItemIds = validatedItems.map(item => item.id)
   const convertedFileCount = importItems.filter(item => item.status === 'converted').length
   const savedArchiveScripts = collectSavedEnterpriseArchiveScripts(importItems)
-  const pendingReviewScriptCount = importItems.reduce((count, item) => count + ((item.status === 'converted' || item.status === 'validated')
-    ? getEnterpriseArchiveResultScripts(item.result).filter((_script, index) => !enterpriseArchiveResultScriptIsSaved(item, index)).length
-    : 0), 0)
+  const reviewSessionIsSaved = (item: EnterpriseArchiveImportQueueItem, index: number) =>
+    savedReviewSessions[`${item.id}:${index}`] === item.reviewGeneration
+  const pendingItemReviewCount = (item: EnterpriseArchiveImportQueueItem) => {
+    if (item.status !== 'converted' && item.status !== 'validated') return 0
+    const scripts = getEnterpriseArchiveResultScripts(item.result)
+    if (!scripts.length) {
+      const artifact = item.result?.review_artifact ?? item.result?.summary?.review_artifact
+      return artifact && !reviewSessionIsSaved(item, 0) ? 1 : 0
+    }
+    return scripts.filter((_script, index) => !enterpriseArchiveResultScriptIsSaved(item, index) && !reviewSessionIsSaved(item, index)).length
+  }
+  const savedReviewSessionCount = importItems.reduce((count, item) => count + Array.from({ length: Math.max(getEnterpriseArchiveResultScripts(item.result).length, 1) }, (_, index) => index)
+    .filter(index => reviewSessionIsSaved(item, index)).length, 0)
+  const pendingReviewScriptCount = importItems.reduce((count, item) => count + pendingItemReviewCount(item), 0)
+  const validatedAwaitingSaveCount = validatedItems.filter(item => pendingItemReviewCount(item) > 0).length
   const pendingValidationFileCount = Math.max(queuedFileCount - validatedFileCount - convertedFileCount, 0)
   const allValidatedReviewsMatchOptions = validatedItems.every(item => item.reviewOptionsIdentity === importOptionsIdentity(options))
   const selectedItemValidated = selectedItem?.status === 'validated'
@@ -1350,6 +1373,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   }
   const detectedProtocol = result?.detected_protocol ?? result?.summary?.detected_protocol ?? null
   const reviewArtifact = result?.review_artifact ?? result?.summary?.review_artifact ?? null
+  const dependencyBundle = javaDependencyInventory(reviewArtifact?.metadata)?.classification === 'java_dependency_bundle'
   const fidelityReport = result?.fidelity_report ?? result?.summary?.fidelity_report ?? null
   const currentRequiredFileCandidates = useMemo(
     () => parseRequiredJavaFilesFromFidelityBlockers(fidelityReport?.blockers || []),
@@ -1504,30 +1528,73 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     (fidelityReport.blockers?.length || 0) === 0,
   )
   const javaClasspathUploadEnabled = isJavaClasspathUploadEnabled()
-  const currentClasspathKey = `${selectedItem?.id ?? ''}:${activeResultScriptIndex}`
+  const currentClasspathKey = javaClasspathReviewKey(projectId, selectedItem?.id || '', activeResultScriptIndex)
   const currentClasspathEntries = importedScript?.protocol === 'java_vuser'
     ? (importedScript.config?.java_vuser?.classpath ?? [])
     : []
-  const currentClasspathAssets = classpathAssetsByKey[currentClasspathKey] ?? []
-  // Count only bindings whose entry is still in the classpath, so the header
-  // never reads e.g. "3/2 attached" when a stale/orphaned binding lingers.
+  const currentClasspathAssets = classpathAssetsByKey[currentClasspathKey]
+    ?? importedScript?.config?.java_vuser?.classpath_assets
+    ?? []
   const currentAttachedCount = currentClasspathAssets.filter(asset => currentClasspathEntries.includes(asset.entry)).length
   const showClasspathResolver = javaClasspathUploadEnabled
     && importedScript?.protocol === 'java_vuser'
     && currentClasspathEntries.length > 0
+  const classpathReviewIsCurrent = () => {
+    const currentItem = importItemsRef.current.find(item => item.id === selectedItem?.id)
+    return Boolean(selectedItem && importedScript)
+      && reviewProjectIdRef.current === projectId
+      && selectedItemIdRef.current === selectedItem?.id
+      && selectedResultScriptIndexRef.current === activeResultScriptIndex
+      && currentItem?.reviewGeneration === selectedItem?.reviewGeneration
+      && currentItem?.reviewOptionsIdentity === selectedItem?.reviewOptionsIdentity
+      && getEnterpriseArchiveResultScripts(currentItem?.result || null)[activeResultScriptIndex] === importedScript
+  }
   const setCurrentClasspathAssets = (assets: JavaClasspathAsset[]) => {
-    setClasspathAssetsByKey(previous => ({ ...previous, [currentClasspathKey]: assets }))
+    if (!classpathReviewIsCurrent() || !selectedItem
+      || classpathUploadInFlightRef.current || reviewArtifactSaveInFlightRef.current
+      || scriptSaveInFlightRef.current || atomicSaveInFlightRef.current) return
+    const filtered = assets.filter(asset => currentClasspathEntries.includes(asset.entry))
+    const nextAssets = { ...classpathAssetsByKeyRef.current, [currentClasspathKey]: filtered }
+    classpathAssetsByKeyRef.current = nextAssets
+    setClasspathAssetsByKey(nextAssets)
+    // A changed dependency produces a different governed draft. Advance the
+    // review identity so a prior authoring-session receipt cannot hide the
+    // change or collide with the next idempotent save.
+    const nextGeneration = selectedItem.reviewGeneration + 1
+    latestPreparedReviewRef.current = { ...latestPreparedReviewRef.current, generation: nextGeneration }
+    setImportItems(items => items.map(item => item.id === selectedItem.id ? {
+      ...item,
+      reviewGeneration: nextGeneration,
+      notice: 'Java dependency bindings changed. Save the updated draft for approval.',
+    } : item))
   }
   const handleUploadClasspathJar = async (file: File, entry: string): Promise<JavaClasspathAsset> => {
-    const importId = selectedItem?.id || 'import'
-    const response = await api.uploadJavaClasspathJar(importId, file, { project_id: projectId ?? '', entry })
-    return {
-      entry,
-      file_name: response.file_name,
-      sha256: response.sha256,
-      size_bytes: response.size_bytes,
-      content_type: response.content_type,
-      storage_ref: response.storage_ref,
+    if (!projectId || !classpathReviewIsCurrent() || sourceMutationLockedRef.current
+      || workingMode !== null || classpathUploadInFlightRef.current) {
+      throw new Error('Finish the current import operation before attaching a JAR.')
+    }
+    const scope = {}
+    const operationGeneration = operationGenerationRef.current
+    classpathUploadInFlightRef.current = scope
+    setClasspathUploadInProgress(true)
+    try {
+      const response = await api.uploadJavaClasspathJar(selectedItem!.id, file, { project_id: projectId, entry })
+      if (operationGenerationRef.current !== operationGeneration || !classpathReviewIsCurrent()) {
+        throw new Error('The import review changed during upload. Attach the JAR again in the current review.')
+      }
+      return {
+        entry,
+        file_name: response.file_name,
+        sha256: response.sha256,
+        size_bytes: response.size_bytes,
+        content_type: response.content_type,
+        storage_ref: response.storage_ref,
+      }
+    } finally {
+      if (classpathUploadInFlightRef.current === scope) {
+        classpathUploadInFlightRef.current = null
+        setClasspathUploadInProgress(false)
+      }
     }
   }
   const importedEditorAvailable = Boolean(onEdit) && !combinedJavaVuserGate
@@ -1569,12 +1636,14 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         || browserReplayInProgress
         || !reviewMatchesCurrentOptions
       )
-  const reviewSaveDisabled = reviewMode === 'validation'
+  const reviewSaveDisabled = classpathUploadInProgress || (reviewMode === 'validation'
     ? (!selectedItemValidated || !reviewMatchesCurrentOptions || workingMode !== null || (saveBlockedByProtocolGate && (!reviewArtifact || reviewArtifactSaving)))
-    : (primarySaveDisabled || workingMode !== null)
+    : (primarySaveDisabled || workingMode !== null))
   const reviewSaveDisabledReason = !reviewSaveDisabled
     ? undefined
-    : workingMode !== null
+    : classpathUploadInProgress
+      ? 'Wait for the Java dependency upload to finish before saving.'
+      : workingMode !== null
       ? 'Wait for the current archive operation to finish before starting another save or conversion.'
       : !reviewMatchesCurrentOptions
         ? 'Conversion options changed after this review was generated. Validate the archive again to refresh the review.'
@@ -2146,7 +2215,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
 
     const zipFiles = incomingFiles.filter(isEnterpriseArchiveZipFile)
     if (zipFiles.length === 0) {
-      setError('Please upload ZIP files containing enterprise script archive folders.')
+      setError('Please upload ZIP or USZ archives containing VuGen projects.')
       return 0
     }
 
@@ -2168,7 +2237,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     })
     setImportItems(items => [...items, ...nextItems])
     setSelectedItemId(nextItems[0].id)
-    setError(zipFiles.length === incomingFiles.length ? '' : `${incomingFiles.length - zipFiles.length} non-ZIP file${incomingFiles.length - zipFiles.length === 1 ? '' : 's'} skipped.`)
+    setError(zipFiles.length === incomingFiles.length ? '' : `${incomingFiles.length - zipFiles.length} unsupported file${incomingFiles.length - zipFiles.length === 1 ? '' : 's'} skipped.`)
     setNotice('')
     return zipFiles.length
   }, [invalidateOperationScopes])
@@ -2229,7 +2298,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const handleBrowseArchives = useCallback(() => {
     if (sourceMutationLockedRef.current) return
     if (nativeDialogs) {
-      void pickFilesViaBridge('.zip', true).then(files => {
+      void pickFilesViaBridge('.zip,.usz', true).then(files => {
         if (files.length > 0) {
           addFilesToQueue(files)
         }
@@ -2472,11 +2541,12 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       item.id,
       nextRequestToken(itemRequestTokensRef.current, item.id),
     ]))
+    const operationIsCurrent = () => operationGenerationRef.current === operationGeneration
+      && reviewProjectIdRef.current === sourceProjectId
+      && importOptionsIdentity(optionsRef.current) === sourceOptionsIdentity
     const requestIsCurrent = (item: EnterpriseArchiveImportQueueItem) => {
       const current = importItemsRef.current.find(candidate => candidate.id === item.id)
-      return operationGenerationRef.current === operationGeneration
-        && reviewProjectIdRef.current === sourceProjectId
-        && importOptionsIdentity(optionsRef.current) === sourceOptionsIdentity
+      return operationIsCurrent()
         && itemRequestTokensRef.current.get(item.id) === requestTokens.get(item.id)
         && current?.file === item.file
         && current.harFile === item.harFile
@@ -2523,11 +2593,13 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     const useNameOverride = targetItems.length === 1
 
     for (const item of targetItems) {
-      if (!requestIsCurrent(item)) break
+      if (!operationIsCurrent()) break
+      if (!requestIsCurrent(item)) continue
       const partiallySaved = Object.keys(item.savedResultScripts || {}).length > 0
       const request = mode === 'validate' && !partiallySaved ? api.validateEnterpriseArchiveImport : api.importEnterpriseArchive
       try {
-        const rawResult = await request(item.file, {
+        const rawResult = await request(item.archiveFile || item.file, {
+          ...(item.archiveMember ? { archive_member: item.archiveMember } : {}),
           name: useNameOverride ? reviewOptions.name || undefined : undefined,
           project_id: sourceProjectId,
           base_url: reviewOptions.base_url || undefined,
@@ -2541,9 +2613,40 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           ...(reviewOptions.salesforce_native ? { salesforce_native: true } : {}),
         })
         if (!requestIsCurrent(item)) {
-          if (sourceProjectId && rawResult.source_secret_session_id) {
-            await discardSourceSecretSession(sourceProjectId, rawResult.source_secret_session_id)
+          if (sourceProjectId) {
+            const sessions = [rawResult.source_secret_session_id, ...(rawResult.archives || []).map(archive => archive.response?.source_secret_session_id)]
+            await Promise.all(sessions.filter((id): id is string => Boolean(id)).map(id => discardSourceSecretSession(sourceProjectId, id)))
           }
+          continue
+        }
+        if (rawResult.archive_collection && rawResult.archives?.length) {
+          const children = rawResult.archives.map<EnterpriseArchiveImportQueueItem>((archive, index) => {
+            const child = buildEnterpriseArchiveImportQueueItem(
+              new File([], archive.source_name, { type: 'application/zip' }),
+              `${item.id}:member:${index}`,
+            )
+            return {
+              ...child,
+              archiveFile: item.archiveFile || item.file,
+              archiveMember: archive.source_name,
+              sourceSize: archive.source_size,
+              status: archive.response ? completeStatus : 'failed' as const,
+              result: archive.response ? uniquifyEnterpriseArchiveResultScriptNames(archive.response, scriptNameRegistry) : null,
+              reviewMode: archive.response ? mode === 'validate' ? 'validation' as const : 'conversion' as const : null,
+              reviewOptionsIdentity: sourceOptionsIdentity,
+              reviewGeneration: item.reviewGeneration + 1,
+              sourceSecretProjectId: sourceProjectId || '',
+              error: archive.error || '',
+              notice: archive.response ? 'Import checks complete. Review this project independently before saving.' : '',
+            }
+          })
+          successCount += children.filter(child => child.result).length
+          failureCount += children.filter(child => !child.result).length
+          const nextItems = importItemsRef.current.flatMap(current => current.id === item.id ? children : [current])
+          importItemsRef.current = nextItems
+          setImportItems(nextItems)
+          if (selectedItemIdRef.current === item.id) setSelectedItemId(children[0].id)
+          setNotice(`Opened ${children.length} projects from ${item.file.name}. Each project has its own settings, review, and save status.`)
           continue
         }
         const previousScripts = getEnterpriseArchiveResultScripts(item.result)
@@ -2588,7 +2691,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     setWorkingMode(null)
     if (targetItems.length > 1) {
       const action = mode === 'validate' ? 'Validated' : 'Converted'
-      setNotice(`${action} ${successCount} of ${targetItems.length} enterprise script archive${targetItems.length === 1 ? '' : 's'}${failureCount > 0 ? `; ${failureCount} failed` : ''}.`)
+      const reviewedCount = successCount + failureCount
+      setNotice(`${action} ${successCount} of ${reviewedCount} enterprise script archive${reviewedCount === 1 ? '' : 's'}${failureCount > 0 ? `; ${failureCount} failed` : ''}.`)
     }
   }
 
@@ -2704,7 +2808,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       }
       let conversionResult: EnterpriseArchiveImportResult | null = null
       try {
-        conversionResult = await api.importEnterpriseArchive(item.file, {
+        conversionResult = await api.importEnterpriseArchive(item.archiveFile || item.file, {
+          ...(item.archiveMember ? { archive_member: item.archiveMember } : {}),
           name: useNameOverride ? options.name || undefined : undefined,
           project_id: sourceProjectId,
           base_url: options.base_url || undefined,
@@ -3218,7 +3323,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       // left by a re-review that changed the classpath).
       if (javaClasspathUploadEnabled) {
         const savedClasspath = scriptToSave.config?.java_vuser?.classpath ?? []
-        const attachedClasspathAssets = (classpathAssetsByKeyRef.current[`${sourceItemId}:${sourceScriptIndex}`] ?? [])
+        const attachedClasspathAssets = (classpathAssetsByKeyRef.current[javaClasspathReviewKey(sourceProjectId, sourceItemId, sourceScriptIndex)] ?? [])
           .filter(asset => savedClasspath.includes(asset.entry))
         if (attachedClasspathAssets.length > 0) {
           scriptToSave = {
@@ -3381,7 +3486,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       let script = sourceScripts[index]
       if (javaClasspathUploadEnabled && script.config?.java_vuser?.classpath?.length) {
         const savedClasspath = script.config.java_vuser.classpath
-        const classpathAssets = (classpathAssetsByKeyRef.current[`${sourceItemId}:${index}`] ?? [])
+        const classpathAssets = (classpathAssetsByKeyRef.current[javaClasspathReviewKey(sourceProjectId, sourceItemId, index)] ?? [])
           .filter(asset => savedClasspath.includes(asset.entry))
         if (classpathAssets.length > 0) {
           script = {
@@ -3730,14 +3835,20 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     const currentResult = preparedReview.result
     const currentReviewArtifact = currentResult?.review_artifact ?? currentResult?.summary?.review_artifact ?? null
     const currentDetectedProtocol = currentResult?.detected_protocol ?? currentResult?.summary?.detected_protocol ?? null
-    if (!currentReviewArtifact || !preparedReview.itemId) return
+    if (!currentReviewArtifact || !preparedReview.itemId || classpathUploadInFlightRef.current) return
     const preparedImportedScript = preparedReview.importedScript
-    const preparedDraft = preparedImportedScript || buildReviewArtifactDraft(
+    const sourceDraft = preparedImportedScript || buildReviewArtifactDraft(
       currentReviewArtifact,
       currentDetectedProtocol,
       preparedReview.projectId,
       optionsRef.current.name,
       currentResult?.summary?.source_review || null,
+    )
+    const preparedDraft = bindJavaClasspathAssets(
+      sourceDraft,
+      javaClasspathUploadEnabled
+        ? classpathAssetsByKeyRef.current[javaClasspathReviewKey(preparedReview.projectId, preparedReview.itemId, preparedReview.scriptIndex)]
+        : undefined,
     )
 
     const saveScope: ImportSaveScope = {
@@ -3799,10 +3910,10 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         project_id: saveScope.projectId,
         folder_id: folderId,
         source: 'source_review_artifact',
-        name: currentReviewArtifact.title || currentDetectedProtocol?.display_name || 'enterprise script archive protocol review',
+        name: preparedDraft.name || currentReviewArtifact.title || currentDetectedProtocol?.display_name || 'enterprise script archive protocol review',
         status: 'reviewing',
         idempotency_key: `enterprise-archive-review:${saveScope.itemId}:${saveScope.generation}:${saveScope.scriptIndex}`,
-        draft: preparedImportedScript || preparedDraft,
+        draft: preparedDraft,
         review_state: {
           review_artifact: currentReviewArtifact,
           detected_protocol: currentDetectedProtocol,
@@ -3816,7 +3927,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       // replacing whichever authoring surface is now active.
       onImported?.({ scripts: [], stayInImportReview: true })
       if (!requestIsCurrent()) return
-      setNotice(`${currentCombinedJavaVuserApprovalReady ? 'Combined Java Vuser draft' : currentCombinedJavaVuser ? 'Combined Java Vuser review artifact' : 'Review artifact'} saved as authoring session ${session.name || session.id}.`)
+      setSavedReviewSessions(previous => ({ ...previous, [`${saveScope.itemId}:${saveScope.scriptIndex}`]: saveScope.generation }))
+      const dependencyReview = javaDependencyInventory(currentReviewArtifact.metadata)?.classification === 'java_dependency_bundle'
+      setNotice(`${dependencyReview ? 'Dependency review' : currentCombinedJavaVuserApprovalReady ? 'Combined Java Vuser draft' : currentCombinedJavaVuser ? 'Combined Java Vuser review artifact' : 'Review artifact'} saved as authoring session ${session.name || session.id}.`)
     } catch (error: unknown) {
       if (requestIsCurrent()) setError(getErrorMessage(error, 'Failed to save review artifact'))
     } finally {
@@ -3891,12 +4004,23 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     selectEnterpriseResultScript(nextIndex, true)
   }
 
+  const reviewProjectPicker = importItems.length > 1 && <label className="lr-review-project-picker">
+    <span>Review imported project</span>
+    <select value={selectedItem?.id || ''} disabled={sourceMutationLocked} onChange={event => selectEnterpriseQueueItem(event.target.value)}>
+      {importItems.map(item => <option key={item.id} value={item.id}>
+        {item.file.name} — {item.status === 'validated' || item.status === 'converted'
+          ? archiveReviewOutcome(item, importOptionsIdentity(options), projectId || '')
+          : enterpriseArchiveImportStatusLabel(item.status)}
+      </option>)}
+    </select>
+  </label>
+
   return (
     <div className={`lr-import ${result ? 'lr-import-reviewed' : ''}`}>
       <div className="lr-import-header">
         <div>
           <h2>Import Loadrunner Script Archive</h2>
-          <p className="lr-subtitle">Choose an uncompressed VuGen script folder or a LoadRunner ZIP archive, including source, runtime settings, parameter files, and dependencies. We detect the protocol and show what can be saved, what needs repair, and whether a runner is required. Import checks do not execute your script.</p>
+          <p className="lr-subtitle">Choose an uncompressed VuGen script folder or a LoadRunner ZIP or USZ archive, including source, runtime settings, parameter files, and dependencies. We detect the protocol and show what can be saved, what needs repair, and whether a runner is required. Import checks do not execute your script.</p>
         </div>
         {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
           invalidateOperationScopes()
@@ -3929,14 +4053,14 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           }
         }}>
         <DropIngestOverlay phase={ingestPhase} label={ingestLabel} />
-        <input ref={fileRef} type="file" accept=".zip" multiple disabled={sourceMutationLocked} onClick={event => event.stopPropagation()} onChange={handleFileSelect} hidden />
+        <input ref={fileRef} type="file" accept=".zip,.usz" multiple disabled={sourceMutationLocked} onClick={event => event.stopPropagation()} onChange={handleFileSelect} hidden />
         <input ref={folderRef} type="file" disabled={sourceMutationLocked} onClick={event => event.stopPropagation()} onChange={event => { addFolderToQueue(event.target.files); event.target.value = '' }} hidden />
         {queuedFileCount > 0 ? (
           <div className="lr-file-queue">
             <div className="lr-file-info">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               <div>
-                <span className="lr-filename">{importItems.some(item => item.folderFiles) ? `${queuedFileCount} source${queuedFileCount === 1 ? '' : 's'}` : `${queuedFileCount} ZIP file${queuedFileCount === 1 ? '' : 's'}`} queued</span>
+                <span className="lr-filename">{importItems.some(item => item.folderFiles) ? `${queuedFileCount} source${queuedFileCount === 1 ? '' : 's'}` : `${queuedFileCount} archive${queuedFileCount === 1 ? '' : 's'}`} queued</span>
                 <span className="lr-filesize">Select a source to review its result.</span>
                 <button type="button" className="btn btn-secondary btn-sm" disabled={sourceMutationLocked} onClick={event => { event.stopPropagation(); handleBrowseArchives() }}>Add archives</button>
               </div>
@@ -3996,13 +4120,14 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                     <span className="lr-file-row-main">
                       <strong>{item.file.name}</strong>
                       <small className="lr-file-row-meta">
-                        {item.folderFiles ? `${item.folderFiles.length} files` : formatEnterpriseArchiveFileSize(item.file)} ·{' '}
+                        {item.folderFiles ? `${item.folderFiles.length} files` : item.sourceSize !== undefined ? `${(item.sourceSize / 1024).toFixed(1)} KB` : formatEnterpriseArchiveFileSize(item.file)} ·{' '}
                         {reviewOutcome === 'Blocker'
                           ? <ImportIssueSeverityTag severity="blocker" />
                           : <span className={`lr-file-status-pill ${item.status}`}>
                             {enterpriseArchiveImportStatusIsRunning(item.status) && <span className="lr-status-dot" aria-hidden="true" />}
                             {reviewOutcome || enterpriseArchiveImportStatusLabel(item.status)}
                           </span>}
+                        {item.archiveFile ? ` · from ${item.archiveFile.name}` : ''}
                         {item.harFile ? ` · HAR: ${item.harFile.name}` : ''}
                         {(item.supplementalFiles || []).length > 0 ? ` · Required files: ${(item.supplementalFiles || []).length}` : ''}
                       </small>
@@ -4028,7 +4153,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         ) : (
           <div className="lr-drop-content">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <p>Drop one or more enterprise script archive <code>.zip</code> files here</p>
+            <p>Drop one or more enterprise script archive <code>.zip</code> or <code>.usz</code> files here</p>
             <span className="lr-drop-hint">or click to browse</span>
           </div>
         )}
@@ -4039,7 +4164,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       </div>
 
       {queuedFileCount > 0 && (
-        <p role="status">{savedArchiveScripts.length} script{savedArchiveScripts.length === 1 ? '' : 's'} saved · {pendingReviewScriptCount} script{pendingReviewScriptCount === 1 ? ' requires' : 's require'} review · {validatedFileCount} archive{validatedFileCount === 1 ? '' : 's'} validated, awaiting save · {failedFileCount} archive{failedFileCount === 1 ? '' : 's'} failed</p>
+        <p role="status">{savedArchiveScripts.length} script{savedArchiveScripts.length === 1 ? '' : 's'} saved · {savedReviewSessionCount} review session{savedReviewSessionCount === 1 ? '' : 's'} saved · {pendingReviewScriptCount} draft{pendingReviewScriptCount === 1 ? '' : 's'} awaiting save · {validatedAwaitingSaveCount} archive{validatedAwaitingSaveCount === 1 ? '' : 's'} validated, awaiting save · {failedFileCount} archive{failedFileCount === 1 ? '' : 's'} failed</p>
       )}
       <ImportSaveConfirmation
         result={savedArchiveScripts.length ? { scripts: savedArchiveScripts } : null}
@@ -4149,7 +4274,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         <div className="lr-import-actions-card">
           <div>
             <h3 className="lr-section-title">Validation / Conversion</h3>
-            <p className="lr-subtitle">{importItems.some(item => item.folderFiles) ? `${queuedFileCount} source${queuedFileCount === 1 ? '' : 's'}` : `${queuedFileCount} ZIP file${queuedFileCount === 1 ? '' : 's'}`} queued</p>
+            <p className="lr-subtitle">{importItems.some(item => item.folderFiles) ? `${queuedFileCount} source${queuedFileCount === 1 ? '' : 's'}` : `${queuedFileCount} archive${queuedFileCount === 1 ? '' : 's'}`} queued</p>
           </div>
           <input ref={harFileRef} type="file" accept=".har,.json,application/json" disabled={sourceMutationLocked} onChange={handleHARFileSelect} hidden />
           <input ref={supplementalFileRef} type="file" accept=".java,.zip,.jar,.json,.txt" multiple disabled={sourceMutationLocked} onChange={handleSupplementalFileSelect} hidden />
@@ -4374,6 +4499,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       {failedImportMessage && <div className="lr-error" role="alert">{failedImportMessage}</div>}
       {displayError && <div className="lr-error" role="alert">{displayError}</div>}
       {displayNotice && <div className="settings-notice">{displayNotice}</div>}
+      {!importedScript && importItems.some(item => ['validated', 'converted', 'failed'].includes(item.status)) && (
+        <div className="lr-validation-review-navigation">{reviewProjectPicker}</div>
+      )}
 
       <ArchiveReviewBoundary key={`${selectedItem?.id}:${projectId}`} resetKey={reviewScope} archiveName={selectedItem?.file.name || 'Selected archive'} retryDisabled={sourceMutationLocked || workingMode !== null} onRetry={() => { if (selectedItem) void runReview('validate', options, undefined, [selectedItem.id]) }}>
       {/* Results */}
@@ -4382,10 +4510,12 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           <div className="lr-result-header">
             <div>
               <h3>{reviewMode === 'validation' ? 'Validation Review' : 'Import Review Artifact'}</h3>
-              <p className="lr-subtitle">This archive was classified without creating an executable APEX Load script.</p>
+              <p className="lr-subtitle">{dependencyBundle
+                ? 'This archive contains Java dependencies without a script project. Attach this ZIP under Required Files in the corresponding Java project import, then validate that project. You can save this dependency review as evidence.'
+                : 'This archive was classified without creating an executable APEX Load script.'}</p>
             </div>
-            <button className="btn btn-primary" onClick={handleSaveReviewArtifact} disabled={reviewArtifactSaving}>
-              {reviewArtifactSaving ? <><span className="spinner" /> Saving Review Artifact...</> : 'Save Review Artifact'}
+            <button className="btn btn-primary" onClick={handleSaveReviewArtifact} disabled={reviewArtifactSaving || classpathUploadInProgress}>
+              {reviewArtifactSaving ? <><span className="spinner" /> Saving Review Artifact...</> : dependencyBundle ? 'Save Dependency Review' : 'Save Review Artifact'}
             </button>
           </div>
 
@@ -4411,6 +4541,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               </div>
             ))}
           </div>
+          <JavaDependencyInventory metadata={reviewArtifact.metadata} />
           {sourceReview && (
             <SourceMappingReview sourceReview={sourceReview} script={null} />
           )}
@@ -4477,6 +4608,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             </div>
           )}
           <div className="lr-tab-readiness" role="status">{importedScript && (() => { const issues = tabIssues; return `${issues.filter(i => i.blocking).length} grouped issues block replay · ${issues.filter(i => !i.blocking).length} need review`; })()}</div>
+          <div className="lr-validation-review-navigation">
+          {reviewProjectPicker}
           <TabList className="lr-validation-review-tabs"
  role="tablist" aria-label="Script archive review sections" onKeyDown={handleTabKey}>
               {validationReviewTabs.map((tab) => (
@@ -4514,6 +4647,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                 </button>
               ))}
           </TabList>
+          </div>
           <div
             id="lr-validation-review-panel"
             role="tabpanel"
@@ -4567,6 +4701,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             sourceMigrationRequirements={archiveSecretBindingRequirements}
             preserveSourceSessionAfterApply={archiveSecretBindingRequirements.length > secretBindingRequirements.length}
             onSecretBindingsApply={handleSecretBindingsApply}
+            onSecretBindingsErrorChange={setError}
             sharedValues={result.shared_values}
             sharedValueScripts={resultScripts}
             onSharedValuesApplied={handleSharedValuesApplied}
@@ -4578,7 +4713,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             onSourceSecretSessionSettled={handleSourceSecretSessionSettled}
             credentialReviewRef={credentialReviewRef}
             saving={saveBlockedByProtocolGate ? reviewArtifactSaving : workingMode === 'convert' || scriptSaveInProgress}
-            reviewBusy={guidedRepairBusy || !reviewMatchesCurrentOptions || editorActionPreparing || scriptSaveInProgress || selectedResultScriptSaved}
+            reviewBusy={classpathUploadInProgress || guidedRepairBusy || !reviewMatchesCurrentOptions || editorActionPreparing || scriptSaveInProgress || selectedResultScriptSaved}
             onReviewBusyChange={setInternalReviewBusy}
             saveDisabled={reviewSaveDisabled}
             saveDisabledReason={reviewSaveDisabledReason}
@@ -4650,6 +4785,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               </div>
             )}
 
+            <JavaDependencyInventory metadata={reviewArtifact?.metadata} />
+
             {showClasspathResolver && (
               <div className="lr-warnings lr-java-classpath-resolver-section">
                 <div className="lr-review-section">
@@ -4661,11 +4798,12 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                     <p className="cell-error">Select a project before attaching classpath JARs.</p>
                   )}
                   <JavaClasspathResolver
+                    key={reviewScope}
                     classpath={currentClasspathEntries}
                     assets={currentClasspathAssets}
                     onChange={setCurrentClasspathAssets}
                     onUpload={handleUploadClasspathJar}
-                    disabled={!projectId}
+                    disabled={!projectId || sourceMutationLocked || workingMode !== null || internalReviewBusy || guidedRepairBusy}
                   />
                 </div>
               </div>

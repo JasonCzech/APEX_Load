@@ -100,7 +100,7 @@ export async function archiveContainsOpenCollectionMarker(file: File): Promise<b
 export function nativeImportTargetForFileName(fileName: string): NativeImportTarget {
   const name = fileName.toLowerCase()
   if (name.endsWith('.bruno.zip') || name.endsWith('.bruno.tar') || name.endsWith('.bruno.tar.gz') || name.endsWith('.bru')) return { launcher: 'bruno' }
-  if (name.endsWith('.zip')) return { launcher: 'enterprise_archive' }
+  if (name.endsWith('.zip') || name.endsWith('.usz')) return { launcher: 'enterprise_archive' }
   if (name.endsWith('.jmx')) return { launcher: 'jmeter' }
   if (name.endsWith('.har')) return { launcher: 'traffic_har', mode: 'auto_detect' }
   if (name.endsWith('.postman_collection.json') || name.endsWith('.postman_environment.json')) return { launcher: 'postman' }

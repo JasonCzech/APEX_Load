@@ -1,0 +1,206 @@
+source_file,section,key,disposition,target_paths,reason
+default.cfg,FILTERS,ExcludeFiltersInList,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,FILTERS,FilterType,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,FILTERS,IncludeFiltersInList,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,General,AccessVTSPortByQueryString,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,General,AutomaticTransactions,mapped,config.run_logic.auto_transactions,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,General,AutomaticTransactionsPerFunc,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,General,ContinueOnError,mapped,config.error_handling.continue_on_error,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,General,DefaultRunLogic,mapped,,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,General,FailTransOnErrorMsg,compatibility_only,config.error_handling.fail_transaction_on_error_message,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,General,Replay64bit,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,General,UseThreads,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,General,XlBridgeTimeout,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,General,iter_begins_val,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,General,iter_ends_val,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,Iterations,IterationPace,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,Iterations,NumOfIterations,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,Iterations,RandomMax,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,Iterations,RandomMin,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,Iterations,StartEvery,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,Java,ExternalJREPath,mapped,config.java_vuser.jdk_selection | config.java_vuser.jdk_home,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,Java,UseExternalJVM,mapped,config.java_vuser.jdk_selection | config.java_vuser.jdk_home,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,JavaVM:Options,Java_Env_ClassPath,mapped,config.java_vuser.classpath,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,JavaVM:Options,Java_Env_ClassPath_UI,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,JavaVM:Options,Java_Env_ClassPath_Unused,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,JavaVM:Options,Java_Previous_Class_Path,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,JavaVM:Options,Java_VM_Params,mapped,config.java_vuser.additional_vm_parameters,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,JavaVM:Options,Java_VM_Params_extra_arg_1,mapped,config.java_vuser.additional_vm_parameters,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,JavaVM:Options,Java_VM_Params_extra_arg_2,mapped,config.java_vuser.additional_vm_parameters,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,JavaVM:Options,Java_VM_Params_extra_arg_3,mapped,config.java_vuser.additional_vm_parameters,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,JavaVM:Options,Java_VM_Params_extra_arg_4,mapped,config.java_vuser.additional_vm_parameters,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,JavaVM:Options,Java_VM_Params_extra_arg_5,mapped,config.java_vuser.additional_vm_parameters,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,JavaVM:Options,Java_VM_Params_extra_arg_6,mapped,config.java_vuser.additional_vm_parameters,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,JavaVM:Options,Java_VM_Params_extra_arg_7,mapped,config.java_vuser.additional_vm_parameters,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,JavaVM:Options,SkipAutomaticParameterEvaluation,mapped,config.java_vuser.skip_parameter_evaluation,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,JavaVM:Options,Use_Xboot,compatibility_only,config.java_vuser.use_xbootclasspath,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,JavaVM:Options,enable_CL_per_vuser,mapped,config.java_vuser.dedicated_class_loader,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,JavaVM:Options,jdk_home,mapped,config.java_vuser.jdk_selection | config.java_vuser.jdk_home,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,JavaVM:Options,jdk_home_extra_arg_1,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,JavaVM:Options,use_jdk,mapped,config.java_vuser.jdk_selection | config.java_vuser.jdk_home,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,Log,AutoLog,mapped,config.log,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,Log,AutoLogBufferSize,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,Log,IncludeEnvInfo,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,Log,LogDetail,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,Log,LogOptions,mapped,config.log,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,Log,MsgClassData,mapped,config.log,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,Log,MsgClassFull,mapped,config.log,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,Log,MsgClassParameters,mapped,config.log,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,Log,PrintTimeStamp,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,ModemSpeed,CustomModemSpeed,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,ModemSpeed,EnableCustomModemSpeed,mapped,config.web_runtime.network_simulation,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,ModemSpeed,EnableModemSpeed,mapped,config.web_runtime.network_simulation,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,ModemSpeed,ModemSpeed,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,ThinkTime,Factor,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,ThinkTime,Limit,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,ThinkTime,LimitFlag,mapped,config.think_time,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,ThinkTime,Options,mapped,config.think_time,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,ThinkTime,ThinkTimeRandomHigh,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,ThinkTime,ThinkTimeRandomLow,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,AedUtf8Values,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,AutoTransFileLine,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,BrowserAcceptEncoding,mapped,config.browser_emulation.custom_user_agent | config.browser_emulation.language | config.http.accept_language | config.http.accept_encoding,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,BrowserAcceptLanguage,mapped,config.browser_emulation.custom_user_agent | config.browser_emulation.language | config.http.accept_language | config.http.accept_encoding,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,BrowserLanguageCode,mapped,config.browser_emulation.custom_user_agent | config.browser_emulation.language | config.http.accept_language | config.http.accept_encoding,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,BrowserPlatform,non_applicable,config.browser_emulation.browser_type | config.browser_emulation.browser_version | config.browser_emulation.platform,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,BrowserUserAgent,mapped,config.browser_emulation.custom_user_agent | config.browser_emulation.language | config.http.accept_language | config.http.accept_encoding,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,BrowserVer,non_applicable,config.browser_emulation.browser_type | config.browser_emulation.browser_version | config.browser_emulation.platform,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,Browser_Type,non_applicable,config.browser_emulation.browser_type | config.browser_emulation.browser_version | config.browser_emulation.platform,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,CacheAlwaysCheckForNewerPages,mapped,config.browser_emulation.cache.check_newer_versions | config.browser.check_newer_versions,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,CacheHtmlPages,mapped,config.browser_emulation.cache.cache_content_urls | config.browser.cache_content_urls,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ClearCacheForSimulateNewUser,compatibility_only,config.browser_emulation.cache.clear_cache_for_new_user,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,ConnectTimeout,mapped,config.http.version | config.http.connect_timeout_ms | config.http.request_timeout_ms | config.http.max_redirects | config.http.keep_alive | config.http.max_conns_per_host,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,CustomUserAgent,mapped,config.browser_emulation.custom_user_agent | config.browser_emulation.language | config.http.accept_language | config.http.accept_encoding,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,DeleteCacheUnreferencedIterations,compatibility_only,config.http.cache_max_unused_iterations,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,DisableNTLM2SS,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,EnableChecks,compatibility_only,config.http.legacy_html_checks,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,EnableDynatrace,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,EnableHTTP2,mapped,config.http.version | config.http.connect_timeout_ms | config.http.request_timeout_ms | config.http.max_redirects | config.http.keep_alive | config.http.max_conns_per_host,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,EnableIPCache,compatibility_only,config.http.dns_cache,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,EnableJsForTransport,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,EnableSnapshotsInReplay,compatibility_only,config.results.message_detail,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,FailNonCriticalItem,compatibility_only,config.http.fail_noncritical_resources,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,GraphBytesPerSecond,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,GraphHitsPerSecondHttpStatusCodes,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,GraphPagesPerSecond,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,HTTPVer,mapped,config.http.version | config.http.connect_timeout_ms | config.http.request_timeout_ms | config.http.max_redirects | config.http.keep_alive | config.http.max_conns_per_host,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,HeavyKDCLoad,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,HttpErrorsAsWarnings,compatibility_only,config.http.http_errors_as_warnings,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,IPVersionPolicy,compatibility_only,config.http.ip_version,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,IgnoreContentCachingTypes,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,IntegratedAuthentication,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,JsForTransportRuntimeSize,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,JsForTransportStackSize,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,KeepAlive,mapped,config.http.version | config.http.connect_timeout_ms | config.http.request_timeout_ms | config.http.max_redirects | config.http.keep_alive | config.http.max_conns_per_host,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,KeepAliveTimeout,mapped,config.http.idle_timeout_ms,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,KeepNonTextMimeType,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,LoadChilEngine,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,LogFileWrite,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,LogFileWriteTraceToFile,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,MaxConnections,mapped,config.http.version | config.http.connect_timeout_ms | config.http.request_timeout_ms | config.http.max_redirects | config.http.keep_alive | config.http.max_conns_per_host,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,MaxErrorMatchesAsERRORS,compatibility_only,config.http.content_check_error_limit,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,MaxRedirectionDepth,mapped,config.http.version | config.http.connect_timeout_ms | config.http.request_timeout_ms | config.http.max_redirects | config.http.keep_alive | config.http.max_conns_per_host,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,MaxSelfMetaRefreshCount,compatibility_only,config.http.max_meta_refresh,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,NetBufSize,compatibility_only,config.http.receive_buffer_bytes,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,OverrideNTLMCreds,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,PageDownloadTimeout,compatibility_only,config.http.page_timeout_ms,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,ParseHtmlContentType,compatibility_only,config.http.html_parse_mode,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,PrefetchPrerenderCallBackTimerIntervalMS,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,PrintBufEscape0,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,PrintBufLineLen,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,PrintNTLMLog,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,PrintSSLLog,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,ProxyAutoConfigScriptURL,mapped,config.http.proxy_mode | config.http.proxy,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ProxyBypass,mapped,config.http.proxy_mode | config.http.proxy,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ProxyHTTPHost,mapped,config.http.proxy_mode | config.http.proxy,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ProxyHTTPPort,mapped,config.http.proxy_mode | config.http.proxy,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ProxyHTTPSHost,mapped,config.http.proxy_mode | config.http.proxy,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ProxyHTTPSPort,mapped,config.http.proxy_mode | config.http.proxy,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ProxyNoLocal,mapped,config.http.proxy_mode | config.http.proxy,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ProxyPassword,mapped,config.http.proxy_mode | config.http.proxy,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ProxyPasswordIsEncrypted,mapped,config.http.proxy.password,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ProxyUseAutoConfigScript,mapped,config.http.proxy_mode | config.http.proxy,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ProxyUseBrowser,mapped,config.http.proxy_mode | config.http.proxy,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ProxyUseProxy,mapped,config.http.proxy_mode | config.http.proxy,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ProxyUseProxyServer,mapped,config.http.proxy_mode | config.http.proxy,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ProxyUseSame,mapped,config.http.proxy_mode | config.http.proxy,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ProxyUserName,mapped,config.http.proxy_mode | config.http.proxy,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ReceiveTimeout,mapped,config.http.version | config.http.connect_timeout_ms | config.http.request_timeout_ms | config.http.max_redirects | config.http.keep_alive | config.http.max_conns_per_host,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,ResetContext,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,ResourcePageTimeoutIsWarning,compatibility_only,config.http.resource_timeout_as_warning,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,Retry401ThinkTime,compatibility_only,config.http.challenge_delay_ms,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,SPNAddNoneDefPort,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,SPNCNameLookup,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,SSLVersionKey,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,SaveSnapshotResources,compatibility_only,config.results.message_detail.include_resources,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,SearchForImages,mapped,config.browser_emulation.cache.download_non_html_resources,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,SimulateCache,mapped,config.browser_emulation.cache.simulate_cache | config.browser.cache_enabled,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,SimulatePrefetchPrerender,mapped,config.browser_emulation.cache.simulate_prefetch,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,SnapshotOnErrorActive,mapped,config.error_handling.snapshot_on_error,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,SupportCharset,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,TreeViewRequestBodyLimit,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,UTF8InputOutput,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,UseBrowserAgent,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,UseCustomAgent,mapped,config.browser_emulation.custom_user_agent | config.browser_emulation.language | config.http.accept_language | config.http.accept_encoding,Mapped source control; inspect the target field and any independent import gates.
+default.cfg,WEB,UseDataFormatExtensions,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,UseNativeNTLM,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,WebSocketCallBackTimerIntervalMS,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,WebSyncRetryIntervalMs,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,WebSyncRetryTimeoutMs,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.cfg,WEB,WinInetReplay,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.cfg,WEB,ZlibHeadersInCompressedRequestBody,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.usp,Profile Actions,MercIniTreeFather,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,Profile Actions,MercIniTreeSectionName,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,Profile Actions,Profile Actions name,compatibility_only,config.run_logic.action_sequence,Preserved source control; runtime equivalence requires explicit review.
+default.usp,RunLogicEndRoot,MercIniTreeFather,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicEndRoot,MercIniTreeSectionName,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicEndRoot,MercIniTreeSons,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicEndRoot,Name,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicEndRoot,RunLogicActionOrder,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicEndRoot,RunLogicActionType,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicEndRoot,RunLogicNumOfIterations,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicEndRoot,RunLogicObjectKind,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicEndRoot,RunLogicRunMode,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicEndRoot:vuser_end,MercIniTreeFather,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicEndRoot:vuser_end,MercIniTreeSectionName,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicEndRoot:vuser_end,Name,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicEndRoot:vuser_end,RunLogicActionType,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicEndRoot:vuser_end,RunLogicInterpreterType,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.usp,RunLogicEndRoot:vuser_end,RunLogicObjectKind,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicInitRoot,MercIniTreeFather,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicInitRoot,MercIniTreeSectionName,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicInitRoot,MercIniTreeSons,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicInitRoot,Name,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicInitRoot,RunLogicActionOrder,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicInitRoot,RunLogicActionType,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicInitRoot,RunLogicNumOfIterations,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicInitRoot,RunLogicObjectKind,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicInitRoot,RunLogicRunMode,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicInitRoot:vuser_init,MercIniTreeFather,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicInitRoot:vuser_init,MercIniTreeSectionName,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicInitRoot:vuser_init,Name,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicInitRoot:vuser_init,RunLogicActionType,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicInitRoot:vuser_init,RunLogicInterpreterType,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.usp,RunLogicInitRoot:vuser_init,RunLogicObjectKind,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot,MercIniTreeFather,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot,MercIniTreeSectionName,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot,MercIniTreeSons,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot,Name,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot,RunLogicActionOrder,compatibility_only,config.run_logic.action_sequence,Preserved source control; runtime equivalence requires explicit review.
+default.usp,RunLogicRunRoot,RunLogicActionType,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot,RunLogicAfterPaceMax,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot,RunLogicAfterPaceMin,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot,RunLogicNumOfIterations,mapped,config.run_logic.iterations,Mapped source control; inspect the target field and any independent import gates.
+default.usp,RunLogicRunRoot,RunLogicObjectKind,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot,RunLogicPaceConstAfterTime,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot,RunLogicPaceConstTime,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot,RunLogicPaceType,mapped,config.pacing,Mapped source control; inspect the target field and any independent import gates.
+default.usp,RunLogicRunRoot,RunLogicRandomPaceMax,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot,RunLogicRandomPaceMin,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot,RunLogicRunMode,compatibility_only,config.run_logic.block_scheduling,Preserved source control; runtime equivalence requires explicit review.
+default.usp,RunLogicRunRoot:Actions,MercIniTreeFather,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot:Actions,MercIniTreeSectionName,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot:Actions,Name,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot:Actions,RunLogicActionType,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.
+default.usp,RunLogicRunRoot:Actions,RunLogicInterpreterType,compatibility_only,,Preserved source control; runtime equivalence requires explicit review.
+default.usp,RunLogicRunRoot:Actions,RunLogicObjectKind,non_applicable,,Preserved source control classified inactive or outside the selected runtime scope.

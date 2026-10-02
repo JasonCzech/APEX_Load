@@ -159,6 +159,10 @@ func splitControlElseChildren(children []truXMLStep) ([]truXMLStep, []truXMLStep
 	for index, child := range children {
 		kind := controlKind(child.Action)
 		if kind == truControlElse || kind == truControlElseIf {
+			if child.Disabled {
+				thenSteps = append(thenSteps, child)
+				continue
+			}
 			if kind == truControlElseIf {
 				child.Action = "If"
 				return thenSteps, []truXMLStep{child}
@@ -184,6 +188,7 @@ func controlMetadata(step truXMLStep, source string, sourceCondition string) map
 	if sourceCondition != "" {
 		metadata["source_condition"] = sourceCondition
 	}
+	applyTruClientStepContract(&dsl.Action{Metadata: metadata}, step)
 	return metadata
 }
 

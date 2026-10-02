@@ -1,0 +1,2027 @@
+{
+  "generation_context": "Current local gated-result.json selected-runtime dispositions after semantic review fixes. All220 dispositions independently reconciled; no source values or remote browser execution.",
+  "row_count": 220,
+  "source_file_counts": {
+    "default.cfg": 154,
+    "default.usp": 66
+  },
+  "disposition_counts": {
+    "non_applicable": 79,
+    "mapped": 12,
+    "compatibility_only": 129
+  },
+  "dynamic_reason_rows_replaced": 4,
+  "rows": [
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "FILTERS",
+      "key": "ExcludeFiltersInList",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "disabled_feature: The source filter list is empty."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "FILTERS",
+      "key": "FilterType",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "disabled_feature: Inactive, managed, or source-tool-only setting; original evidence remains preserved."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "FILTERS",
+      "key": "IncludeFiltersInList",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "disabled_feature: The source filter list is empty."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "AccessVTSPortByQueryString",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "disabled_feature: Inactive, managed, or source-tool-only setting; original evidence remains preserved."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "AutomaticTransactions",
+      "disposition": "mapped",
+      "target_paths": [
+        "config.run_logic.auto_transactions"
+      ],
+      "reason": "Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "DefaultRunLogic",
+      "disposition": "mapped",
+      "target_paths": [],
+      "reason": "Selects the run-logic (.usp) profile."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "UseThreads",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "unused_mode_value: mdrv threading model; APEX VUsers are goroutines."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "VTSHTTPAccessPort",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "VTSHTTPSAccessPort",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "AutoLog",
+      "disposition": "mapped",
+      "target_paths": [
+        "config.log"
+      ],
+      "reason": "Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "AutoLogBufferSize",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "apex_managed_behavior: Inactive, managed, or source-tool-only setting; original evidence remains preserved."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "IncludeEnvInfo",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "apex_managed_behavior: Inactive, managed, or source-tool-only setting; original evidence remains preserved."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "LogOptions",
+      "disposition": "mapped",
+      "target_paths": [
+        "config.log"
+      ],
+      "reason": "Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "MsgClassData",
+      "disposition": "mapped",
+      "target_paths": [
+        "config.log"
+      ],
+      "reason": "Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "MsgClassFull",
+      "disposition": "mapped",
+      "target_paths": [
+        "config.log"
+      ],
+      "reason": "Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "MsgClassParameters",
+      "disposition": "mapped",
+      "target_paths": [
+        "config.log"
+      ],
+      "reason": "Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "ModemSpeed",
+      "key": "CustomModemSpeed",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "unused_mode_value: Custom modem speed is dormant because EnableCustomModemSpeed is off."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "ModemSpeed",
+      "key": "EnableCustomModemSpeed",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "Source network speed simulation selector is disabled; HTTP engine network shaping is not a browser capability."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "ModemSpeed",
+      "key": "EnableModemSpeed",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "Source network speed simulation selector is disabled; HTTP engine network shaping is not a browser capability."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "ModemSpeed",
+      "key": "ModemSpeed",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "unused_mode_value: Preset modem speed is dormant because EnableModemSpeed is off."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "ModemSpeed",
+      "key": "ModemSpeedDownload",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "disabled_feature: Empty source value with no APEX equivalent defined."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "ModemSpeed",
+      "key": "ModemSpeedDownloadAndUpload",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "ModemSpeed",
+      "key": "ModemSpeedMode",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "ModemSpeed",
+      "key": "ModemSpeedUpload",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "disabled_feature: Empty source value with no APEX equivalent defined."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ActionOnError",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "AddingPlugin",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "AlwaysEnableNetTimeout",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ApplyInnerWinSize",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ApplyWinSizeByUser",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ApplyWinSizeInteractive",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "AutoConfigURL",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "AutomaticTransactions",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "BrowserName",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ChromiumCMDToAdd",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ChromiumCMDToRemove",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ComponentBreakdown",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "CustomUserAgent",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "CustomizeKeepAliveTimeout",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "DnsCacheEntries",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "DnsCacheTimeout",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "EnableCDP",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "EnableChromiumLog",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "EnableDynamicAUTView",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "EnableHttp1_1",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "EnableNanny",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "EnableNegotiate",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "EnablePrivateBrowsing",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "EnableVideoRecorder",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "EnforcementVersion",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "EvalJavaScriptTimeout",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ExceptionProxyOverride",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "FTPProxyServer",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "FlushInternalLog",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "FlushUserLog",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "HTTPProxyServer",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "IncludeTimestampsInUserLog",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "KeepAliveTimeout",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "LocalProxyOverride",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "LogAutError",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "LogAutNonError",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "LogErrorsWarningsOnlyInStandard",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "LogHttpRequestBody",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "LogHttpRequestHeaders",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "LogHttpResponseBody",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "LogHttpResponseHeaders",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "LogHttpTrace",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "LogNTLM",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "LogSSL",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "MdrvPriorityInLoad",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "MeasurementLevel",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "MinSecureProtocol",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "MinSecureProtocolTCB",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "MinTimeApplyWaitStep",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "MinTimeEnableRandom",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "MinTimeEnableRandomLimit",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "MinTimeRandomHigh",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "MinTimeRandomLimitValue",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "MinTimeRandomLow",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "NannyAlwaysRestart",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "NannyMaxMemGrowthAfterStable",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "NannyMinIterBeforeRestart",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "NannyMinMemDiffEstToStable",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "NannyNeverRestart",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "NannyRestartRetries",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "NannyRestartTimeout",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "NetworkEndThreshold",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "NotSameProxyForAll",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ObjectTimeout",
+      "disposition": "mapped",
+      "target_paths": [
+        "actions[].params.timeout_ms",
+        "actions[].wait_for.timeout_ms"
+      ],
+      "reason": "Source seconds converted to selector/object timeout milliseconds; explicit per-step object timeouts override this value."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "OmitCatchStepErrors",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "OptimizeDiskIO",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "PPIExplicitLoadedDlls",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "PaintWindowsInLoad",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ProxyEnable",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ProxyHttp1.1",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ProxyOverride",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ProxyServer",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ProxyType",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ReplaySnapshotsMode",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ReportBreakdownInterval",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ResetReplayState",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "RunAsAService",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "SecureProtocols",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "SecureProxyServer",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "ServerInfoTimeout",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "SimulateNewUser",
+      "disposition": "mapped",
+      "target_paths": [
+        "config.browser.new_user_per_iteration"
+      ],
+      "reason": "Mapped browser new-user policy; browser identity and exact source reset behavior remain covered by the profile review gate."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "SnapshotsFullPage",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "SnapshotsWatermark",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "SocksProxyServer",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "StartRenderSnapshotsInterval",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "StepPacingInterval",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "StepTimeout",
+      "disposition": "mapped",
+      "target_paths": [
+        "actions[].timeout_ms",
+        "actions[].sync.timeout_ms",
+        "actions[].wait_for.timeout_ms"
+      ],
+      "reason": "Source seconds converted to bounded per-step, completion, and duration-wait timeout milliseconds."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "SupportOption1",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "SupportOption2",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "SupportOption3",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "SupportOption4",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "SupportOption5",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "SyncMode5",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "TC2WebServerPort",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "TC2WebServerUrl",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "TCIEInjectionCheckRequestHeader",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "TCIEInjectionCheckResponse",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "TCIEInjectionStrategy",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "TCIEInputModel",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "TypingInterval",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "UseOIA",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "UseRecordedDuration",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "Recorded durations are preserved on source steps but source runtime duration replay is disabled."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "UseSSL2",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "UseSSL3",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "UseTLS1",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "UseTls1_0",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "UseTls1_1",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "UseTls1_2",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "UserLogInteractive",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "UserLogLineLength",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "WindowHeight",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "Saved window dimension is inactive because ApplyWinSizeByUser is disabled."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "WindowHeightInteractive",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "WindowWidth",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "Saved window dimension is inactive because ApplyWinSizeByUser is disabled."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "WindowWidthInteractive",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "WriteMdrvLog",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClient",
+      "key": "config.snapshot_dir",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "Preserved source browser setting; its Go browser equivalence requires source-profile review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClientEx",
+      "key": "AllowPipelining",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClientEx",
+      "key": "AllowPipeliningProxy",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClientEx",
+      "key": "AllowPipeliningSSL",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClientEx",
+      "key": "CacheImgSize",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClientEx",
+      "key": "CacheMemoryCap",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClientEx",
+      "key": "MaxPersistConnsProxy",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClientEx",
+      "key": "MaxPersistConnsServer",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClientEx",
+      "key": "MaxTotalConns",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClientEx",
+      "key": "MaxTotalConnsServer",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClientEx",
+      "key": "NetworkBufCache",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClientEx",
+      "key": "PipeliningMaxReqs",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClientEx",
+      "key": "TCPSendBuf",
+      "disposition": "compatibility_only",
+      "target_paths": [],
+      "reason": "unverified_semantics: No APEX equivalent is defined for this source setting; false and zero can be meaningful and are preserved for review."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClientEx",
+      "key": "UserAgent",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "disabled_feature: Empty source value with no APEX equivalent defined."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.cfg",
+      "section": "TruClientEx",
+      "key": "device",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "disabled_feature: Empty source value with no APEX equivalent defined."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "Profile Actions",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "Profile Actions",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "Profile Actions",
+      "key": "Profile Actions name",
+      "disposition": "compatibility_only",
+      "target_paths": [
+        "config.run_logic.action_sequence"
+      ],
+      "reason": "unverified_semantics: Source setting remains preserved for compatibility review; exact source behavior is not certified by the native browser preview."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "MercIniTreeSons",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "Name",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "RunLogicActionOrder",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: Init/end lifecycle groups run once; per-group run-logic knobs have no additional meaning."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "RunLogicActionType",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "RunLogicNumOfIterations",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: Init/end lifecycle groups run once; per-group run-logic knobs have no additional meaning."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "RunLogicObjectKind",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "RunLogicRunMode",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: Init/end lifecycle groups run once; per-group run-logic knobs have no additional meaning."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot:vuser_end",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot:vuser_end",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot:vuser_end",
+      "key": "Name",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot:vuser_end",
+      "key": "RunLogicActionType",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot:vuser_end",
+      "key": "RunLogicObjectKind",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicErrorHandlerRoot",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicErrorHandlerRoot",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicErrorHandlerRoot",
+      "key": "MercIniTreeSons",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicErrorHandlerRoot",
+      "key": "Name",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicErrorHandlerRoot",
+      "key": "RunLogicActionOrder",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: Error-handler run-logic block; accounted for by the run_logic_error_handler finding."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicErrorHandlerRoot",
+      "key": "RunLogicActionType",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicErrorHandlerRoot",
+      "key": "RunLogicNumOfIterations",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: Error-handler run-logic block; accounted for by the run_logic_error_handler finding."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicErrorHandlerRoot",
+      "key": "RunLogicObjectKind",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicErrorHandlerRoot",
+      "key": "RunLogicRunMode",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: Error-handler run-logic block; accounted for by the run_logic_error_handler finding."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicErrorHandlerRoot:vuser_errorhandler",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicErrorHandlerRoot:vuser_errorhandler",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicErrorHandlerRoot:vuser_errorhandler",
+      "key": "Name",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicErrorHandlerRoot:vuser_errorhandler",
+      "key": "RunLogicActionType",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicErrorHandlerRoot:vuser_errorhandler",
+      "key": "RunLogicObjectKind",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "MercIniTreeSons",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "Name",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "RunLogicActionOrder",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: Init/end lifecycle groups run once; per-group run-logic knobs have no additional meaning."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "RunLogicActionType",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "RunLogicNumOfIterations",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: Init/end lifecycle groups run once; per-group run-logic knobs have no additional meaning."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "RunLogicObjectKind",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "RunLogicRunMode",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: Init/end lifecycle groups run once; per-group run-logic knobs have no additional meaning."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot:vuser_init",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot:vuser_init",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot:vuser_init",
+      "key": "Name",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot:vuser_init",
+      "key": "RunLogicActionType",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot:vuser_init",
+      "key": "RunLogicObjectKind",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "MercIniTreeSons",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "Name",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicActionOrder",
+      "disposition": "compatibility_only",
+      "target_paths": [
+        "config.run_logic.action_sequence"
+      ],
+      "reason": "unverified_semantics: Source setting remains preserved for compatibility review; exact source behavior is not certified by the native browser preview."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicActionType",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicAfterPaceMax",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "unused_mode_value: Saved pacing bound is inactive under the selected RunLogicPaceType."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicAfterPaceMin",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "unused_mode_value: Saved pacing bound is inactive under the selected RunLogicPaceType."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicNumOfIterations",
+      "disposition": "mapped",
+      "target_paths": [
+        "config.run_logic.iterations"
+      ],
+      "reason": "Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicObjectKind",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicPaceConstAfterTime",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "unused_mode_value: Saved pacing bound is inactive under the selected RunLogicPaceType."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicPaceConstTime",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "unused_mode_value: Saved pacing bound is inactive under the selected RunLogicPaceType."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicPaceType",
+      "disposition": "mapped",
+      "target_paths": [
+        "config.pacing"
+      ],
+      "reason": "Native DSL mapping recorded; the source profile remains gated and no remote browser execution was verified."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicRandomPaceMax",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "unused_mode_value: Saved pacing bound is inactive under the selected RunLogicPaceType."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicRandomPaceMin",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "unused_mode_value: Saved pacing bound is inactive under the selected RunLogicPaceType."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicRunMode",
+      "disposition": "compatibility_only",
+      "target_paths": [
+        "config.run_logic.block_scheduling"
+      ],
+      "reason": "unverified_semantics: Source setting remains preserved for compatibility review; exact source behavior is not certified by the native browser preview."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot:Action",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot:Action",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot:Action",
+      "key": "Name",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot:Action",
+      "key": "RunLogicActionType",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    },
+    {
+      "project": "Prefetch_Wireless_Center_Sep_Truclient_v0.1",
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot:Action",
+      "key": "RunLogicObjectKind",
+      "disposition": "non_applicable",
+      "target_paths": [],
+      "reason": "source_tool_metadata: VuGen run-logic tree bookkeeping."
+    }
+  ]
+}

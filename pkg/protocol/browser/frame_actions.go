@@ -100,17 +100,41 @@ func (b *Browser) fillAction(ctx context.Context, action *protocol.Action, selec
 }
 
 func (b *Browser) selectAction(ctx context.Context, action *protocol.Action, selector string, values []string) error {
+	selection, err := selectActionOptions(action, values)
+	if err != nil {
+		return err
+	}
 	if locator, ok := b.actionLocator(action, selector); ok {
 		timeout := b.actionTimeout(action)
 		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
 			return err
 		}
-		_, err := locator.SelectOption(playwright.SelectOptionValues{ValuesOrLabels: playwright.StringSlice(values...)}, playwright.LocatorSelectOptionOptions{
-			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
-		})
+		_, err := locator.SelectOption(selection, playwright.LocatorSelectOptionOptions{Timeout: playwright.Float(b.timeoutMS(ctx, timeout))})
+		return err
+	}
+	if selection.Indexes != nil {
+		if b.currentPage() == nil {
+			return fmt.Errorf("browser page is not initialized")
+		}
+		_, err := b.currentPage().Locator(selector).SelectOption(selection, playwright.LocatorSelectOptionOptions{Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action)))})
 		return err
 	}
 	return b.selectOption(ctx, action, selector, values)
+}
+
+func selectActionOptions(action *protocol.Action, values []string) (playwright.SelectOptionValues, error) {
+	selection := playwright.SelectOptionValues{ValuesOrLabels: playwright.StringSlice(values...)}
+	if raw, exists := action.Params["option_index"]; exists {
+		index, ok := intFromAny(raw)
+		if !ok || index < 0 || index >= 1_000_000 {
+			return playwright.SelectOptionValues{}, fmt.Errorf("browser_select option_index must be an integer between 0 and 999999")
+		}
+		if len(values) > 0 {
+			return playwright.SelectOptionValues{}, fmt.Errorf("browser_select option_index cannot be combined with value or values")
+		}
+		selection = playwright.SelectOptionValues{Indexes: &[]int{index}}
+	}
+	return selection, nil
 }
 
 func (b *Browser) scrollAction(ctx context.Context, action *protocol.Action, selector string, deltaX, deltaY int) error {
@@ -297,10 +321,14 @@ func splitKeyChord(value string) ([]string, string) {
 }
 
 func (b *Browser) waitVisibleForAction(ctx context.Context, action *protocol.Action, selector string) error {
+	return b.waitVisibleForActionTimeout(ctx, action, selector, b.actionTimeout(action))
+}
+
+func (b *Browser) waitVisibleForActionTimeout(ctx context.Context, action *protocol.Action, selector string, timeout time.Duration) error {
 	if locator, ok := b.actionLocator(action, selector); ok {
-		return b.waitLocatorVisible(ctx, locator, b.actionTimeout(action))
+		return b.waitLocatorVisible(ctx, locator, timeout)
 	}
-	return b.waitVisibleWithTimeout(ctx, selector, b.actionTimeout(action))
+	return b.waitVisibleWithTimeout(ctx, selector, timeout)
 }
 
 func (b *Browser) waitHiddenForAction(ctx context.Context, action *protocol.Action, selector string) error {
