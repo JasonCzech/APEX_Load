@@ -1708,7 +1708,7 @@ func TestValidateParallelBranchRuntimeSafetyRejectsUnsafeNestedControl(t *testin
 	}{
 		{name: "nested parallel", action: Action{Type: "control_parallel"}, want: "control_parallel is not permitted"},
 		{name: "rendezvous", action: Action{Type: "rendezvous"}, want: "rendezvous is not permitted"},
-		{name: "break nested in loop", action: Action{Type: "control_loop", Control: &ControlFlow{Count: 1, Steps: []Action{{Type: "control_break"}}}}, want: "control_break is not permitted"},
+		{name: "unowned break", action: Action{Type: "control_break"}, want: "control_break is not permitted"},
 		{name: "continue nested in condition", action: Action{Type: "control_if", Control: &ControlFlow{Condition: &Condition{Left: "x", Op: "exists"}, Steps: []Action{{Type: "control_continue"}}}}, want: "control_continue is not permitted"},
 	}
 	for _, test := range tests {
@@ -1729,5 +1729,20 @@ func TestValidateParallelBranchRuntimeSafetyAllowsBoundedControl(t *testing.T) {
 	}}
 	if issues := validateParallelBranchRuntimeSafety(actions, "actions[0].control.branches[0].steps"); len(issues) != 0 {
 		t.Fatalf("safe nested control rejected: %v", issues)
+	}
+}
+
+func TestParallelBranchLocalLoopControl(t *testing.T) {
+	for _, kind := range []string{"control_break", "control_continue"} {
+		a := Action{Type: "control_loop", Control: &ControlFlow{Count: 3, Steps: []Action{{Type: "control_if", Control: &ControlFlow{Steps: []Action{{Type: kind}}}}}}}
+		if issues := ValidateParallelBranchRuntimeSafety([]Action{a}, "branch"); len(issues) > 0 {
+			t.Fatal(issues)
+		}
+		// A loop's else/default bodies are not iteration bodies and cannot own control.
+		a.Control.Steps = nil
+		a.Control.Default = []Action{{Type: kind}}
+		if len(ValidateParallelBranchRuntimeSafety([]Action{a}, "branch")) == 0 {
+			t.Fatal("non-body loop control admitted")
+		}
 	}
 }

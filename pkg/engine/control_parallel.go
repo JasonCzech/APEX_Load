@@ -139,6 +139,10 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		return
 	}
 	sink := &parallelResultSink{downstream: vu.ResultSink}
+	variables := cloneStringMap(vu.Variables)
+	if variables == nil {
+		variables = make(map[string]string)
+	}
 	branchVU := &VUser{
 		ID:                           vu.ID,
 		sourceSamplers:               vu.sourceSamplers,
@@ -151,7 +155,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		Script:                       vu.Script,
 		Metrics:                      vu.Metrics,
 		ResultSink:                   sink,
-		Variables:                    cloneStringMap(vu.Variables),
+		Variables:                    variables,
 		DataProvider:                 vu.DataProvider,
 		Parameters:                   NewParameterRuntime(vu.Script.Parameters, vu.DataProvider, vu.ID),
 		SecretResolver:               vu.SecretResolver,
@@ -216,12 +220,15 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 
 func parallelActionsRuntimeSafe(branches []dsl.ParallelBranch) bool {
 	for _, branch := range branches {
+		if len(dsl.ValidateParallelBranchRuntimeSafety(branch.Steps, "branch")) > 0 {
+			return false
+		}
 		stack := append([]dsl.Action(nil), branch.Steps...)
 		for len(stack) > 0 {
 			action := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]
 			switch dsl.CanonicalActionType(strings.ToLower(strings.TrimSpace(action.Type))) {
-			case "control_parallel", "rendezvous", "control_break", "control_continue", "java_vuser_run", "browser":
+			case "java_vuser_run", "browser":
 				return false
 			}
 			if action.Control != nil {

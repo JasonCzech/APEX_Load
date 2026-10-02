@@ -1240,7 +1240,7 @@ func javaVuserDistributedContainmentError(capabilities protocol.RuntimeCapabilit
 
 func requiredRuntimeFeature(script *dsl.Script) string {
 	base := requiredBaseRuntimeFeature(script)
-	for _, feature := range dsl.RequiredMessagingRuntimeFeatures(script) {
+	for _, feature := range append(dsl.RequiredMessagingRuntimeFeatures(script), dsl.RequiredCompositionRuntimeFeatures(script)...) {
 		if base != "" {
 			base += "+"
 		}
@@ -1389,7 +1389,7 @@ func requiredProtocolRuntimeFeature(script *dsl.Script) string {
 	external := []string{}
 	for _, feature := range strings.Split(required, "+") {
 		switch feature {
-		case "", dsl.FeaturePropertyAnalyticsV1, dsl.FeatureLRFidelityV1, FeatureControlParallelV1, FeatureMessageDetailCaptureV1, FeatureMessageDetailControlParallelV1:
+		case "", dsl.FeatureParallelLoopControlV1, dsl.FeaturePropertyAnalyticsV1, dsl.FeatureLRFidelityV1, FeatureControlParallelV1, FeatureMessageDetailCaptureV1, FeatureMessageDetailControlParallelV1:
 		default:
 			external = append(external, feature)
 		}

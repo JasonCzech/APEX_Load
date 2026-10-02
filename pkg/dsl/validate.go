@@ -1379,19 +1379,35 @@ func validateControlFlowIssues(protocol string, path string, action Action) []st
 // protocol branches. This is an admission rule; the engine repeats the check as
 // defense in depth for callers that construct scripts without validation.
 func validateParallelBranchRuntimeSafety(actions []Action, path string) []string {
+	return ValidateParallelBranchRuntimeSafety(actions, path)
+}
+
+// ValidateParallelBranchRuntimeSafety is shared by authoring and execution.
+// Loop control must be owned by a loop inside the same isolated branch.
+func ValidateParallelBranchRuntimeSafety(actions []Action, path string) []string {
+	return validateParallelBranchScope(actions, path, 0)
+}
+func validateParallelBranchScope(actions []Action, path string, loopDepth int) []string {
 	var issues []string
 	for index, action := range actions {
 		actionPath := fmt.Sprintf("%s[%d]", path, index)
 		actionType := CanonicalActionType(strings.ToLower(strings.TrimSpace(action.Type)))
 		switch actionType {
-		case "control_parallel", "rendezvous", "control_break", "control_continue":
+		case "control_parallel", "rendezvous":
 			issues = append(issues, fmt.Sprintf("%s: %s is not permitted inside control_parallel", actionPath, actionType))
+		}
+		if (actionType == "control_break" || actionType == "control_continue") && loopDepth == 0 {
+			issues = append(issues, fmt.Sprintf("%s: %s is not permitted without a branch-local control_loop", actionPath, actionType))
 		}
 		if action.Control == nil {
 			continue
 		}
 		for _, branch := range action.Control.ActionBranches() {
-			issues = append(issues, validateParallelBranchRuntimeSafety(branch.Actions, actionPath+".control."+branch.Path)...)
+			depth := loopDepth
+			if actionType == "control_loop" && branch.Path == "steps" {
+				depth++
+			}
+			issues = append(issues, validateParallelBranchScope(branch.Actions, actionPath+".control."+branch.Path, depth)...)
 		}
 	}
 	return issues
