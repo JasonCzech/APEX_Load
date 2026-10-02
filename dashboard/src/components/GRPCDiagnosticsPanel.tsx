@@ -9,7 +9,7 @@ export default function GRPCDiagnosticsPanel({ transactions }: { transactions: T
   return (
     <section className="tx-section server-telemetry-section" aria-label="gRPC diagnostics">
       <h3 className="chart-title">gRPC diagnostics</h3>
-      <p className="server-telemetry-subtitle">Client-observed RPC timings from retained diagnostic samples. A receive limit leaves the final status unavailable.</p>
+      <p className="server-telemetry-subtitle">Client-observed RPC timings from retained diagnostic samples. Rates use total client-call seconds, not elapsed run time. Codec work can overlap. A receive limit leaves the final status unavailable.</p>
       <div className="server-telemetry-grid">
         {measured.map(tx => (
           <div className="server-telemetry-card" key={tx.name}>

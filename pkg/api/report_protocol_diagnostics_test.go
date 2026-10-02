@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"strings"
 	"testing"
@@ -41,5 +42,30 @@ func TestProtocolReportsRenderMeasuredEvidenceAndEscapeIdentities(t *testing.T) 
 	}
 	if !found {
 		t.Fatal("root-cause response omitted advisory protocol evidence")
+	}
+}
+
+func TestProtocolReportsIncludeQualifiedClientCallAnalysisAndBoundOutput(t *testing.T) {
+	encode, decode := 80., 80.
+	var g *protocol.GRPCSummary
+	protocol.MergeGRPCDiagnostic(&g, &protocol.GRPCDiagnostics{Method: "/example.Service/Call", Mode: "bidi_stream", CallMs: 100, EncodeMs: &encode, DecodeMs: &decode, MessagesSent: 2, RequestBytes: 100})
+	report := &RunArchiveReport{ByAction: map[string]RunArchiveActionStats{"stream": {GRPC: g}}}
+	text := strings.Join(protocolReportLines(report), "\n")
+	for _, want := range []string{"20.00 sent/s", "0.00 received/s", "1000.00 sent bytes/s", "50.00 sent bytes", "160.00 %", "timings can overlap"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in %s", want, text)
+		}
+	}
+	g.Decode.Count = 0
+	if !strings.Contains(strings.Join(protocolReportLines(report), "\n"), "wall time: unavailable") {
+		t.Fatal("partial codec cohort was scored")
+	}
+	report.ByProperty = map[string]RunArchiveActionStats{}
+	for i := 0; i < 250; i++ {
+		report.ByProperty[fmt.Sprint(i)] = RunArchiveActionStats{}
+	}
+	lines := protocolReportLines(report)
+	if len(lines) != 201 || !strings.Contains(lines[200], "structured report") {
+		t.Fatal("report diagnostic budget not explicit", len(lines))
 	}
 }

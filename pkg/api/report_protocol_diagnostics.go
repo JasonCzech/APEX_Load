@@ -70,6 +70,20 @@ func protocolReportLines(report *RunArchiveReport) []string {
 			add(identity, "first response", g.FirstMessage)
 			add(identity, "protobuf encoding per call", g.Encode)
 			add(identity, "protobuf decoding per call", g.Decode)
+			analysis := g.ClientAnalysis()
+			metric := func(v *float64, unit string) string {
+				if v == nil {
+					return "unavailable"
+				}
+				return fmt.Sprintf("%.2f %s", *v, unit)
+			}
+			lines = append(lines,
+				identity+" · Client-call message rate: "+metric(analysis.SentMessagesPerCallSecond, "sent/s")+" / "+metric(analysis.ReceivedMessagesPerCallSecond, "received/s"),
+				identity+" · Client-call protobuf byte rate: "+metric(analysis.SentBytesPerCallSecond, "sent bytes/s")+" / "+metric(analysis.ReceivedBytesPerCallSecond, "received bytes/s"),
+				identity+" · Mean protobuf message payload: "+metric(analysis.MeanSentPayloadBytes, "sent bytes")+" / "+metric(analysis.MeanReceivedPayloadBytes, "received bytes"),
+				identity+" · Codec elapsed work / call wall time: "+metric(analysis.CodecWorkToCallWallPct, "%")+" (codec timings can overlap)",
+			)
+
 		}
 		if w := a.WebSocket; w != nil {
 			add(name, "WebSocket handshake", w.Handshake)
@@ -89,6 +103,9 @@ func protocolReportLines(report *RunArchiveReport) []string {
 	}
 	if len(lines) == 1 {
 		lines = append(lines, "No typed messaging, gRPC or WebSocket diagnostic samples were captured.")
+	}
+	if len(lines) > 200 {
+		lines = append(lines[:200], "Additional protocol diagnostics remain available in the structured report.")
 	}
 	return lines
 }

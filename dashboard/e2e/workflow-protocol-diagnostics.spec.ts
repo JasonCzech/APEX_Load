@@ -29,6 +29,7 @@ test('gRPC diagnostics distinguishes unavailable and measured-zero responses in 
       transactions: { lookup: { name: 'Lookup product', count: 1, errors: 0, avg_ms: 10,
         dependency_type: 'grpc', server_telemetry: { samples: 1, grpc: {
           samples: 1, call_ms: { ...empty, count: 1, sum: 10, max: 10 },
+          encode_ms: { ...empty, count: 1, sum: 8 }, decode_ms: { ...empty, count: received ? 1 : 0, sum: received ? 8 : 0 },
           first_message_ms: { ...empty, count: received ? 1 : 0 }, deadline_budget_ms: empty,
           status_counts: received ? [1] : [], unavailable_status: received ? 0 : 1,
           receive_limit_reached: 0, messages_sent: 1, messages_received: received ? 1 : 0,
@@ -45,9 +46,14 @@ test('gRPC diagnostics distinguishes unavailable and measured-zero responses in 
   await expect(panel).toBeVisible()
   await expect(panel).toContainText('First response: unavailable (0 measured)')
   await expect(panel).toContainText('Status · unavailable: 1')
+  await expect(panel).toContainText('Client-call message rate: 100.00 sent/s / 0.00 received/s')
+  await expect(panel).toContainText('Codec elapsed work / call wall time: unavailable')
   received = true
   await expect(panel).toContainText('First response: 0.0 ms (1 measured)')
   await expect(panel).toContainText('Status · OK: 1')
+  await expect(panel).toContainText('Client-call message rate: 100.00 sent/s / 100.00 received/s')
+  await expect(panel).toContainText('Mean protobuf message payload: 5.00 sent bytes / 0.00 received bytes')
+  await expect(panel).toContainText('Codec elapsed work / call wall time: 160.00 % (codec timings can overlap)')
   await expect(panel).not.toContainText('Receive limit reached: 1')
   await page.setViewportSize({ width: 760, height: 900 })
   await expect(panel).toBeVisible()
