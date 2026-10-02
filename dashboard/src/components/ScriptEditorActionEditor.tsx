@@ -329,6 +329,7 @@ interface ActionEditorHeaderProps {
 
 function ActionEditorHeader({ action, issues, methodColor }: ActionEditorHeaderProps) {
   const badgeLabel = action.type === 'http_sequence' ? 'SEQ' : action.type
+  const reviewAction = action.type === 'source_review' || action.type === 'review_required'
   const fallbackCount = actionSelectorFallbackCount(action)
   const reviewGated = actionRequiresReview(action)
   const executionBlockers = actionExecutionBlockers(action)
@@ -336,7 +337,7 @@ function ActionEditorHeader({ action, issues, methodColor }: ActionEditorHeaderP
   return (
     <>
       <div className="action-editor-top">
-        <span className="action-badge" style={{ background: methodColor(action.type), color: '#fff' }}>{badgeLabel}</span>
+        <span className={`action-badge${reviewAction ? ' action-badge-review' : ''}`} style={reviewAction ? undefined : { background: methodColor(action.type), color: '#fff' }}>{badgeLabel}</span>
         <h3 tabIndex={-1} data-inspector-focus>{action.name || 'Unnamed Action'}</h3>
         {(isControlAction(action) || reviewGated || executionBlocked || fallbackCount > 0) && (
           <div className="action-editor-issue-pills">

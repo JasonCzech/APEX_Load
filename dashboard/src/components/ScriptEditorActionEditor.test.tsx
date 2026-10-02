@@ -232,6 +232,21 @@ describe('ActionEditor transaction field', () => {
     return updates
   }
 
+  it.each(['source_review', 'review_required'])('uses semantic theme colors for the %s badge', (type) => {
+    renderEditor({ name: 'Review imported source', type } as ScriptActionDefinition)
+    const badge = container.querySelector<HTMLElement>('.action-badge')!
+    expect(badge.textContent).toBe(type)
+    expect(badge.classList.contains('action-badge-review')).toBe(true)
+    expect(badge.getAttribute('style')).toBeNull()
+  })
+
+  it('preserves method colors for request badges', () => {
+    renderEditor({ name: 'Login', type: 'POST', target: '/login' } as ScriptActionDefinition)
+    const badge = container.querySelector<HTMLElement>('.action-badge')!
+    expect(badge.classList.contains('action-badge-review')).toBe(false)
+    expect(badge.style.background).toBe('rgb(0, 0, 0)')
+  })
+
   it('shows an empty Transaction field and tags the action on input', () => {
     const updates = renderEditor({ name: 'Login', type: 'POST', target: '/login' } as unknown as ScriptActionDefinition)
     const input = labelInput('Transaction')!
