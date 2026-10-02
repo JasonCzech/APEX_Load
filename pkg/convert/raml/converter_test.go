@@ -329,7 +329,7 @@ baseUri: https://api.example.test
 	}
 }
 
-func TestLookupIncludeBasenameCollisionIsDeterministic(t *testing.T) {
+func TestLookupIncludeRejectsBasenameSubstitution(t *testing.T) {
 	files := map[string][]byte{
 		"d2/w.json": []byte("two"),
 		"d1/w.json": []byte("one"),
@@ -337,8 +337,8 @@ func TestLookupIncludeBasenameCollisionIsDeterministic(t *testing.T) {
 	}
 	for i := 0; i < 50; i++ {
 		content, ok := lookupInclude(files, "x/w.json")
-		if !ok || string(content) != "one" {
-			t.Fatalf("lookupInclude = %q, %v; want deterministic 'one' (smallest key)", string(content), ok)
+		if ok {
+			t.Fatalf("lookupInclude = %q, %v; an unrelated basename must not resolve", string(content), ok)
 		}
 	}
 }
