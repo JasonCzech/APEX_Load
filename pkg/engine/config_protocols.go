@@ -760,6 +760,9 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 	if kafkaCfg.Idempotence != "" {
 		cfg["kafka_idempotence"] = kafkaCfg.Idempotence
 	}
+	if kafkaCfg.ConsumerTransactions {
+		cfg["kafka_consumer_transactions"] = true
+	}
 	if kafkaCfg.TransactionalID != "" {
 		cfg["kafka_transactional_id"] = kafkaCfg.TransactionalID
 	}

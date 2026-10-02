@@ -1348,7 +1348,7 @@ Aborts the open producer transaction, discarding buffered records.
 
 ### `kafka_begin_transaction`
 
-Begins a producer transaction (requires config.kafka.transactional_id). Subsequent kafka_produce records are buffered until commit.
+Begins a transaction (requires config.kafka.transactional_id). consumer_transactions also commits consumed offsets atomically and aborts on ownership loss.
 
 ### `kafka_commit`
 
@@ -1403,7 +1403,7 @@ Produces a request record and waits for the correlated reply record.
 
 ### `kafka_seek`
 
-Seeks the consumer cursor for the whole (topic, group) to an offset (mock only; the real adapter does not yet support seek).
+Repositions the consumer cursor. The real adapter requires a configured group and previously polled owned partitions; earliest/latest respect isolation.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|

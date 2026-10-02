@@ -99,11 +99,14 @@ type pendingProduce struct {
 // no-op transaction lifecycle otherwise cannot roll back records already
 // appended during a failed commit flush. Real clients rely on broker-native
 // transaction isolation and intentionally do not implement this interface.
+var errKafkaTransactionAborted = errors.New("Kafka transaction was not committed; retry from recovered offsets")
+
 type atomicTransactionCommitter interface {
 	CommitBufferedTransaction(ctx context.Context, pending []pendingProduce) error
 }
 
 type config struct {
+	ConsumerTransactions                                                                                    bool
 	Producer                                                                                                producerTuning
 	TLSMinVersion, TLSMaxVersion                                                                            string
 	OAuthMode, OAuthTokenURL, OAuthClientID, OAuthClientSecret, OAuthClientScope, OAuthAuthenticationMethod string
@@ -194,6 +197,7 @@ func (k *Kafka) Init(ctx context.Context, cfg map[string]any) error {
 		Acks:                      stringValue(cfg, "kafka_acks"),
 		Idempotence:               strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_idempotence"))),
 		TransactionalID:           stringValue(cfg, "kafka_transactional_id"),
+		ConsumerTransactions:      boolValue(cfg, "kafka_consumer_transactions"),
 		Compression:               stringValue(cfg, "kafka_compression"),
 		PartitionStrategy:         stringValue(cfg, "kafka_partition_strategy"),
 		AutoOffsetReset:           stringValue(cfg, "kafka_auto_offset_reset"),
@@ -214,6 +218,10 @@ func (k *Kafka) Init(ctx context.Context, cfg map[string]any) error {
 		TLSClientKeyFile:      stringValue(cfg, "kafka_tls_client_key_file"),
 		TLSCACertFile:         stringValue(cfg, "kafka_tls_ca_cert_file"),
 	}
+	if k.cfg.ConsumerTransactions && (k.cfg.Mock || !realKafkaAvailable || k.cfg.TransactionalID == "" || k.cfg.ConsumerGroup == "" || k.cfg.IsolationLevel != "read_committed") {
+		return fmt.Errorf("Kafka consumer_transactions requires kafka_real, a non-mock consumer_group, transactional_id and read_committed isolation")
+	}
+
 	if err := validateKafkaConfigBounds(k.cfg); err != nil {
 		return err
 	}
@@ -444,7 +452,17 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 				result.ServerTelemetry = &protocol.ServerTelemetry{CommitCount: 1}
 			}
 		case "kafka_seek":
-			target := seekTarget(action.Params)
+			target, targetErr := seekTarget(action.Params)
+			if targetErr != nil {
+				err = targetErr
+				break
+			}
+			if !k.cfg.Mock {
+				if _, requested := action.Params["partition"]; requested {
+					err = fmt.Errorf("real Kafka seek repositions all owned partitions; partition selection is unavailable")
+					break
+				}
+			}
 			if seekErr := k.client.Seek(ctx, k.topic(action), k.consumerGroup(action), target); seekErr != nil {
 				err = seekErr
 			} else {
@@ -533,34 +551,36 @@ func (k *Kafka) HealthCheck(ctx context.Context) error {
 
 // seekTarget resolves the kafka_seek "offset" param (a number, "earliest", or
 // "latest") to a string the client Seek understands; defaults to earliest.
-func seekTarget(params map[string]any) string {
+func seekTarget(params map[string]any) (string, error) {
 	v, ok := params["offset"]
-	if !ok {
-		return "earliest"
+	if !ok || v == "" {
+		return "earliest", nil
 	}
 	switch t := v.(type) {
 	case string:
-		if strings.TrimSpace(t) == "" {
-			return "earliest"
+		if t == "earliest" || t == "latest" {
+			return t, nil
 		}
-		return t
+		offset, err := strconv.ParseInt(t, 10, 64)
+		if err == nil && offset >= 0 {
+			return t, nil
+		}
 	case float64:
-		return strconv.FormatInt(int64(t), 10)
+		if !math.IsNaN(t) && !math.IsInf(t, 0) && t >= 0 && t <= 9007199254740991 && t == math.Trunc(t) {
+			return strconv.FormatInt(int64(t), 10), nil
+		}
 	case int:
-		return strconv.Itoa(t)
+		if t >= 0 {
+			return strconv.Itoa(t), nil
+		}
 	case int64:
-		return strconv.FormatInt(t, 10)
-	default:
-		return "earliest"
+		if t >= 0 {
+			return strconv.FormatInt(t, 10), nil
+		}
 	}
+	return "", fmt.Errorf("Kafka seek offset must be earliest, latest, or an exact nonnegative integer; use a string for large offsets")
 }
 
-// checkRecordSize is a conservative pre-flight guard for the broker message-size
-// cap (config.kafka.max_message_bytes; defaulted to 1 MiB by the eventhubs
-// profile). It counts value + key + header bytes — an approximation of the
-// encoded record size, not the exact wire size, so it errs toward catching
-// oversized records early. The franz adapter additionally enforces the cap
-// authoritatively via kgo.ProducerBatchMaxBytes on the real network path.
 func (k *Kafka) checkRecordSize(rec kafkaRecord) error {
 	limit := k.cfg.MaxMessageBytes
 	if limit <= 0 || limit > MaxConfiguredMessageBytes {
@@ -768,6 +788,11 @@ func (k *Kafka) commitTransaction(ctx context.Context, result *protocol.Result) 
 			}
 		}
 		if err := k.client.CommitTransaction(ctx); err != nil {
+			if errors.Is(err, errKafkaTransactionAborted) {
+				k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
+				k.session.Rollback()
+				return err
+			}
 			abortErr := k.abortAfterTransactionFailure(ctx)
 			k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
 			k.txPoisoned = true

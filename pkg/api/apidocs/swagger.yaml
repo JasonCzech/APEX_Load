@@ -2427,6 +2427,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -12515,6 +12517,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -14518,6 +14522,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -16331,6 +16337,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -39727,6 +39735,8 @@ paths:
                             type: string
                           consumer_group:
                             type: string
+                          consumer_transactions:
+                            type: boolean
                           idempotence:
                             type: string
                           isolation_level:
@@ -139628,6 +139638,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -141693,6 +141705,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -143737,6 +143751,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -145703,6 +145719,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -147766,6 +147784,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -149772,6 +149792,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -153445,6 +153467,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -157614,6 +157638,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -159622,6 +159648,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -164552,6 +164580,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -166382,6 +166412,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -168303,6 +168335,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -170141,6 +170175,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -171913,6 +171949,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -175419,6 +175457,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -177568,6 +177608,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -180726,6 +180768,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -182510,6 +182554,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -184538,6 +184584,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -186588,6 +186636,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -189820,6 +189870,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -192513,6 +192565,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -194202,6 +194256,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -196347,6 +196403,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -198011,6 +198069,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -200063,6 +200123,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -202945,6 +203007,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -205228,6 +205292,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -208575,6 +208641,8 @@ paths:
                                     type: string
                                   consumer_group:
                                     type: string
+                                  consumer_transactions:
+                                    type: boolean
                                   idempotence:
                                     type: string
                                   isolation_level:
@@ -210376,6 +210444,8 @@ paths:
                                     type: string
                                   consumer_group:
                                     type: string
+                                  consumer_transactions:
+                                    type: boolean
                                   idempotence:
                                     type: string
                                   isolation_level:
@@ -212118,6 +212188,8 @@ paths:
                                       type: string
                                     consumer_group:
                                       type: string
+                                    consumer_transactions:
+                                      type: boolean
                                     idempotence:
                                       type: string
                                     isolation_level:
@@ -213613,6 +213685,8 @@ paths:
                                       type: string
                                     consumer_group:
                                       type: string
+                                    consumer_transactions:
+                                      type: boolean
                                     idempotence:
                                       type: string
                                     isolation_level:
@@ -215521,6 +215595,8 @@ paths:
                                     type: string
                                   consumer_group:
                                     type: string
+                                  consumer_transactions:
+                                    type: boolean
                                   idempotence:
                                     type: string
                                   isolation_level:
@@ -217322,6 +217398,8 @@ paths:
                                     type: string
                                   consumer_group:
                                     type: string
+                                  consumer_transactions:
+                                    type: boolean
                                   idempotence:
                                     type: string
                                   isolation_level:
@@ -219064,6 +219142,8 @@ paths:
                                       type: string
                                     consumer_group:
                                       type: string
+                                    consumer_transactions:
+                                      type: boolean
                                     idempotence:
                                       type: string
                                     isolation_level:
@@ -220559,6 +220639,8 @@ paths:
                                       type: string
                                     consumer_group:
                                       type: string
+                                    consumer_transactions:
+                                      type: boolean
                                     idempotence:
                                       type: string
                                     isolation_level:
@@ -222490,6 +222572,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -224249,6 +224333,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -226136,6 +226222,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -227751,6 +227839,8 @@ paths:
                                 type: string
                               consumer_group:
                                 type: string
+                              consumer_transactions:
+                                type: boolean
                               idempotence:
                                 type: string
                               isolation_level:
@@ -229374,6 +229464,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -231370,6 +231462,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -234606,6 +234700,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -236396,6 +236492,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:
@@ -238333,6 +238431,8 @@ paths:
                               type: string
                             consumer_group:
                               type: string
+                            consumer_transactions:
+                              type: boolean
                             idempotence:
                               type: string
                             isolation_level:

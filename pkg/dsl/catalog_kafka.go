@@ -55,7 +55,7 @@ func kafkaActionSpecs() []ActionSpec {
 		{
 			Type:      "kafka_seek",
 			Protocols: []string{"kafka"},
-			Summary:   "Seeks the consumer cursor for the whole (topic, group) to an offset (mock only; the real adapter does not yet support seek).",
+			Summary:   "Repositions the consumer cursor. The real adapter requires a configured group and previously polled owned partitions; earliest/latest respect isolation.",
 			Fields: []FieldSpec{
 				{Name: "params.consumer_group", Kind: FieldKindString, Doc: "Consumer group override; falls back to config.kafka.consumer_group."},
 				{Name: "params.offset", Kind: FieldKindAny, Doc: "Target offset: a number, \"earliest\", or \"latest\"."},
@@ -65,7 +65,7 @@ func kafkaActionSpecs() []ActionSpec {
 		{
 			Type:      "kafka_begin_transaction",
 			Protocols: []string{"kafka"},
-			Summary:   "Begins a producer transaction (requires config.kafka.transactional_id). Subsequent kafka_produce records are buffered until commit.",
+			Summary:   "Begins a transaction (requires config.kafka.transactional_id). consumer_transactions also commits consumed offsets atomically and aborts on ownership loss.",
 		},
 		{
 			Type:      "kafka_commit_transaction",

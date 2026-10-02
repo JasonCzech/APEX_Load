@@ -11,9 +11,11 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -48,7 +50,12 @@ func newRealClient(cfg config) kafkaClient {
 	return &franzClient{cfg: cfg, admission: newProducerAdmission(cfg.Producer)}
 }
 
+const realKafkaAvailable = true
+
 type franzClient struct {
+	transact             *kgo.GroupTransactSession
+	transactionActive    bool
+	transactionTopic     string
 	admission            *producerAdmission
 	cfg                  config
 	once                 sync.Once
@@ -293,6 +300,14 @@ func (c *franzClient) newClient(consumerGroup string, extra ...kgo.Opt) (*kgo.Cl
 	// for example, always start at the end even when normal consumption starts
 	// at the beginning.
 	opts = append(opts, extra...)
+	if c.cfg.ConsumerTransactions && consumerGroup == c.cfg.ConsumerGroup {
+		session, err := kgo.NewGroupTransactSession(opts...)
+		if err != nil {
+			return nil, err
+		}
+		c.transact = session
+		return session.Client(), nil
+	}
 	return kgo.NewClient(opts...)
 }
 
@@ -570,6 +585,15 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 	}
 	c.consumePollMu.Lock()
 	defer c.consumePollMu.Unlock()
+	if c.cfg.ConsumerTransactions {
+		if !c.transactionActive {
+			return kafkaRecord{}, 0, fmt.Errorf("consumer_transactions requires an open transaction before consuming")
+		}
+		if c.transactionTopic != "" && c.transactionTopic != topic {
+			return kafkaRecord{}, 0, fmt.Errorf("consumer_transactions supports one input topic per VUser; use separate groups for multiple inputs")
+		}
+		c.transactionTopic = topic
+	}
 	if err := c.addConsumeTopic(cl, topic); err != nil {
 		return kafkaRecord{}, 0, err
 	}
@@ -586,8 +610,7 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 			c.removePendingLocked(i)
 			c.pendingMu.Unlock()
 			if err := c.trackConsumedRecord(record); err != nil {
-				rewindKafkaRecord(cl, record)
-				return kafkaRecord{}, 0, err
+				return kafkaRecord{}, 0, c.deliveryFailure(ctx, cl, record, err)
 			}
 			return record, pendingConsumerLag(pending), nil
 		}
@@ -636,8 +659,7 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 			}
 			record := fromKgoRecord(rec)
 			if err := c.trackConsumedRecord(record); err != nil {
-				rewindKafkaRecord(cl, record)
-				return kafkaRecord{}, 0, err
+				return kafkaRecord{}, 0, c.deliveryFailure(ctx, cl, record, err)
 			}
 			return record, lag, nil
 		}
@@ -1048,6 +1070,11 @@ func pendingReplyBytes(record kafkaRecord) int64 {
 }
 
 func (c *franzClient) Commit(ctx context.Context) error {
+	c.consumePollMu.Lock()
+	defer c.consumePollMu.Unlock()
+	if c.cfg.ConsumerTransactions {
+		return fmt.Errorf("consumer_transactions requires kafka_commit_transaction, not kafka_commit")
+	}
 	cl, err := c.handle()
 	if err != nil {
 		return err
@@ -1075,37 +1102,226 @@ func (c *franzClient) Commit(ctx context.Context) error {
 }
 
 func (c *franzClient) BeginTransaction(_ context.Context) error {
+	c.consumePollMu.Lock()
+	defer c.consumePollMu.Unlock()
 	cl, err := c.handle()
 	if err != nil {
 		return err
 	}
-	return cl.BeginTransaction()
+	if c.transactionActive {
+		return fmt.Errorf("a Kafka transaction is already open")
+	}
+	if c.transact != nil {
+		err = c.transact.Begin()
+	} else {
+		err = cl.BeginTransaction()
+	}
+	if err == nil {
+		c.transactionActive = true
+	}
+	return err
 }
 
 func (c *franzClient) CommitTransaction(ctx context.Context) error {
+	c.consumePollMu.Lock()
+	defer c.consumePollMu.Unlock()
 	cl, err := c.handle()
 	if err != nil {
 		return err
+	}
+	if !c.transactionActive && c.transact != nil {
+		return errKafkaTransactionAborted
 	}
 	if err := cl.Flush(ctx); err != nil {
 		return err
 	}
-	return cl.EndTransaction(ctx, kgo.TryCommit)
+	if c.transact != nil {
+		committed, err := c.transact.End(ctx, kgo.TryCommit)
+		if err != nil {
+			return err
+		}
+		c.transactionActive = false
+		c.clearTransactionDelivery()
+		if !committed {
+			return errKafkaTransactionAborted
+		}
+		return nil
+	}
+	err = cl.EndTransaction(ctx, kgo.TryCommit)
+	if err == nil {
+		c.transactionActive = false
+	}
+	return err
 }
 
 func (c *franzClient) AbortTransaction(ctx context.Context) error {
+	c.consumePollMu.Lock()
+	defer c.consumePollMu.Unlock()
 	cl, err := c.handle()
 	if err != nil {
 		return err
 	}
-	return cl.EndTransaction(ctx, kgo.TryAbort)
+	if !c.transactionActive {
+		return nil
+	}
+	if c.transact != nil {
+		_, err = c.transact.End(ctx, kgo.TryAbort)
+	} else {
+		err = cl.EndTransaction(ctx, kgo.TryAbort)
+	}
+	if err == nil {
+		c.transactionActive = false
+		c.clearTransactionDelivery()
+	}
+	return err
 }
 
-func (c *franzClient) Seek(_ context.Context, _, _, _ string) error {
-	// Real-broker seek (kgo SetOffsets across the topic's partitions, honoring
-	// earliest/latest/explicit offsets) lands with the P2.1 part-2 real-broker
-	// work; the in-memory mock supports seek/replay today for shakeout and CI.
-	return fmt.Errorf("kafka_seek is not yet supported on the real (kafka_real) adapter; use config.kafka.mock for seek/replay shakeout")
+// clearTransactionDelivery follows the SDK's commit/abort offset reconciliation.
+func (c *franzClient) clearTransactionDelivery() {
+	c.consumedMu.Lock()
+	c.consumedOffsets = nil
+	c.consumedMu.Unlock()
+	c.pendingMu.Lock()
+	for len(c.pending) > 0 {
+		c.removePendingLocked(len(c.pending) - 1)
+	}
+	c.pendingMu.Unlock()
+}
+
+// Seek repositions all previously polled partitions of the configured group.
+// It cannot claim unassigned partitions or silently create a different group.
+func (c *franzClient) Seek(ctx context.Context, topic, group, target string) error {
+	c.consumePollMu.Lock()
+	defer c.consumePollMu.Unlock()
+	if c.transactionActive {
+		return fmt.Errorf("seek requires a closed transaction")
+	}
+	if c.cfg.ConsumerTransactions {
+		return fmt.Errorf("seek is unavailable in consumer_transactions mode; use a separate replay group")
+	}
+	if c.cfg.ConsumerGroup == "" || group != "" && group != c.cfg.ConsumerGroup {
+		return fmt.Errorf("real seek requires the configured consumer_group")
+	}
+	offset, err := parseRealSeekTarget(target)
+	if err != nil {
+		return err
+	}
+	cl, err := c.handle()
+	if err != nil {
+		return err
+	}
+	positions := cl.UncommittedOffsets()[topic]
+	if len(positions) == 0 || len(positions) > maxTrackedConsumePartitions {
+		return fmt.Errorf("seek requires previously polled owned partitions; consume the topic first")
+	}
+	c.assignmentMu.RLock()
+	owned := c.ownedPartitions[topic]
+	if len(owned) != len(positions) {
+		c.assignmentMu.RUnlock()
+		return fmt.Errorf("seek requires every owned partition to have been polled")
+	}
+	for partition := range positions {
+		if _, ok := owned[partition]; !ok {
+			c.assignmentMu.RUnlock()
+			return fmt.Errorf("seek partition ownership changed")
+		}
+	}
+	generation := c.assignmentGeneration
+	c.assignmentMu.RUnlock()
+	if offset < 0 {
+		req := kmsg.NewPtrListOffsetsRequest()
+		if strings.EqualFold(c.cfg.IsolationLevel, "read_committed") {
+			req.IsolationLevel = 1
+		}
+		t := kmsg.NewListOffsetsRequestTopic()
+		t.Topic = topic
+		for partition := range positions {
+			p := kmsg.NewListOffsetsRequestTopicPartition()
+			p.Partition = partition
+			p.Timestamp = offset
+			t.Partitions = append(t.Partitions, p)
+		}
+		req.Topics = []kmsg.ListOffsetsRequestTopic{t}
+		budget, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		positions, err = resolveSeekOffsets(topic, positions, cl.RequestSharded(budget, req))
+		if err != nil {
+			return err
+		}
+	} else {
+		for partition := range positions {
+			positions[partition] = kgo.EpochOffset{Epoch: -1, Offset: offset}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	c.assignmentMu.RLock()
+	defer c.assignmentMu.RUnlock()
+	if c.assignmentGeneration != generation {
+		return fmt.Errorf("seek partition ownership changed during offset lookup")
+	}
+	cl.SetOffsets(map[string]map[int32]kgo.EpochOffset{topic: positions})
+	// Both queued delivery and explicit commit tracking must follow the new cursor.
+	c.pendingMu.Lock()
+	for i := 0; i < len(c.pending); {
+		if c.pending[i].record.Topic == topic {
+			c.removePendingLocked(i)
+		} else {
+			i++
+		}
+	}
+	c.pendingMu.Unlock()
+	c.consumedMu.Lock()
+	delete(c.consumedOffsets, topic)
+	c.consumedMu.Unlock()
+	return nil
+}
+func parseRealSeekTarget(target string) (int64, error) {
+	switch target {
+	case "earliest":
+		return -2, nil
+	case "latest":
+		return -1, nil
+	}
+	offset, err := strconv.ParseInt(target, 10, 64)
+	if err != nil || offset < 0 {
+		return 0, fmt.Errorf("seek offset must be earliest, latest, or a nonnegative integer")
+	}
+	return offset, nil
+}
+func resolveSeekOffsets(topic string, requested map[int32]kgo.EpochOffset, shards []kgo.ResponseShard) (map[int32]kgo.EpochOffset, error) {
+	out := map[int32]kgo.EpochOffset{}
+	for _, shard := range shards {
+		if shard.Err != nil {
+			return nil, shard.Err
+		}
+		response, ok := shard.Resp.(*kmsg.ListOffsetsResponse)
+		if !ok {
+			return nil, fmt.Errorf("invalid seek broker response")
+		}
+		for _, t := range response.Topics {
+			if t.Topic != topic {
+				return nil, fmt.Errorf("unexpected seek topic")
+			}
+			for _, p := range t.Partitions {
+				if err := kerr.ErrorForCode(p.ErrorCode); err != nil {
+					return nil, err
+				}
+				if _, ok := requested[p.Partition]; !ok || p.Offset < 0 {
+					return nil, fmt.Errorf("unexpected seek partition or offset")
+				}
+				if _, exists := out[p.Partition]; exists {
+					return nil, fmt.Errorf("duplicate seek partition")
+				}
+				out[p.Partition] = kgo.EpochOffset{Epoch: p.LeaderEpoch, Offset: p.Offset}
+			}
+		}
+	}
+	if len(out) != len(requested) {
+		return nil, fmt.Errorf("incomplete seek offsets")
+	}
+	return out, nil
 }
 
 func (c *franzClient) HealthCheck(ctx context.Context) error {
@@ -1236,4 +1452,17 @@ func (c *franzClient) Flush(ctx context.Context) error {
 		return err
 	}
 	return cl.Flush(ctx)
+}
+
+func (c *franzClient) deliveryFailure(ctx context.Context, cl *kgo.Client, record kafkaRecord, cause error) error {
+	if c.transact != nil {
+		_, err := c.transact.End(ctx, kgo.TryAbort)
+		if err == nil {
+			c.transactionActive = false
+			c.clearTransactionDelivery()
+		}
+		return errors.Join(cause, err)
+	}
+	rewindKafkaRecord(cl, record)
+	return cause
 }

@@ -1377,3 +1377,11 @@ func TestBuildGroupProtoConfigUsesManagedScenarioIdentity(t *testing.T) {
 		t.Fatalf("direct-run scenario_id = %#v, want script artifact fallback", got)
 	}
 }
+
+func TestBuildProtoConfig_KafkaConsumerTransactions(t *testing.T) {
+	script := &dsl.Script{Protocol: "kafka", Config: dsl.ScriptConfig{Kafka: dsl.KafkaConfig{ConsumerTransactions: true}}}
+	cfg := buildProtoConfig(script)
+	if cfg["kafka_consumer_transactions"] != true {
+		t.Fatal("consumer transaction mode lost during runtime configuration")
+	}
+}

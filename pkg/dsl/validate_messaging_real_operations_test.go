@@ -118,7 +118,7 @@ func TestValidateRealJMSSettlementFailsClosedAcrossActionTree(t *testing.T) {
 	}
 }
 
-func TestValidateKafkaSeekIsMockOnlyAcrossActionTree(t *testing.T) {
+func TestValidateKafkaRealSeekRequiresCapabilityAcrossActionTree(t *testing.T) {
 	script := kafkaScript(func(script *Script) {
 		script.Config.Kafka.Mock = false
 		script.Config.Kafka.Brokers = []string{"broker.example.com:9092"}
@@ -131,11 +131,17 @@ func TestValidateKafkaSeekIsMockOnlyAcrossActionTree(t *testing.T) {
 		}}
 	})
 	issues := ValidateScriptIssues(script)
-	if !hasIssueContaining(issues, "actions[0].control.steps[0] \"seek-nested\": kafka_seek is supported only with config.kafka.mock") {
-		t.Fatalf("issues = %v, want real Kafka seek issue", issues)
+	if hasIssueContaining(issues, "kafka_seek is supported only") {
+		t.Fatalf("issues = %v, real Kafka seek should be capability-gated, not rejected", issues)
 	}
 
+	if features := RequiredMessagingRuntimeFeatures(script); len(features) != 1 || features[0] != "kafka_real_seek_v1" {
+		t.Fatalf("features %v", features)
+	}
 	script.Config.Kafka.Mock = true
+	if len(RequiredMessagingRuntimeFeatures(script)) != 0 {
+		t.Fatal("mock incorrectly requires real seek")
+	}
 	issues = ValidateScriptIssues(script)
 	if hasIssueContaining(issues, "kafka_seek is supported only with config.kafka.mock") {
 		t.Fatalf("mock Kafka seek script has real-adapter issue: %v", issues)

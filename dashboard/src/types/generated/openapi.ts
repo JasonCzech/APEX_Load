@@ -856,6 +856,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -4527,6 +4528,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -5323,6 +5325,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -6021,6 +6024,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -9609,6 +9613,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -10459,6 +10464,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -11134,6 +11140,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -11778,6 +11785,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -12312,6 +12320,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -12919,6 +12928,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -13538,6 +13548,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -14759,6 +14770,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -16145,6 +16157,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -17793,6 +17806,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -18453,6 +18467,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -19391,6 +19406,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -20254,6 +20270,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -20941,6 +20958,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -29021,6 +29039,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -29832,6 +29851,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -41827,6 +41847,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -43558,6 +43579,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -55622,6 +55644,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -66011,6 +66034,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -66690,6 +66714,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -79462,6 +79487,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -80307,6 +80333,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -80995,6 +81022,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -81752,6 +81780,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -82718,6 +82747,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -83393,6 +83423,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -84037,6 +84068,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -84571,6 +84603,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -86094,6 +86127,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -94475,6 +94509,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -95248,6 +95283,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -97723,6 +97759,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -99330,6 +99367,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -99941,6 +99979,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -102354,6 +102393,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -103586,6 +103626,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -104895,6 +104936,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -106203,6 +106245,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -107512,6 +107555,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -108820,6 +108864,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -116878,6 +116923,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -117564,6 +117610,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -122601,6 +122648,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
@@ -123411,6 +123459,7 @@ export interface operations {
                   "client_id"?: string;
                   "compression"?: string;
                   "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
                   "idempotence"?: string;
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
@@ -127777,6 +127826,7 @@ export interface operations {
                 "client_id"?: string;
                 "compression"?: string;
                 "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
                 "idempotence"?: string;
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;

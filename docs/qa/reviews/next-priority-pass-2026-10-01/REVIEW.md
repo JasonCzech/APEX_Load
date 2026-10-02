@@ -4,7 +4,7 @@ Five implementation/review commits are planned. The first includes the preceding
 
 1. Cross-protocol SLA and regression reporting: complete. Extend exact terminal rules with population/protocol/group scope and missing measurements; add qualified messaging baseline evidence and explicit CI verdicts using existing load/version qualification.
 2. Live analytics dimensions: complete. Retain bounded hierarchy/lifecycle joint evidence alongside selected network-profile intersections, without answering queries from unrelated marginals.
-3. Real Kafka execution: pending. Implement real seek and transaction/consumer-offset coordination with isolation, ownership fencing and recovery verification.
+3. Real Kafka execution: implemented; live acceptance pending. Implement real seek and transaction/consumer-offset coordination with isolation, ownership fencing and recovery verification.
 4. Event Hubs consumer ownership: pending. Add processor ownership and durable checkpoint support with governed Blob access, bounded queues and restart recovery; keep the observer probe contract and zero-traffic preparation boundary.
 5. Quantitative chart exports: pending. Apply the shared CSV/SVG workflow to remaining live and saved analytics charts, preserving filters, units and coverage.
 
@@ -23,3 +23,9 @@ The full Go suite passed before the final identity, typed-throughput and scoped-
 Retained bounded measured action/network/hierarchy/lifecycle tuples and distributions in native evidence v3, engine snapshots, optional RPC fields, source publications and SQLite/PostgreSQL history representations. Saved live panels expose exact filters and hierarchy/lifecycle grouping. Queries require merged action evidence and reject unretained combinations, incomplete peer coverage and missing grouping labels.
 
 Review/fix rounds corrected legacy/source version recognition, rejected synthetic missing-label identities, bounded tuple labels and accounted for distribution retention memory. Final review found no further actionable issues. Engine, generator RPC, storage and API native evidence tests passed; additional query capability tests passed. Dashboard typecheck, lint, 14 relevant unit tests, embedded build, documentation checks, and the save/reopen browser workflow passed in both authentication profiles. The first commit is `bb2741dd`.
+
+## Item 3 review and verification
+
+Implemented real seek for previously polled owned group partitions, complete sharded offset lookup, isolation preservation and ownership revalidation. Added opt-in consumer transactions using the pinned franz-go GroupTransactSession, single-input-topic delivery boundaries, explicit commit/seek restrictions, clean-abort recovery and versioned placement/runtime capabilities. Generated DSL/API/TypeScript contracts are fresh.
+
+Review/fix rounds corrected failed-delivery offset advancement, false success on SDK-aborted transactions, ambiguous abort wording, fractional/unsafe JSON offsets, and stale mock-only seek validation/documentation. Final review found no further actionable issues. Default Kafka/DSL, engine and generator capability tests passed. Final real-adapter tests and targeted real-adapter race tests passed, as did runtime configuration and documentation checks. The API affected-test build failed with `no space left on device`; it is unverified. Broker-backed seek/EOS/rebalance/restart acceptance remains pending an approved disposable broker. The second commit is `8661b64c`.

@@ -2,6 +2,8 @@
 
 package kafka
 
+const realKafkaAvailable = false
+
 // newRealClient returns the non-mock client for the default build. The real
 // franz-go-backed adapter is only compiled in with the `kafka_real` build tag;
 // without it, the non-mock path fails loudly with actionable guidance (mirroring

@@ -192,3 +192,35 @@ func TestKafkaTeardownAbortsOpenTransaction(t *testing.T) {
 		t.Fatal("buffered records must be discarded after Teardown")
 	}
 }
+
+type ownershipAbortClient struct{ kafkaClient }
+
+func (c ownershipAbortClient) CommitTransaction(context.Context) error {
+	return errKafkaTransactionAborted
+}
+func TestKnownOwnershipAbortAllowsNextTransaction(t *testing.T) {
+	k := newMockKafka(t, map[string]any{"kafka_transactional_id": "recover"})
+	k.client = ownershipAbortClient{k.client}
+	result := &protocol.Result{Extractions: map[string]string{}}
+	if err := k.beginTransaction(context.Background(), result); err != nil {
+		t.Fatal(err)
+	}
+	if err := k.commitTransaction(context.Background(), result); err == nil || k.txOpen || k.txPoisoned || k.session.Commits() != 0 {
+		t.Fatal("known abort was committed or poisoned")
+	}
+	if err := k.beginTransaction(context.Background(), result); err != nil {
+		t.Fatal("recovery failed", err)
+	}
+}
+func TestKafkaSeekRejectsInexactOffsets(t *testing.T) {
+	for _, input := range []any{1.5, -1, float64(9007199254740992), "-1", []string{"0"}} {
+		if _, err := seekTarget(map[string]any{"offset": input}); err == nil {
+			t.Fatalf("accepted %v", input)
+		}
+	}
+	for _, input := range []any{0, float64(2), "9223372036854775807", "earliest", "latest"} {
+		if _, err := seekTarget(map[string]any{"offset": input}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

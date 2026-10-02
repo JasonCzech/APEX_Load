@@ -691,6 +691,12 @@ func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]gene
 
 func groupRequiredRuntimeFeature(group TestGroup) string {
 	base := groupBaseRuntimeFeature(group)
+	for _, feature := range dsl.RequiredMessagingRuntimeFeatures(group.script) {
+		if base != "" {
+			base += "+"
+		}
+		base += feature
+	}
 	if group.script != nil && len(group.script.Config.Results.PropertyAnalytics) > 0 {
 		if base != "" {
 			base += "+"

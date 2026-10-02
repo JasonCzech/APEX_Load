@@ -238,7 +238,7 @@ Ratings: None (not implemented or mock-only), Thin/Partial, Basic (core ops over
 | Platform | Import | Run | Results | Remaining gaps |
 | --- | --- | --- | --- | --- |
 | JMS (generic) | Partial (AMQP server drafts) | Thin | Partial | Durable/shared subscription breadth, provider breadth |
-| Apache Kafka | Partial (AsyncAPI) | Basic (`kafka_real`) | Partial | Full transactions/EOS, complete `read_committed`, real-adapter `kafka_seek`, offset-lag in every view |
+| Apache Kafka | Partial (AsyncAPI) | Basic (`kafka_real`) | Partial | Full transactions/EOS, complete `read_committed`, Owned-partition real seek and opt-in consumer-offset transactions implemented; broker-backed EOS/rebalance acceptance and offset-lag in every view remain pending |
 | Solace PubSub+ | Partial (AsyncAPI to `jms-solace`) | AMQP-only (`jms_solace_real`) | Partial | Native SMF (P2.6) |
 | IBM MQ | None | Mock only | Partial | Entire native MQI adapter (P2.5) |
 | Azure Service Bus | None | Basic (`jms_servicebus_real`) | Partial | Cross-entity transactions, backlog probes, emulator/live breadth |
@@ -540,4 +540,4 @@ The whole-pass review also hardened supervised preparation readiness, legacy bro
 
 ### Next priority pass (2026-10-01)
 
-The next five-item pass is tracked in the [implementation and review record](qa/reviews/next-priority-pass-2026-10-01/REVIEW.md), with one commit per completed item. Scoped action/transaction SLA rules and qualified baseline CI verdicts are implemented; live hierarchy/lifecycle intersections are also implemented with versioned measured tuples; real Kafka seek/transaction coordination, Event Hubs processor checkpoints, and the remaining chart exports are in progress. Live Azure acceptance remains separate; IBM MQ remains low priority and the 10 GB benchmark is waived by operator instruction.
+The next five-item pass is tracked in the [implementation and review record](qa/reviews/next-priority-pass-2026-10-01/REVIEW.md), with one commit per completed item. Scoped action/transaction SLA rules, qualified baseline CI verdicts, live hierarchy/lifecycle intersections and real Kafka seek/transaction coordination are implemented. Kafka broker-backed acceptance remains pending. Event Hubs processor checkpoints and the remaining chart exports are in progress. Live Azure acceptance remains separate; IBM MQ remains low priority and the 10 GB benchmark is waived by operator instruction.

@@ -128,6 +128,9 @@ func validateKafkaScriptIssues(script *Script) []string {
 	if kafka.IsolationLevel != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(kafka.IsolationLevel)), "read_uncommitted", "read_committed") {
 		issues = append(issues, fmt.Sprintf("config.kafka.isolation_level %q is not supported", kafka.IsolationLevel))
 	}
+	if kafka.ConsumerTransactions && (kafka.Mock || kafka.ConsumerGroup == "" || kafka.TransactionalID == "" || kafka.IsolationLevel != "read_committed") {
+		issues = append(issues, "config.kafka.consumer_transactions requires a non-mock consumer_group, transactional_id and read_committed isolation")
+	}
 	if strings.TrimSpace(kafka.TransactionalID) != "" {
 		// Transactional (EOS) producers require acks=all and idempotence.
 		if acks := strings.ToLower(strings.TrimSpace(kafka.Acks)); acks != "" && acks != "all" {
@@ -199,13 +202,6 @@ func validateKafkaScriptIssues(script *Script) []string {
 			issues = append(issues, actionIssues...)
 		}
 	})
-	if !kafka.Mock {
-		visitScriptActions(script, func(path string, action Action) {
-			if strings.EqualFold(strings.TrimSpace(action.Type), "kafka_seek") {
-				issues = append(issues, fmt.Sprintf("%s: kafka_seek is supported only with config.kafka.mock; the real Kafka adapter cannot reposition consumers", actionLabel(path, action)))
-			}
-		})
-	}
 
 	return issues
 }
