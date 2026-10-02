@@ -21,3 +21,11 @@ func TestProcessorSettingsPreserveObserverAndRejectUnsupportedModes(t *testing.T
 		}
 	}
 }
+
+func TestProcessorSettingsRejectURLCredentialsBeforeClientConstruction(t *testing.T) {
+	for _, storage := range []string{"https://user:password@account.blob.core.windows.net/checkpoints", "https://account.blob.core.windows.net/checkpoints?sig=secret"} {
+		if err := ValidateProcessorSettings("processor", storage, "aad", "namespace.servicebus.windows.net", "workers", "", false); err == nil {
+			t.Fatal("credential-bearing storage URL accepted")
+		}
+	}
+}

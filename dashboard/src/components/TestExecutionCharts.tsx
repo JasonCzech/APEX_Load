@@ -1,3 +1,4 @@
+import { buildChartSVG } from "./exportableChartUtils"
 import TabList from './ux/TabList'
 import DialogLayer from './ux/DialogLayer'
 import { handleTabKey } from './tabKeyboard'
@@ -169,6 +170,7 @@ interface Props {
   latestLatency?: NetworkLatency
   latestMetrics?: LiveMetrics
   surface?: 'execution' | 'command-center'
+  runId?: string
   storageScope?: string
   initialPresetId?: string
   defaultDensity?: ChartDensityMode
@@ -339,7 +341,7 @@ function inlineSvgStyles(source: Element, clone: Element) {
   })
 }
 
-function chartSnapshotSvg(card: HTMLElement, chart: ChartConfig) {
+function chartSnapshotSvg(card: HTMLElement, chart: ChartConfig, context = "") {
   const svg = card.querySelector('svg')
   if (!svg) return null
   const clone = svg.cloneNode(true) as SVGSVGElement
@@ -365,7 +367,7 @@ function chartSnapshotSvg(card: HTMLElement, chart: ChartConfig) {
   title.textContent = chart.title
   clone.insertBefore(title, clone.firstChild)
 
-  return new XMLSerializer().serializeToString(clone)
+  return buildChartSVG(clone, chart.title, `${chart.title}. Snapshot of the current chart selection. ${context}`)
 }
 
 function latestGraphValuesText(
@@ -533,6 +535,7 @@ export default function TestExecutionCharts({
   latestMetrics,
   surface = 'execution',
   storageScope = 'apexload.execution',
+  runId,
   initialPresetId,
   defaultDensity,
   activeCursor,
@@ -1555,7 +1558,7 @@ export default function TestExecutionCharts({
       return
     }
     const displayTitle = displayTitleForChart(chart)
-    const snapshot = chartSnapshotSvg(card, { ...chart, title: displayTitle })
+    const snapshot = chartSnapshotSvg(card, { ...chart, title: displayTitle }, JSON.stringify({ run_id: runId, source: storageScope, visible_series: visibleMetricKeysForChart(chart), time_range: timeRange }))
     if (!snapshot) {
       await downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitle }, latest, graphGroupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNamesForChart(chart)), `${safeFileName(displayTitle)}-values.txt`, 'text/plain;charset=utf-8')
       return
@@ -1564,7 +1567,16 @@ export default function TestExecutionCharts({
   }
 
   const exportChartCsv = async (chart: ChartConfig) => {
-    await downloadTextFile(graphCsvForChart(chart, chartDataFor(chart), graphGroupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNamesForChart(chart)), `${safeFileName(displayTitleForChart(chart))}-data.csv`, 'text/csv;charset=utf-8')
+    const visibleKeys = visibleMetricKeysForChart(chart)
+    const displayedRows = derivedSeriesCacheRef.current.get(chart.id)?.displayChartData ?? chartDataFor(chart)
+    const smoothed = commandCenterSurface ? smoothedMetricKeysForChart(chart, visibleKeys) : []
+    const rows = displayedRows.map(point => {
+      const row = { ...point }
+      for (const key of smoothed) row[key] = point[smoothedGraphMetricKey(key)]
+      return row
+    })
+    const labels = Object.fromEntries(metricRowsForChart(chart).map(row => [row.key, `${row.label}${row.unit ? ` (${row.unit})` : ''} [${row.key}]`]))
+    await downloadTextFile(graphCsvForChart(chart, rows, graphGroupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNamesForChart(chart), { visibleKeys, labels, context: { run_id: runId, source: storageScope, time_range: timeRange, granularity: granularitySeconds, transactions: transactionNamesForChart(chart), groups: graphGroupNames, response_time_basis: responseTimeNetworkMode, network_route: activeRouteLatencyKey, smoothed_metrics: smoothed, displayed_samples: rows.length, retained_samples: chartDataFor(chart).length } }), `${safeFileName(displayTitleForChart(chart))}-data.csv`, 'text/csv;charset=utf-8')
   }
 
   const copyLatestValues = async (chart: ChartConfig) => {
@@ -2529,6 +2541,7 @@ export default function TestExecutionCharts({
     <>
       {showLoadImpact && (
         <LoadImpactHeatmap
+          runId={runId}
           points={filteredData}
           title="Load Impact"
           subtitle="Performance and resource behavior grouped by active VUser load."
@@ -2649,6 +2662,7 @@ export default function TestExecutionCharts({
             if (isLoadImpactHeatmapChart(chart)) {
               return (
                 <LoadImpactHeatmap
+                  runId={runId}
                   key={chart.id}
                   ref={element => {
                     chartCardRefs.current[chart.id] = element

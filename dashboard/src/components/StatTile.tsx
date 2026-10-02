@@ -1,3 +1,4 @@
+import SeriesChartExport from "./SeriesChartExport"
 interface StatTileProps {
   title: string
   value?: number
@@ -42,7 +43,7 @@ export default function StatTile({ title, value, unit, error, compact, sparkline
           {unit ? <span className="stat-tile-unit">{unit}</span> : null}
         </div>
       )}
-      {!error && points && <svg className="stat-tile-sparkline" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline points={points} fill="none" vectorEffect="non-scaling-stroke" /></svg>}
+      {!error && points && <SeriesChartExport id="stat-sparkline" title={`${title} samples`} rows={sparkline.map((value,index) => ({ value, index })).filter(point => Number.isFinite(point.value))} axes={[{ key: "sample", label: "Original sample index (time unavailable)", value: point => point.index }]} series={[{ key: "value", label: title, unit }]} context={{ value, baseline: baselineValue, tone }}><svg className="stat-tile-sparkline" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline points={points} fill="none" vectorEffect="non-scaling-stroke" /></svg></SeriesChartExport>}
       {!error && typeof baselineValue === 'number' && Number.isFinite(baselineValue) && <div className="stat-tile-title">Baseline {formatStatValue(baselineValue)}{unit ? ` ${unit}` : ''} · Δ {hasValue ? formatStatValue((value as number) - baselineValue) : '—'}</div>}
     </div>
   )

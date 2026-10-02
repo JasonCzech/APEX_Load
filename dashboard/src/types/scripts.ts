@@ -623,6 +623,8 @@ export interface KafkaConfig {
 }
 
 export interface EventHubsConfig {
+  consumer_mode?: string
+  checkpoint_container_url?: string
   namespace?: string
   event_hub?: string
   connection_string?: string

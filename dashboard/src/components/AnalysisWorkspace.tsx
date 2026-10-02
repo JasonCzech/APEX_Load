@@ -1,3 +1,4 @@
+import SeriesChartExport from "./SeriesChartExport"
 import { formatAnalysisTimeTick } from '../utils/analysisTime'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
@@ -26,6 +27,7 @@ export default function AnalysisWorkspace({ projectId, canEdit = false }: { proj
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState('')
   const [points, setPoints] = useState<AnalysisPoint[]>([])
+  const [seriesSelection, setSeriesSelection] = useState<Record<string, unknown>>({})
   const [metric, setMetric] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -159,11 +161,11 @@ export default function AnalysisWorkspace({ projectId, canEdit = false }: { proj
             <label>Aggregation<select value={aggregation} onChange={e => setAggregation(e.target.value)}>{['avg', 'min', 'max', 'sum', 'count', 'p50', 'p95', 'p99', 'rate'].map(v => <option key={v}>{v}</option>)}</select></label>
             <button type="button" disabled={!metric || !from || !to} onClick={() => void act(async signal => {
               const result = await request<{ points: AnalysisPoint[] }>(`/analysis/datasets/${selected.id}/series`, { method: 'POST', signal, body: JSON.stringify({ metric, from: new Date(`${from}Z`).toISOString(), to: new Date(`${to}Z`).toISOString(), bucket_seconds: Math.max(1, Math.ceil((Date.parse(`${to}Z`) - Date.parse(`${from}Z`)) / 1000 / 500)), aggregation }) })
-              setPoints(result.points)
+              if (!signal.aborted) { setPoints(result.points); setSeriesSelection({ dataset_id: selected.id, metric, from, to, aggregation }) }
             })}>Show series</button>
           </fieldset>}
           {selected?.state === 'ready' && <AnalysisComparison key={selected.id} projectId={projectId} dataset={selected} datasets={imports} canEdit={canEdit} onAssociated={setSelected} />}
-          {points.length > 0 && <div className="analysis-chart" role="img" aria-label={`${points[0].metric_name} over UTC time; ${points.length} buckets`}><ResponsiveContainer width="100%" height={260}><LineChart data={points} margin={{ top: 8, right: 60, bottom: 8, left: 8 }}><XAxis dataKey="timestamp_utc" tickFormatter={formatAnalysisTimeTick} tick={{ fontSize: 11 }} interval="preserveStartEnd" minTickGap={20} /><YAxis unit={points[0].unit ? ` ${points[0].unit}` : undefined} tick={{ fontSize: 11 }} /><Tooltip /><Line isAnimationActive={false} type="linear" dataKey="value" stroke="var(--chart-1)" connectNulls={false} dot={false} /></LineChart></ResponsiveContainer></div>}
+          {points.length > 0 && <div className="analysis-chart"><SeriesChartExport id="dataset-series" title={`${points[0].metric_name} dataset series`} rows={points.map(point => ({ ...point, value: point.quality === "valid" ? point.value : undefined }))} axes={[{ key: "utc", label: "UTC timestamp", value: point => point.timestamp_utc }, { key: "quality", label: "Quality", value: point => point.quality }, { key: "kind", label: "Evidence kind", value: point => point.kind }, { key: "host", label: "Host", value: point => point.host }, { key: "dimensions", label: "Dimensions", value: point => point.dimensions }]} series={[{ key: "value", label: points[0].metric_name, unit: points[0].unit }]} context={seriesSelection}><div role="img" aria-label={`${points[0].metric_name} over UTC time; ${points.length} buckets`}><ResponsiveContainer width="100%" height={260}><LineChart data={points.map(point => ({ ...point, value: point.quality === "valid" ? point.value : undefined }))} margin={{ top: 8, right: 60, bottom: 8, left: 8 }}><XAxis dataKey="timestamp_utc" tickFormatter={formatAnalysisTimeTick} tick={{ fontSize: 11 }} interval="preserveStartEnd" minTickGap={20} /><YAxis unit={points[0].unit ? ` ${points[0].unit}` : undefined} tick={{ fontSize: 11 }} /><Tooltip /><Line isAnimationActive={false} type="linear" dataKey="value" stroke="var(--chart-1)" connectNulls={false} dot={false} /></LineChart></ResponsiveContainer></div></SeriesChartExport></div>}
           {canEdit && selected && !['deleted', 'cancelled'].includes(selected.state) && <button type="button" disabled={busy} onClick={() => void act(async signal => { await request(importPath(selected.id), { method: 'DELETE', signal }); setSelected(undefined); setPreview(undefined); setPoints([]); await reload(signal) })}>{selected.state === 'ready' ? 'Delete dataset' : 'Cancel import'}</button>}
         </div>
       </div>

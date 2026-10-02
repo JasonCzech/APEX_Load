@@ -15,7 +15,7 @@ const DEFAULT_MAX_COLUMNS = 256
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024
 
 function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return ''
+  if (value === null || value === undefined || typeof value === 'number' && !Number.isFinite(value)) return ''
   let text = typeof value === 'object' ? JSON.stringify(value) : String(value)
   if (typeof value === 'string' && /^[\s\uFEFF]*[=+\-@]/.test(text)) {
     text = `'${text}`
@@ -44,7 +44,28 @@ export function buildChartCSV<T>(rows: readonly T[], columns: readonly ChartExpo
 }
 
 export function buildChartSVG(svg: SVGSVGElement, title: string, description: string, maxBytes = DEFAULT_MAX_BYTES): string {
+  const originals = [svg, ...svg.querySelectorAll<SVGElement>('*')]
+  if (originals.length > 100_000) throw new Error('Chart SVG export exceeds the element limit.')
   const clone = svg.cloneNode(true) as SVGSVGElement
+  const copies = [clone, ...clone.querySelectorAll<SVGElement>('*')]
+  // Resolve theme paints before detaching, while retaining local gradients.
+  originals.forEach((element, index) => {
+    const style = window.getComputedStyle(element)
+    for (const property of ['fill', 'stroke', 'color', 'font-family', 'font-size', 'font-weight', 'opacity', 'stop-color', 'stop-opacity']) {
+      const value = style.getPropertyValue(property)
+      if (value && !value.includes('var(')) copies[index].style.setProperty(property, value)
+    }
+  })
+  clone.querySelectorAll('script,foreignObject,iframe,object,embed,image,style,animate,animateMotion,animateTransform,set').forEach(element => element.remove())
+  for (const element of [clone, ...clone.querySelectorAll('*')]) {
+    for (const attribute of [...element.attributes]) {
+      const name = attribute.name.toLowerCase()
+      const externalURL = [...attribute.value.matchAll(/url\(([^)]*)\)/gi)].some(match => !match[1].trim().replace(/^['"]|['"]$/g, '').startsWith('#'))
+      if (name.startsWith('on') || (name === 'href' || name === 'xlink:href') && !attribute.value.startsWith('#') || externalURL || attribute.value.includes('var(')) element.removeAttribute(attribute.name)
+    }
+  }
+  clone.style.removeProperty('display')
+  clone.style.removeProperty('visibility')
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
   clone.setAttribute('role', 'img')
   clone.setAttribute('aria-label', description)

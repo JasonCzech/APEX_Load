@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises"
+import { startLiveRun, abortLiveRun, type LiveRun } from "./support/liveRun"
 import { test, expect, seedScript, json, idOf, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
@@ -131,4 +133,56 @@ test('active load observations expire without updates and fresh telemetry clears
   await expect(state).toContainText('120')
   await expect(state).toContainText('Stale sample')
   await expect(state.getByRole('status')).toContainText('recovery are unconfirmed')
+})
+
+
+// Own the API context so cleanup still runs if the browser test times out.
+const exportTest = test.extend<{ exportRun: LiveRun }>({
+ exportRun: [async ({ page, playwright, baseURL }, provide) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const context = await playwright.request.newContext({ baseURL, storageState: await page.context().storageState() })
+  let run: LiveRun | undefined
+  try {
+   run = await startLiveRun(context, baseURL, { label: 'command-load-export' })
+   await provide(run)
+  } finally {
+   try { if (run) await abortLiveRun(context, run) } finally { await context.dispose() }
+  }
+ }, { timeout: 150_000 }],
+})
+
+exportTest('analysis load exports retain run identity and distinguish resampled observations', async ({ page, exportRun: run }) => {
+ exportTest.setTimeout(150_000)
+ await page.goto(`/#/command-center/${run.testId}`)
+ await page.getByRole('button', { name: 'Open analysis', exact: true }).click()
+ const card = page.locator('[data-chart-definition="command-observed-load"]')
+ await expect(card).toBeVisible()
+ const csvDownload = page.waitForEvent('download')
+ await card.getByRole('button', { name: 'Export Planned and actual load data as CSV', exact: true }).click()
+ const csv = await readFile((await (await csvDownload).path())!, 'utf8')
+ expect(csv).toContain(run.testId)
+ expect(csv).toContain('Resampled observed VUsers (VUsers)')
+ expect(csv).toContain('future actual values remain missing')
+ const svgDownload = page.waitForEvent('download')
+ await card.getByRole('button', { name: 'Export Planned and actual load image as SVG', exact: true }).click()
+ const svg = await readFile((await (await svgDownload).path())!, 'utf8')
+ expect(svg).toContain(run.testId)
+ expect(svg).toContain('<svg')
+ expect(svg).not.toContain('var(')
+ await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
+ await page.getByRole('tab', { name: /^Active (?:Tests|& Queued)/ }).click()
+ const openRun = page.getByRole('button', { name: /^Open live test command-load-export/ })
+ const activeCard = page.locator('.dash-active-card').filter({ has: openRun })
+ await expect(activeCard.locator('[role="button"] button')).toHaveCount(0)
+ await expect(activeCard.getByRole('button', { name: /data as CSV$/ })).toBeVisible()
+ const dashboardDownload = page.waitForEvent('download')
+ await activeCard.getByRole('button', { name: /data as CSV$/ }).click()
+ const dashboardCSV = await readFile((await (await dashboardDownload).path())!, 'utf8')
+ expect(dashboardCSV).toContain(run.testId)
+ await expect(page).toHaveURL(/#\/dashboard/)
+ await openRun.focus()
+ await expect(openRun).toBeFocused()
+ expect(await activeCard.evaluate(element => element.matches(':focus-within'))).toBe(true)
+ await page.keyboard.press('Enter')
+ await expect(page).toHaveURL(new RegExp(`#/test/${run.testId}`))
 })

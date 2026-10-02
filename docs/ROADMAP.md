@@ -200,7 +200,7 @@ Scope: importing, running and evaluating results for JMS, Apache Kafka, Solace P
 | P2.6 Solace native SMF transport | Not built | Solace is JMS-over-AMQP 1.0 only (`jms_solace_real`). No direct vs guaranteed, wildcards, partitioned queues, DMQ/max-redelivery, replay. Spec below. |
 | Event Hubs deployment env vars and HOWTO | Implemented | Optional auth/probe-group defaults preserve explicit script settings; [deployment guide](EVENT_HUBS_HOWTO.md) documents identity, real-adapter builds, consumer isolation and terminal lag gates. Live Azure acceptance remains open. |
 | Event Hubs consumer-side parity | Processor implemented; live acceptance pending | Opt-in AAD processor with balanced ownership, fenced durable Blob checkpoints and restart recovery. Epoch-exclusive consumer and live Azure rebalance/crash acceptance remain open; observer probes remain available. |
-| Messaging depth gaps | Partial | Kafka transactions/EOS and complete `read_committed`, `kafka_seek` on the real adapter, unified offset/queue-depth lag across providers, not every adapter populates the reliability counters, no Event Hubs GA emulator so live coverage needs a namespace, many JMS/AMQP/Solace/MQ/MQTT AsyncAPI bindings still downgrade to review-only. |
+| Messaging depth gaps | Partial | Broker-backed Kafka transaction/EOS/rebalance acceptance, unified offset/queue-depth lag across providers, not every adapter populates the reliability counters, no Event Hubs GA emulator so live coverage needs a namespace, many JMS/AMQP/Solace/MQ/MQTT AsyncAPI bindings still downgrade to review-only. |
 
 IBM MQ is very low priority at user direction (2026-10-01); do not include it in the current analytics slice.
 
@@ -218,7 +218,7 @@ Original items were checked against the tree on 2026-09-24; Event Hubs defaults 
 | P1.3 | Request-reply correlation with safe requeue | Landed as `pkg/protocol/messaging/correlation.go` |
 | P1.4 | DSL catalog enrichment and catalog/runtime parity | Landed for JMS; regenerate with `go generate ./pkg/dsl` |
 | P1.5 | Consumer-lag / queue-depth / DLQ telemetry and dashboard | Largely landed; lag is not yet a single offset/queue-depth model across providers |
-| P2.1 | Kafka depth: idempotence, transactions, isolation, batching, seek | Partly landed; full EOS and `read_committed` open |
+| P2.1 | Kafka depth: idempotence, transactions, isolation, batching, seek | Real owned-partition seek and opt-in consumer transactions implemented; broker-backed EOS/rebalance/restart acceptance pending |
 | P2.2 | Schema Registry / Avro / Protobuf / JSON-Schema serde | Largely landed in `pkg/protocol/kafka`; Protobuf/JSON-Schema not re-audited |
 | P2.3 | JMS semantics: message types, selectors, priority, TTL, delivery mode, browse, topic fan-out | Landed |
 | P2.4 | Azure Service Bus: settlement, lock renewal, sessions, scheduled/deferred, DLQ receive | Landed in `realadapter_servicebus.go`; cross-entity transactions and backlog probes shallow |
@@ -238,7 +238,7 @@ Ratings: None (not implemented or mock-only), Thin/Partial, Basic (core ops over
 | Platform | Import | Run | Results | Remaining gaps |
 | --- | --- | --- | --- | --- |
 | JMS (generic) | Partial (AMQP server drafts) | Thin | Partial | Durable/shared subscription breadth, provider breadth |
-| Apache Kafka | Partial (AsyncAPI) | Basic (`kafka_real`) | Partial | Full transactions/EOS, complete `read_committed`, Owned-partition real seek and opt-in consumer-offset transactions implemented; broker-backed EOS/rebalance acceptance and offset-lag in every view remain pending |
+| Apache Kafka | Partial (AsyncAPI) | Basic (`kafka_real`) | Partial | Owned-partition real seek and opt-in consumer-offset transactions implemented; broker-backed EOS/rebalance acceptance and offset-lag in every view remain pending |
 | Solace PubSub+ | Partial (AsyncAPI to `jms-solace`) | AMQP-only (`jms_solace_real`) | Partial | Native SMF (P2.6) |
 | IBM MQ | None | Mock only | Partial | Entire native MQI adapter (P2.5) |
 | Azure Service Bus | None | Basic (`jms_servicebus_real`) | Partial | Cross-entity transactions, backlog probes, emulator/live breadth |
@@ -540,4 +540,4 @@ The whole-pass review also hardened supervised preparation readiness, legacy bro
 
 ### Next priority pass (2026-10-01)
 
-The next five-item pass is tracked in the [implementation and review record](qa/reviews/next-priority-pass-2026-10-01/REVIEW.md), with one commit per completed item. Scoped action/transaction SLA rules, qualified baseline CI verdicts, live hierarchy/lifecycle intersections and real Kafka seek/transaction coordination are implemented. Kafka broker-backed acceptance remains pending. Event Hubs processor checkpoints are implemented with governed Blob access and local takeover/restart tests; the remaining chart exports are in progress. Live Azure acceptance remains separate; IBM MQ remains low priority and the 10 GB benchmark is waived by operator instruction.
+The next five-item pass is tracked in the [implementation and review record](qa/reviews/next-priority-pass-2026-10-01/REVIEW.md), with one commit per completed item. Scoped action/transaction SLA rules, qualified baseline CI verdicts, live hierarchy/lifecycle intersections and real Kafka seek/transaction coordination are implemented. Kafka broker-backed acceptance remains pending. Event Hubs processor checkpoints are implemented with governed Blob access and local takeover/restart tests; CSV/SVG exports now cover the remaining live and saved quantitative chart surfaces, with displayed-selection provenance and explicit resource limits. Live Azure acceptance remains separate; IBM MQ remains low priority and the 10 GB benchmark is waived by operator instruction.

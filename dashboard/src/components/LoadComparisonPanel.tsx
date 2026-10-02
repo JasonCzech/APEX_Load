@@ -1,3 +1,4 @@
+import SeriesChartExport from "./SeriesChartExport"
 import { AnalysisSavedViews } from './AnalysisSavedViews'
 import { useEffect, useMemo, useState } from 'react'
 import {
@@ -229,6 +230,7 @@ export function LoadComparisonPanel({
     }
     plotted.forEach((item, index) => {
       const point = item.points.find((p) => p.load_level_id === level.id)
+      row[`evidence_${index}`] = point ? JSON.stringify(point) : undefined
       row[`latency_${index}`] = loadLatency(point, metric, outcome)
       row[`throughput_${index}`] = validLoadPoint(point)
         ? point?.successful_rate
@@ -899,7 +901,7 @@ export function LoadComparisonPanel({
                 <h4>
                   {chart.title} ({chart.unit})
                 </h4>
-                <ResponsiveContainer width="100%" height={240}>
+                <SeriesChartExport id={`load-${chart.key}`} title={chart.title} rows={chartRows} axes={[{ key: "load", label: "Observed load midpoint (VUsers)", value: point => point.load }, { key: "bucket", label: "Load bucket", value: point => point.label }, ...plotted.map((item,index) => ({ key: `evidence_${index}`, label: `${labelFor(item)} evidence`, value: (point: typeof chartRows[number]) => point[`evidence_${index}`] }))]} series={plotted.map((item,index) => ({ key: `${chart.key}_${index}`, label: labelFor(item), unit: chart.unit }))} context={{ population, metric, outcome, mode: effectiveMode, scope, key, window, evidence_ids: plotted.map(item => idFor(item)), limit: chart.limit, eligibility }}><ResponsiveContainer width="100%" height={240}>
                   <LineChart
                     data={chartRows}
                     margin={{ top: 16, right: 20, bottom: 12, left: 0 }}
@@ -955,7 +957,7 @@ export function LoadComparisonPanel({
                       />
                     ))}
                   </LineChart>
-                </ResponsiveContainer>
+                </ResponsiveContainer></SeriesChartExport>
               </div>
             ))}
           </div>

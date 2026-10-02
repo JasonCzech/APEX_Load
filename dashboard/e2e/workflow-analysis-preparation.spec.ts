@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises"
 import { test, expect, seedScript, json, idOf, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
@@ -68,6 +69,19 @@ test('Parquet upload, mapping, query and deletion remain in project scope', asyn
   await expect(chart).toContainText('ms')
   await query.getByLabel('Metric', { exact: true }).fill('different metric')
   await expect(chart).toBeVisible()
+  const csvDownload = page.waitForEvent('download')
+  await area.getByRole('button', { name: 'Export latency dataset series data as CSV', exact: true }).click()
+  const csv = await readFile((await (await csvDownload).path())!, 'utf8')
+  expect(csv).toContain('latency (ms) [value]')
+  expect(csv).toContain(id)
+  expect(csv).toContain('"20"')
+  expect(csv).not.toContain('different metric')
+  const svgDownload = page.waitForEvent('download')
+  await area.getByRole('button', { name: 'Export latency dataset series image as SVG', exact: true }).click()
+  const svg = await readFile((await (await svgDownload).path())!, 'utf8')
+  expect(svg).toContain('<svg')
+  expect(svg).toContain('latency dataset series')
+  expect(svg).not.toContain('var(')
   await chart.screenshot({ path: test.info().outputPath('parquet-series.png') })
   await area.getByRole('button', { name: 'Delete dataset', exact: true }).click()
   await expect(area).not.toContainText('State: ready')

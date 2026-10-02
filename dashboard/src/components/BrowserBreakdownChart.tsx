@@ -1,3 +1,4 @@
+import SeriesChartExport from "./SeriesChartExport"
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import {
@@ -58,7 +59,7 @@ export default function BrowserBreakdownChart({
     <div className="results-compare-chart-card">
       <h4 className="results-compare-chart-title">{title}</h4>
       {copy && <p className="results-compare-chart-copy">{copy}</p>}
-      <ResponsiveContainer width="100%" height={height}>
+      <SeriesChartExport id="browser-breakdown" title={title} rows={data} axes={[{ key: "segment", label: segmentLabel, value: row => row.segment }]} series={series.map(item => ({ key: item.dataKey, label: item.name, unit: item.yAxisId === "cls" ? "score" : "ms" }))} context={{ description: copy }}><ResponsiveContainer width="100%" height={height}>
         <LineChart data={data} margin={{ top: 10, right: hasScoreAxis ? 92 : 18, bottom: 12, left: 24 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
           <XAxis
@@ -113,7 +114,7 @@ export default function BrowserBreakdownChart({
             />
           ))}
         </LineChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer></SeriesChartExport>
     </div>
   )
 }

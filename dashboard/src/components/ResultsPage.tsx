@@ -1,3 +1,4 @@
+import SeriesChartExport from "./SeriesChartExport"
 import { testOutcomeStatus } from '../utils/testStatusUtils'
 import BulkActions from './ux/BulkActions'
 import { lifecycleElapsedSeconds, formatElapsedSeconds } from './runReport/executionPresentation'
@@ -1790,7 +1791,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                           ))}
                         </TabList>
                       </div>
-                      <ResponsiveContainer width="100%" height={260}>
+                      <SeriesChartExport id="archive-comparison" title={`${comparisonChartMetricConfig.label} run comparison`} rows={comparisonChartData} axes={[{ key: "sample", label: "Representative sample index", value: point => point.sample }]} series={comparisonSummarySeries.map(item => ({ key: item.dataKey, label: item.name, unit: comparisonChartMetricConfig.valueFormat === "ms" ? "ms" : comparisonChartMetricConfig.valueFormat === "percent" ? "%" : "/s" }))} context={{ runs: comparisonCards.map(card => card.test.id), sampling: `Up to ${ARCHIVE_CHART_MAX_SAMPLES} representative samples per run`, metric: comparisonChartMetric }}><ResponsiveContainer width="100%" height={260}>
                         <LineChart data={comparisonChartData} margin={{ top: 10, right: 16, bottom: 12, left: 24 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                           <XAxis
@@ -1828,7 +1829,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                             />
                           ))}
                         </LineChart>
-                      </ResponsiveContainer>
+                      </ResponsiveContainer></SeriesChartExport>
                     </div>
                   )}
                   <table className="results-compare-table">

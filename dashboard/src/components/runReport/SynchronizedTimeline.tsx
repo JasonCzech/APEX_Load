@@ -1,3 +1,4 @@
+import SeriesChartExport from "../SeriesChartExport"
 import { useId, useMemo, useReducer, useState } from 'react'
 import {
   Area,
@@ -38,6 +39,8 @@ interface Props {
   loading?: boolean
   error?: string
   showBaseline?: boolean
+  runId?: string
+  baselineId?: string
 }
 
 const seriesColor = (index: number) => `var(--chart-${(index % 6) + 1})`
@@ -51,6 +54,8 @@ function LaneChart({
   showBaseline,
   transactions,
   onRemove,
+  runId,
+  baselineId,
 }: {
   lane: TimelineGraph
   data: MetricsHistoryPoint[]
@@ -60,6 +65,8 @@ function LaneChart({
   showBaseline?: boolean
   transactions?: string[]
   onRemove: () => void
+  runId?: string
+  baselineId?: string
 }) {
   const transactionScoped = transactions !== undefined && graphSupportsTransactions(lane)
   const series = lane.series.flatMap((item, index) => {
@@ -126,7 +133,7 @@ function LaneChart({
           </p>
         ) : (
           <>
-            <ResponsiveContainer width="100%" height={138}>
+            <SeriesChartExport id={`timeline-${lane.id}`} title={lane.title} rows={data} axes={[{ key: "time", label: "Run time", value: point => point.time }, { key: "utc", label: "Captured UTC timestamp (when retained)", value: point => point.timestampMs === undefined ? undefined : new Date(point.timestampMs).toISOString() }]} series={series.map(item => ({ key: item.key, label: item.name, unit: lane.unit }))} context={{ run_id: runId, baseline_id: showBaseline && !transactionScoped ? baselineId : undefined, scope: transactionScoped ? transactions : "Whole run", baseline_visible: showBaseline && !transactionScoped, sla, breach_windows: transactionScoped ? undefined : breachWindows }}><ResponsiveContainer width="100%" height={138}>
               <ComposedChart data={data} syncId="metrics" margin={{ top: 14, right: 24, bottom: 8, left: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} minTickGap={28} />
@@ -191,7 +198,7 @@ function LaneChart({
                   ),
                 )}
               </ComposedChart>
-            </ResponsiveContainer>
+            </ResponsiveContainer></SeriesChartExport>
             <div className="run-report-timeline-legend" aria-label={`${lane.title} series`}>
               {series.map((item) => (
                 <span key={item.key}>
@@ -207,7 +214,7 @@ function LaneChart({
   )
 }
 
-export default function SynchronizedTimeline({ data, goalConfig, loading, error, showBaseline }: Props) {
+export default function SynchronizedTimeline({ data, goalConfig, loading, error, showBaseline, runId, baselineId }: Props) {
   const controlsId = useId()
   const [zoomState, dispatchZoom] = useReducer(timelineZoomReducer, initialTimelineZoomState)
   const [visibleLanes, setVisibleLanes] = useState(() => new Set(DEFAULT_TIMELINE_GRAPHS))
@@ -533,6 +540,8 @@ export default function SynchronizedTimeline({ data, goalConfig, loading, error,
             showBaseline={showBaseline}
             transactions={selectedOnly ? selectedTransactions : undefined}
             onRemove={() => toggleGraph(lane.id)}
+            runId={runId}
+            baselineId={baselineId}
           />
         ))}
         {visibleLanes.size === 0 && (

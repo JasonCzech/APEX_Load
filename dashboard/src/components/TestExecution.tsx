@@ -713,6 +713,7 @@ export default function TestExecution({
       description: 'Live and archived execution charts.',
       render: () => (
         <TestExecutionCharts
+          runId={testId}
           filteredData={filteredData}
           expandedChart={expandedChart}
           onExpandedChartChange={onExpandedChartChange}
@@ -917,6 +918,7 @@ export default function TestExecution({
       description: 'Live execution charts and telemetry signals.',
       render: () => (
         <TestExecutionCharts
+          runId={testId}
           filteredData={filteredData}
           expandedChart={expandedChart}
           onExpandedChartChange={onExpandedChartChange}

@@ -306,6 +306,15 @@ describe('TestExecutionCharts context menu', () => {
     expect(document.activeElement).toBe(actionsButton)
   })
 
+  it('includes the current run identity in displayed live data exports', async () => {
+    await renderCharts(null, true, false, 'run-export-source')
+    const card = container.querySelector('.chart-card')
+    await act(async () => card?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 100, clientY: 120 })))
+    await act(async () => { menuButton('Export Graph Data')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await Promise.resolve(); await Promise.resolve() })
+    expect(vi.mocked(downloadTextFile).mock.calls[0][0]).toContain('run-export-source')
+    expect(vi.mocked(downloadTextFile).mock.calls[0][0]).toContain('displayed_samples')
+  })
+
   it('surfaces a native chart export failure from the graph action caller', async () => {
     vi.mocked(downloadTextFile).mockRejectedValueOnce(new Error('native save failed'))
     await renderCharts()
@@ -2240,10 +2249,11 @@ describe('TestExecutionCharts context menu', () => {
     element.dispatchEvent(event)
   }
 
-  async function renderCharts(expandedChart: string | null = null, showLoadImpact = true, commandCenter = false) {
+  async function renderCharts(expandedChart: string | null = null, showLoadImpact = true, commandCenter = false, runId?: string) {
     await act(async () => {
       root.render(
         <TestExecutionCharts
+          runId={runId}
           filteredData={[
             {
               time: '10:00:00',

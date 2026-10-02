@@ -170,7 +170,6 @@
   border-top: 3px solid var(--accent);
   border-radius: var(--radius);
   padding: 16px;
-  cursor: pointer;
   transition: all var(--transition-spring);
   display: flex;
   flex-direction: column;
@@ -183,7 +182,7 @@
   transform: translateY(-4px);
 }
 
-.dash-active-card:focus-visible {
+.dash-active-card:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--focus-ring), 0 8px 24px rgba(var(--accent-rgb), 0.15);
   outline: none;

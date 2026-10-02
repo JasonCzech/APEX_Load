@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises"
 import { test, expect, seedScript, json, idOf, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 import type { ComparisonSnapshot, ComparisonRequest, Measurement, RunIdentity } from '../src/components/baselineComparison/model'
@@ -90,6 +91,16 @@ test('baseline workspace selects pins, investigates resources, shares and preser
   await expect(drawer).toBeVisible()
   await expect(drawer.getByText('100 vs 100 VUsers', { exact: false }).first()).toBeVisible()
   await drawer.getByLabel('Chart alignment').selectOption('elapsed')
+  const exportCSV = page.waitForEvent('download')
+  await drawer.getByRole('button', { name: 'Export external/java_heap comparison data as CSV', exact: true }).click()
+  const exported = await readFile((await (await exportCSV).path())!, 'utf8')
+  expect(exported).toContain('Elapsed seconds')
+  expect(exported).toContain(currentId)
+  expect(exported).toContain('Coverage (%)')
+  expect(exported).toContain('bytes')
+  const exportSVG = page.waitForEvent('download')
+  await drawer.getByRole('button', { name: 'Export external/java_heap comparison image as SVG', exact: true }).click()
+  expect(await readFile((await (await exportSVG).path())!, 'utf8')).toContain('external/java_heap comparison')
   await expect(drawer.locator('.recharts-line-dot').first()).toHaveAttribute('fill', 'var(--chart-1)')
   await page.screenshot({ path: testInfo.outputPath('baseline-resource-detail.png'), fullPage: true })
   await page.keyboard.press('Escape')

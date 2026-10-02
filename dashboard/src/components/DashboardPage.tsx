@@ -1,3 +1,4 @@
+import SeriesChartExport from "./SeriesChartExport"
 import type { AnalysisReportContext } from './dashboardAnalysisModel'
 import TabList from './ux/TabList'
 import DashboardLandingSummary from './DashboardLandingSummary'
@@ -1590,19 +1591,10 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     <div
                       key={test.id}
                       className="dash-active-card"
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Open live test ${test.name}`}
-                      onClick={() => onSelectTest(test.id)}
-                      onKeyDown={event => {
-                        if (event.key !== 'Enter' && event.key !== ' ') return
-                        event.preventDefault()
-                        onSelectTest(test.id)
-                      }}
                     >
                       <div className="dac-header">
                         <div className="dac-title-wrap">
-                          <span className="dac-name">{test.name}</span>
+                          <button type="button" className="btn btn-ghost dac-name" aria-label={`Open live test ${test.name}`} onClick={() => onSelectTest(test.id)}>{test.name}</button>
                         </div>
                         <StatusBadge status={test.status} />
                       </div>
@@ -1628,7 +1620,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                       </div>
                       {chartData.length > 1 && (
                         <div className="dac-sparkline">
-                          <ResponsiveContainer width="100%" height={60}>
+                          <SeriesChartExport id={`active-${test.id}`} title={`${test.name} ${metricOption.label}`} rows={chartData} axes={[{ key: "time", label: "Captured time", value: point => point.timestampMs === undefined ? point.time : new Date(point.timestampMs).toISOString() }]} series={[{ key: "selectedMetric", label: metricOption.label, unit: "/s" }]} context={{ run_id: test.id, window: "Last 60 retained intervals" }}><ResponsiveContainer width="100%" height={60}>
                             <AreaChart data={chartData}>
                               <defs>
                                 <linearGradient id={`spark-${test.id}`} x1="0" y1="0" x2="0" y2="1">
@@ -1645,7 +1637,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                                 isAnimationActive={false}
                               />
                             </AreaChart>
-                          </ResponsiveContainer>
+                          </ResponsiveContainer></SeriesChartExport>
                           <span className="dac-chart-label">{metricOption.label}</span>
                         </div>
                       )}
@@ -1691,9 +1683,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               </div>
             )}
             {activeTests.length > 0 && aggregateHistory.length > 1 && (
-              <button type="button" className="dash-aggregate-chart dash-card-button" onClick={navigateToTests}>
-                <span className="aggregate-label">Aggregate TPS (active tests)</span>
-                <ResponsiveContainer width="100%" height={70}>
+              <div className="dash-aggregate-chart">
+                <button type="button" className="btn btn-ghost btn-sm aggregate-label" onClick={navigateToTests}>Aggregate TPS (active tests)</button>
+                <SeriesChartExport id="active-aggregate" title="Aggregate TPS" rows={aggregateHistory} axes={[{ key: "time", label: "Aligned captured time", value: point => point.timestampMs === undefined ? point.time : new Date(point.timestampMs).toISOString() }]} series={[{ key: "tps", label: "Retained aggregate TPS", unit: "/s" }]} context={{ run_ids: activeTestIds, alignment: "Timestamp buckets; legacy clock-only samples align newest intervals", coverage: "Only retained samples contribute; this is not guaranteed complete fleet coverage" }}><ResponsiveContainer width="100%" height={70}>
                   <AreaChart data={aggregateHistory}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="time" hide />
@@ -1704,8 +1696,8 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     />
                     <Area type="monotone" dataKey="tps" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.15} strokeWidth={1.5} isAnimationActive={false} />
                   </AreaChart>
-                </ResponsiveContainer>
-              </button>
+                </ResponsiveContainer></SeriesChartExport>
+              </div>
             )}
           </section>
         )}

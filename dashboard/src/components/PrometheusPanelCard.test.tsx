@@ -34,7 +34,7 @@ describe('PrometheusPanelCard imported panel kinds', () => {
 
   it('renders heatmap cells and threshold-colored stat tiles', async () => {
     await act(async () => root.render(<PrometheusPanelCard title="CPU" kind="heatmap" series={series} />))
-    expect(container.querySelectorAll('.imported-panel-heatmap-row span')).toHaveLength(1)
+    expect(container.querySelectorAll('.imported-panel-heatmap-row rect')).toHaveLength(1)
     await act(async () => root.render(<PrometheusPanelCard title="CPU" kind="single_value" value={95} series={series} thresholds={[{ value: 90, color: 'red', severity: 'critical' }]} />))
     expect(container.querySelector('.stat-tile-critical')).not.toBeNull()
   })

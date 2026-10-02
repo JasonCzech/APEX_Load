@@ -1,3 +1,4 @@
+import SeriesChartExport from "./SeriesChartExport"
 import { useLiveObservation } from '../hooks/useLiveObservation'
 import LiveObservationNotice from './LiveObservationNotice'
 import ResourceSnapshotList from './ResourceSnapshotList'
@@ -1518,6 +1519,7 @@ export default function CommandCenterPrototype({
       {noRequestSamples && runStatus !== 'RESERVED' && runStatus !== 'QUEUED' && <section className="command-panel" aria-label="No request samples"><h3>No request samples</h3><p>Response times, throughput and error rates are unavailable until requests are captured. Load values describe VUser allocation; they do not establish workload execution.</p><LoadModelPanel groups={groups} testGroups={displayTest.groups} runStatus={runStatus} totalDurationSeconds={totalDurationSeconds} remainingSeconds={remainingSeconds} /></section>}
       {(!noRequestSamples || runStatus === 'RESERVED' || runStatus === 'QUEUED') && (variant === 'ops' || runStatus === 'RESERVED' || runStatus === 'QUEUED') && (
         <OpsCockpitView
+          runId={testId}
           experienceVersion={experienceVersion}
           variant={variant}
           onVariantChange={changeVariant}
@@ -1551,6 +1553,7 @@ export default function CommandCenterPrototype({
       )}
       {!noRequestSamples && variant === 'grafana' && runStatus !== 'RESERVED' && runStatus !== 'QUEUED' && (
         <GrafanaWallView
+          runId={testId}
           variant={variant}
           onVariantChange={changeVariant}
           groups={groups}
@@ -1812,6 +1815,7 @@ function MetricPill({ label, value, tone = 'default' }: { label: string; value: 
 }
 
 interface CommonViewProps {
+  runId?: string
   variant: VariantId
   onVariantChange: (variant: VariantId) => void
   groups: CommandGroup[]
@@ -1841,6 +1845,7 @@ interface CommonViewProps {
 }
 
 interface OpsCockpitViewProps {
+  runId?: string
   experienceVersion: 'original' | 'v2'
   variant: VariantId
   onVariantChange: (variant: VariantId) => void
@@ -1887,6 +1892,7 @@ interface GrafanaWallViewProps extends CommonViewProps {
 }
 
 function OpsCockpitView({
+  runId,
   experienceVersion,
   variant,
   onVariantChange,
@@ -1923,6 +1929,7 @@ function OpsCockpitView({
   if (experienceVersion === 'v2') {
     return (
       <OpsCockpitV2View
+        runId={runId}
         variant={variant}
         onVariantChange={onVariantChange}
         groups={groups}
@@ -2015,6 +2022,7 @@ function numericCommandValue(source: unknown, ...keys: string[]) {
 type OpsCockpitV2ViewProps = Omit<OpsCockpitViewProps, 'experienceVersion' | 'onOpenGroupSettings'>
 
 function OpsCockpitV2View({
+  runId,
   groups,
   testGroups,
   metrics,
@@ -2081,7 +2089,7 @@ function OpsCockpitV2View({
             </div>
 
             <div className="command-v2-chart" aria-label="Planned and actual VUsers over test duration">
-              <ResponsiveContainer width="100%" height={230} minWidth={320}>
+              <SeriesChartExport id="command-observed-load" title="Planned and actual load" rows={chartProfile} axes={[{ key: "progress", label: "Planned duration progress (%)", value: point => point.pct }]} series={[{ key: "planned", label: "Target VUsers", unit: "VUsers" }, { key: "actual", label: "Resampled observed VUsers", unit: "VUsers" }]} context={{ run_id: runId, progress_pct: progressPct, basis: "Observed samples resampled onto the planned progress grid; future actual values remain missing" }}><ResponsiveContainer width="100%" height={230} minWidth={320}>
                 <AreaChart data={chartProfile} margin={{ top: 10, right: 18, left: -8, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                   <XAxis dataKey="pct" type="number" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={value => `${value}%`} stroke="var(--text-muted)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
@@ -2091,7 +2099,7 @@ function OpsCockpitV2View({
                   <Area type="stepAfter" dataKey="planned" name="Target VUsers" stroke="var(--accent)" strokeDasharray="5 4" fill="transparent" strokeWidth={2} dot={false} isAnimationActive={false} />
                   <Area type="stepAfter" dataKey="actual" name="Actual VUsers" stroke="var(--chart-2)" fill="var(--accent-soft)" fillOpacity={0.32} strokeWidth={2} dot={false} isAnimationActive={false} />
                 </AreaChart>
-              </ResponsiveContainer>
+              </ResponsiveContainer></SeriesChartExport>
             </div>
 
             <div className="command-v2-capacity" aria-label="Capacity pressure">
@@ -2179,6 +2187,7 @@ function OpsCockpitV2View({
 }
 
 function GrafanaWallView({
+  runId,
   variant,
   onVariantChange,
   groups,
@@ -2221,6 +2230,7 @@ function GrafanaWallView({
     <section className="command-layout command-layout-grafana" aria-label="Runtime graph wall">
       <div className="command-grafana-grid">
         <CommandRuntimeGraphs
+          runId={runId}
           variant="grafana"
           groups={chartGroups}
           metrics={metrics}
@@ -3380,6 +3390,7 @@ function alignScopedChartDataToReference(scopedData: MetricsHistoryPoint[], refe
 }
 
 interface CommandRuntimeGraphsProps {
+  runId?: string
   variant: VariantId
   groups: CommandGroup[]
   metrics?: LiveMetrics
@@ -3412,6 +3423,7 @@ interface CommandRuntimeGraphsProps {
 }
 
 function CommandRuntimeGraphs({
+  runId,
   variant,
   groups,
   metrics,
@@ -3462,6 +3474,7 @@ function CommandRuntimeGraphs({
   return (
     <div className={`command-runtime-graphs command-runtime-graphs-${variant}`} data-visible-groups={groups.map(group => group.key).join(' ')} data-load-impact-vuser-range={loadImpactVuserRange}>
       <TestExecutionCharts
+        runId={runId}
         key={variant}
         filteredData={activeChartData}
         expandedChart={expandedChart}

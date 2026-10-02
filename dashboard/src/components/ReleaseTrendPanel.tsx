@@ -1,3 +1,4 @@
+import SeriesChartExport from "./SeriesChartExport"
 import { AnalysisSavedViews } from './AnalysisSavedViews'
 import { useEffect, useMemo, useState } from 'react'
 import {
@@ -745,7 +746,7 @@ export function ReleaseTrendPanel({
             ).map((chart, index) => (
               <div className="load-comparison-chart" key={chart.key}>
                 <h4>{chart.label}</h4>
-                <ResponsiveContainer width="100%" height={180}>
+                <SeriesChartExport id={`release-${chart.key}`} title={chart.label} rows={chartRows} axes={[{ key: "utc", label: "Completed UTC", value: point => new Date(point.time).toISOString() }, { key: "run", label: "Run ID", value: point => point.run }, { key: "name", label: "Run name", value: point => point.name }]} series={[{ key: chart.key, label: chart.label, unit: chart.key === "latency" ? "ms" : chart.key === "throughput" ? "/s" : chart.key === "errors" ? "%" : "VUsers" }]} context={{ population, transaction: effectiveTransaction, scenario: effectiveScenario, metric }}><ResponsiveContainer width="100%" height={180}>
                   <LineChart
                     data={chartRows}
                     syncId="release-analysis"
@@ -804,7 +805,7 @@ export function ReleaseTrendPanel({
                       isAnimationActive={false}
                     />
                   </LineChart>
-                </ResponsiveContainer>
+                </ResponsiveContainer></SeriesChartExport>
               </div>
             ))}
           </div>

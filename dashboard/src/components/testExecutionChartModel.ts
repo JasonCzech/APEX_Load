@@ -1876,19 +1876,29 @@ export function graphCsvForChart(
   routeLatencyMode: RouteLatencyMode = 'total',
   selectedRouteLatencyKey?: string,
   transactionNames: string[] = [],
+  selection?: { visibleKeys: readonly string[]; labels?: Record<string, string>; context?: Record<string, unknown> },
 ) {
+  if (data.length > 100_000) throw new Error("Chart CSV export exceeds the row limit.")
   const firstColumn = isLoadImpactChart(chart) || isLoadImpactPercentilesChart(chart) ? 'load' : 'time'
-  const keys = [firstColumn, ...chartMetricKeys(chart, groupNames, latencyKeys, includeVuserOverlay, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey, transactionNames)]
-  const rows = [
-    keys.map(escapeCsvCell).join(','),
-    ...data.map(point => keys.map(key => escapeCsvCell(key === firstColumn ? point.time : point[key])).join(',')),
-  ]
+  const keys = [firstColumn, ...chartMetricKeys(chart, groupNames, latencyKeys, includeVuserOverlay, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey, transactionNames).filter(key => !selection || selection.visibleKeys.includes(key))]
+  if (keys.length + (selection?.context ? 1 : 0) > 256) throw new Error('Chart CSV export exceeds the column limit.')
+  const encoder = new TextEncoder()
+  let bytes = 0
+  const rows: string[] = []
+  const append = (line: string) => {
+    bytes += encoder.encode(line).byteLength + 1
+    if (bytes > 16 * 1024 * 1024) throw new Error('Chart CSV export exceeds the byte limit.')
+    rows.push(line)
+  }
+  append([...keys.map(key => escapeCsvCell(selection?.labels?.[key] ?? key)), ...(selection?.context ? ['Selection'] : [])].join(','))
+  for (const point of data) append([...keys.map(key => escapeCsvCell(key === firstColumn ? point.time : point[key])), ...(selection?.context ? [escapeCsvCell(JSON.stringify(selection.context))] : [])].join(','))
   return rows.join('\n')
 }
 
 function escapeCsvCell(value: unknown) {
-  if (value === undefined || value === null) return ''
-  const text = String(value)
+  if (value === undefined || value === null || typeof value === 'number' && !Number.isFinite(value)) return ''
+  let text = String(value)
+  if (typeof value === 'string' && /^[\s\uFEFF]*[=+\-@]/.test(text)) text = `'${text}`
   if (!/[",\n\r]/.test(text)) return text
   return `"${text.replace(/"/g, '""')}"`
 }

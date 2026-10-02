@@ -5,7 +5,8 @@ import './ExportableChart.css'
 import { buildChartCSV, buildChartSVG, type ChartExportColumn } from './exportableChartUtils'
 
 interface Props<T> {
- allowSVG?: boolean
+  hideCaption?: boolean
+  allowSVG?: boolean
   definitionId: string
   title: string
   description: string
@@ -20,7 +21,7 @@ function safeChartFilename(title: string, definitionId: string): string {
   return source.replace(/[^a-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '') || 'apexload-chart'
 }
 
-export default function ExportableChart<T>({ definitionId, title, description, rows, columns, note, children, allowSVG = true }: Props<T>) {
+export default function ExportableChart<T>({ definitionId, title, description, rows, columns, note, children, allowSVG = true, hideCaption = false }: Props<T>) {
   const chartRef = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -58,7 +59,7 @@ export default function ExportableChart<T>({ definitionId, title, description, r
   return (
     <figure className="report-chart-card exportable-chart" aria-label={description} data-chart-definition={definitionId}>
       <div className="exportable-chart-heading">
-        <figcaption>{title}</figcaption>
+        {!hideCaption && <figcaption>{title}</figcaption>}
         <div className="chart-export-actions" aria-label={`${title} export actions`}>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => void exportCSV()} disabled={Boolean(busy)} aria-label={`Export ${title} data as CSV`}>
             {busy === 'csv' ? 'Exporting…' : 'CSV'}

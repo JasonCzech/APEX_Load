@@ -961,3 +961,33 @@ describe('resolveSharedCursorTime', () => {
     expect(resolveSharedCursorTime(data, null)).toBeUndefined()
   })
 })
+
+describe('bounded live graph CSV exports', () => {
+ it('neutralizes formula-bearing labels and preserves nonfinite gaps', () => {
+  const csv = graphCsvForChart({ id: 'latency', title: 'Latency', dataKey: 'avgMs', color: 'red', type: 'line-latency' } as ChartConfig, [{ time: '=NOW()', avgMs: NaN } as MetricsHistoryPoint], [], [])
+  expect(csv).toContain("'=NOW()")
+  expect(csv).not.toContain('NaN')
+ })
+ it('rejects oversized live selections explicitly', () => {
+  expect(() => graphCsvForChart({ id: 'latency', title: 'Latency', dataKey: 'avgMs', color: 'red', type: 'line-latency' } as ChartConfig, Array(100001).fill({ time: 'a', avgMs: 1 }), [], [])).toThrow('row limit')
+ })
+})
+
+it('exports only displayed live series with explicit units and sampling context', () => {
+ const chart: ChartConfig = { id: 'latency', title: 'Response Time', type: 'line-latency' }
+ const data = [{ time: 't', avgMs: 20, p95: 999 } as MetricsHistoryPoint]
+ const csv = graphCsvForChart(chart, data, [], [], false, [], 'total', undefined, [], { visibleKeys: ['avgMs'], labels: { avgMs: 'ART (ms)' }, context: { run_id: 'run', retained_samples: 10, displayed_samples: 1 } })
+ expect(csv).toContain('ART (ms)')
+ expect(csv).toContain('displayed_samples')
+ expect(csv).not.toContain('999')
+ expect(csv).not.toContain('p95')
+})
+
+
+it('counts selection provenance in the live CSV column limit', () => {
+ const chart: ChartConfig = { id: 'latency', title: 'Response Time', type: 'line-latency' }
+ const groups = Array.from({ length: 254 }, (_, i) => `group${i}`)
+ const keys = ['avgMs', ...groups.map(name => `${name}_avgMs`)]
+ expect(() => graphCsvForChart(chart, [], groups, [], false, [], 'total', undefined, [], { visibleKeys: keys, context: { run_id: 'run' } })).toThrow('column limit')
+ expect(() => graphCsvForChart(chart, [], groups.slice(1), [], false, [], 'total', undefined, [], { visibleKeys: keys, context: { run_id: 'run' } })).not.toThrow()
+})

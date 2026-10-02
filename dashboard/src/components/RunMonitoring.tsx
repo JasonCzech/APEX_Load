@@ -1,3 +1,4 @@
+import SeriesChartExport from "./SeriesChartExport"
 import { useEffect, useRef, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import DependencyEvidence from './DependencyEvidence'
@@ -95,6 +96,8 @@ export function RunMonitorTimeline({ projectId, testId, history }: { projectId?:
   const [dimensions, setDimensions] = useState('{}')
   const [window, setWindow] = useState<{ from: string; to: string }>()
   const [points, setPoints] = useState<(AnalysisPoint & { relative_time_ms?: number })[]>([])
+  const [evidenceSelection, setEvidenceSelection] = useState<Record<string, unknown>>({})
+  const [loadedWindow, setLoadedWindow] = useState<{ from: string; to: string }>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const controller = useRef<AbortController>()
@@ -122,12 +125,12 @@ export function RunMonitorTimeline({ projectId, testId, history }: { projectId?:
       }
       const identities = new Set(collected.map(p => JSON.stringify([p.unit, p.kind, p.host, Object.entries(p.dimensions ?? {}).sort(([a], [b]) => a.localeCompare(b))])))
       if (identities.size > 1) throw new Error('Select dimensions for a single monitor series before plotting.')
-      if (!c.signal.aborted) setPoints(collected)
+      if (!c.signal.aborted) { setPoints(collected); setEvidenceSelection({ source_id: source, metric, dimensions: filters, window }); setLoadedWindow(window) }
     } catch (e) { if (!c.signal.aborted) setError(String(e)) } finally { if (!c.signal.aborted) setBusy(false) }
   }
-  const rows: { time: number; monitor?: number; latency?: number }[] = []
-  for (const point of points) rows.push({ time: Date.parse(point.timestamp_utc), monitor: point.quality === 'valid' ? point.value : undefined })
-  for (const point of history) if (point.timestampMs !== undefined && (!window || (point.timestampMs >= Date.parse(window.from) && point.timestampMs <= Date.parse(window.to)))) rows.push({ time: point.timestampMs, latency: point.avgMs })
+  const rows: { time: number; monitor?: number; latency?: number; quality?: string; host?: string; dimensions?: Record<string, string> }[] = []
+  for (const point of points) rows.push({ time: Date.parse(point.timestamp_utc), monitor: point.quality === 'valid' ? point.value : undefined, quality: point.quality, host: point.host, dimensions: point.dimensions })
+  for (const point of history) if (point.timestampMs !== undefined && (!loadedWindow || (point.timestampMs >= Date.parse(loadedWindow.from) && point.timestampMs <= Date.parse(loadedWindow.to)))) rows.push({ time: point.timestampMs, latency: point.avgMs })
   rows.sort((a, b) => a.time - b.time)
   return <section className="tx-section" aria-label="Run monitor evidence">
     <DependencyEvidence testId={testId} projectId={projectId} select={(source, metric, from, to) => { controller.current?.abort(); setBusy(false); setSource(source); setMetric(metric); setDimensions('{}'); setWindow({ from, to }); setPoints([]) }} />
@@ -138,6 +141,6 @@ export function RunMonitorTimeline({ projectId, testId, history }: { projectId?:
     <label>Metric name<input value={metric} onChange={e => setMetric(e.target.value)} /></label>
     <label>Dimensions (JSON)<input value={dimensions} onChange={e => { setDimensions(e.target.value); setPoints([]) }} /></label>
     <button type="button" disabled={busy || !source || !metric} onClick={() => void load()}>{busy ? 'Loading…' : 'Refresh monitor overlay'}</button>
-    {points.length > 0 && <><p>{points.filter(p => p.quality === 'valid').length} valid / {points.length} observed samples. Missing or stale evidence is excluded.</p><ResponsiveContainer width="100%" height={260}><LineChart data={rows}><XAxis dataKey="time" type="number" domain={['dataMin', 'dataMax']} tickFormatter={x => new Date(x).toLocaleTimeString()} /><YAxis yAxisId="monitor" /><YAxis yAxisId="latency" orientation="right" unit=" ms" /><Tooltip labelFormatter={x => new Date(Number(x)).toISOString()} /><Line isAnimationActive={false} data={rows.filter(r => 'monitor' in r)} yAxisId="monitor" dataKey="monitor" stroke="var(--chart-1)" dot={false} connectNulls={false} /><Line isAnimationActive={false} data={rows.filter(r => 'latency' in r)} yAxisId="latency" dataKey="latency" stroke="var(--chart-2)" dot={false} connectNulls={false} /></LineChart></ResponsiveContainer></>}
+    {points.length > 0 && <><p>{points.filter(p => p.quality === 'valid').length} valid / {points.length} observed samples. Missing or stale evidence is excluded.</p><SeriesChartExport id="run-monitors" title="Run monitor timeline" rows={rows} axes={[{ key: "utc", label: "UTC timestamp", value: point => new Date(point.time).toISOString() }, { key: "quality", label: "Monitor quality", value: point => point.quality }, { key: "host", label: "Monitor host", value: point => point.host }, { key: "dimensions", label: "Monitor dimensions", value: point => point.dimensions }]} series={[{ key: "monitor", label: points[0]?.metric_name ?? "Monitor", unit: points[0]?.unit }, { key: "latency", label: "Run mean response time", unit: "ms" }]} context={{ run_id: testId, selection: evidenceSelection, valid_monitor_samples: points.filter(p => p.quality === "valid").length, observed_monitor_samples: points.length }}><ResponsiveContainer width="100%" height={260}><LineChart data={rows}><XAxis dataKey="time" type="number" domain={['dataMin', 'dataMax']} tickFormatter={x => new Date(x).toLocaleTimeString()} /><YAxis yAxisId="monitor" /><YAxis yAxisId="latency" orientation="right" unit=" ms" /><Tooltip labelFormatter={x => new Date(Number(x)).toISOString()} /><Line isAnimationActive={false} data={rows.filter(r => 'monitor' in r)} yAxisId="monitor" dataKey="monitor" stroke="var(--chart-1)" dot={false} connectNulls={false} /><Line isAnimationActive={false} data={rows.filter(r => 'latency' in r)} yAxisId="latency" dataKey="latency" stroke="var(--chart-2)" dot={false} connectNulls={false} /></LineChart></ResponsiveContainer></SeriesChartExport></>}
   </section>
 }

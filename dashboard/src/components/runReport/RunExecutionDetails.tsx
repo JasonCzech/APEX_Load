@@ -1,3 +1,4 @@
+import SeriesChartExport from "../SeriesChartExport"
 import { Area, CartesianGrid, ComposedChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { MetricsHistoryPoint, RunArchiveReport, TestRunManifest, TestSummary } from '../../types'
 import type { useExecutionTestManifest } from '../useExecutionTestManifest'
@@ -71,7 +72,7 @@ export default function RunExecutionDetails({ test, report, history = [], histor
         <p>Configured load: {recordedNumber(facts.vusers)} VUsers. This reference is not a ramp schedule. Observed samples cover only the captured intervals.</p>
         {historyLoading ? <p role="status">Loading captured load history…</p> : historyError ? <p role="alert">{historyError}</p> : points.length > 0 ? <>
           <div className="run-execution-chart" aria-label="Captured VUsers with configured load reference">
-            <ResponsiveContainer width="100%" height={220}>
+            <SeriesChartExport id="execution-load" title="Configured and observed load" rows={points} axes={[{ key: "utc", label: "UTC timestamp", value: point => point.timestampMs === undefined ? undefined : new Date(point.timestampMs).toISOString() }]} series={[{ key: "vusers", label: "Observed VUsers", unit: "VUsers" }]} context={{ run_id: test.id, configured_vusers: facts.vusers, configuration_immutable: facts.immutable }}><ResponsiveContainer width="100%" height={220}>
               <ComposedChart data={points} margin={{ top: 16, right: 24, left: 0, bottom: 12 }}>
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
                 <XAxis dataKey="timestampMs" type="number" scale="time" domain={['dataMin', 'dataMax']} tickFormatter={value => new Date(value).toLocaleTimeString()} tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} minTickGap={48} />
@@ -80,7 +81,7 @@ export default function RunExecutionDetails({ test, report, history = [], histor
                 {facts.vusers !== undefined && Number.isFinite(facts.vusers) && facts.vusers >= 0 && <ReferenceLine y={facts.vusers} stroke="var(--text-secondary)" strokeDasharray="5 5" ifOverflow="extendDomain" />}
                 <Area dataKey="vusers" name="Observed VUsers" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.12} isAnimationActive={false} />
               </ComposedChart>
-            </ResponsiveContainer>
+            </ResponsiveContainer></SeriesChartExport>
           </div>
           <p className="run-report-muted">Solid curve: observed VUsers.{facts.vusers !== undefined && Number.isFinite(facts.vusers) && facts.vusers >= 0 ? ' Dashed line: configured VUsers.' : ' Configured reference unavailable.'}</p>
         </> : <p>No interval history was retained. Planned workload completion cannot be inferred from the final controller sample.</p>}

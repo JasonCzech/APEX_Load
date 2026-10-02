@@ -1,3 +1,4 @@
+import ExportableChart from "./ExportableChart"
 import TabList from './ux/TabList'
 import DialogLayer from './ux/DialogLayer'
 import { handleTabKey } from './tabKeyboard'
@@ -28,6 +29,7 @@ const LoadImpact3DHeatmap = lazy(() => import('./LoadImpact3DHeatmap'))
 
 interface Props {
   points: MetricsHistoryPoint[]
+  runId?: string
   title?: string
   subtitle?: string
   loading?: boolean
@@ -81,6 +83,7 @@ function detailColumns(cell: LoadImpactCell) {
 
 const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeatmap({
   points,
+  runId,
   title = 'Load Impact',
   subtitle = 'Performance and resource behavior grouped by active VUser load.',
   loading = false,
@@ -319,6 +322,24 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
         </div>
       </div>
 
+      {!loading && sortedRows.length > 0 && <ExportableChart hideCaption definitionId="load-impact-matrix" title={`${title} selected matrix`} description={`A 2D summary of the currently selected metrics and load buckets. Cell means are means of retained telemetry intervals, not pooled transaction percentiles. Run ID: ${runId ?? "unavailable"}.`} note="SVG exports a 2D summary of the current selection, including when viewing the 3D map." rows={sortedRows.flatMap(row => row.cells)} columns={[
+        { key: 'run_id', label: 'Run ID (when associated)', value: () => runId },
+        { key: 'metric', label: 'Metric identity', value: cell => cell.metric.id },
+        { key: 'name', label: 'Metric name', value: cell => cell.metric.label },
+        { key: 'unit', label: 'Unit', value: cell => cell.metric.unit ?? (cell.metric.id === 'tps' ? '/s' : '') },
+        { key: 'bucket', label: 'Load bucket', value: cell => cell.bucket.id },
+        { key: 'loadMin', label: 'Minimum VUsers', value: cell => cell.bucket.minVusers },
+        { key: 'loadMax', label: 'Maximum VUsers', value: cell => cell.bucket.maxVusers },
+        { key: 'samples', label: 'Retained telemetry intervals', value: cell => cell.sampleCount },
+        { key: 'avg', label: 'Interval mean', value: cell => cell.average },
+        { key: 'min', label: 'Minimum', value: cell => cell.min },
+        { key: 'max', label: 'Maximum', value: cell => cell.max },
+      ]}>
+        <svg width={200 + displayModel.buckets.length * 100} height={Math.max(60, sortedRows.length * 30 + 40)} viewBox={`0 0 ${200 + displayModel.buckets.length * 100} ${Math.max(60, sortedRows.length * 30 + 40)}`} style={{ display: 'none' }} aria-hidden="true">
+          {displayModel.buckets.map((bucket, index) => <text key={bucket.id} x={200 + index * 100} y={20} fontSize={10}>{bucket.label}</text>)}
+          {sortedRows.map((row, index) => <g key={row.metric.id}><text x={4} y={index * 30 + 60} fontSize={12}>{`${row.metric.label} (${row.metric.unit || (row.metric.id === 'tps' ? '/s' : 'unit unverified')})`}</text>{row.cells.map((cell, column) => <g key={cell.bucket.id}><rect x={200 + column * 100} y={index * 30 + 40} width={94} height={26} fill={cell.sampleCount ? '#568ad1' : '#e0e0e0'} opacity={cell.sampleCount ? 0.2 + cell.intensity * 0.8 : 1} /><text x={205 + column * 100} y={index * 30 + 58} fontSize={11}>{cell.average === undefined ? 'Missing' : cell.average.toFixed(2)}</text><title>{formatLoadImpactCellTitle(cell)}</title></g>)}</g>)}
+        </svg>
+      </ExportableChart>}
       {error && <p className="scenario-script-status error">{error}</p>}
 
       {loading ? (

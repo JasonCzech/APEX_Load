@@ -276,6 +276,9 @@ func splitURLUserinfo(raw string) (string, string, bool) {
 //     userinfo. Same for config.jms/kafka(sasl_*)/eventhubs/sapgui credentials:
 //     broker and session material whose bare values snapshotReferencedSecrets
 //     registers and whose concatenated spellings never enter run evidence.
+//   - config.eventhubs.checkpoint_container_url — processor validation and
+//     identitypolicy reject userinfo and query credentials before Blob client
+//     construction, so it cannot synthesize a Basic composite.
 //   - config.observability.external_metrics[].url — polled by the API server,
 //     never part of buildProtoConfig, so it is outside this matcher entirely.
 //   - config.bruno.secret_bindings — names bound inside an opaque Bruno bundle.
