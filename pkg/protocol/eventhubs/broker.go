@@ -21,6 +21,7 @@ type eventHubsClient interface {
 
 // event is a provider-neutral Event Hubs event.
 type event struct {
+	receipt           *processorReceipt
 	MessageCount      int // successful sampled send; zero means one ordinary event
 	AcknowledgementMs *float64
 	Body              []byte

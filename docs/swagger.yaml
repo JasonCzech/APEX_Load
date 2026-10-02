@@ -2111,11 +2111,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -12205,11 +12209,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -14210,11 +14218,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -16021,11 +16033,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -39363,11 +39379,15 @@ paths:
                         properties:
                           auth_type:
                             type: string
+                          checkpoint_container_url:
+                            type: string
                           connection_string:
                             type: string
                           connection_string_secret:
                             type: string
                           consumer_group:
+                            type: string
+                          consumer_mode:
                             type: string
                           event_hub:
                             type: string
@@ -139287,11 +139307,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -141389,11 +141413,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -143435,11 +143463,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -145368,11 +145400,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -147468,11 +147504,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -149480,11 +149520,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -153155,11 +153199,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -157326,11 +157374,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -159336,11 +159388,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -164264,11 +164320,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -166096,11 +166156,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -168019,11 +168083,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -169863,11 +169931,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -171633,11 +171705,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -175141,11 +175217,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -177296,11 +177376,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -180456,11 +180540,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -182238,11 +182326,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -184268,11 +184360,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -186324,11 +186420,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -189558,11 +189658,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -192251,11 +192355,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -193944,11 +194052,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -196089,11 +196201,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -197755,11 +197871,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -199811,11 +199931,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -202695,11 +202819,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -204980,11 +205108,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -208325,11 +208457,15 @@ paths:
                                 properties:
                                   auth_type:
                                     type: string
+                                  checkpoint_container_url:
+                                    type: string
                                   connection_string:
                                     type: string
                                   connection_string_secret:
                                     type: string
                                   consumer_group:
+                                    type: string
+                                  consumer_mode:
                                     type: string
                                   event_hub:
                                     type: string
@@ -210128,11 +210264,15 @@ paths:
                                 properties:
                                   auth_type:
                                     type: string
+                                  checkpoint_container_url:
+                                    type: string
                                   connection_string:
                                     type: string
                                   connection_string_secret:
                                     type: string
                                   consumer_group:
+                                    type: string
+                                  consumer_mode:
                                     type: string
                                   event_hub:
                                     type: string
@@ -211870,11 +212010,15 @@ paths:
                                   properties:
                                     auth_type:
                                       type: string
+                                    checkpoint_container_url:
+                                      type: string
                                     connection_string:
                                       type: string
                                     connection_string_secret:
                                       type: string
                                     consumer_group:
+                                      type: string
+                                    consumer_mode:
                                       type: string
                                     event_hub:
                                       type: string
@@ -213367,11 +213511,15 @@ paths:
                                   properties:
                                     auth_type:
                                       type: string
+                                    checkpoint_container_url:
+                                      type: string
                                     connection_string:
                                       type: string
                                     connection_string_secret:
                                       type: string
                                     consumer_group:
+                                      type: string
+                                    consumer_mode:
                                       type: string
                                     event_hub:
                                       type: string
@@ -215279,11 +215427,15 @@ paths:
                                 properties:
                                   auth_type:
                                     type: string
+                                  checkpoint_container_url:
+                                    type: string
                                   connection_string:
                                     type: string
                                   connection_string_secret:
                                     type: string
                                   consumer_group:
+                                    type: string
+                                  consumer_mode:
                                     type: string
                                   event_hub:
                                     type: string
@@ -217082,11 +217234,15 @@ paths:
                                 properties:
                                   auth_type:
                                     type: string
+                                  checkpoint_container_url:
+                                    type: string
                                   connection_string:
                                     type: string
                                   connection_string_secret:
                                     type: string
                                   consumer_group:
+                                    type: string
+                                  consumer_mode:
                                     type: string
                                   event_hub:
                                     type: string
@@ -218824,11 +218980,15 @@ paths:
                                   properties:
                                     auth_type:
                                       type: string
+                                    checkpoint_container_url:
+                                      type: string
                                     connection_string:
                                       type: string
                                     connection_string_secret:
                                       type: string
                                     consumer_group:
+                                      type: string
+                                    consumer_mode:
                                       type: string
                                     event_hub:
                                       type: string
@@ -220321,11 +220481,15 @@ paths:
                                   properties:
                                     auth_type:
                                       type: string
+                                    checkpoint_container_url:
+                                      type: string
                                     connection_string:
                                       type: string
                                     connection_string_secret:
                                       type: string
                                     consumer_group:
+                                      type: string
+                                    consumer_mode:
                                       type: string
                                     event_hub:
                                       type: string
@@ -222260,11 +222424,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -224017,11 +224185,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -225910,11 +226082,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -227525,11 +227701,15 @@ paths:
                             properties:
                               auth_type:
                                 type: string
+                              checkpoint_container_url:
+                                type: string
                               connection_string:
                                 type: string
                               connection_string_secret:
                                 type: string
                               consumer_group:
+                                type: string
+                              consumer_mode:
                                 type: string
                               event_hub:
                                 type: string
@@ -229152,11 +229332,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -231150,11 +231334,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -234388,11 +234576,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -236180,11 +236372,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string
@@ -238080,11 +238276,15 @@ paths:
                           properties:
                             auth_type:
                               type: string
+                            checkpoint_container_url:
+                              type: string
                             connection_string:
                               type: string
                             connection_string_secret:
                               type: string
                             consumer_group:
+                              type: string
+                            consumer_mode:
                               type: string
                             event_hub:
                               type: string

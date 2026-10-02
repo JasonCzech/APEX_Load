@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/identitypolicy"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 )
@@ -49,19 +50,22 @@ func init() {
 }
 
 type config struct {
-	ProducerLifecycle  string
-	SampleTiming       string
-	Namespace          string
-	EventHub           string
-	ConnectionString   string
-	ConsumerGroup      string
-	PartitionKey       string
-	PartitionID        string
-	StartPosition      string // observer-probe start: "latest" (default) | "earliest"
-	AuthType           string // connection_string | aad
-	Timeout            time.Duration
-	Mock               bool
-	AllowedTargetHosts []string
+	ConsumerMode           string
+	CheckpointContainerURL string
+	Lifetime               context.Context
+	ProducerLifecycle      string
+	SampleTiming           string
+	Namespace              string
+	EventHub               string
+	ConnectionString       string
+	ConsumerGroup          string
+	PartitionKey           string
+	PartitionID            string
+	StartPosition          string // observer-probe start: "latest" (default) | "earliest"
+	AuthType               string // connection_string | aad
+	Timeout                time.Duration
+	Mock                   bool
+	AllowedTargetHosts     []string
 }
 
 // EventHubs is a per-VUser Azure Event Hubs client.
@@ -79,12 +83,13 @@ type EventHubs struct {
 
 func (e *EventHubs) Name() string { return e.name }
 
-func (e *EventHubs) Init(_ context.Context, cfg map[string]any) error {
+func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 	timeoutMS, err := boundedInteger(cfg["eventhubs_timeout_ms"], int(defaultTimeout/time.Millisecond), 0, int(MaxConfiguredTimeout/time.Millisecond))
 	if err != nil {
 		return fmt.Errorf("eventhubs timeout_ms: %w", err)
 	}
 	e.cfg = config{
+		Lifetime: ctx, ConsumerMode: stringValue(cfg, "eventhubs_consumer_mode"), CheckpointContainerURL: stringValue(cfg, "eventhubs_checkpoint_container_url"),
 		ProducerLifecycle:  stringValue(cfg, "eventhubs_producer_lifecycle"),
 		SampleTiming:       stringValue(cfg, "eventhubs_sample_timing"),
 		Namespace:          stringValue(cfg, "eventhubs_namespace"),
@@ -108,6 +113,17 @@ func (e *EventHubs) Init(_ context.Context, cfg map[string]any) error {
 	if e.cfg.ConnectionString == "" {
 		e.cfg.ConnectionString = stringValue(cfg, "eventhubs_connection_string_secret")
 	}
+	if err := ValidateProcessorSettings(e.cfg.ConsumerMode, e.cfg.CheckpointContainerURL, e.cfg.AuthType, e.cfg.Namespace, e.cfg.ConsumerGroup, e.cfg.PartitionID, e.cfg.Mock); err != nil {
+		return err
+	}
+	if e.cfg.ConsumerMode == "processor" && !realEventHubsAvailable {
+		return fmt.Errorf("Event Hubs processor requires an eventhubs_real build")
+	}
+	if e.cfg.ConsumerMode == "processor" {
+		if _, err := identitypolicy.ValidateEventHubsCheckpointContainer(e.cfg.CheckpointContainerURL); err != nil {
+			return err
+		}
+	}
 	if err := validateEventHubsConfigBounds(e.cfg); err != nil {
 		return err
 	}
@@ -118,7 +134,7 @@ func (e *EventHubs) Init(_ context.Context, cfg map[string]any) error {
 		e.cfg.Timeout = defaultTimeout
 	}
 	if !e.cfg.Mock {
-		for _, target := range []string{e.cfg.Namespace, e.cfg.ConnectionString} {
+		for _, target := range []string{e.cfg.Namespace, e.cfg.ConnectionString, e.cfg.CheckpointContainerURL} {
 			if strings.TrimSpace(target) == "" {
 				continue
 			}
@@ -399,6 +415,12 @@ func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result
 		result.StatusCode = 502
 		return event{}, err
 	}
+	accepted := false
+	defer func() {
+		if !accepted && ev.receipt != nil {
+			ev.receipt.reject()
+		}
+	}()
 	result.BytesReceived = int64(len(ev.Body))
 	if err := addEventExtractions(result, ev); err != nil {
 		return event{}, err
@@ -406,8 +428,10 @@ func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result
 	if err := protocol.StoreExtraction(result, "eventhubs_operation", "consume"); err != nil {
 		return event{}, err
 	}
-	if err := protocol.StoreExtraction(result, "eventhubs_consumer_lag", strconv.FormatInt(lag, 10)); err != nil {
-		return event{}, err
+	if lag >= 0 {
+		if err := protocol.StoreExtraction(result, "eventhubs_consumer_lag", strconv.FormatInt(lag, 10)); err != nil {
+			return event{}, err
+		}
 	}
 	// Reliability detection by sequence number. Event Hubs sequence numbers are
 	// per-(hub,partition), so observe within that stream's own space — otherwise
@@ -441,7 +465,16 @@ func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result
 	if err := runExtractors(action.Extractors, result, ev); err != nil {
 		return event{}, err
 	}
-	return ev, evaluateAssertions(action.Assertions, result, ev)
+	if err := evaluateAssertions(action.Assertions, result, ev); err != nil {
+		return event{}, err
+	}
+	if ev.receipt != nil {
+		if err := ev.receipt.finish(ctx); err != nil {
+			return event{}, err
+		}
+	}
+	accepted = true
+	return ev, nil
 }
 
 func (e *EventHubs) hub(action *protocol.Action) string {

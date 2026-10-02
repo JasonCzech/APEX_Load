@@ -1385,3 +1385,11 @@ func TestBuildProtoConfig_KafkaConsumerTransactions(t *testing.T) {
 		t.Fatal("consumer transaction mode lost during runtime configuration")
 	}
 }
+
+func TestBuildProtoConfig_EventHubsProcessor(t *testing.T) {
+	script := &dsl.Script{Protocol: "eventhubs", Config: dsl.ScriptConfig{EventHubs: dsl.EventHubsConfig{ConsumerMode: "processor", CheckpointContainerURL: "https://account.blob.core.windows.net/checkpoints"}}}
+	cfg := buildProtoConfig(script)
+	if cfg["eventhubs_consumer_mode"] != "processor" || cfg["eventhubs_checkpoint_container_url"] != script.Config.EventHubs.CheckpointContainerURL {
+		t.Fatal("processor settings lost")
+	}
+}

@@ -732,9 +732,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -4404,9 +4406,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -5201,9 +5205,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -5900,9 +5906,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -9489,9 +9497,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -10340,9 +10350,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -11016,9 +11028,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -11661,9 +11675,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -12196,9 +12212,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -12804,9 +12822,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -13424,9 +13444,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -14646,9 +14668,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -16033,9 +16057,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -17682,9 +17708,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -18343,9 +18371,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -19251,9 +19281,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -20146,9 +20178,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -20834,9 +20868,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -28892,9 +28928,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -29727,9 +29765,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -41723,9 +41763,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -43455,9 +43497,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -55520,9 +55564,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -65910,9 +65956,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -66590,9 +66638,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -79363,9 +79413,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -80209,9 +80261,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -80898,9 +80952,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -81656,9 +81712,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -82623,9 +82681,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -83299,9 +83359,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -83944,9 +84006,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -84479,9 +84543,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -86003,9 +86069,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -94385,9 +94453,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -95159,9 +95229,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -97635,9 +97707,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -99243,9 +99317,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -99855,9 +99931,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -102269,9 +102347,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -103502,9 +103582,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -104812,9 +104894,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -106121,9 +106205,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -107431,9 +107517,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -108740,9 +108828,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -116799,9 +116889,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -117486,9 +117578,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -122501,9 +122595,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
@@ -123335,9 +123431,11 @@ export interface operations {
                 };
                 "eventhubs"?: {
                   "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
                   "connection_string"?: string;
                   "connection_string_secret"?: string;
                   "consumer_group"?: string;
+                  "consumer_mode"?: string;
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
@@ -127679,9 +127777,11 @@ export interface operations {
               };
               "eventhubs"?: {
                 "auth_type"?: string;
+                "checkpoint_container_url"?: string;
                 "connection_string"?: string;
                 "connection_string_secret"?: string;
                 "consumer_group"?: string;
+                "consumer_mode"?: string;
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;

@@ -29,13 +29,15 @@ func newRealClient(cfg config) eventHubsClient {
 	}
 }
 
-// realClient is a per-VUser Event Hubs adapter. It is producer-first: Send is
-// the primary path; Receive is a read-only observer probe over a single
-// partition (cfg.PartitionID, default "0") used to measure end-to-end latency
-// and offset backlog. Checkpointing / Processor-based exclusive consumption are
-// deferred per the locked producer-first scope.
+// realClient supports producer and observer paths, plus an opt-in processor
+// with balanced partition ownership and fenced durable Blob checkpoints.
+// Processor construction and collection remain lazy until the first consume.
+const realEventHubsAvailable = true
+
 type realClient struct {
-	cfg config
+	processorMu sync.Mutex
+	processor   *eventHubsProcessor
+	cfg         config
 
 	mu         sync.Mutex
 	cred       azcore.TokenCredential
@@ -120,6 +122,9 @@ func (c *realClient) SendBatch(ctx context.Context, hub string, events []event) 
 }
 
 func (c *realClient) Receive(ctx context.Context, hub, group string, timeout time.Duration) (event, int64, error) {
+	if c.cfg.ConsumerMode == "processor" {
+		return c.receiveProcessed(ctx, hub, group, timeout)
+	}
 	partition := c.cfg.PartitionID
 	if partition == "" {
 		partition = "0"
@@ -138,11 +143,11 @@ func (c *realClient) Receive(ctx context.Context, hub, group string, timeout tim
 			// the receive budget rather than starting a second full action timeout.
 			cc, cerr := c.consumer(hub, group)
 			if cerr != nil {
-				return 0
+				return -1
 			}
 			props, perr := cc.GetPartitionProperties(probeCtx, partition, nil)
 			if perr != nil {
-				return 0
+				return -1
 			}
 			if delta := props.LastEnqueuedSequenceNumber - received.SequenceNumber; delta > 0 {
 				return delta
@@ -224,9 +229,22 @@ func (c *realClient) Teardown(ctx context.Context) error {
 	c.consumers = make(map[string]*azeventhubs.ConsumerClient)
 	c.producers = make(map[string]*azeventhubs.ProducerClient)
 	c.mu.Unlock()
+	c.processorMu.Lock()
+	processor := c.processor
+	c.processorMu.Unlock()
+	if processor != nil {
+		processor.cancel()
+	}
 	closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(ctx), eventHubsCloseTimeout)
 	defer closeCancel()
 	var firstErr error
+	if processor != nil {
+		select {
+		case <-processor.done:
+		case <-closeCtx.Done():
+			firstErr = fmt.Errorf("Event Hubs processor cleanup deadline exceeded")
+		}
+	}
 	for _, pc := range partitions {
 		if pc != nil {
 			if err := pc.Close(closeCtx); err != nil && firstErr == nil {

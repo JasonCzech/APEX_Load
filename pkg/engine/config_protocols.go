@@ -794,6 +794,12 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 
 func appendEventHubsConfig(cfg map[string]any, script *dsl.Script) {
 	ehCfg := script.Config.EventHubs
+	if ehCfg.ConsumerMode != "" {
+		cfg["eventhubs_consumer_mode"] = ehCfg.ConsumerMode
+	}
+	if ehCfg.CheckpointContainerURL != "" {
+		cfg["eventhubs_checkpoint_container_url"] = ehCfg.CheckpointContainerURL
+	}
 	if c := script.Config.JMeter; c != nil {
 		cfg["eventhubs_producer_lifecycle"] = c.ProducerLifecycle
 		cfg["eventhubs_sample_timing"] = c.SampleTiming

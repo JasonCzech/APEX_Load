@@ -25,3 +25,15 @@ func TestKafkaConsumerTransactionsRequireCompleteConfiguration(t *testing.T) {
 		t.Fatal("missing coordination capability")
 	}
 }
+
+func TestEventHubsProcessorRequiresVersionedRuntime(t *testing.T) {
+	s := &Script{Protocol: "eventhubs"}
+	if len(RequiredMessagingRuntimeFeatures(s)) != 0 {
+		t.Fatal("observer requires new runtime")
+	}
+	s.Config.EventHubs.ConsumerMode = "processor"
+	features := RequiredMessagingRuntimeFeatures(s)
+	if len(features) != 1 || features[0] != "eventhubs_processor_checkpoints_v1" {
+		t.Fatal(features)
+	}
+}

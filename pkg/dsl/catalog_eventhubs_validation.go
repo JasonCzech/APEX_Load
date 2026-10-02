@@ -24,6 +24,9 @@ func validateEventHubsScriptIssues(script *Script) []string {
 	}
 
 	eh := script.Config.EventHubs
+	if err := eventhubsprotocol.ValidateProcessorSettings(eh.ConsumerMode, eh.CheckpointContainerURL, eh.AuthType, eh.Namespace, eh.ConsumerGroup, eh.PartitionID, eh.Mock); err != nil {
+		issues = append(issues, err.Error())
+	}
 	if !eh.Mock && !isBlockedJMeterMessagingDraft(script) {
 		// A non-mock run needs a reachable namespace and a real adapter. The
 		// connection string may be supplied inline or via a secret reference.

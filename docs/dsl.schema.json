@@ -7412,6 +7412,10 @@
         "auth_type": {
           "type": "string"
         },
+        "checkpoint_container_url": {
+          "maxLength": 1024,
+          "type": "string"
+        },
         "connection_string": {
           "type": "string"
         },
@@ -7419,6 +7423,13 @@
           "type": "string"
         },
         "consumer_group": {
+          "type": "string"
+        },
+        "consumer_mode": {
+          "enum": [
+            "observer",
+            "processor"
+          ],
           "type": "string"
         },
         "event_hub": {

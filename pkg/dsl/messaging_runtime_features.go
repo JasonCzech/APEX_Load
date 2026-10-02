@@ -1,6 +1,7 @@
 package dsl
 
 import (
+	eventhubsprotocol "github.com/jasonczech/apexload/pkg/protocol/eventhubs"
 	kafkaprotocol "github.com/jasonczech/apexload/pkg/protocol/kafka"
 	"strings"
 )
@@ -27,6 +28,9 @@ func RequiredMessagingRuntimeFeatures(script *Script) []string {
 				features = append(features, kafkaprotocol.FeatureRealSeekV1)
 			}
 		}
+	}
+	if strings.EqualFold(script.Protocol, "eventhubs") && script.Config.EventHubs.ConsumerMode == "processor" {
+		features = append(features, eventhubsprotocol.FeatureProcessorCheckpointsV1)
 	}
 	return features
 }
