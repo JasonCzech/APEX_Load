@@ -464,6 +464,8 @@ message MetricsBatch {
   repeated MetricAggregate action_metrics = 23;
   uint32 action_metrics_version = 24;
   repeated MetricAggregate action_property_metrics = 25;
+  // Version 3 measured action/network/hierarchy/lifecycle intersections.
+  repeated MetricAggregate action_dimension_metrics = 26;
   repeated TransactionResponseTimeSLACompliance transaction_response_time_sla = 21;
 }
 

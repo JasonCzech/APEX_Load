@@ -6,7 +6,8 @@ import (
 	"time"
 )
 
-// NativeIntervalEvidence retains original collection-interval summaries. Version 2
+// NativeIntervalEvidence retains original collection-interval summaries. Version 3
+// adds bounded measured action/network/hierarchy/lifecycle tuples; version 2
 // also retains mergeable distributions; scalar percentiles are never averaged.
 type NativeIntervalEvidence struct {
 	Publication   *NativePublicationEvidence                 `json:"publication,omitempty"`
@@ -103,15 +104,16 @@ func ValidateNativeEvidenceQuery(q AnalyticsQuery) error {
 		return errors.New("invalid live bucket mode")
 	}
 	if q.EvidenceMode == "live" {
-		if group == "hierarchy" || group == "phase" {
-			return errors.New("hierarchy and phase grouping require raw archive evidence")
+		jointDimensions := NativeActionDimensionsRequired(q)
+		if jointDimensions && (q.Population != "action" || q.LiveBucketMode != "merged" || q.PropertyName != "" || (group != "" && group != "action" && group != "network_profile" && group != "hierarchy" && group != "phase")) {
+			return errors.New("live dimension intersections require merged action evidence v3; property intersections are separate")
 		}
 		for key := range q.Filters {
-			if key != "action" {
+			if key != "action" && key != "network_profile" && key != "hierarchy" && key != "phase" {
 				return errors.New("live dimension filters require joint evidence that is unavailable")
 			}
 		}
-		if group == "network_profile" && (q.Population != "action" || q.Filters["action"] != "" || q.PropertyName != "") {
+		if group == "network_profile" && !jointDimensions && (q.Population != "action" || q.Filters["action"] != "" || q.PropertyName != "") {
 			return errors.New("live network profiles describe independent action observations")
 		}
 
@@ -150,4 +152,13 @@ func ValidateNativeEvidenceQuery(q AnalyticsQuery) error {
 		}
 	}
 	return nil
+}
+
+// NativeActionDimensionsRequired selects a retained measured intersection.
+func NativeActionDimensionsRequired(q AnalyticsQuery) bool {
+	group := ""
+	if len(q.Dimensions) > 0 {
+		group = q.Dimensions[0]
+	}
+	return group == "hierarchy" || group == "phase" || q.Filters["network_profile"] != "" || q.Filters["hierarchy"] != "" || q.Filters["phase"] != "" || group == "network_profile" && q.Filters["action"] != ""
 }

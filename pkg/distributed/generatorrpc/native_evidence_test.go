@@ -61,3 +61,26 @@ func TestNativeEvidenceV2JointAndDistributionPropagation(t *testing.T) {
 		t.Fatal("partial distribution advertised as complete")
 	}
 }
+
+func TestNativeEvidenceV3DimensionsAndMixedPeers(t *testing.T) {
+	d := engine.NewTDigest(200)
+	d.Add(float64(time.Millisecond))
+	snapshot := d.Snapshot()
+	key := engine.ActionDimensionKey("checkout", "slow", "cart", "actions")
+	var a metricsAggregateSet
+	mergeSnapshotSideChannelAggregates(&a, engine.MetricsSnapshot{ByAction: map[string]*engine.ActionMetrics{}, ByActionProperty: map[string]*engine.ActionMetrics{}, ByDimensions: map[string]*engine.ActionMetrics{key: {Name: key, Count: 1, DurationDigest: &snapshot}}})
+	if a.NativeVersion != 3 || len(a.ActionDimensions) != 1 {
+		t.Fatalf("v3 %+v", a)
+	}
+	merged := mergeMetricsAggregateSets(map[string]metricsAggregateSet{"a": a, "b": a})
+	if len(merged.ActionDimensions) != 1 || merged.ActionDimensions[0].Count != 2 {
+		t.Fatal("lost merged joint")
+	}
+	old := a
+	old.NativeVersion = 2
+	old.ActionDimensions = nil
+	mixed := mergeMetricsAggregateSets(map[string]metricsAggregateSet{"a": a, "b": old})
+	if mixed.NativeVersion != 2 || len(mixed.ActionDimensions) != 0 {
+		t.Fatal("unsupported peer represented as v3")
+	}
+}

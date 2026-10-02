@@ -43,9 +43,30 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 	} else if q.PropertyName != "" {
 		dimension = "property"
 	}
+	jointDimensions := storage.NativeActionDimensionsRequired(q)
+	if jointDimensions {
+		dimension = "action_dimensions"
+	}
 	nameFor := func(key string) (string, bool, error) {
 		name := key
-		if joint {
+		if jointDimensions {
+			var labels []string
+			if len(key) > 512 || json.Unmarshal([]byte(key), &labels) != nil || len(labels) != 4 {
+				return "", false, errors.New("invalid action dimension identity")
+			}
+			dimensions := map[string]string{"action": labels[0], "network_profile": labels[1], "hierarchy": labels[2], "phase": labels[3]}
+			for key, value := range q.Filters {
+				if dimensions[key] != value {
+					return "", false, nil
+				}
+			}
+			name = dimensions[nativeGroup(q)]
+			if nativeGroup(q) == "" {
+				name = "Selection"
+			} else if name == "" {
+				return "", false, errors.New("selected dimension is unavailable for some observations")
+			}
+		} else if joint {
 			var labels []string
 			if json.Unmarshal([]byte(key), &labels) != nil || len(labels) != 3 {
 				return "", false, errors.New("invalid joint identity")
@@ -121,7 +142,7 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 			}
 			expected[i][id] = true
 		}
-		if e == nil || e.Version != 2 || e.Incomplete || math.IsNaN(e.WindowSeconds) || math.IsInf(e.WindowSeconds, 0) || e.WindowSeconds <= 0 || e.WindowSeconds > 3600 {
+		if e == nil || (e.Version < 2 || e.Version > 3) || jointDimensions && e.Version != 3 || e.Incomplete || math.IsNaN(e.WindowSeconds) || math.IsInf(e.WindowSeconds, 0) || e.WindowSeconds <= 0 || e.WindowSeconds > 3600 {
 			invalid[i] = true
 			continue
 		}
@@ -167,7 +188,7 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 		}
 	}
 	if publications > 0 && !supported {
-		return out, errors.New("merged live queries require native evidence v2 from every contributing runtime")
+		return out, errors.New("merged live queries require native evidence v2, or v3 for dimension intersections, from every contributing runtime")
 	}
 	names := make([]string, 0, len(groups))
 	for name := range groups {

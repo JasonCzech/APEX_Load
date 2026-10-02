@@ -48,8 +48,8 @@ func compactMetricsResult(input *protocol.Result) *protocol.Result {
 	out.SourceTransaction = ""
 	out.SourceProfile = ""
 	out.SourcePath = ""
-	out.Phase = ""
-	out.Hierarchy = ""
+	out.Phase = boundedMetricString(input.Phase, maxMetricLabelBytes)
+	out.Hierarchy = boundedMetricString(input.Hierarchy, maxMetricLabelBytes)
 	out.SourceUID = ""
 	out.RequestType = ""
 	out.OperationKind = ""
@@ -171,6 +171,7 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 		}
 	}
 	estimateActions(snapshot.ByAction)
+	estimateActions(snapshot.ByDimensions)
 	estimateActions(snapshot.ByActionProperty)
 	estimateActions(snapshot.ByProperty)
 	estimateActions(snapshot.ByTransaction)

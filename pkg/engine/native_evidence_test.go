@@ -74,3 +74,24 @@ func TestValidateNativeDurationDistribution(t *testing.T) {
 		t.Fatal("valid digest rejected")
 	}
 }
+
+func TestNativeDimensionIntersectionPopulationAndBounds(t *testing.T) {
+	mc := NewMetricsCollector(10)
+	snap := mc.computeSnapshot([]*protocol.Result{
+		{ActionName: "checkout", NetworkProfile: "slow", Hierarchy: "cart/checkout", Phase: "actions", Duration: time.Millisecond, Success: true},
+		{ActionName: "checkout", NetworkProfile: "fast", Hierarchy: "cart/checkout", Phase: "init", Duration: 9 * time.Millisecond, Success: false},
+		{ActionName: "business", BusinessTransaction: true, Phase: "actions", Duration: time.Second, Success: true},
+	}, time.Second)
+	key := ActionDimensionKey("checkout", "slow", "cart/checkout", "actions")
+	m := snap.ByDimensions[key]
+	if len(snap.ByDimensions) != 2 || m == nil || m.Count != 1 || m.Errors != 0 || ValidateDurationDigest(m.DurationDigest, 1) != nil {
+		t.Fatalf("intersection %+v", snap.ByDimensions)
+	}
+	compact := compactMetricsResult(&protocol.Result{Phase: "init", Hierarchy: "tree"})
+	if compact.Phase != "init" || compact.Hierarchy != "tree" {
+		t.Fatal("lost lifecycle evidence")
+	}
+	if ActionDimensionKey(strings.Repeat("x", 257), "", "", "") != metricOverflowLabel || ActionDimensionKey("x", string([]byte{255}), "", "") != metricOverflowLabel {
+		t.Fatal("invalid identity accepted")
+	}
+}

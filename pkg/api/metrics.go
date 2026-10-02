@@ -185,6 +185,14 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		}
 		addNativeJointEvidence(live.NativeEvidence, joint)
 	}
+	if snap.ByDimensions != nil {
+		live.NativeEvidence.Version = 3
+		dimensions := map[string]*TxMetrics{}
+		for key, metric := range snap.ByDimensions {
+			dimensions[key] = buildTxMetricsFromAction(key, metric, snap.Window)
+		}
+		addNativeDimensionEvidence(live.NativeEvidence, dimensions)
+	}
 	return live
 }
 

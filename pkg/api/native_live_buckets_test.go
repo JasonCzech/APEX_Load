@@ -117,3 +117,38 @@ func TestNativeMergedSourceFramesDeduplicateFleetRepublication(t *testing.T) {
 		t.Fatal("source frame clone alias")
 	}
 }
+
+func TestNativeMergedLiveDimensionIntersections(t *testing.T) {
+	start := time.Now().UTC().Truncate(time.Second)
+	q := nativeEvidenceQuery("live")
+	q.LiveBucketMode = "merged"
+	q.Dimensions = []string{"phase"}
+	q.Filters = map[string]string{"action": "checkout", "network_profile": "slow", "hierarchy": "cart"}
+	h := &LiveMetrics{Timestamp: start.Add(time.Second), NativeEvidence: &storage.NativeIntervalEvidence{Version: 3, WindowSeconds: 1, Dimensions: map[string]map[string]storage.NativeIntervalMetric{"action_dimensions": {
+		engine.ActionDimensionKey("checkout", "slow", "cart", "init"):    nativeBucketMetric(10),
+		engine.ActionDimensionKey("checkout", "slow", "cart", "actions"): nativeBucketMetric(20),
+		engine.ActionDimensionKey("checkout", "fast", "cart", "actions"): nativeBucketMetric(9000),
+		engine.ActionDimensionKey("other", "slow", "cart", "actions"):    nativeBucketMetric(9000),
+	}}}}
+	if err := storage.ValidateNativeEvidenceQuery(q); err != nil {
+		t.Fatal(err)
+	}
+	out, err := buildNativeLiveEvidence(context.Background(), start, []*LiveMetrics{h}, q)
+	if err != nil || len(out.Series) != 2 || out.Series[0].Name != "actions" || *out.Series[0].Points[0].Value != 20 || *out.Series[1].Points[0].Value != 10 {
+		t.Fatalf("intersections %+v %v", out, err)
+	}
+	h.NativeEvidence.Version = 2
+	if _, err = buildNativeLiveEvidence(context.Background(), start, []*LiveMetrics{h}, q); err == nil {
+		t.Fatal("legacy peer accepted")
+	}
+	h.NativeEvidence.Version = 3
+	h.NativeEvidence.Dimensions["action_dimensions"][engine.ActionDimensionKey("checkout", "slow", "cart", "")] = nativeBucketMetric(1)
+	if _, err = buildNativeLiveEvidence(context.Background(), start, []*LiveMetrics{h}, q); err == nil {
+		t.Fatal("missing label scored")
+	}
+	q.PropertyName = "kind"
+	q.PropertyValue = "paid"
+	if storage.ValidateNativeEvidenceQuery(q) == nil {
+		t.Fatal("unretained property intersection accepted")
+	}
+}

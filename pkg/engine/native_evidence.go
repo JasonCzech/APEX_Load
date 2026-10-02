@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"unicode/utf8"
 )
 
 // ActionPropertyKey is collision-free even when names contain delimiters.
@@ -49,4 +50,15 @@ func boundedJointPropertyKey(key string, values map[string]*ActionMetrics) strin
 		return key
 	}
 	return metricOverflowLabel
+}
+
+// ActionDimensionKey retains a measured intersection, never independent marginals.
+func ActionDimensionKey(action, network, hierarchy, phase string) string {
+	for _, label := range []string{action, network, hierarchy, phase} {
+		if len(label) > 256 || !utf8.ValidString(label) {
+			return metricOverflowLabel
+		}
+	}
+	data, _ := json.Marshal([4]string{action, network, hierarchy, phase})
+	return string(data)
 }

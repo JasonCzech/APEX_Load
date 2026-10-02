@@ -46,6 +46,13 @@ func TestNativeEvidenceQueryValidation(t *testing.T) {
 		mutate func(*AnalyticsQuery)
 		valid  bool
 	}{
+		{"v3 hierarchy", func(q *AnalyticsQuery) { q.LiveBucketMode = "merged"; q.Dimensions = []string{"hierarchy"} }, true},
+		{"hierarchy source unavailable", func(q *AnalyticsQuery) { q.Dimensions = []string{"hierarchy"} }, false},
+		{"v3 phase transaction unavailable", func(q *AnalyticsQuery) {
+			q.LiveBucketMode = "merged"
+			q.Population = "transaction"
+			q.Dimensions = []string{"phase"}
+		}, false},
 		{"live grouped", func(q *AnalyticsQuery) {}, true},
 		{"merged intersection", func(q *AnalyticsQuery) {
 			q.LiveBucketMode = "merged"

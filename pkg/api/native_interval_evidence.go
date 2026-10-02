@@ -1,10 +1,12 @@
 package api
 
 import (
+	"encoding/json"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"sort"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -92,10 +94,36 @@ func nativePublicationEvidence(source string, batch generatorrpc.MetricsBatch, p
 	evidence := nativeIntervalEvidence(live, convert(batch.ActionMetrics), true, batchWindowSeconds(batch.WindowMs))
 	evidence.Version = int(batch.ActionMetricsVersion)
 	addNativeJointEvidence(evidence, convert(batch.ActionPropertyMetrics))
+	if evidence.Version == 3 {
+		addNativeDimensionEvidence(evidence, convert(batch.ActionDimensionMetrics))
+	}
 	sources := make([]string, 0, len(peers))
 	for id := range peers {
 		sources = append(sources, id)
 	}
 	sort.Strings(sources)
 	return &storage.NativePublicationEvidence{SourceID: source, Sequence: batch.BatchSequence, ExecutionGeneration: batch.ExecutionGeneration, Timestamp: time.UnixMilli(batch.TimestampUnixMs).UTC(), Version: evidence.Version, WindowSeconds: evidence.WindowSeconds, Dimensions: evidence.Dimensions, Incomplete: evidence.Incomplete, ExpectedSources: sources}
+}
+
+func addNativeDimensionEvidence(out *storage.NativeIntervalEvidence, metrics map[string]*TxMetrics) {
+	joint := &storage.NativeIntervalEvidence{Dimensions: map[string]map[string]storage.NativeIntervalMetric{}}
+	addNativeJointEvidence(joint, metrics)
+	out.Incomplete = out.Incomplete || joint.Incomplete
+	values := joint.Dimensions["action_property"]
+	for key := range values {
+		var labels []string
+		if json.Unmarshal([]byte(key), &labels) != nil || len(labels) != 4 {
+			delete(values, key)
+			out.Incomplete = true
+			continue
+		}
+		for _, label := range labels {
+			if len(label) > 256 || !utf8.ValidString(label) {
+				delete(values, key)
+				out.Incomplete = true
+				break
+			}
+		}
+	}
+	out.Dimensions["action_dimensions"] = values
 }

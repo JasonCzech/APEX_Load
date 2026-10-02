@@ -154,7 +154,7 @@ func buildNativeLiveEvidence(ctx context.Context, start time.Time, history []*Li
 		}
 		intervals = append(intervals, h)
 		e := h.NativeEvidence
-		if e == nil || (e.Version != 1 && e.Version != 2) || e.WindowSeconds <= 0 || e.Incomplete {
+		if e == nil || (e.Version < 1 || e.Version > 3) || e.WindowSeconds <= 0 || e.Incomplete {
 			continue
 		}
 		if _, ok := e.Dimensions[dimension]; ok {
@@ -183,7 +183,7 @@ func buildNativeLiveEvidence(ctx context.Context, start time.Time, history []*Li
 		for _, h := range intervals {
 			p := NativeEvidencePoint{From: h.Timestamp, To: h.Timestamp, OffsetSeconds: h.Timestamp.Sub(start).Seconds()}
 			e := h.NativeEvidence
-			if e != nil && (e.Version == 1 || e.Version == 2) && e.WindowSeconds > 0 && !e.Incomplete {
+			if e != nil && (e.Version >= 1 && e.Version <= 3) && e.WindowSeconds > 0 && !e.Incomplete {
 				p.From = h.Timestamp.Add(-time.Duration(e.WindowSeconds * float64(time.Second)))
 				if m, ok := e.Dimensions[dimension][name]; ok && m.Count > 0 {
 					if m.Errors < 0 || m.Errors > m.Count {

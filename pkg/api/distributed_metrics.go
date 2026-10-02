@@ -35,10 +35,11 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	soapMetrics := make([]generatorrpc.MetricAggregate, 0)
 	networkProfileMetrics := make([]generatorrpc.MetricAggregate, 0)
 	actionMetrics := make([]generatorrpc.MetricAggregate, 0)
-	actionsVersion := uint32(2)
+	actionsVersion := uint32(3)
 	if len(batches) == 0 {
 		actionsVersion = 0
 	}
+	dimensionMetrics := make([]generatorrpc.MetricAggregate, 0)
 	jointMetrics := make([]generatorrpc.MetricAggregate, 0)
 	propertyMetrics := make([]generatorrpc.MetricAggregate, 0)
 	regionMetrics := make([]generatorrpc.MetricAggregate, 0)
@@ -118,11 +119,12 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		dependencyMetrics = append(dependencyMetrics, batch.DependencyMetrics...)
 		soapMetrics = append(soapMetrics, batch.SOAPMetrics...)
 		networkProfileMetrics = append(networkProfileMetrics, batch.NetworkProfileMetrics...)
-		if batch.ActionMetricsVersion > 2 {
+		if batch.ActionMetricsVersion > 3 {
 			actionsVersion = 0
 		} else {
 			actionsVersion = min(actionsVersion, batch.ActionMetricsVersion)
 		}
+		dimensionMetrics = append(dimensionMetrics, batch.ActionDimensionMetrics...)
 		jointMetrics = append(jointMetrics, batch.ActionPropertyMetrics...)
 		actionMetrics = append(actionMetrics, batch.ActionMetrics...)
 		propertyMetrics = append(propertyMetrics, batch.PropertyMetrics...)
@@ -231,7 +233,10 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	combined.FleetMetrics = mergeGeneratorMetricAggregates(fleetMetrics)
 	if actionsVersion > 0 {
 		combined.ActionMetricsVersion = actionsVersion
-		if actionsVersion == 2 {
+		if actionsVersion == 3 {
+			combined.ActionDimensionMetrics = mergeGeneratorMetricAggregateSeries(dimensionMetrics)
+		}
+		if actionsVersion >= 2 {
 			combined.ActionPropertyMetrics = mergeGeneratorMetricAggregateSeries(jointMetrics)
 		}
 		combined.ActionMetrics = mergeGeneratorMetricAggregateSeries(actionMetrics)
@@ -578,17 +583,27 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 	defer func() {
 		actions := map[string]*TxMetrics{}
-		if batch.ActionMetricsVersion >= 1 && batch.ActionMetricsVersion <= 2 {
+		if batch.ActionMetricsVersion >= 1 && batch.ActionMetricsVersion <= 3 {
 			for _, a := range batch.ActionMetrics {
 				if m := txMetricsFromAggregate(a); m != nil {
 					actions[m.Name] = m
 				}
 			}
 		}
-		if batch.ActionMetricsVersion >= 1 && batch.ActionMetricsVersion <= 2 {
+		if batch.ActionMetricsVersion >= 1 && batch.ActionMetricsVersion <= 3 {
 			live.NativeEvidence = nativeIntervalEvidence(live, actions, true, batchWindowSeconds(batch.WindowMs))
-			if batch.ActionMetricsVersion == 2 {
-				live.NativeEvidence.Version = 2
+			if batch.ActionMetricsVersion == 3 {
+				live.NativeEvidence.Version = 3
+				dimensions := map[string]*TxMetrics{}
+				for _, a := range batch.ActionDimensionMetrics {
+					if m := txMetricsFromAggregate(a); m != nil {
+						dimensions[m.Name] = m
+					}
+				}
+				addNativeDimensionEvidence(live.NativeEvidence, dimensions)
+			}
+			if batch.ActionMetricsVersion >= 2 {
+				live.NativeEvidence.Version = int(batch.ActionMetricsVersion)
 				joint := map[string]*TxMetrics{}
 				for _, a := range batch.ActionPropertyMetrics {
 					if m := txMetricsFromAggregate(a); m != nil {
