@@ -1602,6 +1602,7 @@ export interface operations {
               "device_platform"?: string;
               "device_profile"?: string;
               "duration_ms"?: number;
+              "failure_kind"?: string;
               "method"?: string;
               "page_url"?: string;
               "resource_type"?: string;
@@ -51544,6 +51545,7 @@ export interface operations {
               "device_platform"?: string;
               "device_profile"?: string;
               "duration_ms"?: number;
+              "failure_kind"?: string;
               "method"?: string;
               "page_url"?: string;
               "resource_type"?: string;

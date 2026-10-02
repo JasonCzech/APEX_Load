@@ -267,6 +267,7 @@ func browserResourceTimingsFromTransaction(tx TransactionEvent) []BrowserResourc
 			continue
 		}
 		timing := BrowserResourceTiming{
+			FailureKind:   entry.FailureKind,
 			Timestamp:     tx.Timestamp,
 			ActionName:    tx.ActionName,
 			PageURL:       tx.PageURL,
@@ -300,6 +301,7 @@ func appendTopBrowserResourceTimingsFromTransaction(current []BrowserResourceTim
 			continue
 		}
 		timing := BrowserResourceTiming{
+			FailureKind:   entry.FailureKind,
 			Timestamp:     tx.Timestamp,
 			ActionName:    tx.ActionName,
 			PageURL:       tx.PageURL,

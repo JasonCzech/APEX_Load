@@ -4511,6 +4511,8 @@ paths:
                           duration_ms:
                             type: number
                             format: double
+                          failure_kind:
+                            type: string
                           method:
                             type: string
                           page_url:
@@ -280343,6 +280345,8 @@ paths:
                         duration_ms:
                           type: number
                           format: double
+                        failure_kind:
+                          type: string
                         method:
                           type: string
                         page_url:

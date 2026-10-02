@@ -634,6 +634,7 @@ type RunArchiveEvidenceTier struct {
 }
 
 type BrowserResourceTiming struct {
+	FailureKind    string    `json:"failure_kind,omitempty"`
 	Timestamp      time.Time `json:"timestamp"`
 	ActionName     string    `json:"action_name,omitempty"`
 	PageURL        string    `json:"page_url,omitempty"`

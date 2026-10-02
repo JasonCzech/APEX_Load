@@ -747,3 +747,12 @@ func TestSOAPPayloadTelemetryDoesNotClassifyHTTPPayloadsAsSOAP(t *testing.T) {
 		})
 	}
 }
+
+func TestBrowserResourceFailureAttribution(t *testing.T) {
+	tx := TransactionEvent{ActionName: "navigate", NetworkEntries: []protocol.NetworkEntry{{URL: "https://example.test/app.js", FailureKind: "timeout", Method: "GET"}}}
+	tx.PageURL = "https://example.test/page"
+	rows := appendTopBrowserResourceTimingsFromTransaction(nil, tx, 50)
+	if len(rows) != 1 || rows[0].FailureKind != "timeout" || rows[0].PageURL != tx.PageURL || rows[0].ActionName != "navigate" {
+		t.Fatalf("lost attribution %+v", rows)
+	}
+}

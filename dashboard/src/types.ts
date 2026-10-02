@@ -1976,6 +1976,7 @@ export interface RunArchiveEvidenceTier {
 }
 
 export interface BrowserResourceTiming {
+  failure_kind?: string
   timestamp: string
   action_name?: string
   page_url?: string
