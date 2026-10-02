@@ -15,6 +15,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -125,40 +126,14 @@ type actionRef struct {
 }
 
 type harEntry struct {
-	ID              int
-	Method          string
-	URL             string
-	RequestBody     string
-	RequestHeaders  map[string]string
-	ResponseBody    string
-	ResponseHeaders map[string]string
-}
-
-type harLog struct {
-	Log struct {
-		Entries []struct {
-			Request struct {
-				Method  string `json:"method"`
-				URL     string `json:"url"`
-				Headers []struct {
-					Name  string `json:"name"`
-					Value string `json:"value"`
-				} `json:"headers"`
-				PostData *struct {
-					Text string `json:"text"`
-				} `json:"postData,omitempty"`
-			} `json:"request"`
-			Response struct {
-				Headers []struct {
-					Name  string `json:"name"`
-					Value string `json:"value"`
-				} `json:"headers"`
-				Content *struct {
-					Text string `json:"text"`
-				} `json:"content,omitempty"`
-			} `json:"response"`
-		} `json:"entries"`
-	} `json:"log"`
+	ID                     int
+	Method                 string
+	URL                    string
+	RequestBody            string
+	RequestBodyTransformed bool
+	RequestHeaders         map[string]string
+	ResponseBody           string
+	ResponseHeaders        map[string]string
 }
 
 var (
@@ -382,53 +357,24 @@ func parseHAR(data []byte) ([]harEntry, error) {
 	if len(data) == 0 || strings.TrimSpace(string(data)) == "" {
 		return nil, nil
 	}
-	var parsed harLog
-	if err := json.Unmarshal(data, &parsed); err != nil {
+	observations, err := sample.HARSourceObservations(string(data), true)
+	if err != nil {
 		return nil, fmt.Errorf("parse Salesforce HAR: %w", err)
 	}
-	entries := make([]harEntry, 0, len(parsed.Log.Entries))
-	for index, entry := range parsed.Log.Entries {
-		out := harEntry{
-			ID:              index + 1,
-			Method:          strings.ToUpper(strings.TrimSpace(entry.Request.Method)),
-			URL:             strings.TrimSpace(entry.Request.URL),
-			RequestHeaders:  headerMap(entry.Request.Headers),
-			ResponseHeaders: headerMap(entry.Response.Headers),
-		}
-		if entry.Request.PostData != nil {
-			out.RequestBody = entry.Request.PostData.Text
-		}
-		if entry.Response.Content != nil {
-			out.ResponseBody = entry.Response.Content.Text
-		}
-		entries = append(entries, out)
+	entries := make([]harEntry, 0, len(observations))
+	for _, observation := range observations {
+		entries = append(entries, harEntry{
+			ID:                     observation.ID,
+			Method:                 strings.ToUpper(strings.TrimSpace(observation.Method)),
+			URL:                    strings.TrimSpace(observation.RequestURL),
+			RequestBody:            observation.RequestBody,
+			RequestBodyTransformed: observation.RequestBodyTransformed,
+			RequestHeaders:         observation.RequestHeaders,
+			ResponseBody:           observation.ResponseBody,
+			ResponseHeaders:        observation.ResponseHeaders,
+		})
 	}
 	return entries, nil
-}
-
-func headerMap(headers []struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}) map[string]string {
-	out := make(map[string]string, len(headers))
-	canonicalKeys := make(map[string]string, len(headers))
-	for _, header := range headers {
-		name := strings.TrimSpace(header.Name)
-		if name == "" {
-			continue
-		}
-		lowerName := strings.ToLower(name)
-		if existingKey, exists := canonicalKeys[lowerName]; exists {
-			// HAR represents repeated fields as separate entries. Newlines mirror
-			// the runtime extractor's flattened-header surface and preserve every
-			// value without corrupting commas inside Set-Cookie Expires attributes.
-			out[existingKey] += "\n" + header.Value
-			continue
-		}
-		canonicalKeys[lowerName] = name
-		out[name] = header.Value
-	}
-	return out
 }
 
 // normalizedURL is the comparison form of a request URL: the trimmed raw text plus
@@ -2070,12 +2016,13 @@ func detectCorrelationsChecked(entries []harEntry) ([]correlate.Correlation, []s
 	observations := make([]correlate.Observation, 0, len(entries))
 	for _, entry := range entries {
 		observations = append(observations, correlate.Observation{
-			ID:              entry.ID,
-			RequestURL:      entry.URL,
-			RequestBody:     entry.RequestBody,
-			RequestHeaders:  entry.RequestHeaders,
-			ResponseBody:    entry.ResponseBody,
-			ResponseHeaders: entry.ResponseHeaders,
+			ID:                     entry.ID,
+			RequestURL:             entry.URL,
+			RequestBody:            entry.RequestBody,
+			RequestBodyTransformed: entry.RequestBodyTransformed,
+			RequestHeaders:         entry.RequestHeaders,
+			ResponseBody:           entry.ResponseBody,
+			ResponseHeaders:        entry.ResponseHeaders,
 		})
 	}
 	genericCorrelations, warnings, err := correlate.DetectCheckedWithWarnings(observations)

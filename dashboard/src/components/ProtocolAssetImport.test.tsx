@@ -1910,6 +1910,30 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('HAR replay accounting')
   })
 
+  it.each([
+    { kind: 'har' as const, index: 0, name: 'primary.har', sizeMB: 96, rejected: false, limit: 100 },
+    { kind: 'har' as const, index: 1, name: 'comparison.har', sizeMB: 96, rejected: false, limit: 100 },
+    { kind: 'har' as const, index: 0, name: 'too-large.har', sizeMB: 101, rejected: true, limit: 100 },
+    { kind: 'postman' as const, index: 0, name: 'collection.json', sizeMB: 51, rejected: true, limit: 50 },
+  ])('checks the $kind $name file envelope', async ({ kind, index, name, sizeMB, rejected, limit }) => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind={kind} projectId="project-1" />)
+    })
+    const input = container.querySelectorAll<HTMLInputElement>('input[type="file"]')[index]
+    const file = new File(['{"log":{"entries":[]}}'], name, { type: 'application/json' })
+    Object.defineProperty(file, 'size', { configurable: true, value: sizeMB * 1024 * 1024 })
+    await act(async () => {
+      Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    if (rejected) {
+      expect(container.textContent).toContain(`imports are limited to ${limit}.0 MB`)
+    } else {
+      expect(container.textContent).toContain(name)
+      expect(container.textContent).not.toContain('imports are limited')
+    }
+  })
+
   it('rejects an oversized comparison HAR before it reaches conversion', async () => {
     await act(async () => {
       root.render(<ProtocolAssetImport kind="har" projectId="project-1" />)
@@ -1917,7 +1941,7 @@ describe('ProtocolAssetImport', () => {
     const fileInputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]')
     const primary = new File(['{"log":{"entries":[]}}'], 'capture.har', { type: 'application/json' })
     const oversized = new File(['{}'], 'comparison.har', { type: 'application/json' })
-    Object.defineProperty(oversized, 'size', { configurable: true, value: 51 * 1024 * 1024 })
+    Object.defineProperty(oversized, 'size', { configurable: true, value: 101 * 1024 * 1024 })
 
     await act(async () => {
       Object.defineProperty(fileInputs[0], 'files', { configurable: true, value: [primary] })
@@ -1926,7 +1950,7 @@ describe('ProtocolAssetImport', () => {
       fileInputs[1].dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('comparison.har is 51.0 MB; imports are limited')
+    expect(container.textContent).toContain('comparison.har is 101.0 MB; imports are limited')
     await act(async () => {
       Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))

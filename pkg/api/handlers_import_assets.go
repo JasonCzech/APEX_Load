@@ -63,13 +63,13 @@ func (s *Server) handleUploadImportAsset(w http.ResponseWriter, r *http.Request)
 	}
 	defer file.Close()
 
-	data, err := io.ReadAll(io.LimitReader(file, harImportMaxBodyBytes+1))
+	data, err := io.ReadAll(io.LimitReader(file, importAssetMaxBodyBytes+1))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
 		return
 	}
-	if int64(len(data)) > harImportMaxBodyBytes {
-		writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("asset exceeds %d byte limit", harImportMaxBodyBytes))
+	if int64(len(data)) > importAssetMaxBodyBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("asset exceeds %d byte limit", importAssetMaxBodyBytes))
 		return
 	}
 	if len(data) == 0 {

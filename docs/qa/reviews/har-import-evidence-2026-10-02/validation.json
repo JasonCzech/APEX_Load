@@ -1,0 +1,11 @@
+{
+  "command": "GOMAXPROCS=4 go test -p 1 ./...",
+  "exit_code": 0,
+  "tested_packages": 117,
+  "packages_without_tests": 6,
+  "affected_packages_uncached": "go test ./pkg/convert/sample ./pkg/convert/har ./pkg/convert/correlate -count=1",
+  "affected_packages_exit_code": 0,
+  "documentation_checks_exit_code": 0,
+  "git_diff_check_exit_code": 0,
+  "customer_hosts_replayed": false
+}

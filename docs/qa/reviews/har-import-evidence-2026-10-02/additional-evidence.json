@@ -1,0 +1,218 @@
+{
+  "default_imports": [
+    {
+      "analysis_limits": [],
+      "baseline_json_responses": 88,
+      "baseline_observations": 153,
+      "diagnostics": {
+        "blocker:Content-Length": 9,
+        "blocker:HTTP version": 153,
+        "info:HAR Content-Length regenerated": 96,
+        "info:HAR request header stripped": 563,
+        "info:HAR static asset filter": 1,
+        "warning:HTTP request URL": 6,
+        "warning:imported credential": 97
+      },
+      "duration_ms": 1713,
+      "file": "Desktop_attone.lightning.force.har",
+      "include_static_assets": false,
+      "pre_applied_correlations": 0,
+      "request_body_mismatches": 0,
+      "sha256": "9edade9b80e40571a03b9cb9a4aaf145c4b1f6ff6b69fd3f4f84a4d5384d0fe9",
+      "stats": {
+        "format": "har",
+        "total_requests": 347,
+        "converted_actions": 153,
+        "filtered_assets": 194,
+        "assertions": 153,
+        "extractors": 0,
+        "correlations_detected": 208
+      },
+      "validation_failed": 0
+    },
+    {
+      "analysis_limits": [],
+      "baseline_json_responses": 89,
+      "baseline_observations": 124,
+      "diagnostics": {
+        "blocker:Content-Length": 15,
+        "info:HAR Content-Length regenerated": 51,
+        "info:HAR cookies[]": 94,
+        "info:HAR proxy tunnel": 78,
+        "info:HAR request header stripped": 313,
+        "info:HAR static asset filter": 1,
+        "info:duplicate Set-Cookie headers": 17,
+        "warning:HTTP request URL": 3,
+        "warning:imported credential": 112
+      },
+      "duration_ms": 4205,
+      "file": "Login_Prod_7_18_2.har",
+      "include_static_assets": false,
+      "pre_applied_correlations": 0,
+      "request_body_mismatches": 0,
+      "sha256": "90ca8a55737cc0a5079d413c16b578f79139d3d3faee5a544a64961bde125466",
+      "stats": {
+        "format": "har",
+        "total_requests": 273,
+        "converted_actions": 124,
+        "filtered_assets": 71,
+        "skipped_requests": 78,
+        "assertions": 124,
+        "extractors": 0,
+        "correlations_detected": 110
+      },
+      "validation_failed": 0
+    }
+  ],
+  "include_static_assets": [
+    {
+      "analysis_limits": [
+        "correlation analysis was incomplete; detected candidates are retained for manual review only and no automatic correlation rewrites were applied: correlation candidate discovery for observation 137 was incomplete after retaining 1024 candidate(s) (per-observation cap 1024); later values in that response were not analyzed; correlation analysis exceeded its deterministic work budget; remaining candidates and observations were skipped"
+      ],
+      "baseline_json_responses": 88,
+      "baseline_observations": 347,
+      "diagnostics": {
+        "blocker:Content-Length": 9,
+        "blocker:HTTP version": 347,
+        "info:HAR Content-Length regenerated": 96,
+        "info:HAR base64 content": 27,
+        "info:HAR request header stripped": 1186,
+        "warning:HAR correlation analysis incomplete": 1,
+        "warning:HTTP request URL": 6,
+        "warning:imported credential": 97
+      },
+      "duration_ms": 19100,
+      "file": "Desktop_attone.lightning.force.har",
+      "include_static_assets": true,
+      "pre_applied_correlations": 0,
+      "request_body_mismatches": 0,
+      "sha256": "9edade9b80e40571a03b9cb9a4aaf145c4b1f6ff6b69fd3f4f84a4d5384d0fe9",
+      "stats": {
+        "format": "har",
+        "total_requests": 347,
+        "converted_actions": 347,
+        "assertions": 347,
+        "extractors": 0,
+        "correlations_detected": 183
+      },
+      "validation_failed": 0
+    },
+    {
+      "analysis_limits": [],
+      "baseline_json_responses": 89,
+      "baseline_observations": 195,
+      "diagnostics": {
+        "blocker:Content-Length": 15,
+        "info:HAR Content-Length regenerated": 51,
+        "info:HAR base64 content": 15,
+        "info:HAR cookies[]": 161,
+        "info:HAR proxy tunnel": 78,
+        "info:HAR request header stripped": 425,
+        "info:duplicate Set-Cookie headers": 43,
+        "warning:HTTP request URL": 3,
+        "warning:imported credential": 183
+      },
+      "duration_ms": 13594,
+      "file": "Login_Prod_7_18_2.har",
+      "include_static_assets": true,
+      "pre_applied_correlations": 0,
+      "request_body_mismatches": 0,
+      "sha256": "90ca8a55737cc0a5079d413c16b578f79139d3d3faee5a544a64961bde125466",
+      "stats": {
+        "format": "har",
+        "total_requests": 273,
+        "converted_actions": 195,
+        "skipped_requests": 78,
+        "assertions": 195,
+        "extractors": 0,
+        "correlations_detected": 131
+      },
+      "validation_failed": 0
+    }
+  ],
+  "salesforce_reviews": [
+    {
+      "blocker_count": 3,
+      "correlation_confidence": "medium",
+      "coverage": {
+        "har_provided": true,
+        "imported_requests": 153,
+        "matched_requests": 153,
+        "coverage_pct": 100
+      },
+      "detected": true,
+      "file": "Desktop_attone.lightning.force.har",
+      "native_correlations": 64,
+      "native_preapplied": 0,
+      "validation_failed": 0
+    },
+    {
+      "blocker_count": 1,
+      "correlation_confidence": "high",
+      "coverage": {
+        "har_provided": true,
+        "imported_requests": 124,
+        "matched_requests": 124,
+        "coverage_pct": 100
+      },
+      "detected": true,
+      "file": "Login_Prod_7_18_2.har",
+      "native_correlations": 113,
+      "native_preapplied": 0,
+      "validation_failed": 0
+    }
+  ],
+  "truncated_capture_complete_entry_prefix_analysis_only": {
+    "analysis_limits": [],
+    "baseline_json_responses": 49,
+    "baseline_observations": 56,
+    "diagnostics": {
+      "blocker:Content-Length": 5,
+      "blocker:imported credential": 5,
+      "info:HAR Content-Length regenerated": 13,
+      "info:HAR cookies[]": 48,
+      "info:HAR static asset filter": 1,
+      "warning:HTTP request URL": 1,
+      "warning:imported credential": 56
+    },
+    "duration_ms": 4014,
+    "file": "KM-complete-entries-analysis-only.har",
+    "include_static_assets": false,
+    "pre_applied_correlations": 5,
+    "request_body_mismatches": 11,
+    "sha256": "0e2d13770b30813a3e3afe0b75d4bb1d6e19687e420b3cc846a48ac98758b096",
+    "stats": {
+      "format": "har",
+      "total_requests": 68,
+      "converted_actions": 56,
+      "filtered_assets": 12,
+      "assertions": 56,
+      "extractors": 5,
+      "correlations_detected": 9
+    },
+    "validation_failed": 0
+  },
+  "sources": [
+    {
+      "name": "KM_ACCPerf_1121_LoginWorking.har",
+      "bytes": 13643776,
+      "sha256": "d4b0cdb4734eb7a0a174fb347bc070c3d2cc91410ba8ed0711b9df1b50c3650b",
+      "valid_complete_har": false,
+      "complete_entries_before_truncation": 68
+    },
+    {
+      "name": "Desktop_attone.lightning.force.zip",
+      "bytes": 13656745,
+      "sha256": "fe5f3c5ebcf0f8bbde2fe853125de7152e0f3b7f4bfadd6ecfc39e0c1717aa9a",
+      "extracted_bytes": 96121070,
+      "extracted_sha256": "9edade9b80e40571a03b9cb9a4aaf145c4b1f6ff6b69fd3f4f84a4d5384d0fe9"
+    },
+    {
+      "name": "Login_Prod_7_18_2.zip",
+      "bytes": 5633279,
+      "sha256": "89b32113a81254361c8180752e26c6cec7c1df2c4e37b89b89f2e782f9574c2a",
+      "extracted_bytes": 31375024,
+      "extracted_sha256": "90ca8a55737cc0a5079d413c16b578f79139d3d3faee5a544a64961bde125466"
+    }
+  ]
+}

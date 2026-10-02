@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -25,21 +26,50 @@ import (
 
 const maxHARDecodedContentBytes = 10 << 20
 
-// HARCorrelationBaseline returns the same non-static, non-WebSocket exchanges
-// that HAR conversion consumes, projected as raw record-vs-replay
+// HARCorrelationBaseline returns the same application exchanges
+// that HAR conversion consumes under the selected asset filter, projected as raw record-vs-replay
 // observations. The caller owns disclosure and persistence; this helper must
 // never be used in a public conversion response because the observations can
 // contain source credentials.
 func HARCorrelationBaseline(content string, includeStaticAssets bool) ([]correlate.Observation, error) {
+	sources, err := harObservations(content, includeStaticAssets, false)
+	if err != nil {
+		return nil, err
+	}
+	observations := make([]correlate.Observation, 0, len(sources))
+	for _, source := range sources {
+		observations = append(observations, source.Observation)
+	}
+	return observations, nil
+}
+
+// HARSourceObservation is a private source observation with the request method.
+type HARSourceObservation struct {
+	correlate.Observation
+	Method string
+}
+
+// HARSourceObservations shares HAR decoding with import while retaining original
+// one-based entry IDs for source-aware adapters. Like HARCorrelationBaseline,
+// these observations contain source values and must remain private.
+func HARSourceObservations(content string, includeStaticAssets bool) ([]HARSourceObservation, error) {
+	return harObservations(content, includeStaticAssets, true)
+}
+
+func harObservations(content string, includeStaticAssets, sourceIDs bool) ([]HARSourceObservation, error) {
 	var diagnostics diag.Collector
 	exchanges, _, _, _, err := parseHAR(content, includeStaticAssets, &diagnostics)
 	if err != nil {
 		return nil, err
 	}
-	observations := make([]correlate.Observation, 0, len(exchanges))
+	observations := make([]HARSourceObservation, 0, len(exchanges))
 	for index, exchange := range exchanges {
+		id := index
+		if sourceIDs {
+			id = exchange.SourceEntryID
+		}
 		observation := correlate.Observation{
-			ID:                     index,
+			ID:                     id,
 			RequestURL:             exchange.URL,
 			RequestBody:            exchange.Body,
 			RequestBodyTransformed: exchange.BodyEncoding != "",
@@ -50,14 +80,14 @@ func HARCorrelationBaseline(content string, includeStaticAssets bool) ([]correla
 			observation.ResponseHeaders = correlationObservationHeaders(exchange.Response.Headers, exchange.Response.HeaderList)
 			observation.ResponseStatus = exchange.Response.Status
 		}
-		observations = append(observations, observation)
+		observations = append(observations, HARSourceObservation{Observation: observation, Method: exchange.Method})
 	}
 	return observations, nil
 }
 
 func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collector) ([]exchange, []string, int, int, error) {
 	var payload any
-	if err := json.Unmarshal([]byte(content), &payload); err != nil {
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(content, "\uFEFF")), &payload); err != nil {
 		return nil, nil, 0, 0, fmt.Errorf("failed to parse HAR JSON: %w", err)
 	}
 	items, err := extractHARItems(payload)
@@ -71,6 +101,12 @@ func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collec
 	for index, item := range items {
 		if !includeStaticAssets && isStaticHAREntry(item) {
 			filtered++
+			continue
+		}
+		requestData, _ := item["request"].(map[string]any)
+		if strings.EqualFold(strings.TrimSpace(stringValue(requestData["method"])), http.MethodConnect) {
+			diagnostics.Add(diag.Info, "HAR proxy tunnel", fmt.Sprintf("HAR entry %d", index+1), "proxy CONNECT transport setup was excluded from application actions; configure replay proxy policy separately")
+			skipped++
 			continue
 		}
 		if isHARWebSocketUpgrade(item) {
@@ -181,19 +217,27 @@ func parseHARItem(item map[string]any, diagnostics *diag.Collector, index int) (
 	headerList := headerListEntries(requestData["headers"])
 	body, bodyEncoding, fileAssets := harBody(requestData, headers, diagnostics, location)
 	ex := exchange{
-		Method:       strings.ToUpper(stringValue(requestData["method"])),
-		URL:          stringValue(requestData["url"]),
-		HTTPVersion:  stringValue(requestData["httpVersion"]),
-		Body:         body,
-		BodyEncoding: bodyEncoding,
-		FileAssets:   fileAssets,
-		Headers:      headers,
-		HeaderList:   headerList,
-		Metadata:     harEntryMetadata(item, requestData, nil),
-		DurationMs:   floatValue(item["time"]),
+		SourceEntryID: index + 1,
+		Method:        strings.ToUpper(stringValue(requestData["method"])),
+		URL:           stringValue(requestData["url"]),
+		HTTPVersion:   stringValue(requestData["httpVersion"]),
+		Body:          body,
+		BodyEncoding:  bodyEncoding,
+		FileAssets:    fileAssets,
+		Headers:       headers,
+		HeaderList:    headerList,
+		Metadata:      harEntryMetadata(item, requestData, nil),
+		DurationMs:    floatValue(item["time"]),
 	}
 	if ex.Method != "" || ex.URL != "" {
 		location = strings.TrimSpace(ex.Method + " " + ex.URL)
+	}
+	// "unknown" is an exporter sentinel for absent version information, not
+	// an unsupported protocol declaration. Keep it in source metadata and allow
+	// normal runtime negotiation instead of creating a false execution gate.
+	if strings.EqualFold(strings.TrimSpace(ex.HTTPVersion), "unknown") {
+		ex.HTTPVersion = ""
+		diagnostics.Add(diag.Info, "HAR HTTP version unavailable", location, "the exporter did not record an HTTP version; replay uses the runtime negotiation policy")
 	}
 	applyHARPostDataHeaders(requestData, ex.Headers)
 	// applyHARPostDataHeaders may inject a multipart boundary into the Content-Type
@@ -225,7 +269,62 @@ func parseHARItem(item map[string]any, diagnostics *diag.Collector, index int) (
 	} else {
 		diagnostics.Add(diag.Warning, "HAR missing response", location, "entry has no response object; no status assertion or response extractors can be generated for this step")
 	}
+	normalizeHARContentLength(&ex, diagnostics, location)
 	return ex, nil
+}
+
+// A valid recorded Content-Length is transport framing, regenerated by Go
+// after correlation/template expansion. Conflicting or incorrect lengths stay
+// in the shared fidelity pipeline so they still require explicit review.
+func normalizeHARContentLength(ex *exchange, diagnostics *diag.Collector, location string) {
+	length := int64(len(ex.Body))
+	if ex.BodyEncoding == "base64" {
+		decoded, err := decodeBase64Text(ex.Body)
+		if err != nil {
+			return
+		}
+		length = int64(len(decoded))
+	}
+	found := false
+	for _, header := range ex.HeaderList {
+		if !strings.EqualFold(header.Name, "Content-Length") {
+			continue
+		}
+		value := strings.TrimSpace(header.Value)
+		if value == "" {
+			return
+		}
+		for _, digit := range value {
+			if digit < '0' || digit > '9' {
+				return
+			}
+		}
+		recorded, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || recorded != length {
+			return
+		}
+		found = true
+	}
+	if !found {
+		return
+	}
+	kept := make(dsl.HeaderList, 0, len(ex.HeaderList))
+	for _, header := range ex.HeaderList {
+		if !strings.EqualFold(header.Name, "Content-Length") {
+			kept = append(kept, header)
+		}
+	}
+	ex.HeaderList = kept
+	for name := range ex.Headers {
+		if strings.EqualFold(name, "Content-Length") {
+			delete(ex.Headers, name)
+		}
+	}
+	if ex.Metadata == nil {
+		ex.Metadata = map[string]any{}
+	}
+	ex.Metadata["har.request.content_length"] = length
+	diagnostics.Add(diag.Info, "HAR Content-Length regenerated", location, "recorded Content-Length matched the captured request bytes; Go regenerates framing after template expansion")
 }
 
 func harEntryMetadata(item map[string]any, requestData map[string]any, responseData map[string]any) map[string]any {
@@ -355,7 +454,8 @@ func harBody(requestData map[string]any, headers map[string]string, diagnostics 
 
 func decodeHARText(text string, encoding string, headers map[string]string, diagnostics *diag.Collector, location string, label string) string {
 	decoded := []byte(text)
-	if strings.EqualFold(strings.TrimSpace(encoding), "base64") {
+	base64Encoded := strings.EqualFold(strings.TrimSpace(encoding), "base64")
+	if base64Encoded {
 		base64Decoded, err := decodeBase64Text(text)
 		if err != nil {
 			diagnostics.Add(diag.Warning, "HAR base64 content", location, label+" is marked base64 but could not be decoded; original text was preserved")
@@ -363,7 +463,11 @@ func decodeHARText(text string, encoding string, headers map[string]string, diag
 		}
 		decoded = base64Decoded
 	}
-	if encodings := contentEncodings(headers); len(encodings) > 0 {
+	// HAR content.text is normally already decompressed, even when the wire
+	// headers retain Content-Encoding. Some exporters store compressed bytes
+	// instead; decode those only for binary base64 resources. Unencoded/Raw
+	// text is already decoded, including legitimate Unicode control characters.
+	if encodings := contentEncodings(headers); base64Encoded && len(encodings) > 0 && !isHARDecodedText(decoded) {
 		var err error
 		decoded, err = decodeHARContentEncodings(decoded, encodings)
 		if err != nil {
@@ -378,6 +482,20 @@ func decodeHARText(text string, encoding string, headers map[string]string, diag
 		return placeholder
 	}
 	return string(decoded)
+}
+
+func isHARDecodedText(body []byte) bool {
+	if !utf8.Valid(body) {
+		return false
+	}
+	// UTF-8 C1 characters may occur in exported JavaScript literals. Only
+	// binary-looking ASCII control bytes distinguish compressed resources here.
+	for _, b := range body {
+		if (b < 0x20 || b == 0x7f) && b != '\t' && b != '\n' && b != '\r' && b != '\f' {
+			return false
+		}
+	}
+	return true
 }
 
 func contentEncodings(headers map[string]string) []string {

@@ -78,20 +78,21 @@ type ConvertResult struct {
 }
 
 type exchange struct {
-	Method       string
-	URL          string
-	HTTPVersion  string
-	Headers      map[string]string
-	HeaderList   dsl.HeaderList
-	Body         string
-	BodyEncoding string
-	FileAssets   []dsl.DataSource
-	Metadata     map[string]any
-	Response     *response
-	StartedAt    time.Time
-	HasStartedAt bool
-	DurationMs   float64
-	TimeoutMs    int
+	SourceEntryID int
+	Method        string
+	URL           string
+	HTTPVersion   string
+	Headers       map[string]string
+	HeaderList    dsl.HeaderList
+	Body          string
+	BodyEncoding  string
+	FileAssets    []dsl.DataSource
+	Metadata      map[string]any
+	Response      *response
+	StartedAt     time.Time
+	HasStartedAt  bool
+	DurationMs    float64
+	TimeoutMs     int
 	// SourceSecrets retains source-only values that do not survive in a
 	// projected request surface (for example cURL -u input or arguments of an
 	// unsupported option). It is consumed only by source-review redaction.
@@ -165,7 +166,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	correlationVarSources := map[string]int{}
 	extraCorrelationExtractors := map[int][]dsl.Extractor{}
 	if inferExtractors {
-		correlations, err = detectCorrelationsChecked(exchanges)
+		var analysisWarnings []string
+		if format == "har" {
+			correlations, analysisWarnings, err = detectHARCorrelationsForReview(exchanges)
+		} else {
+			correlations, err = detectCorrelationsChecked(exchanges)
+		}
 		if err != nil {
 			if !errors.Is(err, correlate.ErrCorrelationWorkLimit) {
 				return nil, fmt.Errorf("detect correlations: %w", err)
@@ -175,7 +181,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			correlations = nil
 			warnings = append(warnings, fmt.Sprintf("correlation analysis was not completed and no automatic correlation rewrites were applied: %v", err))
 		}
-		correlationVars, correlationVarSources, extraCorrelationExtractors = prepareCorrelationApplication(exchanges, correlations)
+		if len(analysisWarnings) > 0 {
+			detail := "correlation analysis was incomplete; detected candidates are retained for manual review only and no automatic correlation rewrites were applied: " + strings.Join(analysisWarnings, "; ")
+			warnings = append(warnings, detail)
+			diagnostics.Add(diag.Warning, "HAR correlation analysis incomplete", "HAR import", detail)
+			for index := range correlations {
+				correlations[index].ReviewAction = manualCorrelationValueReplacement
+			}
+		} else {
+			correlationVars, correlationVarSources, extraCorrelationExtractors = prepareCorrelationApplication(exchanges, correlations)
+		}
 		if len(correlations) == 0 {
 			warnings = append(warnings, "no reusable correlation values were detected across the provided samples")
 		}

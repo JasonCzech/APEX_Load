@@ -146,6 +146,7 @@ const copy = {
 } satisfies Record<ImportKind, Record<string, string>>
 
 const IMPORT_FILE_MAX_BYTES = 50 * 1024 * 1024
+const HAR_FILE_MAX_BYTES = 100 * 1024 * 1024
 const POSTMAN_ENVIRONMENT_ACCEPT = '.postman_environment.json,.json,application/json'
 
 function formatBytes(bytes: number): string {
@@ -169,8 +170,9 @@ function fileMatchesAccept(file: File, accept: string): boolean {
 }
 
 function validateImportFile(kind: ImportKind, file: File): string | null {
-  if (file.size > IMPORT_FILE_MAX_BYTES) {
-    return `${file.name} is ${formatBytes(file.size)}; imports are limited to ${formatBytes(IMPORT_FILE_MAX_BYTES)}.`
+  const maxBytes = kind === 'har' ? HAR_FILE_MAX_BYTES : IMPORT_FILE_MAX_BYTES
+  if (file.size > maxBytes) {
+    return `${file.name} is ${formatBytes(file.size)}; imports are limited to ${formatBytes(maxBytes)}.`
   }
   if (!fileMatchesAccept(file, copy[kind].accept)) {
     const extensions = acceptTokens(copy[kind].accept).filter(token => token.startsWith('.')).join(', ')

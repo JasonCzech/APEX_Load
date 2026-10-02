@@ -318,7 +318,7 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/jmeter/validate", editorImportAccess(resolveImportProjectIDFromForm, jmeterImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/github", editorProjectAccess(resolveImportProjectIDFromJSON)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/sample", editorProjectAccess(resolveImportProjectIDFromJSON)),
-	routeAuth(http.MethodPost, "/api/v1/scripts/import/{id}/assets/upload", withDomainFeature(editorImportAccess(resolveImportProjectIDFromForm, harImportMaxBodyBytes), "script_builder.imports")),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/{id}/assets/upload", withDomainFeature(editorImportAccess(resolveImportProjectIDFromForm, importAssetMaxBodyBytes), "script_builder.imports")),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/{id}/java-classpath/upload", withDomainFeature(editorImportAccess(resolveImportProjectIDFromForm, javaClasspathUploadMaxBodyBytes), "script_builder.imports")),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/oracle-ebusiness/review", editorImportAccess(resolveImportProjectIDFromJSONOrForm, oracleReviewImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/k6", editorImportAccess(resolveImportProjectIDFromJSONOrForm, k6ImportMaxBodyBytes)),
