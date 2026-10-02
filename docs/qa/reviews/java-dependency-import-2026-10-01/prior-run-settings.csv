@@ -1,0 +1,13 @@
+source_file,section,key,status,target_paths,reason
+result1/GeneralInfo.ini,General,Product,non_executable_prior_run_metadata,,Retained prior-run report metadata; not a selected CFG/USP replay setting. No source values are included.
+result1/GeneralInfo.ini,General,Version,non_executable_prior_run_metadata,,Retained prior-run report metadata; not a selected CFG/USP replay setting. No source values are included.
+result1/GeneralInfo.ini,General,Total,non_executable_prior_run_metadata,,Retained prior-run report metadata; not a selected CFG/USP replay setting. No source values are included.
+result1/GeneralInfo.ini,General,Title,non_executable_prior_run_metadata,,Retained prior-run report metadata; not a selected CFG/USP replay setting. No source values are included.
+result1/GeneralInfo.ini,General,OSVersion,non_executable_prior_run_metadata,,Retained prior-run report metadata; not a selected CFG/USP replay setting. No source values are included.
+result1/GeneralInfo.ini,General,TestLocation,non_executable_prior_run_metadata,,Retained prior-run report metadata; not a selected CFG/USP replay setting. No source values are included.
+result1/GeneralInfo.ini,General,TestOnHost,non_executable_prior_run_metadata,,Retained prior-run report metadata; not a selected CFG/USP replay setting. No source values are included.
+result1/GeneralInfo.ini,General,GlobalIteration,non_executable_prior_run_metadata,,Retained prior-run report metadata; not a selected CFG/USP replay setting. No source values are included.
+result1/GeneralInfo.ini,General,QCServer,non_executable_prior_run_metadata,,Retained prior-run report metadata; not a selected CFG/USP replay setting. No source values are included.
+result1/GeneralInfo.ini,General,QCProject,non_executable_prior_run_metadata,,Retained prior-run report metadata; not a selected CFG/USP replay setting. No source values are included.
+result1/Mediainfo.ini,Media,Report,non_executable_prior_run_metadata,,Retained prior-run report metadata; not a selected CFG/USP replay setting. No source values are included.
+result1/Mediainfo.ini,Media,IterDir,non_executable_prior_run_metadata,,Retained prior-run report metadata; not a selected CFG/USP replay setting. No source values are included.

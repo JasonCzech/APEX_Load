@@ -1,0 +1,1650 @@
+{
+  "source_file_key_rows": 205,
+  "disposition_counts": {
+    "non_applicable": 103,
+    "mapped": 64,
+    "compatibility_only": 38
+  },
+  "rows": [
+    {
+      "source_file": "default.cfg",
+      "section": "FILTERS",
+      "key": "ExcludeFiltersInList",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "FILTERS",
+      "key": "FilterType",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "FILTERS",
+      "key": "IncludeFiltersInList",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "AccessVTSPortByQueryString",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "AutomaticTransactions",
+      "disposition": "mapped",
+      "target_paths": "config.run_logic.auto_transactions",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "AutomaticTransactionsPerFunc",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "ContinueOnError",
+      "disposition": "mapped",
+      "target_paths": "config.error_handling.continue_on_error",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "DefaultRunLogic",
+      "disposition": "mapped",
+      "target_paths": "",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "FailTransOnErrorMsg",
+      "disposition": "compatibility_only",
+      "target_paths": "config.error_handling.fail_transaction_on_error_message",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "Replay64bit",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "UseThreads",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "XlBridgeTimeout",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "iter_begins_val",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "General",
+      "key": "iter_ends_val",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Iterations",
+      "key": "IterationPace",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Iterations",
+      "key": "NumOfIterations",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Iterations",
+      "key": "RandomMax",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Iterations",
+      "key": "RandomMin",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Iterations",
+      "key": "StartEvery",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Java",
+      "key": "ExternalJREPath",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.jdk_selection | config.java_vuser.jdk_home",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Java",
+      "key": "UseExternalJVM",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.jdk_selection | config.java_vuser.jdk_home",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "Java_Env_ClassPath",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.classpath",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "Java_Env_ClassPath_UI",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "Java_Env_ClassPath_Unused",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "Java_Previous_Class_Path",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "Java_VM_Params",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.additional_vm_parameters",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "Java_VM_Params_extra_arg_1",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.additional_vm_parameters",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "Java_VM_Params_extra_arg_2",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.additional_vm_parameters",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "Java_VM_Params_extra_arg_3",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.additional_vm_parameters",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "Java_VM_Params_extra_arg_4",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.additional_vm_parameters",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "Java_VM_Params_extra_arg_5",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.additional_vm_parameters",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "Java_VM_Params_extra_arg_6",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.additional_vm_parameters",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "Java_VM_Params_extra_arg_7",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.additional_vm_parameters",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "SkipAutomaticParameterEvaluation",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.skip_parameter_evaluation",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "Use_Xboot",
+      "disposition": "compatibility_only",
+      "target_paths": "config.java_vuser.use_xbootclasspath",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "enable_CL_per_vuser",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.dedicated_class_loader",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "jdk_home",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.jdk_selection | config.java_vuser.jdk_home",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "jdk_home_extra_arg_1",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "JavaVM:Options",
+      "key": "use_jdk",
+      "disposition": "mapped",
+      "target_paths": "config.java_vuser.jdk_selection | config.java_vuser.jdk_home",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "AutoLog",
+      "disposition": "mapped",
+      "target_paths": "config.log",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "AutoLogBufferSize",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "IncludeEnvInfo",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "LogDetail",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "LogOptions",
+      "disposition": "mapped",
+      "target_paths": "config.log",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "MsgClassData",
+      "disposition": "mapped",
+      "target_paths": "config.log",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "MsgClassFull",
+      "disposition": "mapped",
+      "target_paths": "config.log",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "MsgClassParameters",
+      "disposition": "mapped",
+      "target_paths": "config.log",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "Log",
+      "key": "PrintTimeStamp",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "ModemSpeed",
+      "key": "CustomModemSpeed",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "ModemSpeed",
+      "key": "EnableCustomModemSpeed",
+      "disposition": "mapped",
+      "target_paths": "config.web_runtime.network_simulation",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "ModemSpeed",
+      "key": "EnableModemSpeed",
+      "disposition": "mapped",
+      "target_paths": "config.web_runtime.network_simulation",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "ModemSpeed",
+      "key": "ModemSpeed",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "ThinkTime",
+      "key": "Factor",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "ThinkTime",
+      "key": "Limit",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "ThinkTime",
+      "key": "LimitFlag",
+      "disposition": "mapped",
+      "target_paths": "config.think_time",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "ThinkTime",
+      "key": "Options",
+      "disposition": "mapped",
+      "target_paths": "config.think_time",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "ThinkTime",
+      "key": "ThinkTimeRandomHigh",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "ThinkTime",
+      "key": "ThinkTimeRandomLow",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "AedUtf8Values",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "AutoTransFileLine",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "BrowserAcceptEncoding",
+      "disposition": "mapped",
+      "target_paths": "config.browser_emulation.custom_user_agent | config.browser_emulation.language | config.http.accept_language | config.http.accept_encoding",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "BrowserAcceptLanguage",
+      "disposition": "mapped",
+      "target_paths": "config.browser_emulation.custom_user_agent | config.browser_emulation.language | config.http.accept_language | config.http.accept_encoding",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "BrowserLanguageCode",
+      "disposition": "mapped",
+      "target_paths": "config.browser_emulation.custom_user_agent | config.browser_emulation.language | config.http.accept_language | config.http.accept_encoding",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "BrowserPlatform",
+      "disposition": "non_applicable",
+      "target_paths": "config.browser_emulation.browser_type | config.browser_emulation.browser_version | config.browser_emulation.platform",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "BrowserUserAgent",
+      "disposition": "mapped",
+      "target_paths": "config.browser_emulation.custom_user_agent | config.browser_emulation.language | config.http.accept_language | config.http.accept_encoding",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "BrowserVer",
+      "disposition": "non_applicable",
+      "target_paths": "config.browser_emulation.browser_type | config.browser_emulation.browser_version | config.browser_emulation.platform",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "Browser_Type",
+      "disposition": "non_applicable",
+      "target_paths": "config.browser_emulation.browser_type | config.browser_emulation.browser_version | config.browser_emulation.platform",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "CacheAlwaysCheckForNewerPages",
+      "disposition": "mapped",
+      "target_paths": "config.browser_emulation.cache.check_newer_versions | config.browser.check_newer_versions",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "CacheHtmlPages",
+      "disposition": "mapped",
+      "target_paths": "config.browser_emulation.cache.cache_content_urls | config.browser.cache_content_urls",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ClearCacheForSimulateNewUser",
+      "disposition": "compatibility_only",
+      "target_paths": "config.browser_emulation.cache.clear_cache_for_new_user",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ConnectTimeout",
+      "disposition": "mapped",
+      "target_paths": "config.http.version | config.http.connect_timeout_ms | config.http.request_timeout_ms | config.http.max_redirects | config.http.keep_alive | config.http.max_conns_per_host",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "CustomUserAgent",
+      "disposition": "mapped",
+      "target_paths": "config.browser_emulation.custom_user_agent | config.browser_emulation.language | config.http.accept_language | config.http.accept_encoding",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "DeleteCacheUnreferencedIterations",
+      "disposition": "compatibility_only",
+      "target_paths": "config.http.cache_max_unused_iterations",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "DisableNTLM2SS",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "EnableChecks",
+      "disposition": "compatibility_only",
+      "target_paths": "config.http.legacy_html_checks",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "EnableDynatrace",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "EnableHTTP2",
+      "disposition": "mapped",
+      "target_paths": "config.http.version | config.http.connect_timeout_ms | config.http.request_timeout_ms | config.http.max_redirects | config.http.keep_alive | config.http.max_conns_per_host",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "EnableIPCache",
+      "disposition": "compatibility_only",
+      "target_paths": "config.http.dns_cache",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "EnableJsForTransport",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "EnableSnapshotsInReplay",
+      "disposition": "compatibility_only",
+      "target_paths": "config.results.message_detail",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "FailNonCriticalItem",
+      "disposition": "compatibility_only",
+      "target_paths": "config.http.fail_noncritical_resources",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "GraphBytesPerSecond",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "GraphHitsPerSecondHttpStatusCodes",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "GraphPagesPerSecond",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "HTTPVer",
+      "disposition": "mapped",
+      "target_paths": "config.http.version | config.http.connect_timeout_ms | config.http.request_timeout_ms | config.http.max_redirects | config.http.keep_alive | config.http.max_conns_per_host",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "HeavyKDCLoad",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "HttpErrorsAsWarnings",
+      "disposition": "compatibility_only",
+      "target_paths": "config.http.http_errors_as_warnings",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "IPVersionPolicy",
+      "disposition": "compatibility_only",
+      "target_paths": "config.http.ip_version",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "IgnoreContentCachingTypes",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "IntegratedAuthentication",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "JsForTransportRuntimeSize",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "JsForTransportStackSize",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "KeepAlive",
+      "disposition": "mapped",
+      "target_paths": "config.http.version | config.http.connect_timeout_ms | config.http.request_timeout_ms | config.http.max_redirects | config.http.keep_alive | config.http.max_conns_per_host",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "KeepAliveTimeout",
+      "disposition": "mapped",
+      "target_paths": "config.http.idle_timeout_ms",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "KeepNonTextMimeType",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "LoadChilEngine",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "LogFileWrite",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "LogFileWriteTraceToFile",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "MaxConnections",
+      "disposition": "mapped",
+      "target_paths": "config.http.version | config.http.connect_timeout_ms | config.http.request_timeout_ms | config.http.max_redirects | config.http.keep_alive | config.http.max_conns_per_host",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "MaxErrorMatchesAsERRORS",
+      "disposition": "compatibility_only",
+      "target_paths": "config.http.content_check_error_limit",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "MaxRedirectionDepth",
+      "disposition": "mapped",
+      "target_paths": "config.http.version | config.http.connect_timeout_ms | config.http.request_timeout_ms | config.http.max_redirects | config.http.keep_alive | config.http.max_conns_per_host",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "MaxSelfMetaRefreshCount",
+      "disposition": "compatibility_only",
+      "target_paths": "config.http.max_meta_refresh",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "NetBufSize",
+      "disposition": "compatibility_only",
+      "target_paths": "config.http.receive_buffer_bytes",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "OverrideNTLMCreds",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "PageDownloadTimeout",
+      "disposition": "compatibility_only",
+      "target_paths": "config.http.page_timeout_ms",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ParseHtmlContentType",
+      "disposition": "compatibility_only",
+      "target_paths": "config.http.html_parse_mode",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "PrefetchPrerenderCallBackTimerIntervalMS",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "PrintBufEscape0",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "PrintBufLineLen",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "PrintNTLMLog",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "PrintSSLLog",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyAutoConfigScriptURL",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy_mode | config.http.proxy",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyBypass",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy_mode | config.http.proxy",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyHTTPHost",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy_mode | config.http.proxy",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyHTTPPort",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy_mode | config.http.proxy",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyHTTPSHost",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy_mode | config.http.proxy",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyHTTPSPort",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy_mode | config.http.proxy",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyNoLocal",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy_mode | config.http.proxy",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyPassword",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy_mode | config.http.proxy",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyPasswordIsEncrypted",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy.password",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyUseAutoConfigScript",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy_mode | config.http.proxy",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyUseBrowser",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy_mode | config.http.proxy",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyUseProxy",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy_mode | config.http.proxy",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyUseProxyServer",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy_mode | config.http.proxy",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyUseSame",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy_mode | config.http.proxy",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ProxyUserName",
+      "disposition": "mapped",
+      "target_paths": "config.http.proxy_mode | config.http.proxy",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ReceiveTimeout",
+      "disposition": "mapped",
+      "target_paths": "config.http.version | config.http.connect_timeout_ms | config.http.request_timeout_ms | config.http.max_redirects | config.http.keep_alive | config.http.max_conns_per_host",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ResetContext",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ResourcePageTimeoutIsWarning",
+      "disposition": "compatibility_only",
+      "target_paths": "config.http.resource_timeout_as_warning",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "Retry401ThinkTime",
+      "disposition": "compatibility_only",
+      "target_paths": "config.http.challenge_delay_ms",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "SPNAddNoneDefPort",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "SPNCNameLookup",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "SSLVersionKey",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "SaveSnapshotResources",
+      "disposition": "compatibility_only",
+      "target_paths": "config.results.message_detail.include_resources",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "SearchForImages",
+      "disposition": "mapped",
+      "target_paths": "config.browser_emulation.cache.download_non_html_resources",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "SimulateCache",
+      "disposition": "mapped",
+      "target_paths": "config.browser_emulation.cache.simulate_cache | config.browser.cache_enabled",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "SimulatePrefetchPrerender",
+      "disposition": "mapped",
+      "target_paths": "config.browser_emulation.cache.simulate_prefetch",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "SnapshotOnErrorActive",
+      "disposition": "mapped",
+      "target_paths": "config.error_handling.snapshot_on_error",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "SupportCharset",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "TreeViewRequestBodyLimit",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "UTF8InputOutput",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "UseBrowserAgent",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "UseCustomAgent",
+      "disposition": "mapped",
+      "target_paths": "config.browser_emulation.custom_user_agent | config.browser_emulation.language | config.http.accept_language | config.http.accept_encoding",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "UseDataFormatExtensions",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "UseNativeNTLM",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "WebSocketCallBackTimerIntervalMS",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "WebSyncRetryIntervalMs",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "WebSyncRetryTimeoutMs",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "WinInetReplay",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.cfg",
+      "section": "WEB",
+      "key": "ZlibHeadersInCompressedRequestBody",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "Profile Actions",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "Profile Actions",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "Profile Actions",
+      "key": "Profile Actions name",
+      "disposition": "compatibility_only",
+      "target_paths": "config.run_logic.action_sequence",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "MercIniTreeSons",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "Name",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "RunLogicActionOrder",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "RunLogicActionType",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "RunLogicNumOfIterations",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "RunLogicObjectKind",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot",
+      "key": "RunLogicRunMode",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot:vuser_end",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot:vuser_end",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot:vuser_end",
+      "key": "Name",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot:vuser_end",
+      "key": "RunLogicActionType",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot:vuser_end",
+      "key": "RunLogicInterpreterType",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicEndRoot:vuser_end",
+      "key": "RunLogicObjectKind",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "MercIniTreeSons",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "Name",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "RunLogicActionOrder",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "RunLogicActionType",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "RunLogicNumOfIterations",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "RunLogicObjectKind",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot",
+      "key": "RunLogicRunMode",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot:vuser_init",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot:vuser_init",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot:vuser_init",
+      "key": "Name",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot:vuser_init",
+      "key": "RunLogicActionType",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot:vuser_init",
+      "key": "RunLogicInterpreterType",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicInitRoot:vuser_init",
+      "key": "RunLogicObjectKind",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "MercIniTreeSons",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "Name",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicActionOrder",
+      "disposition": "compatibility_only",
+      "target_paths": "config.run_logic.action_sequence",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicActionType",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicAfterPaceMax",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicAfterPaceMin",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicNumOfIterations",
+      "disposition": "mapped",
+      "target_paths": "config.run_logic.iterations",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicObjectKind",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicPaceConstAfterTime",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicPaceConstTime",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicPaceType",
+      "disposition": "mapped",
+      "target_paths": "config.pacing",
+      "reason": "Mapped source control; inspect the target field and any independent import gates."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicRandomPaceMax",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicRandomPaceMin",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot",
+      "key": "RunLogicRunMode",
+      "disposition": "compatibility_only",
+      "target_paths": "config.run_logic.block_scheduling",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot:Actions",
+      "key": "MercIniTreeFather",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot:Actions",
+      "key": "MercIniTreeSectionName",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot:Actions",
+      "key": "Name",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot:Actions",
+      "key": "RunLogicActionType",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot:Actions",
+      "key": "RunLogicInterpreterType",
+      "disposition": "compatibility_only",
+      "target_paths": "",
+      "reason": "Preserved source control; runtime equivalence requires explicit review."
+    },
+    {
+      "source_file": "default.usp",
+      "section": "RunLogicRunRoot:Actions",
+      "key": "RunLogicObjectKind",
+      "disposition": "non_applicable",
+      "target_paths": "",
+      "reason": "Preserved source control classified inactive or outside the selected runtime scope."
+    }
+  ]
+}

@@ -40,9 +40,12 @@ func TestSourceReviewDecodesBOMBeforeApplyingDisplayLimit(t *testing.T) {
 		if bomlessReview.Content != text || bomlessReview.OriginalBytes != len(bomless) {
 			t.Fatal("recognized BOM-less TruClient source remains unreadable")
 		}
-		other := Build(map[string]string{"payload.dat": bomless}, nil).SourceFiles[0]
-		if other.Content != bomless {
+		other, decoded := decodeReviewSourceText("payload.dat", bomless)
+		if decoded || other != bomless {
 			t.Fatal("binary parameter asset guessed to be TruClient XML")
+		}
+		if Build(map[string]string{"payload.dat": bomless}, nil) != nil {
+			t.Fatal("unrecognized binary parameter asset became source preview")
 		}
 		large := sourceUTF16(strings.Repeat("a", MaxFileChars+10), order)
 		projected := Build(map[string]string{"default.xml": large}, nil).SourceFiles[0]

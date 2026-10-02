@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { JavaClasspathAsset } from '../types/scripts'
 
@@ -34,6 +34,14 @@ export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, d
   const [busyEntry, setBusyEntry] = useState<string | null>(null)
   const [dragEntry, setDragEntry] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const uploadInFlight = useRef(false)
+  const mounted = useRef(true)
+  const disabledRef = useRef(disabled)
+  disabledRef.current = disabled
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   const inputs = useRef<Record<string, HTMLInputElement | null>>({})
 
   // Bindings are keyed by the exact entry string (matching the backend's
@@ -47,20 +55,26 @@ export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, d
   // any upload is in flight every attach/remove control is disabled, so the
   // closure can never go stale between start and merge.
   const handleFile = async (entry: string, file: File | undefined) => {
-    if (!file || busyEntry !== null) return
+    if (!file || disabledRef.current || uploadInFlight.current) return
+    uploadInFlight.current = true
     setError('')
     setBusyEntry(entry)
     try {
       const asset = await onUpload(file, entry)
+      if (!mounted.current) return
       onChange([...assets.filter(existing => existing.entry !== entry), asset])
     } catch (uploadError: unknown) {
-      setError(classpathUploadErrorMessage(uploadError))
+      if (mounted.current) setError(classpathUploadErrorMessage(uploadError))
     } finally {
-      setBusyEntry(null)
+      uploadInFlight.current = false
+      if (mounted.current) setBusyEntry(null)
     }
   }
 
-  const removeAsset = (entry: string) => onChange(assets.filter(asset => asset.entry !== entry))
+  const removeAsset = (entry: string) => {
+    if (disabledRef.current || uploadInFlight.current) return
+    onChange(assets.filter(asset => asset.entry !== entry))
+  }
 
   if (classpath.length === 0) {
     return <div className="cell-muted">This Java Vuser declares no classpath entries, so there are no dependencies to attach.</div>
@@ -117,7 +131,7 @@ export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, d
                   <button
                     type="button"
                     className="chip-remove"
-                    disabled={busyEntry !== null}
+                    disabled={disabled || busyEntry !== null}
                     onClick={() => removeAsset(entry)}
                     aria-label={`Remove attached JAR for ${entry}`}
                   >
@@ -131,6 +145,7 @@ export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, d
                       inputs.current[entry] = element
                     }}
                     type="file"
+                    disabled={disabled || busyEntry !== null}
                     accept=".jar,application/java-archive"
                     className="java-classpath-file-input"
                     aria-label={`Attach JAR for ${entry}`}

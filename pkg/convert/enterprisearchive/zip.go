@@ -662,6 +662,9 @@ func finalizeEnterpriseArchiveImportResult(
 			script.Init = append(script.Init, gate)
 		}
 	}
+	// Source metadata installs a complete preserved envelope. Reattach inert asset
+	// evidence afterwards so finalized drafts and standalone conversion agree.
+	attachJavaDependencyInventory(result, ctx.Files)
 	attachImportFidelityReport(result, ctx.Files, ctx.ProjectConfig, ctx.ParsedActions)
 	return nil
 }
@@ -1568,6 +1571,7 @@ func newEnterpriseArchiveReviewResult(detected DetectedProtocol, files map[strin
 		files,
 		findParameterFiles(files, nil),
 	)
+	attachJavaDependencyInventory(result, files)
 	attachImportFidelityReport(result, files, nil, actions)
 	return result
 }

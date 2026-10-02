@@ -200,6 +200,7 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 	applyJavaVuserSourceSelectionGate(result, program)
 	appendJavaCombinedSourceMappingsForEntries(result, program, mappable.entries, externalLifecycle, runtimeReachability)
 	attachJavaKafkaSettingsReview(result, program)
+	attachJavaDependencyInventory(result, files)
 	if blockers := javaVuserRunnerSemanticBlockers(runtimeReachability); len(blockers) > 0 {
 		if result.ReviewArtifact != nil {
 			if result.ReviewArtifact.Metadata == nil {

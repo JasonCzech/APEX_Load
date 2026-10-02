@@ -25,6 +25,7 @@ const apiMock = {
   createProjectSecrets: vi.fn(),
   migrateImportSecrets: vi.fn(),
   discardImportSecretSession: vi.fn(),
+  uploadJavaClasspathJar: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -2432,6 +2433,142 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('0 scripts saved · 1 review session saved · 0 drafts awaiting save · 0 archives validated, awaiting save')
     await clickImportAction(container, 'Validate Only')
     expect(container.textContent).toContain('0 scripts saved · 0 review sessions saved · 1 draft awaiting save · 1 archive validated, awaiting save')
+  })
+
+  const javaDependencyDraft = () => ({
+    name: 'Java Dependency Review',
+    version: '1.0.0',
+    protocol: 'java_vuser',
+    config: { java_vuser: { enabled: false, classpath: ['client.jar', 'extra.jar'] } },
+    actions: [{ name: 'Java action', type: 'java_vuser_run', params: { method: 'action' } }],
+  })
+  const javaDependencyResult = () => executableEnterpriseResult(javaDependencyDraft(), {
+    detected_protocol: {
+      canonical_source_protocol: 'java_vuser', apexload_protocol: 'java_vuser',
+      import_mode: 'external_runner_required', confidence: 'high',
+    },
+    review_artifact: {
+      id: 'java-dependency-review', title: 'Java dependency review',
+      status: 'external_runner_required', summary: 'Governed source review',
+    },
+    fidelity_report: { promotion_status: 'promotable', blockers: [] },
+  })
+  const uploadedJar = {
+    entry: 'client.jar', file_name: 'client.jar', sha256: 'a'.repeat(64),
+    size_bytes: 14, content_type: 'application/java-archive',
+    storage_ref: 'file:///project-scoped-assets/client.jar',
+  }
+  const attachDependencyJar = async () => {
+    const input = container.querySelector<HTMLInputElement>('.java-classpath-resolver input[type="file"]')!
+    expect(input).not.toBeNull()
+    await act(async () => {
+      Object.defineProperty(input, 'files', { configurable: true, value: [new File(['PK synthetic jar'], 'client.jar')] })
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+  }
+  const reviewJavaDependencies = async (onOperationBusyChange?: (busy: boolean) => void) => {
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(javaDependencyResult())
+    await act(async () => root.render(<EnterpriseArchiveImport
+      projectId="project-1"
+      initialFiles={[new File(['zip-content'], 'java-project.zip')]}
+      onOperationBusyChange={onOperationBusyChange}
+    />))
+    await flushPromises()
+    await clickImportAction(container, 'Validate Only')
+  }
+
+  it('saves uploaded JAR provenance in the authoring draft and changes save identity after removal', async () => {
+    apiMock.uploadJavaClasspathJar.mockResolvedValue(uploadedJar)
+    await reviewJavaDependencies()
+    await attachDependencyJar()
+    expect(apiMock.uploadJavaClasspathJar).toHaveBeenCalledWith(expect.any(String), expect.any(File), {
+      project_id: 'project-1', entry: 'client.jar',
+    })
+    expect(container.textContent).toContain('1/2 attached')
+    await clickButton(findButton(container, 'Save Combined Java Draft for Approval')!)
+    const saved = apiMock.createAuthoringSession.mock.calls[0][0]
+    // These are the exact fields used when the saved session is reopened and
+    // the governed runner materializes its project-scoped JAR capability.
+    expect(saved.draft.config.java_vuser.classpath_assets).toEqual([uploadedJar])
+    expect(saved.draft.config.java_vuser.classpath).toEqual(['client.jar', 'extra.jar'])
+    expect(saved.draft.config.java_vuser.enabled).toBe(false)
+    expect(container.textContent).toContain('1 review session saved')
+    await clickButton(container.querySelector<HTMLButtonElement>('.java-classpath-resolver .chip-remove')!)
+    expect(container.textContent).toContain('0/2 attached')
+    expect(container.textContent).toContain('0 review sessions saved')
+    await clickButton(findButton(container, 'Save Combined Java Draft for Approval')!)
+    const afterRemoval = apiMock.createAuthoringSession.mock.calls[1][0]
+    expect(afterRemoval.draft.config.java_vuser.classpath_assets).toEqual([])
+    expect(afterRemoval.idempotency_key).not.toBe(saved.idempotency_key)
+    await clickButton(findButton(container, 'Save Combined Java Draft for Approval')!)
+    expect(apiMock.createAuthoringSession.mock.calls[2][0]).toEqual(afterRemoval)
+    expect(apiMock.saveEnterpriseArchiveImport).not.toHaveBeenCalled()
+  })
+
+  it('blocks saves and source mutation until a dependency upload settles', async () => {
+    let finishUpload: (value: typeof uploadedJar) => void = () => {}
+    apiMock.uploadJavaClasspathJar.mockImplementationOnce(() => new Promise(resolve => { finishUpload = resolve }))
+    const onBusy = vi.fn()
+    await reviewJavaDependencies(onBusy)
+    await attachDependencyJar()
+    const save = findButton(container, 'Save Combined Java Draft for Approval')!
+    expect(save.disabled).toBe(true)
+    expect(findButton(container, 'Attach Required File(s)')?.disabled).toBe(true)
+    expect(container.querySelector<HTMLInputElement>('.java-classpath-resolver input[type="file"]')?.disabled).toBe(true)
+    expect(onBusy).toHaveBeenLastCalledWith(true)
+    await clickButton(save)
+    expect(apiMock.createAuthoringSession).not.toHaveBeenCalled()
+    await act(async () => finishUpload(uploadedJar))
+    await flushPromises()
+    expect(findButton(container, 'Save Combined Java Draft for Approval')?.disabled).toBe(false)
+    expect(onBusy).toHaveBeenLastCalledWith(false)
+  })
+
+  it('does not attach a stale upload result after switching projects', async () => {
+    let finishUpload: (value: typeof uploadedJar) => void = () => {}
+    apiMock.uploadJavaClasspathJar.mockImplementationOnce(() => new Promise(resolve => { finishUpload = resolve }))
+    await reviewJavaDependencies()
+    await attachDependencyJar()
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-2" />))
+    await flushPromises()
+    await act(async () => finishUpload(uploadedJar))
+    await flushPromises()
+    await clickImportAction(container, 'Validate Only')
+    expect(container.textContent).toContain('0/2 attached')
+    expect(container.textContent).not.toContain('The import review changed during upload')
+    await clickButton(findButton(container, 'Save Combined Java Draft for Approval')!)
+    const saved = apiMock.createAuthoringSession.mock.calls[0][0]
+    expect(saved.project_id).toBe('project-2')
+    expect(saved.draft.config.java_vuser.classpath_assets).toBeUndefined()
+  })
+
+  it('directs a standalone dependency bundle to its Java project and saves review evidence without a library script', async () => {
+    const inventory = {
+      contract: 'apexload.java-dependency-inventory.v1', classification: 'java_dependency_bundle',
+      runtime_provisioned: false, counts: { jars: 1, classes: 1, executables: 1 },
+      files: [{ source_path: 'client.jar', role: 'jar', size_bytes: 12, sha256: 'a'.repeat(64) }],
+    }
+    const artifact = { id: 'dependency-only', title: 'Java dependencies', status: 'review_only',
+      summary: 'Source dependency evidence', metadata: { java_dependency_inventory: inventory } }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue({
+      scripts: [], review_artifact: artifact, warnings: [], unsupported_elements: [], assumptions: [],
+      review_sections: [], repair_suggestions: [], summary: {}, stats: {},
+    })
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1"
+      initialFiles={[new File(['zip-content'], 'dependencies.zip')]} />))
+    await flushPromises()
+    await clickImportAction(container, 'Validate Only')
+    expect(container.textContent).toContain('Java dependencies without a script project')
+    expect(container.textContent).toContain('Attach this ZIP under Required Files')
+    expect(container.textContent).toContain('1 JARs')
+    await clickButton(findButton(container, 'Save Dependency Review')!)
+    const saved = apiMock.createAuthoringSession.mock.calls[0][0]
+    expect(saved.draft.actions).toEqual([])
+    expect(saved.review_state.review_artifact.metadata.java_dependency_inventory).toEqual(inventory)
+    expect(container.textContent).toContain('Dependency review saved as authoring session')
+    expect(container.textContent).toContain('0 scripts saved')
+    expect(apiMock.saveEnterpriseArchiveImport).not.toHaveBeenCalled()
   })
 
   it('saves the credential-bound combined Java draft instead of the stale redacted review', async () => {

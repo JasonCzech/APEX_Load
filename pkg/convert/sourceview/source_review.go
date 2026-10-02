@@ -272,7 +272,7 @@ func buildFiles(files map[string]string, mappings []Mapping) ([]SourceFile, int,
 
 	names := make([]string, 0, len(files))
 	for name := range files {
-		if shouldIncludeFile(name, referenced) {
+		if shouldIncludeFile(name, referenced) && !IsOpaqueAsset(name, files[name]) {
 			names = append(names, name)
 		}
 	}

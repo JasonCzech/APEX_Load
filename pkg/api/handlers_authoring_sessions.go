@@ -181,7 +181,7 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 					return
 				}
 			}
-			importAttestationClaim, err = s.claimImportDraftAttestation(r, &req.Draft)
+			importAttestationClaim, err = s.claimImportDraftAttestationWithJavaReview(r, &req.Draft, true)
 			if err != nil {
 				writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
 				return
@@ -204,6 +204,12 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 			req.Draft = *safeCandidate
 		} else {
 			s.discardImportDraftAttestation(r, &req.Draft)
+		}
+	}
+	if importAttestationClaim == nil || !importAttestationClaim.JavaClasspathReviewChecked {
+		if err := s.validateAuthoringJavaClasspathAssets(&req.Draft, req.Draft.Config.JavaVuser.Classpath); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
 		}
 	}
 	safeDraft, ok := prepareAuthoringSessionDraftWithImportTrust(
@@ -414,6 +420,10 @@ func (s *Server) handleUpdateAuthoringSession(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if err := bindStoredScriptProject(&req.Draft, existing.ProjectID, req.ProjectID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.validateAuthoringJavaClasspathAssetMutation(&req.Draft, existing.Draft); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
