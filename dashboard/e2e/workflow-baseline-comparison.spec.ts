@@ -31,6 +31,7 @@ test('baseline workspace selects pins, investigates resources, shares and preser
       const cells = Object.fromEntries(refs.map(run => [run.id, { measurement: measurement(100), window, qualification: [], approximate: true, delta: 50, delta_pct: 50 }]))
       saved = { id: `saved-comparison-${snapshots.size + 1}`,  project_id: workspace.projectId, current, baselines: refs, created_at: '2026-09-25T12:00:00Z', rule_version: 'baseline-comparison-v1', request: body, policy: body.policy || defaultPolicy,
         verdict: { status: 'not_evaluated', evaluated: 0, unavailable: 1, metrics: body.regression_metrics || ['successful_p95'], evidence: [{row_id:'tx/0',baseline_id:refs[0].id,metric:'successful_p95',status:'not_evaluated',reason:'Workload differs'}] },
+        telemetry: [{ run_id: currentId, metric_intervals: 2, retained_intervals: 2, health_intervals: 2, health_coverage_pct: 100, breached_interval_pct: 0, dropped_results: 0, max_sample_age_ms: 0, warnings: ['Whole-run advisory evidence'] }, {run_id: refs[0].id, metric_intervals: 0, retained_intervals: 2, health_intervals: 0, warnings: ['Missing health evidence'] }],
         transactions: Array.from({ length: 300 }, (_, i) => ({ id: `tx/${i}`, name: i === 0 ? 'Purchase' : `Transaction ${String(i).padStart(3, '0')}`, group: 'checkout', protocol: 'http', source: 'transaction', unit: 'ms', window, current: measurement(150), baselines: cells })),
         resources: [{ id: 'resource/0', name: 'external/java_heap', group: '', source: 'application', unit: 'bytes', window, current: measurement(150), baselines: cells }],
         setup: [{ baseline_id: refs[0].id, field: 'Think time', current: '1 second', baseline: '2 seconds', status: 'differs' }],
@@ -59,6 +60,9 @@ test('baseline workspace selects pins, investigates resources, shares and preser
   await page.getByRole('button', { name: 'Compare selected baselines' }).click()
   await expect(page.getByText('Java heap +50% at 100 VUsers', { exact: true })).toBeVisible()
   await expect(page).toHaveURL(/comparison_id=saved-comparison-1/)
+  const telemetry = page.getByRole('region', { name: 'Whole-run telemetry health', exact: true })
+  await expect(telemetry).toContainText('0.0%'); await expect(telemetry).toContainText('Unavailable'); await expect(telemetry).toContainText('0 ms')
+
   await page.getByText('Load alignment, thresholds and mappings', { exact: false }).click()
   await expect(page.getByRole('region', { name: 'Regression verdict', exact: true })).toContainText('not_evaluated')
   await page.getByLabel('Acceptance metrics', { exact: true }).selectOption(['consumer_lag_ms', 'error_rate_pct'])

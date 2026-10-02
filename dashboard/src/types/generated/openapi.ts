@@ -1529,6 +1529,18 @@ export interface operations {
                 "field"?: string;
                 "status"?: string;
               }>;
+              "telemetry"?: Array<{
+                "breached_interval_pct"?: (number) | null;
+                "dropped_results"?: (number) | null;
+                "health_coverage_pct"?: (number) | null;
+                "health_intervals"?: number;
+                "max_sample_age_ms"?: (number) | null;
+                "metric_intervals"?: number;
+                "retained_intervals"?: number;
+                "run_id"?: string;
+                "summary"?: (Record<string, unknown>) | null;
+                "warnings"?: Array<string>;
+              }>;
               "transactions"?: Array<{
                 "baselines"?: Record<string, Record<string, unknown>>;
                 "current"?: (Record<string, unknown>) | null;
@@ -21796,6 +21808,36 @@ export interface operations {
               "field": string;
               "status": string;
             }>;
+            "telemetry"?: Array<{
+              "breached_interval_pct"?: (number) | null;
+              "dropped_results"?: (number) | null;
+              "health_coverage_pct"?: (number) | null;
+              "health_intervals": number;
+              "max_sample_age_ms"?: (number) | null;
+              "metric_intervals": number;
+              "retained_intervals": number;
+              "run_id": string;
+              "summary"?: ({
+                "breached_intervals"?: number;
+                "condition_counts"?: Record<string, number>;
+                "degraded_intervals"?: number;
+                "dropped_results"?: number;
+                "first_breach_at"?: (string) | null;
+                "healthy_intervals"?: number;
+                "last_breach_at"?: (string) | null;
+                "max_browser_render_lag_ms"?: number;
+                "max_controller_fanout_lag_ms"?: number;
+                "max_generator_processing_lag_ms"?: number;
+                "max_sample_age_ms"?: number;
+                "max_transport_lag_ms"?: number;
+                "samples": number;
+                "status": string;
+                "sustained_breach_intervals"?: number;
+                "websocket_dropped_events"?: number;
+                "websocket_dropped_messages"?: number;
+              }) | null;
+              "warnings": Array<string>;
+            }>;
             "transactions": Array<{
               "baselines": Record<string, {
                 "approximate": boolean;
@@ -25757,6 +25799,7 @@ export interface operations {
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
                   "dropped_results"?: number;
+                  "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
@@ -26148,6 +26191,7 @@ export interface operations {
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
                   "dropped_results"?: number;
+                  "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
@@ -32443,6 +32487,7 @@ export interface operations {
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
                 "dropped_results"?: number;
+                "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
@@ -33851,6 +33896,7 @@ export interface operations {
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
                 "dropped_results"?: number;
+                "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
@@ -44379,6 +44425,36 @@ export interface operations {
               "field": string;
               "status": string;
             }>;
+            "telemetry"?: Array<{
+              "breached_interval_pct"?: (number) | null;
+              "dropped_results"?: (number) | null;
+              "health_coverage_pct"?: (number) | null;
+              "health_intervals": number;
+              "max_sample_age_ms"?: (number) | null;
+              "metric_intervals": number;
+              "retained_intervals": number;
+              "run_id": string;
+              "summary"?: ({
+                "breached_intervals"?: number;
+                "condition_counts"?: Record<string, number>;
+                "degraded_intervals"?: number;
+                "dropped_results"?: number;
+                "first_breach_at"?: (string) | null;
+                "healthy_intervals"?: number;
+                "last_breach_at"?: (string) | null;
+                "max_browser_render_lag_ms"?: number;
+                "max_controller_fanout_lag_ms"?: number;
+                "max_generator_processing_lag_ms"?: number;
+                "max_sample_age_ms"?: number;
+                "max_transport_lag_ms"?: number;
+                "samples": number;
+                "status": string;
+                "sustained_breach_intervals"?: number;
+                "websocket_dropped_events"?: number;
+                "websocket_dropped_messages"?: number;
+              }) | null;
+              "warnings": Array<string>;
+            }>;
             "transactions": Array<{
               "baselines": Record<string, {
                 "approximate": boolean;
@@ -48408,6 +48484,7 @@ export interface operations {
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
                   "dropped_results"?: number;
+                  "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
@@ -48799,6 +48876,7 @@ export interface operations {
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
                   "dropped_results"?: number;
+                  "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
@@ -51319,6 +51397,36 @@ export interface operations {
                 "current": string;
                 "field": string;
                 "status": string;
+              }>;
+              "telemetry"?: Array<{
+                "breached_interval_pct"?: (number) | null;
+                "dropped_results"?: (number) | null;
+                "health_coverage_pct"?: (number) | null;
+                "health_intervals": number;
+                "max_sample_age_ms"?: (number) | null;
+                "metric_intervals": number;
+                "retained_intervals": number;
+                "run_id": string;
+                "summary"?: ({
+                  "breached_intervals"?: number;
+                  "condition_counts"?: Record<string, number>;
+                  "degraded_intervals"?: number;
+                  "dropped_results"?: number;
+                  "first_breach_at"?: (string) | null;
+                  "healthy_intervals"?: number;
+                  "last_breach_at"?: (string) | null;
+                  "max_browser_render_lag_ms"?: number;
+                  "max_controller_fanout_lag_ms"?: number;
+                  "max_generator_processing_lag_ms"?: number;
+                  "max_sample_age_ms"?: number;
+                  "max_transport_lag_ms"?: number;
+                  "samples": number;
+                  "status": string;
+                  "sustained_breach_intervals"?: number;
+                  "websocket_dropped_events"?: number;
+                  "websocket_dropped_messages"?: number;
+                }) | null;
+                "warnings": Array<string>;
               }>;
               "transactions": Array<{
                 "baselines": Record<string, Record<string, unknown>>;
@@ -58951,6 +59059,7 @@ export interface operations {
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
                 "dropped_results"?: number;
+                "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
@@ -60359,6 +60468,7 @@ export interface operations {
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
                 "dropped_results"?: number;
+                "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
@@ -76126,6 +76236,7 @@ export interface operations {
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
                 "dropped_results"?: number;
+                "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
@@ -77534,6 +77645,7 @@ export interface operations {
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
                 "dropped_results"?: number;
+                "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
@@ -87624,6 +87736,7 @@ export interface operations {
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
                   "dropped_results"?: number;
+                  "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
@@ -88015,6 +88128,7 @@ export interface operations {
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
                   "dropped_results"?: number;
+                  "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
@@ -89077,6 +89191,7 @@ export interface operations {
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
                   "dropped_results"?: number;
+                  "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
@@ -89468,6 +89583,7 @@ export interface operations {
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
                   "dropped_results"?: number;
+                  "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
@@ -90530,6 +90646,7 @@ export interface operations {
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
                   "dropped_results"?: number;
+                  "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
@@ -90921,6 +91038,7 @@ export interface operations {
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
                   "dropped_results"?: number;
+                  "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
@@ -91983,6 +92101,7 @@ export interface operations {
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
                   "dropped_results"?: number;
+                  "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
@@ -92374,6 +92493,7 @@ export interface operations {
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
                   "dropped_results"?: number;
+                  "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
@@ -93436,6 +93556,7 @@ export interface operations {
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
                   "dropped_results"?: number;
+                  "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
@@ -93827,6 +93948,7 @@ export interface operations {
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
                   "dropped_results"?: number;
+                  "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
@@ -114517,6 +114639,7 @@ export interface operations {
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
                 "dropped_results"?: number;
+                "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
@@ -115925,6 +116048,7 @@ export interface operations {
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
                 "dropped_results"?: number;
+                "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;

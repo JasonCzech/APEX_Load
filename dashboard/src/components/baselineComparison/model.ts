@@ -37,7 +37,14 @@ export interface ComparisonRow {
   current?: Measurement; window?: LoadWindow; baselines: Record<string, ComparisonCell>
 }
 export interface ComparisonRequest { regression_identities?: string[]; regression_metrics?: string[]; regression_protocols?: string[]; regression_groups?: string[]; minimum_load?: number; maximum_load?: number; baseline_ids: string[]; policy?: ComparisonPolicy; windows?: Record<string, MeasurementWindow>; population: 'transaction' | 'action' | 'unknown'; allow_other_scenarios: boolean }
+export interface TelemetryEvidence {
+ metric_intervals: number; dropped_results?: number; max_sample_age_ms?: number
+ run_id: string; retained_intervals: number; health_intervals: number; health_coverage_pct?: number; breached_interval_pct?: number
+ summary?: { status: string; dropped_results?: number; max_sample_age_ms?: number }
+ warnings: string[]
+}
 export interface ComparisonSnapshot {
+ telemetry?: TelemetryEvidence[]
   verdict?: { status: 'passed' | 'regressed' | 'not_evaluated'; evaluated: number; unavailable: number; metrics: string[]; evidence: { row_id: string; baseline_id: string; metric: string; status: string; reason?: string }[] }
   id: string; project_id: string; current: RunIdentity; baselines: RunIdentity[]; created_at: string; rule_version: string
   request: ComparisonRequest; policy: ComparisonPolicy; transactions: ComparisonRow[]; resources: ComparisonRow[]

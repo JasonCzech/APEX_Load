@@ -606,6 +606,28 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('Scenario Schedule')
   })
 
+  it('preserves a run name entered before the scenario catalog finishes loading', async () => {
+    const catalog = await apiMock.listScenarios()
+    let resolveCatalog!: (value: typeof catalog) => void
+    apiMock.listScenarios.mockReturnValue(new Promise(resolve => { resolveCatalog = resolve }))
+    await act(async () => {
+      root.render(<NewTestPage
+        activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+        activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+        releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+        initialScenarioId="scenario-1" onSelectTest={vi.fn()}
+        onCreateRelease={vi.fn().mockResolvedValue(null)}
+      />)
+    })
+    const name = container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')!
+    expect(name).toBeTruthy()
+    await act(async () => { setInputValue(name, 'Operator launch name') })
+    expect(name.value).toBe('Operator launch name')
+    await act(async () => { resolveCatalog(catalog) })
+    await flushPromises()
+    expect(container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')?.value).toBe('Operator launch name')
+  })
+
   it('retains a dirty run setup when switching tabs without creating a test', async () => {
     await act(async () => {
       root.render(

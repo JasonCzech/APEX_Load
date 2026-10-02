@@ -46,6 +46,7 @@ var baselineComparisonTemplate = template.Must(template.New("baseline-comparison
 {{with $c.Verdict}}<p><strong>Regression verdict: {{.Status}}</strong> · {{.Evaluated}} evaluated · {{.Unavailable}} unavailable</p>{{range .Evidence}}<p>{{.Metric}}: {{.Status}} · row {{.RowID}} · baseline {{.BaselineID}} · current {{observed .Current}} / baseline {{observed .Baseline}} · {{.Reason}}</p>{{end}}{{end}}
 <p>Current run: {{$c.Current.Name}} · {{$c.Current.ReleaseName}}</p>
 {{range $c.Warnings}}<p>{{.}}</p>{{end}}
+<h3>Whole-run telemetry health</h3>{{range $c.Telemetry}}<p>Run {{.RunID}} · retained intervals {{.RetainedIntervals}} · classified {{.HealthIntervals}} · coverage {{observed .HealthCoveragePct}}% · breached classified intervals {{observed .BreachedIntervalPct}}% · peak observed drop counter {{with .DroppedResults}}{{.}}{{else}}Unavailable{{end}} · maximum sample age {{observed .MaxSampleAgeMs}} ms</p>{{range .Warnings}}<p>{{.}}</p>{{end}}{{end}}
 {{range $c.Findings}}<p><strong>{{.Status}} · {{.Category}}</strong> · baseline {{.BaselineID}}: {{.Message}}</p>{{else}}<p>No configured change threshold exceeded.</p>{{end}}
 {{if ne .Profile.ID "executive"}}
 <h3>Effective comparison policy</h3>
@@ -80,6 +81,9 @@ func baselineComparisonReportRenderer() reportSectionRenderer {
 			if c.Verdict != nil {
 				*lines = append(*lines, "Regression verdict: "+c.Verdict.Status)
 			}
+			for _, telemetry := range c.Telemetry {
+				*lines = append(*lines, baselineTelemetryLines(telemetry)...)
+			}
 			for _, f := range c.Findings {
 				*lines = append(*lines, f.Status+": "+f.Message)
 			}
@@ -92,6 +96,15 @@ func baselineComparisonReportRenderer() reportSectionRenderer {
 			if c.Verdict != nil {
 				verdict, _ := json.Marshal(c.Verdict)
 				if err := write("baseline_comparison", c.ID, "regression_verdict", string(verdict)); err != nil {
+					return err
+				}
+			}
+			for _, telemetry := range c.Telemetry {
+				payload, err := json.Marshal(telemetry)
+				if err != nil {
+					return err
+				}
+				if err := write("baseline_telemetry", telemetry.RunID, "whole_run_evidence", string(payload)); err != nil {
 					return err
 				}
 			}

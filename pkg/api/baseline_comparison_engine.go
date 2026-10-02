@@ -24,6 +24,7 @@ type baselineTransactionAccumulator struct {
 	points          []BaselineMetricPoint
 }
 type baselineComparisonRun struct {
+	telemetry      BaselineTelemetryEvidence
 	incomplete     bool
 	population     string
 	originalGroups map[string]string
@@ -122,6 +123,7 @@ func (s *Server) readBaselineComparisonRun(ctx context.Context, t *ManagedTest, 
 	if len(r.windows) > maxBaselineComparisonWindows {
 		return nil, fmt.Errorf("comparison exceeds %d stable windows; narrow the measurement window", maxBaselineComparisonWindows)
 	}
+	r.telemetry = baselineTelemetryEvidence(t.ID, summaries)
 	for _, summary := range summaries {
 		if summary.Telemetry != nil && (summary.Telemetry.DroppedResults > 0 || summary.Telemetry.DroppedSubscriberBatches > 0 || summary.Telemetry.MissingMetricWindows > 0) {
 			r.incomplete = true
@@ -269,6 +271,7 @@ func baselineWindowIndex(r *baselineComparisonRun, w *BaselineLoadWindow) int {
 
 func compareBaselineRuns(current *baselineComparisonRun, baselines []*baselineComparisonRun, request BaselineComparisonRequest, p BaselineComparisonPolicy) *BaselineComparisonSnapshot {
 	out := &BaselineComparisonSnapshot{Current: current.identity, CreatedAt: time.Now().UTC(), RuleVersion: baselineComparisonRuleVersion, Request: request, Policy: p, Baselines: []BaselineRunIdentity{}, Transactions: []BaselineComparisonRow{}, Resources: []BaselineComparisonRow{}, Setup: []BaselineSetupDifference{}, Findings: []BaselineComparisonFinding{}, Warnings: append([]string{}, current.warnings...)}
+	out.Telemetry = append(out.Telemetry, current.telemetry)
 	qualifications := map[string][]string{}
 	keys := map[baselineTransactionKey]bool{}
 	for k := range current.transactions {
@@ -276,6 +279,7 @@ func compareBaselineRuns(current *baselineComparisonRun, baselines []*baselineCo
 	}
 	for _, b := range baselines {
 		out.Baselines = append(out.Baselines, b.identity)
+		out.Telemetry = append(out.Telemetry, b.telemetry)
 		for _, warning := range b.warnings {
 			out.Warnings = append(out.Warnings, b.identity.Name+": "+warning)
 		}

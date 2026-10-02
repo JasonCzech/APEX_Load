@@ -113,9 +113,10 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 	}
 	if snap.Telemetry != nil {
 		live.Telemetry = &TelemetryHealth{
-			DroppedResults:  snap.Telemetry.DroppedResults,
-			SheddedArrivals: snap.Telemetry.SheddedArrivals,
-			CollectedAt:     snap.Timestamp,
+			DroppedResults:          snap.Telemetry.DroppedResults,
+			DroppedResultsAvailable: true,
+			SheddedArrivals:         snap.Telemetry.SheddedArrivals,
+			CollectedAt:             snap.Timestamp,
 		}
 	}
 

@@ -32,6 +32,7 @@ test('[U01] sign in, build workspace, import, edit, launch, stop and retrieve th
   const run = await json(await created)
   const id = idOf(run); trackRun(id)
   expect(run.project_id).toBe(workspace.projectId)
+  expect(run.name).toBe(runName)
   await expect(page).toHaveURL(new RegExp(`(?:test|command-center)/${id}`))
   await expect.poll(() => target.count(), { timeout: 60_000 }).toBeGreaterThan(0)
   const first = target.count()

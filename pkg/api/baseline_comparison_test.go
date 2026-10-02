@@ -282,6 +282,9 @@ func TestBaselineComparisonHTTPPersistenceScopeAndExports(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &snapshot); err != nil {
 		t.Fatal(err)
 	}
+	if len(snapshot.Telemetry) != 2 || snapshot.Telemetry[0].RunID != current.ID || snapshot.Telemetry[1].RunID != baseline.ID || snapshot.Telemetry[0].HealthIntervals != 0 || snapshot.Telemetry[0].BreachedIntervalPct != nil {
+		t.Fatalf("lost legacy telemetry qualifications %+v", snapshot.Telemetry)
+	}
 	if snapshot.ID == "" || snapshot.RuleVersion == "" {
 		t.Fatal("snapshot provenance missing")
 	}

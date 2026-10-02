@@ -554,6 +554,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	live.Resources = resourcesFromGeneratorStats(batch.Stats)
 	if batch.Telemetry != nil {
 		live.Telemetry.DroppedResults = batch.Telemetry.DroppedResults
+		live.Telemetry.DroppedResultsAvailable = true
 		live.Telemetry.SheddedArrivals = batch.Telemetry.SheddedArrivals
 		live.Telemetry.DroppedSubscriberBatches = batch.Telemetry.DroppedSubscriberBatches
 		live.Telemetry.MissingMetricWindows = batch.Telemetry.MissingMetricWindows

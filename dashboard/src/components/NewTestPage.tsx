@@ -647,6 +647,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [schedulePreview, setSchedulePreview] = useState<{ key: string; occurrences: string[]; error: string; conflictSummary?: string } | null>(null)
   const [runName, setRunName] = useState('')
   const runNameScenarioRef = useRef('')
+  const runNameEditedRef = useRef(false)
   const scheduleDraftRef = useRef(scheduleDraft)
   const scheduleBaselineRef = useRef(scheduleDraftBaseline)
   scheduleDraftRef.current = scheduleDraft
@@ -745,6 +746,9 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   })
 
   useLayoutEffect(() => {
+    runNameScenarioRef.current = ''
+    runNameEditedRef.current = false
+    setRunName('')
     setScenarioState({ projectID: activeProjectID, scenarios: [], loaded: false })
     setTimeslotState({ projectID: activeProjectID, timeslots: [] })
     setScenarioId('')
@@ -1370,9 +1374,12 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const runNameScenarioDefault = scenario?.name || ''
 
   useEffect(() => {
-    if (runNameScenarioRef.current === runNameScenarioIdentity) return
+    // A name can be entered while the selected scenario is still loading.
+    // Loading (or refreshing) its metadata must not overwrite that edit.
+    if (!runNameScenarioIdentity || runNameScenarioRef.current === runNameScenarioIdentity) return
+    if (runNameScenarioRef.current) runNameEditedRef.current = false
     runNameScenarioRef.current = runNameScenarioIdentity
-    setRunName(runNameScenarioDefault)
+    if (!runNameEditedRef.current) setRunName(runNameScenarioDefault)
   }, [runNameScenarioDefault, runNameScenarioIdentity])
   useEffect(() => {
     if (!scenarioId) {
@@ -1499,6 +1506,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     runGuarded(() => {
       setScenarioId(nextScenarioId)
       setExpandedScenarioId(nextScenarioId)
+      runNameEditedRef.current = false
       setRunName('')
     })
   }
@@ -1766,6 +1774,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     const emptyDefaults = buildEmptyRunDefaultOverrides()
     runDefaultOverridesRef.current = emptyDefaults
     groupRunOverridesRef.current = {}
+    runNameEditedRef.current = false
     setRunName(scenario?.name || '')
     setReleaseId(defaultReleaseId)
     setNewReleaseName('')
@@ -2605,6 +2614,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setGroupRunOverrides(restoreDraft.groupRunOverrides)
     setNewReleaseName(restoreDraft.newReleaseName)
     setShowNewRelease(restoreDraft.showNewRelease)
+    runNameEditedRef.current = true
     setRunName(restoreDraft.runName)
     launchPlacementPinnedRef.current = true
     explicitPlacementRef.current = true
@@ -3334,7 +3344,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     <span className="setting-label" id="new-test-run-name-label">Run Name</span>
                     <span className="setting-desc">Shown in results and monitoring</span>
                   </div>
-                  <input className="settings-input" aria-labelledby="new-test-run-name-label" value={runName} onChange={event => setRunName(event.target.value)} placeholder={scenario?.name || 'Run name'} />
+                  <input className="settings-input" aria-labelledby="new-test-run-name-label" value={runName} onChange={event => { runNameEditedRef.current = true; setRunName(event.target.value) }} placeholder={scenario?.name || 'Run name'} />
                 </div>
                 <div className="setting-row new-test-release-row">
                   <div className="setting-info">

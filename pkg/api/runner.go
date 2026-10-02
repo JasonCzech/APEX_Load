@@ -1004,6 +1004,7 @@ type ServerTelemetrySummary struct {
 }
 
 type TelemetryHealth struct {
+	DroppedResultsAvailable  bool      `json:"dropped_results_available,omitempty"`
 	DroppedResults           int64     `json:"dropped_results,omitempty"`
 	SheddedArrivals          int64     `json:"shedded_arrivals,omitempty"`
 	DroppedSubscriberBatches int64     `json:"dropped_subscriber_batches,omitempty"`

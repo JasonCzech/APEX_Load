@@ -2170,6 +2170,7 @@ export interface BrowserDeviceLiveMetrics extends BrowserLiveMetrics {
 }
 
 export interface TelemetryHealth {
+  dropped_results_available?: boolean
   dropped_results?: number
   shedded_arrivals?: number
   dropped_subscriber_batches?: number

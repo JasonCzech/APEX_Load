@@ -4301,6 +4301,47 @@ paths:
                                 type: string
                               status:
                                 type: string
+                        telemetry:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              breached_interval_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              dropped_results:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              health_coverage_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              health_intervals:
+                                type: integer
+                                format: int64
+                              max_sample_age_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              metric_intervals:
+                                type: integer
+                                format: int64
+                              retained_intervals:
+                                type: integer
+                                format: int64
+                              run_id:
+                                type: string
+                              summary:
+                                type: object
+                                description: 'Go type: RunArchiveTelemetrySummary'
+                                additionalProperties: true
+                                nullable: true
+                              warnings:
+                                type: array
+                                items:
+                                  type: string
                         transactions:
                           type: array
                           items:
@@ -62878,6 +62919,8 @@ paths:
                                 dropped_results:
                                   type: integer
                                   format: int64
+                                dropped_results_available:
+                                  type: boolean
                                 dropped_subscriber_batches:
                                   type: integer
                                   format: int64
@@ -64163,6 +64206,8 @@ paths:
                               dropped_results:
                                 type: integer
                                 format: int64
+                              dropped_results_available:
+                                type: boolean
                               dropped_subscriber_batches:
                                 type: integer
                                 format: int64
@@ -67318,6 +67363,8 @@ paths:
                                 dropped_results:
                                   type: integer
                                   format: int64
+                                dropped_results_available:
+                                  type: boolean
                                 dropped_subscriber_batches:
                                   type: integer
                                   format: int64
@@ -68603,6 +68650,8 @@ paths:
                               dropped_results:
                                 type: integer
                                 format: int64
+                              dropped_results_available:
+                                type: boolean
                               dropped_subscriber_batches:
                                 type: integer
                                 format: int64
@@ -71759,6 +71808,8 @@ paths:
                                 dropped_results:
                                   type: integer
                                   format: int64
+                                dropped_results_available:
+                                  type: boolean
                                 dropped_subscriber_batches:
                                   type: integer
                                   format: int64
@@ -73044,6 +73095,8 @@ paths:
                               dropped_results:
                                 type: integer
                                 format: int64
+                              dropped_results_available:
+                                type: boolean
                               dropped_subscriber_batches:
                                 type: integer
                                 format: int64
@@ -76212,6 +76265,8 @@ paths:
                                 dropped_results:
                                   type: integer
                                   format: int64
+                                dropped_results_available:
+                                  type: boolean
                                 dropped_subscriber_batches:
                                   type: integer
                                   format: int64
@@ -77497,6 +77552,8 @@ paths:
                               dropped_results:
                                 type: integer
                                 format: int64
+                              dropped_results_available:
+                                type: boolean
                               dropped_subscriber_batches:
                                 type: integer
                                 format: int64
@@ -80665,6 +80722,8 @@ paths:
                                 dropped_results:
                                   type: integer
                                   format: int64
+                                dropped_results_available:
+                                  type: boolean
                                 dropped_subscriber_batches:
                                   type: integer
                                   format: int64
@@ -81950,6 +82009,8 @@ paths:
                               dropped_results:
                                 type: integer
                                 format: int64
+                              dropped_results_available:
+                                type: boolean
                               dropped_subscriber_batches:
                                 type: integer
                                 format: int64
@@ -85118,6 +85179,8 @@ paths:
                                 dropped_results:
                                   type: integer
                                   format: int64
+                                dropped_results_available:
+                                  type: boolean
                                 dropped_subscriber_batches:
                                   type: integer
                                   format: int64
@@ -86403,6 +86466,8 @@ paths:
                               dropped_results:
                                 type: integer
                                 format: int64
+                              dropped_results_available:
+                                type: boolean
                               dropped_subscriber_batches:
                                 type: integer
                                 format: int64
@@ -89571,6 +89636,8 @@ paths:
                                 dropped_results:
                                   type: integer
                                   format: int64
+                                dropped_results_available:
+                                  type: boolean
                                 dropped_subscriber_batches:
                                   type: integer
                                   format: int64
@@ -90856,6 +90923,8 @@ paths:
                               dropped_results:
                                 type: integer
                                 format: int64
+                              dropped_results_available:
+                                type: boolean
                               dropped_subscriber_batches:
                                 type: integer
                                 format: int64
@@ -254804,6 +254873,8 @@ paths:
                             dropped_results:
                               type: integer
                               format: int64
+                            dropped_results_available:
+                              type: boolean
                             dropped_subscriber_batches:
                               type: integer
                               format: int64
@@ -259651,6 +259722,8 @@ paths:
                           dropped_results:
                             type: integer
                             format: int64
+                          dropped_results_available:
+                            type: boolean
                           dropped_subscriber_batches:
                             type: integer
                             format: int64
@@ -265999,6 +266072,8 @@ paths:
                             dropped_results:
                               type: integer
                               format: int64
+                            dropped_results_available:
+                              type: boolean
                             dropped_subscriber_batches:
                               type: integer
                               format: int64
@@ -270846,6 +270921,8 @@ paths:
                           dropped_results:
                             type: integer
                             format: int64
+                          dropped_results_available:
+                            type: boolean
                           dropped_subscriber_batches:
                             type: integer
                             format: int64
@@ -279534,6 +279611,109 @@ paths:
                             - current
                             - field
                             - status
+                      telemetry:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            breached_interval_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            dropped_results:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            health_coverage_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            health_intervals:
+                              type: integer
+                              format: int64
+                            max_sample_age_ms:
+                              type: number
+                              format: double
+                              nullable: true
+                            metric_intervals:
+                              type: integer
+                              format: int64
+                            retained_intervals:
+                              type: integer
+                              format: int64
+                            run_id:
+                              type: string
+                            summary:
+                              type: object
+                              properties:
+                                breached_intervals:
+                                  type: integer
+                                  format: int64
+                                condition_counts:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                degraded_intervals:
+                                  type: integer
+                                  format: int64
+                                dropped_results:
+                                  type: integer
+                                  format: int64
+                                first_breach_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                healthy_intervals:
+                                  type: integer
+                                  format: int64
+                                last_breach_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                max_browser_render_lag_ms:
+                                  type: number
+                                  format: double
+                                max_controller_fanout_lag_ms:
+                                  type: number
+                                  format: double
+                                max_generator_processing_lag_ms:
+                                  type: number
+                                  format: double
+                                max_sample_age_ms:
+                                  type: number
+                                  format: double
+                                max_transport_lag_ms:
+                                  type: number
+                                  format: double
+                                samples:
+                                  type: integer
+                                  format: int64
+                                status:
+                                  type: string
+                                sustained_breach_intervals:
+                                  type: integer
+                                  format: int64
+                                websocket_dropped_events:
+                                  type: integer
+                                  format: int64
+                                websocket_dropped_messages:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - samples
+                                - status
+                              nullable: true
+                            warnings:
+                              type: array
+                              items:
+                                type: string
+                          required:
+                            - health_intervals
+                            - metric_intervals
+                            - retained_intervals
+                            - run_id
+                            - warnings
                       transactions:
                         type: array
                         items:
@@ -291108,6 +291288,109 @@ paths:
                         - current
                         - field
                         - status
+                  telemetry:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        breached_interval_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        dropped_results:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        health_coverage_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        health_intervals:
+                          type: integer
+                          format: int64
+                        max_sample_age_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        metric_intervals:
+                          type: integer
+                          format: int64
+                        retained_intervals:
+                          type: integer
+                          format: int64
+                        run_id:
+                          type: string
+                        summary:
+                          type: object
+                          properties:
+                            breached_intervals:
+                              type: integer
+                              format: int64
+                            condition_counts:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            degraded_intervals:
+                              type: integer
+                              format: int64
+                            dropped_results:
+                              type: integer
+                              format: int64
+                            first_breach_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            healthy_intervals:
+                              type: integer
+                              format: int64
+                            last_breach_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            max_browser_render_lag_ms:
+                              type: number
+                              format: double
+                            max_controller_fanout_lag_ms:
+                              type: number
+                              format: double
+                            max_generator_processing_lag_ms:
+                              type: number
+                              format: double
+                            max_sample_age_ms:
+                              type: number
+                              format: double
+                            max_transport_lag_ms:
+                              type: number
+                              format: double
+                            samples:
+                              type: integer
+                              format: int64
+                            status:
+                              type: string
+                            sustained_breach_intervals:
+                              type: integer
+                              format: int64
+                            websocket_dropped_events:
+                              type: integer
+                              format: int64
+                            websocket_dropped_messages:
+                              type: integer
+                              format: int64
+                          required:
+                            - samples
+                            - status
+                          nullable: true
+                        warnings:
+                          type: array
+                          items:
+                            type: string
+                      required:
+                        - health_intervals
+                        - metric_intervals
+                        - retained_intervals
+                        - run_id
+                        - warnings
                   transactions:
                     type: array
                     items:
@@ -292832,6 +293115,109 @@ paths:
                         - current
                         - field
                         - status
+                  telemetry:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        breached_interval_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        dropped_results:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        health_coverage_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        health_intervals:
+                          type: integer
+                          format: int64
+                        max_sample_age_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        metric_intervals:
+                          type: integer
+                          format: int64
+                        retained_intervals:
+                          type: integer
+                          format: int64
+                        run_id:
+                          type: string
+                        summary:
+                          type: object
+                          properties:
+                            breached_intervals:
+                              type: integer
+                              format: int64
+                            condition_counts:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            degraded_intervals:
+                              type: integer
+                              format: int64
+                            dropped_results:
+                              type: integer
+                              format: int64
+                            first_breach_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            healthy_intervals:
+                              type: integer
+                              format: int64
+                            last_breach_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            max_browser_render_lag_ms:
+                              type: number
+                              format: double
+                            max_controller_fanout_lag_ms:
+                              type: number
+                              format: double
+                            max_generator_processing_lag_ms:
+                              type: number
+                              format: double
+                            max_sample_age_ms:
+                              type: number
+                              format: double
+                            max_transport_lag_ms:
+                              type: number
+                              format: double
+                            samples:
+                              type: integer
+                              format: int64
+                            status:
+                              type: string
+                            sustained_breach_intervals:
+                              type: integer
+                              format: int64
+                            websocket_dropped_events:
+                              type: integer
+                              format: int64
+                            websocket_dropped_messages:
+                              type: integer
+                              format: int64
+                          required:
+                            - samples
+                            - status
+                          nullable: true
+                        warnings:
+                          type: array
+                          items:
+                            type: string
+                      required:
+                        - health_intervals
+                        - metric_intervals
+                        - retained_intervals
+                        - run_id
+                        - warnings
                   transactions:
                     type: array
                     items:
@@ -297675,6 +298061,8 @@ paths:
                             dropped_results:
                               type: integer
                               format: int64
+                            dropped_results_available:
+                              type: boolean
                             dropped_subscriber_batches:
                               type: integer
                               format: int64
@@ -302522,6 +302910,8 @@ paths:
                           dropped_results:
                             type: integer
                             format: int64
+                          dropped_results_available:
+                            type: boolean
                           dropped_subscriber_batches:
                             type: integer
                             format: int64
@@ -308814,6 +309204,8 @@ paths:
                             dropped_results:
                               type: integer
                               format: int64
+                            dropped_results_available:
+                              type: boolean
                             dropped_subscriber_batches:
                               type: integer
                               format: int64
@@ -313661,6 +314053,8 @@ paths:
                           dropped_results:
                             type: integer
                             format: int64
+                          dropped_results_available:
+                            type: boolean
                           dropped_subscriber_batches:
                             type: integer
                             format: int64

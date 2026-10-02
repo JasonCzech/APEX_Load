@@ -18,9 +18,11 @@ func mergeRunArchiveTelemetrySummary(summary *RunArchiveTelemetrySummary, point 
 	}
 	summary.Samples++
 	if point.Telemetry != nil {
-		summary.DroppedResults += point.Telemetry.DroppedResults
-		summary.WebsocketDroppedMessages += point.Telemetry.WebsocketDroppedMessages
-		summary.WebsocketDroppedEvents += point.Telemetry.WebsocketDroppedEvents
+		// These are cumulative observed counters, not interval deltas. Repeated
+		// publications must not multiply a previously observed drop.
+		summary.DroppedResults = max(summary.DroppedResults, point.Telemetry.DroppedResults)
+		summary.WebsocketDroppedMessages = max(summary.WebsocketDroppedMessages, point.Telemetry.WebsocketDroppedMessages)
+		summary.WebsocketDroppedEvents = max(summary.WebsocketDroppedEvents, point.Telemetry.WebsocketDroppedEvents)
 		if point.Telemetry.SampleAgeMs > summary.MaxSampleAgeMs {
 			summary.MaxSampleAgeMs = point.Telemetry.SampleAgeMs
 		}
@@ -274,8 +276,10 @@ func finalizeRunArchiveTelemetrySummary(summary RunArchiveTelemetrySummary) *Run
 		summary.Status = "breached"
 	} else if summary.DegradedIntervals > 0 {
 		summary.Status = "degraded"
-	} else {
+	} else if summary.HealthyIntervals > 0 {
 		summary.Status = "healthy"
+	} else {
+		summary.Status = "unavailable"
 	}
 	if len(summary.ConditionCounts) == 0 {
 		summary.ConditionCounts = nil

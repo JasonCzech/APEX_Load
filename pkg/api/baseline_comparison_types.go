@@ -70,6 +70,7 @@ type BaselineRunIdentity struct {
 }
 
 type BaselineComparisonSnapshot struct {
+	Telemetry    []BaselineTelemetryEvidence `json:"telemetry,omitempty"`
 	Verdict      *BaselineRegressionVerdict  `json:"verdict,omitempty"`
 	ID           string                      `json:"id"`
 	ProjectID    string                      `json:"project_id"`
