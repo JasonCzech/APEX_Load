@@ -17,6 +17,8 @@ bin/
 *.dll
 *.so
 *.dylib
+# Static libraries, including DuckDB native dependency archives.
+*.a
 *.test
 *.prof
 dashboard/dist/
