@@ -493,6 +493,7 @@ interface Props {
   saveLabel?: string
   editLabel?: string
   previewTitle?: string
+  sourceFocusRequest?: ImportSourceIssueFocus | null
   previewAside?: ReactNode
   showPreview?: boolean
   previewInitiallyOpen?: boolean
@@ -558,6 +559,7 @@ export default function ScriptImportReview({
   editLabel = 'Open In Visual Editor',
   previewTitle = 'Generated Script Preview',
   previewAside,
+  sourceFocusRequest,
   showPreview: requestedPreview = true,
   previewInitiallyOpen = false,
   showPreviewAside: requestedSource = true,
@@ -580,6 +582,12 @@ export default function ScriptImportReview({
       description: occurrence?.description || '',
     })
   }
+  useEffect(() => {
+    if (!sourceFocusRequest) return
+    sourceIssueFocusRevision.current += 1
+    setSourceIssueFocus({ ...sourceFocusRequest, revision: sourceIssueFocusRevision.current })
+    setActiveReviewTab('source')
+  }, [sourceFocusRequest])
   const showCredentials = requestedCredentials && (!tabbed || activeReviewTab === 'credentials')
   const showDataReview = requestedData && (!tabbed || activeReviewTab === 'data')
   const showPreview = requestedPreview && (!tabbed || activeReviewTab === 'dsl')

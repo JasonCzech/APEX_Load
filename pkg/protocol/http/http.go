@@ -282,7 +282,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 		return result, nil
 	}
-	if skip, _ := action.Params["legacy_html_check"].(bool); skip && !h.outcome.legacyChecks {
+	if skip, _ := action.Params["legacy_html_check"].(bool); skip && !h.outcome.legacyChecks && !hasAuraSuccessAssertion(action.Assertions) {
 		result.Success = true
 		result.ProtocolEvidence = map[string]any{"legacy_html_check": "disabled"}
 		return result, nil
@@ -836,6 +836,7 @@ extractors:
 		result.Duration = time.Since(state.start)
 	}
 	assertionWork := newAssertionInputWorkBudget(resp.Header, respBody)
+	assertionWork.requestBytes = int64(len(requestBody))
 	for index, assertion := range action.Assertions {
 		if assertion.LegacyHTMLCheck && !h.outcome.legacyChecks {
 			continue
@@ -846,10 +847,16 @@ extractors:
 			break
 		}
 		bodyText := ""
-		if assertionNeedsResponseBody(assertion) {
+		if assertionNeedsResponseBody(assertion) && assertion.Type != "aura_actions_success" {
 			bodyText = loadResponseBodyText()
 		}
-		if err := evaluateResponseAssertion(assertion, result, resp.Header, bodyText); err != nil {
+		var assertionErr error
+		if assertion.Type == "aura_actions_success" {
+			assertionErr = evaluateAuraAssertion(result, requestBody, respBody)
+		} else {
+			assertionErr = evaluateResponseAssertion(assertion, result, resp.Header, bodyText)
+		}
+		if err := assertionErr; err != nil {
 			result.Success = false
 			result.ErrorMessage = err.Error()
 			break

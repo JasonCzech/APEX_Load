@@ -1,0 +1,73 @@
+{
+  "date": "2026-10-03",
+  "scope": "Evidence-backed roadmap and fresh screenshot usability audit; no product implementation",
+  "target": "Chrome on a physical iPad; React frontend with Salesforce Aura",
+  "inspected_code_commit": "903c6690d5729c0cbef3020c4cd6ba186274a0d1",
+  "observed_remote_main": "2e38ef8512353dffa977c438c4eaaf25f571bde1",
+  "review": {
+    "independent_reviewers": 3,
+    "findings_fixed": 3,
+    "remaining_actionable_findings": 0,
+    "areas": [
+      "implementation and existing-feature overlap",
+      "source/capture evidence and counts",
+      "official sources, VuGen workflows and device qualification"
+    ]
+  },
+  "checks": {
+    "documentation": "passed for 100 active Markdown files",
+    "whitespace": "passed",
+    "aura_aggregate_totals": "all numeric totals reconcile across four captures",
+    "screenshots": "four fresh saved and visually inspected; copies byte-identical",
+    "existing_test_source": "inspected, not rerun",
+    "product_test_suites": "not rerun for documentation-only work"
+  },
+  "limitations": {
+    "recorded_hosts_contacted": false,
+    "source_scripts_executed": false,
+    "physical_device_tested": false,
+    "live_salesforce_session_tested": false,
+    "production_code_changed": false,
+    "full_vugen_parity_claimed": false
+  },
+  "cleanup": {
+    "disposable_local_controller": "stopped after screenshot capture"
+  },
+  "artifacts": [
+    {
+      "path": "aura-evidence.json",
+      "bytes": 4594,
+      "sha256": "38a5b82aea305ff5e16e0bd70df50eb5976b85317f72a9887adcc41216bd74ab"
+    },
+    {
+      "path": "roadmap.md",
+      "bytes": 23056,
+      "sha256": "79a1484ffcb96540de5fbd6a03e8f3e2009d2ecd76127b428bea46c45820229a"
+    },
+    {
+      "path": "screenshots/01-authoring-entry.jpg",
+      "bytes": 126851,
+      "sha256": "8ea328fcbf714a0e30dd5929442e9e9469610585849c7571b88f35396bd07537"
+    },
+    {
+      "path": "screenshots/02-ipad-recording-preset.jpg",
+      "bytes": 89986,
+      "sha256": "24cd6bc41d877df35a7b0efb0c1299e567a6bb01eefaef51bfe5c63ff9022c58"
+    },
+    {
+      "path": "screenshots/03-proxy-onboarding.jpg",
+      "bytes": 157057,
+      "sha256": "d5e5ae451b211d0529b63d31eb8fa3dcabfb4d6be112a1128a76f59c787887d6"
+    },
+    {
+      "path": "screenshots/04-browser-replay-workspace.jpg",
+      "bytes": 108847,
+      "sha256": "a3fbfb27a7515fe10d5dc0071a829c7733df63cae50f9c1d5a406c79ee78a3de"
+    },
+    {
+      "path": "usability-audit.md",
+      "bytes": 4832,
+      "sha256": "7d3e1a29fca80b5784d524a9a5eb376734a381215553dd4afdbc9b8741e6fc43"
+    }
+  ]
+}

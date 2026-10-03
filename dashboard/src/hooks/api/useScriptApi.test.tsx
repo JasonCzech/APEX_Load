@@ -169,6 +169,27 @@ describe('useScriptApi import wrappers', () => {
     expect((options.body as FormData).get('file')).toBe(file)
   })
 
+  it.each(['importHAR', 'importSalesforce'] as const)('%s authorizes the project before upload bytes and retains transform options', async method => {
+    const file = new File(['{}'], 'capture.har', { type: 'application/json' })
+    await api[method](file, { project_id: 'project with spaces', name: 'Capture', base_url: 'https://example.test', agentforce_transform: true })
+    const [url, options] = (apiFetch as Mock).mock.calls[0]
+    expect(url).toBe(`/scripts/import/${method === 'importHAR' ? 'har' : 'salesforce'}?project_id=project+with+spaces&agentforce_transform=true`)
+    const body = options.body as FormData
+    expect(Array.from(body.keys())).toEqual(['project_id', 'file', 'name', 'base_url'])
+    expect(body.get('project_id')).toBe('project with spaces')
+    expect(body.get('file')).toBe(file)
+  })
+
+  it('retains HAR native selection alongside project scope and the secondary capture', async () => {
+    const file = new File(['{}'], 'first.har')
+    const second = new File(['{}'], 'second.har')
+    await api.importHAR(file, { project_id: 'project-1', salesforce_native: false, secondary_file: second, include_static_assets: true })
+    const [url, options] = (apiFetch as Mock).mock.calls[0]
+    expect(url).toBe('/scripts/import/har?project_id=project-1&salesforce_native=false')
+    expect(Array.from((options.body as FormData).keys())).toEqual(['project_id', 'file', 'include_static_assets', 'secondary_file'])
+    expect((options.body as FormData).get('secondary_file')).toBe(second)
+  })
+
   it('sends OpenAPI project scope before file bytes for streaming authorization', async () => {
     const file = new File(['openapi: 3.0.3'], 'api.yaml', { type: 'text/yaml' })
     await api.importOpenAPI(file, { project_id: 'project-1', name: 'Orders', agentforce_transform: true })

@@ -490,7 +490,58 @@ export interface SalesforceParameterizationCandidate {
   template: string
 }
 
+export type AuraActionState = 'SUCCESS' | 'ERROR' | 'INCOMPLETE' | 'ABORTED' | 'UNKNOWN'
+
+export interface AuraBatchAnalysis {
+  success: boolean
+  complete: boolean
+  has_response: boolean
+  request_actions: number
+  response_actions: number
+  matched_actions: number
+  outcomes?: { ordinal: number; state: AuraActionState }[]
+  issues?: { code: string; ordinal?: number }[]
+  outcomes_omitted?: number
+  issues_omitted?: number
+}
+
+export interface AuraOutcomeBatch {
+  action_path?: string
+  action_sequence: number
+  har_entry_id?: number
+  request_valid: boolean
+  request_issues?: { code: string; ordinal?: number }[]
+  request_issues_omitted?: number
+  analysis: AuraBatchAnalysis
+}
+
+export interface AuraOutcomeReport {
+  complete: boolean
+  details_complete?: boolean
+  outcomes_omitted?: number
+  issues_omitted?: number
+  request_issues_omitted?: number
+  outcome_detail_limit?: number
+  issue_detail_limit?: number
+  total_batches: number
+  inspected_batches: number
+  complete_batches: number
+  batch_limit: number
+  analysis_byte_limit: number
+  omitted_batches: number
+  incomplete_batches: number
+  missing_responses: number
+  invalid_requests: number
+  request_actions: number
+  response_actions: number
+  matched_actions: number
+  state_counts?: Partial<Record<AuraActionState, number>>
+  issue_counts?: Record<string, number>
+  batches?: AuraOutcomeBatch[]
+}
+
 export interface SalesforceReview {
+  aura_outcomes?: AuraOutcomeReport
   detected: boolean
   domains?: SalesforceDomainObservation[]
   aura_endpoints?: SalesforceEndpointObservation[]

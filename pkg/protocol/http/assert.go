@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/aura"
 )
 
 const (
@@ -28,10 +30,11 @@ const (
 var errHTTPAssertionResourceLimit = errors.New("assertion resource limit exceeded")
 
 type assertionInputWorkBudget struct {
-	used        int64
-	limit       int64
-	bodyBytes   int64
-	headerBytes int64
+	used         int64
+	limit        int64
+	bodyBytes    int64
+	requestBytes int64
+	headerBytes  int64
 }
 
 func newAssertionInputWorkBudget(headers http.Header, body []byte) *assertionInputWorkBudget {
@@ -52,6 +55,12 @@ func (budget *assertionInputWorkBudget) charge(assertion protocol.Assertion) err
 	}
 	var cost int64
 	switch assertion.Type {
+	case "aura_actions_success":
+		// Parse both actual request and response under the shared cumulative budget.
+		if budget.requestBytes < 0 || budget.bodyBytes < 0 || budget.bodyBytes > limit || budget.requestBytes > limit-budget.bodyBytes {
+			return fmt.Errorf("%w: aggregate assertion input exceeds %d bytes", errHTTPAssertionResourceLimit, limit)
+		}
+		cost = budget.requestBytes + budget.bodyBytes
 	case "body_contains", "body_not_contains", "body_regex_capture_equals":
 		cost = budget.bodyBytes
 	case "header_contains":
@@ -83,6 +92,8 @@ func evaluate(a protocol.Assertion, result *protocol.Result, bodyText string) er
 
 func evaluateResponseAssertion(a protocol.Assertion, result *protocol.Result, responseHeaders http.Header, bodyText string) error {
 	switch a.Type {
+	case "aura_actions_success":
+		return evaluateAuraAssertion(result, nil, []byte(bodyText))
 	case "status_code":
 		expected, ok := toInt(a.Expected)
 		if !ok {
@@ -203,6 +214,10 @@ func responseHeaderValues(headers http.Header, name string) []string {
 // same function so authoring health and runtime admission cannot diverge.
 func ValidateAssertionDefinition(assertion protocol.Assertion) error {
 	switch assertion.Type {
+	case "aura_actions_success":
+		if assertion.Value != "" || assertion.Expected != nil || assertion.Min != 0 || assertion.Max != 0 || assertion.LegacyHTMLCheck {
+			return errors.New("aura_actions_success assertion accepts no value, expected, min, max or legacy bypass")
+		}
 	case "status_code", "status_code_not":
 		if _, ok := toInt(assertion.Expected); !ok {
 			return fmt.Errorf("%s assertion: expected integer, got %T", assertion.Type, assertion.Expected)
@@ -267,7 +282,7 @@ func responseStatusExplicitlyAccepted(assertions []protocol.Assertion, result *p
 
 func assertionNeedsResponseBody(assertion protocol.Assertion) bool {
 	switch assertion.Type {
-	case "body_contains", "body_not_contains", "body_regex_capture_equals":
+	case "aura_actions_success", "body_contains", "body_not_contains", "body_regex_capture_equals":
 		return true
 	default:
 		return false
@@ -412,4 +427,52 @@ func evaluateContentChecksLimited(checks []contentCheck, result *protocol.Result
 		}
 	}
 	return first
+}
+
+// Aura reporting is value-free and never changes the observed HTTP status.
+func evaluateAuraAssertion(result *protocol.Result, requestBody, responseBody []byte) error {
+	report := aura.Validate(requestBody, responseBody)
+	if result.ProtocolEvidence == nil {
+		result.ProtocolEvidence = make(map[string]any)
+	}
+	result.ProtocolEvidence["aura"] = retainAuraOutcomeEvidence(report)
+	return report.Err()
+}
+
+func hasAuraSuccessAssertion(assertions []protocol.Assertion) bool {
+	for _, assertion := range assertions {
+		if assertion.Type == "aura_actions_success" {
+			return true
+		}
+	}
+	return false
+}
+
+// Keep both collections below the shared protocol evidence entry/collection
+// budgets. Prioritize unsuccessful outcomes and disclose every omitted item;
+// validation counts and result status always describe the full parsed batch.
+const maxRetainedAuraDetails = 64
+
+func retainAuraOutcomeEvidence(report aura.Report) aura.Report {
+	if len(report.Outcomes) > maxRetainedAuraDetails {
+		selected := make([]aura.Outcome, 0, maxRetainedAuraDetails)
+		for _, outcome := range report.Outcomes {
+			if outcome.State != aura.Success && len(selected) < maxRetainedAuraDetails {
+				selected = append(selected, outcome)
+			}
+		}
+		for _, outcome := range report.Outcomes {
+			if outcome.State == aura.Success && len(selected) < maxRetainedAuraDetails {
+				selected = append(selected, outcome)
+			}
+		}
+		sort.Slice(selected, func(i, j int) bool { return selected[i].Ordinal < selected[j].Ordinal })
+		report.OutcomesOmitted = len(report.Outcomes) - len(selected)
+		report.Outcomes = selected
+	}
+	if len(report.Issues) > maxRetainedAuraDetails {
+		report.IssuesOmitted = len(report.Issues) - maxRetainedAuraDetails
+		report.Issues = append([]aura.Issue(nil), report.Issues[:maxRetainedAuraDetails]...)
+	}
+	return report
 }

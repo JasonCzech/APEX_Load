@@ -425,6 +425,10 @@ describe('ProtocolAssetImport', () => {
         items: ['Aura and Lightning endpoints were detected.'],
       }],
       repair_suggestions: [],
+      source_review: {
+        source_files: [{ path: 'sample.har', language: 'json', content: '{"log":{"entries":[]}}' }],
+        mappings: [{ id: 'sf-source-request', source_file: 'sample.har', start_line: 1, function: 'har_entry', target_path: 'actions[0]', target_name: 'Aura Bootstrap', target_kind: 'action', status: 'converted' }],
+      },
       correlations: [{ name: 'aura_token', source: 'body', expression: 'aura.token', found_in_seq: 1 }],
       stats: {
         format: 'har',
@@ -438,6 +442,15 @@ describe('ProtocolAssetImport', () => {
       summary: {
         artifact_mode: 'salesforce_native_http',
         salesforce_review: {
+          aura_outcomes: {
+            complete: true, total_batches: 1, inspected_batches: 1, complete_batches: 1, incomplete_batches: 0,
+            omitted_batches: 0, missing_responses: 0, invalid_requests: 0, request_actions: 2, response_actions: 2, matched_actions: 2,
+            batch_limit: 512, analysis_byte_limit: 67108864, state_counts: { SUCCESS: 1, ERROR: 1 },
+            issue_counts: { non_success_state: 1 },
+            batches: [{ action_sequence: 1, action_path: 'actions[0]', har_entry_id: 7, request_valid: true,
+              analysis: { success: false, complete: true, has_response: true, request_actions: 2, response_actions: 2, matched_actions: 2,
+                outcomes: [{ ordinal: 1, state: 'SUCCESS' }, { ordinal: 2, state: 'ERROR' }], issues: [{ code: 'non_success_state', ordinal: 2 }] } }],
+          },
           detected: true,
           domains: [{ host: 'acme.my.salesforce.com', kind: 'lightning', count: 2 }],
           aura_endpoints: [{ method: 'POST', path: '/aura', host: 'acme.my.salesforce.com', count: 2 }],
@@ -2032,6 +2045,15 @@ describe('ProtocolAssetImport', () => {
     // Agentforce panel from preserved metadata (G4)
     expect(container.textContent).toContain('Agentforce Agent API Review')
     expect(container.textContent).toContain('streaming (SSE)')
+    const aura = container.querySelector('.aura-outcome-review')!
+    expect(aura.textContent).toContain('1 captured action did not succeed.')
+    expect(aura.textContent).toContain('HAR entry 7')
+    const sourceLink = [...aura.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'View request 1 source mapping')!
+    await act(async () => { sourceLink.click() })
+    await flushPromises()
+    const sourceTab = container.querySelector('[role=tab][aria-label="Source Mapping"]')!
+    expect(sourceTab.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('tr.active[data-mapping-id]')?.getAttribute('data-mapping-id')).toBe('sf-source-request')
   })
 
   it('imports RAML files through the shared protocol asset flow', async () => {

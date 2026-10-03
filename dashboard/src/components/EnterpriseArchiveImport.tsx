@@ -36,6 +36,7 @@ import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import { groupImportFindings, draftImportFindings, reviewSectionFindings, type ImportFinding, type IssueCategory } from './importReviewIssues'
 import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
+import AuraOutcomeReview from './AuraOutcomeReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { salesforceApiSurfaceSummary } from './salesforceReviewSummary'
@@ -4912,6 +4913,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                 </div>
               </div>
             )}
+
+            <AuraOutcomeReview report={salesforceReview?.aura_outcomes} sourceReview={sourceReview || undefined} onViewSource={mapping => { setRepairSourceFocus(previous => ({ id: mapping.id, file: mapping.source_file, revision: previous.revision + 1 })); setValidationReviewTab('source') }} />
 
             {salesforceReview && (
               <div className="lr-salesforce-lanes">

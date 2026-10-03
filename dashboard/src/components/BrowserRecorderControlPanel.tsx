@@ -26,6 +26,7 @@ import {
   type HttpURLScheme,
 } from '../utils/httpUrlInput'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
+import AuraOutcomeReview from './AuraOutcomeReview'
 import BrowserReplayProgress, { type BrowserReplayProgressProps } from './BrowserReplayProgress'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import ParameterizationReview from './ParameterizationReview'
@@ -2052,6 +2053,7 @@ export default function BrowserRecorderControlPanel({
                 {salesforceReview?.har_match_coverage &&
                   ` · ${Math.round(salesforceReview.har_match_coverage.coverage_pct || 0)}% HAR coverage`}
               </div>
+              <AuraOutcomeReview report={salesforceReview?.aura_outcomes} />
               {(salesforceDraft.warnings?.length ?? 0) > 0 && (
                 <div className="brp-warnings">
                   {salesforceDraft.warnings.slice(0, 4).map((warning, idx) => (

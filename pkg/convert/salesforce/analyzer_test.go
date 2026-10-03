@@ -28,7 +28,7 @@ func TestAnalyzeBuildsSalesforceNativePreviewFromHAR(t *testing.T) {
 			Type:   "POST",
 			Method: "POST",
 			Target: "https://attone--perfhyper2.sandbox.lightning.force.com/aura",
-			Body:   `{"descriptor":"apex://AccountController/ACTION$get","token":"tok-abcdef123456"}`,
+			Body:   `{"actions":[{"id":"1;a","descriptor":"apex://AccountController/ACTION$get"}],"token":"tok-abcdef123456"}`,
 		}},
 	}
 	har := []byte(`{
@@ -78,8 +78,8 @@ func TestAnalyzeBuildsSalesforceNativePreviewFromHAR(t *testing.T) {
 	if !strings.Contains(preview.Actions[1].Body, "{{var.corr_access_token}}") {
 		t.Fatalf("aura body = %q, want correlated token variable", preview.Actions[1].Body)
 	}
-	if len(preview.Actions[1].Assertions) != 2 {
-		t.Fatalf("aura assertions = %#v, want Aura state assertions", preview.Actions[1].Assertions)
+	if len(preview.Actions[1].Assertions) != 1 || preview.Actions[1].Assertions[0].Type != "aura_actions_success" {
+		t.Fatalf("aura assertions = %#v, want request-aware Aura assertion", preview.Actions[1].Assertions)
 	}
 }
 
@@ -1284,13 +1284,13 @@ func TestAnalyzeHandlesHAREdgeCases(t *testing.T) {
 			Type:   "POST",
 			Method: "POST",
 			Target: "https://acme.lightning.force.com/aura",
-			Body:   `{"descriptor":"apex://AccountController/ACTION$get"}`,
+			Body:   `{"actions":[{"id":"one;a","descriptor":"apex://AccountController/ACTION$get"}]}`,
 		}, {
 			Name:   "Aura Two",
 			Type:   "POST",
 			Method: "POST",
 			Target: "https://acme.lightning.force.com/aura",
-			Body:   `{"descriptor":"apex://WorkOrderController/ACTION$get"}`,
+			Body:   `{"actions":[{"id":"two;a","descriptor":"apex://WorkOrderController/ACTION$get"}]}`,
 		}, {
 			Name:   "Missing From HAR",
 			Type:   "GET",

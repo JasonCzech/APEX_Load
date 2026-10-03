@@ -187,6 +187,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
             />
           ) : (
             <HttpActionFields
+              protocol={protocol}
               action={action}
               index={index}
               isBrowserScript={isBrowserScript}

@@ -1025,12 +1025,12 @@ func salesforceHARImportJSON(t *testing.T) []byte {
           "method": "POST",
           "url": "https://attone--perfhyper2.sandbox.lightning.force.com/aura",
           "headers": [{"name":"content-type","value":"application/x-www-form-urlencoded"}],
-          "postData": {"text": "aura.token=tok%2B%2F%3D%3D&message=%7B%22actions%22%3A%5B%7B%22descriptor%22%3A%22apex%3A%2F%2FAccountController%2FACTION%24get%22%7D%5D%7D"}
+          "postData": {"text": "aura.token=tok%2B%2F%3D%3D&message=%7B%22actions%22%3A%5B%7B%22id%22%3A%221%3Ba%22%2C%22descriptor%22%3A%22apex%3A%2F%2FAccountController%2FACTION%24get%22%7D%5D%7D"}
         },
         "response": {
           "status": 200,
           "headers": [],
-          "content": {"text": "{\"actions\":[{\"state\":\"SUCCESS\"}]}"}
+          "content": {"text": "{\"actions\":[{\"id\":\"1;a\",\"state\":\"SUCCESS\"}]}"}
         }
       }
     ]

@@ -278,11 +278,12 @@ func validateHTTPAssertionIssues(label string, assertions []Assertion) []string 
 	}
 	for index, assertion := range assertions {
 		if err := httpprotocol.ValidateAssertionDefinition(protocol.Assertion{
-			Type:     assertion.Type,
-			Expected: assertion.Expected,
-			Value:    assertion.Value,
-			Min:      assertion.Min,
-			Max:      assertion.Max,
+			LegacyHTMLCheck: assertion.LegacyHTMLCheck,
+			Type:            assertion.Type,
+			Expected:        assertion.Expected,
+			Value:           assertion.Value,
+			Min:             assertion.Min,
+			Max:             assertion.Max,
 		}); err != nil {
 			issues = append(issues, fmt.Sprintf("%s: assertions[%d]: %v", label, index, err))
 		}

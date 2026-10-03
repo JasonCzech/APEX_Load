@@ -14,9 +14,12 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol/aura"
 )
 
 type AnalyzeOptions struct {
@@ -41,6 +44,8 @@ type Review struct {
 	Parameterizations     []ParameterizationCandidate `json:"parameterizations,omitempty"`
 	CorrelationConfidence string                      `json:"correlation_confidence,omitempty"`
 	HARMatchCoverage      MatchCoverage               `json:"har_match_coverage"`
+	AuraOutcomes          *AuraOutcomeReview          `json:"aura_outcomes,omitempty"`
+	Warnings              []string                    `json:"warnings,omitempty"`
 	Blockers              []string                    `json:"blockers,omitempty"`
 	NextActions           []string                    `json:"next_actions,omitempty"`
 	NativePreview         *NativePreview              `json:"native_preview,omitempty"`
@@ -123,6 +128,7 @@ type actionRef struct {
 	Object      string
 	Transaction string
 	HARID       int
+	ActionPath  string
 }
 
 type harEntry struct {
@@ -151,7 +157,10 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
-	refs := flattenRequestActions(script)
+	refs, err := flattenRequestActionsChecked(script, false)
+	if err != nil {
+		return nil, fmt.Errorf("inspect Salesforce request actions: %w", err)
+	}
 	entries, err := parseHAR(opts.HARData)
 	if err != nil {
 		return nil, err
@@ -186,6 +195,21 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 			"Review Salesforce correlation extractors and HAR match coverage before approval.",
 			"Replay the native preview against a controlled Salesforce sandbox and attach evidence.",
 		},
+	}
+	review.AuraOutcomes = inspectAuraOutcomes(refs, entries)
+	if outcomes := review.AuraOutcomes; outcomes != nil {
+		if !outcomes.DetailsComplete {
+			review.Warnings = append(review.Warnings, "Aura review detail retention was bounded; full inspected aggregate counts remain available with explicit omitted detail counts.")
+		}
+		if !outcomes.Complete {
+			review.Warnings = append(review.Warnings, "Aura baseline analysis is incomplete; review missing responses, malformed or unmatched actions, and analysis limits before controlled replay.")
+		}
+		if outcomes.StateCounts[aura.Error]+outcomes.StateCounts[aura.Incomplete]+outcomes.StateCounts[aura.Aborted] > 0 {
+			review.Warnings = append(review.Warnings, "Captured Aura responses contain unsuccessful action states; review baseline failures before controlled replay.")
+		}
+		if opts.BuildNative && outcomes.InvalidRequests > 0 {
+			review.Blockers = append(review.Blockers, "Imported Aura requests could not be validated; native replay is gated until those request envelopes are repaired.")
+		}
 	}
 	if opts.BuildNative && len(entries) == 0 {
 		review.Blockers = append(review.Blockers, "Salesforce native preview requires a HAR captured from the same recording for high-confidence correlation.")
@@ -223,7 +247,8 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 }
 
 func flattenRequestActions(script *dsl.Script) []actionRef {
-	return flattenRequestActionsWithSequencePersistence(script, false)
+	refs, _ := flattenRequestActionsChecked(script, false)
+	return refs
 }
 
 // flattenRequestActionsForRewrite is the mutable counterpart used by the native
@@ -231,13 +256,21 @@ func flattenRequestActions(script *dsl.Script) []actionRef {
 // them into detached dsl.Action values is not enough: mutations made through the
 // returned refs must point at a slice stored back on the parent action.
 func flattenRequestActionsForRewrite(script *dsl.Script) []actionRef {
-	return flattenRequestActionsWithSequencePersistence(script, true)
+	refs, _ := flattenRequestActionsChecked(script, true)
+	return refs
 }
 
-func flattenRequestActionsWithSequencePersistence(script *dsl.Script, persistSequenceChildren bool) []actionRef {
+func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bool) ([]actionRef, error) {
+	if script == nil {
+		return nil, nil
+	}
+	rootCount := len(script.Init) + len(script.Actions) + len(script.Teardown)
+	if rootCount > dsl.MaxScriptActionDefinitions {
+		return nil, fmt.Errorf("script action definitions exceed %d", dsl.MaxScriptActionDefinitions)
+	}
 	refs := make([]actionRef, 0, len(script.Init)+len(script.Actions)+len(script.Teardown))
 	seq := 1
-	appendRef := func(phase string, index int, action *dsl.Action, inheritedTransaction string) {
+	appendRef := func(phase string, index int, action *dsl.Action, inheritedTransaction, actionPath string) {
 		method := strings.ToUpper(strings.TrimSpace(action.Method))
 		if method == "" {
 			method = strings.ToUpper(strings.TrimSpace(action.Type))
@@ -250,6 +283,7 @@ func flattenRequestActionsWithSequencePersistence(script *dsl.Script, persistSeq
 		descriptor := extractAuraDescriptor(evidence)
 		refs = append(refs, actionRef{
 			Phase:       phase,
+			ActionPath:  actionPath,
 			Index:       index,
 			Sequence:    seq,
 			Action:      action,
@@ -263,38 +297,72 @@ func flattenRequestActionsWithSequencePersistence(script *dsl.Script, persistSeq
 		})
 		seq++
 	}
-	appendRefs := func(phase string, actions []dsl.Action) {
+	definitions := 0
+	var appendRefs func(string, []dsl.Action, string, int, string) error
+	appendRefs = func(phase string, actions []dsl.Action, prefix string, depth int, inheritedTransaction string) error {
+		if depth > dsl.MaxScriptActionDepth {
+			return fmt.Errorf("action nesting exceeds %d levels", dsl.MaxScriptActionDepth)
+		}
 		for index := range actions {
+			definitions++
+			if definitions > dsl.MaxScriptActionDefinitions {
+				return fmt.Errorf("script action definitions exceed %d", dsl.MaxScriptActionDefinitions)
+			}
 			action := &actions[index]
+			actionPath := fmt.Sprintf("%s[%d]", prefix, index)
+			transaction := convertutil.FirstNonEmpty(metadataString(action.Metadata, "source_transaction"), inheritedTransaction)
 			if strings.EqualFold(action.Type, "http_sequence") {
-				transaction := convertutil.FirstNonEmpty(metadataString(action.Metadata, "source_transaction"), metadataString(action.Metadata, "source_transaction"))
+				definitions += salesforceSequenceRequestCount(*action)
+				if definitions > dsl.MaxScriptActionDefinitions {
+					return fmt.Errorf("script action/request definitions exceed %d", dsl.MaxScriptActionDefinitions)
+				}
 				children := salesforceSequenceChildren(*action)
+				exactChildIndexes := len(children) == salesforceSequenceRequestCount(*action)
 				if persistSequenceChildren && len(children) > 0 {
-					// Store the typed slice on the parent before taking child pointers.
-					// The interface keeps the same backing array, so every extractor,
-					// assertion, metadata, and correlation rewrite below survives in
-					// the returned native script.
+					// Preserve mutable child pointers inside the returned native script.
 					action.Params["requests"] = children
 				}
 				for childIndex := range children {
 					child := &children[childIndex]
-					if child.Metadata == nil {
-						child.Metadata = map[string]any{}
+					if persistSequenceChildren {
+						if child.Metadata == nil {
+							child.Metadata = map[string]any{}
+						}
+						if child.Metadata["source_transaction"] == nil && transaction != "" {
+							child.Metadata["source_transaction"] = transaction
+						}
 					}
-					if child.Metadata["source_transaction"] == nil && transaction != "" {
-						child.Metadata["source_transaction"] = transaction
+					childPath := ""
+					if persistSequenceChildren || exactChildIndexes {
+						childPath = fmt.Sprintf("%s.params.requests[%d]", actionPath, childIndex)
 					}
-					appendRef(phase, index, child, transaction)
+					appendRef(phase, index, child, transaction, childPath)
 				}
-				continue
+			} else {
+				appendRef(phase, index, action, transaction, actionPath)
 			}
-			appendRef(phase, index, action, "")
+			if action.Control != nil {
+				if len(action.Control.Cases)+len(action.Control.Branches) > dsl.MaxScriptActionDefinitions {
+					return fmt.Errorf("control branch definitions exceed %d", dsl.MaxScriptActionDefinitions)
+				}
+				for _, branch := range action.Control.ActionBranches() {
+					if err := appendRefs(phase, branch.Actions, actionPath+".control."+branch.Path, depth+1, transaction); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
+	}
+	for _, phase := range []struct {
+		name, path string
+		actions    []dsl.Action
+	}{{"init", "init", script.Init}, {"action", "actions", script.Actions}, {"teardown", "teardown", script.Teardown}} {
+		if err := appendRefs(phase.name, phase.actions, phase.path, 1, ""); err != nil {
+			return nil, err
 		}
 	}
-	appendRefs("init", script.Init)
-	appendRefs("action", script.Actions)
-	appendRefs("teardown", script.Teardown)
-	return refs
+	return refs, nil
 }
 
 func isEngineAction(actionType string) bool {
@@ -303,6 +371,24 @@ func isEngineAction(actionType string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// Generic source navigation must not guess indexes after malformed request
+// entries have been filtered out by the sequence adapter.
+func salesforceSequenceRequestCount(action dsl.Action) int {
+	if action.Params == nil {
+		return 0
+	}
+	switch requests := action.Params["requests"].(type) {
+	case []any:
+		return len(requests)
+	case []map[string]any:
+		return len(requests)
+	case []dsl.Action:
+		return len(requests)
+	default:
+		return 0
 	}
 }
 
@@ -585,7 +671,7 @@ func classifySalesforceAction(action *dsl.Action, rawURL string) string {
 		return "generic"
 	}
 	host := strings.ToLower(parsed.Hostname())
-	path := strings.ToLower(parsed.EscapedPath())
+	path := strings.ToLower(parsed.Path)
 	body := strings.ToLower(action.Body)
 	switch {
 	// Concrete API surfaces are matched before the login heuristic so that data
@@ -594,8 +680,6 @@ func classifySalesforceAction(action *dsl.Action, rawURL string) string {
 	// class) are not misclassified as auth traffic.
 	case strings.Contains(path, "/einstein/ai-agent"):
 		return "agentforce"
-	case strings.Contains(path, "/aura") || strings.Contains(body, "aura.context") || strings.Contains(body, "aura.token") || strings.Contains(body, "\"descriptor\""):
-		return "aura"
 	case strings.Contains(path, "/services/apexrest/"):
 		return "apex_rest"
 	case strings.Contains(path, "/services/data/") && strings.Contains(path, "/ui-api/"):
@@ -608,6 +692,8 @@ func classifySalesforceAction(action *dsl.Action, rawURL string) string {
 		return "bulk_data"
 	case strings.Contains(path, "/services/data/"):
 		return "rest_api"
+	case isAuraEndpointPath(path) || hasAuraActionEnvelopeEvidence(action):
+		return "aura"
 	case strings.Contains(path, "/cometd") || strings.Contains(body, "/meta/handshake") || strings.Contains(body, "/meta/connect") || strings.Contains(body, "/meta/subscribe"):
 		return "cometd"
 	case isSalesforceLoginRequest(host, path):
@@ -617,6 +703,42 @@ func classifySalesforceAction(action *dsl.Action, rawURL string) string {
 	default:
 		return "generic"
 	}
+}
+
+func isAuraEndpointPath(path string) bool {
+	for _, segment := range strings.Split(path, "/") {
+		if strings.EqualFold(segment, "aura") {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAuraActionEnvelopeEvidence(action *dsl.Action) bool {
+	body, code := auraActionRequestBody(action)
+	return code == "" && hasAuraEnvelopeEvidence(body)
+}
+
+func hasAuraEnvelopeEvidence(body string) bool {
+	if len(body) > aura.MaxEnvelopeBytes {
+		return false
+	}
+	// A valid raw or message-form envelope establishes structure without
+	// relying on incidental business payload keys such as descriptor.
+	if validateAuraRequest(body).Success {
+		return true
+	}
+	if strings.HasPrefix(strings.TrimSpace(body), "{") {
+		return false
+	}
+	if strings.Count(body, "&")+1 > aura.MaxFormFields {
+		return false
+	}
+	values, _ := url.ParseQuery(body)
+	_, message := values["message"]
+	_, context := values["aura.context"]
+	_, token := values["aura.token"]
+	return message && (context || token)
 }
 
 // isSalesforceLoginRequest matches genuine Salesforce authentication traffic by
@@ -969,7 +1091,10 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 	clone.GeneratedFrom = "enterprise_script_archive+har"
 	ensureMetadata(clone)["salesforce_native_preview"] = true
 
-	cloneRefs := flattenRequestActionsForRewrite(clone)
+	cloneRefs, err := flattenRequestActionsChecked(clone, true)
+	if err != nil {
+		return nil, fmt.Errorf("inspect native Salesforce request actions: %w", err)
+	}
 	harIDToRef := make(map[int]*actionRef)
 	for refIndex, harID := range matches {
 		if refIndex >= len(cloneRefs) {
@@ -992,9 +1117,21 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 			"sequence":        ref.Sequence,
 			"har_match_id":    ref.HARID,
 		}
-		if ref.Kind == "aura" {
-			addAssertionIfMissing(ref.Action, dsl.Assertion{Type: "body_not_contains", Value: `"state":"ERROR"`})
-			addAssertionIfMissing(ref.Action, dsl.Assertion{Type: "body_not_contains", Value: `"state":"INCOMPLETE"`})
+		if isAuraBatch(*ref) {
+			if validateAuraActionRequest(ref.Action).Success {
+				// Replace the legacy generated substring guards with validation of
+				// the actual outgoing request IDs and every response action.
+				removeLegacyAuraAssertions(ref.Action)
+				addAssertionIfMissing(ref.Action, dsl.Assertion{Type: "aura_actions_success"})
+			} else {
+				const code = "salesforce_aura_request_requires_review"
+				importreview.ApplyToAction(ref.Action, []importreview.Finding{{
+					Code: code, ReasonCode: code, Severity: diag.Blocker,
+					Detail:     "The imported Aura request envelope is malformed, ambiguous, or exceeds validation limits; repair it before native replay.",
+					ActionPath: ref.ActionPath, Gate: importreview.GateExecution,
+					Resolution: "replace_behavior_and_remove_gate",
+				}})
+			}
 		}
 	}
 

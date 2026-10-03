@@ -10,6 +10,8 @@ Each report merges what used to be separate audit, implementation, code review, 
 
 | File | Date | Status | Purpose |
 | --- | --- | --- | --- |
+| [aura-record-replay-2026-10-03/implementation.md](aura-record-replay-2026-10-03/implementation.md) | 2026-10-03 | Implementation slices in progress | Aura outcomes, React recording/replay, correlation, device identity and HTTP/debugger fidelity; each slice is tested and independently reviewed before commit. |
+| [web-record-replay-roadmap-2026-10-03/roadmap.md](web-record-replay-roadmap-2026-10-03/roadmap.md) | 2026-10-03 | Roadmap delivered; live device/session qualification open | Evidence-backed VuGen/browser priorities for React, Salesforce Aura and Chrome on a physical iPad. |
 | [java-dependency-import-2026-10-01/import-review.md](java-dependency-import-2026-10-01/import-review.md) | 2026-10-01 to 2026-10-02 | Import/save/reopen complete; replay gated | Java VuGen settings, supplemental dependency provenance, stored JAR binding fidelity, independent code review and durable review navigation. |
 | [clm-import-2026-10-01/import-review.md](clm-import-2026-10-01/import-review.md) | 2026-10-01 | Import/save/reopen complete; original replay prerequisites remain | ZIP/USZ collection fidelity, governed Java/Kafka settings, independent code review, and durable native-script navigation. |
 | [truclient-import-2026-10-01/import-review.md](truclient-import-2026-10-01/import-review.md) | 2026-10-01 | Import/save/reopen complete; replay gated | Source settings, browser-profile policy, parameter/data and transaction accounting, with saved authoring-review evidence. |

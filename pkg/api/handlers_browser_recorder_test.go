@@ -2889,13 +2889,13 @@ func TestRecordingStudioUsesSalesforceNativeHTTPDraft(t *testing.T) {
 		if !strings.Contains(action.Body, "{{var.") || strings.Contains(action.Body, "tok%2B%2F%3D%3D") {
 			t.Fatalf("Aura token not correlated: %s", action.Body)
 		}
-		hasErrorCheck := false
+		hasAuraCheck := false
 		for _, assertion := range action.Assertions {
-			if assertion.Type == "body_not_contains" && strings.Contains(assertion.Value, "ERROR") {
-				hasErrorCheck = true
+			if assertion.Type == "aura_actions_success" {
+				hasAuraCheck = true
 			}
 		}
-		if !hasErrorCheck {
+		if !hasAuraCheck {
 			t.Fatal("native Aura response assertion missing")
 		}
 	}
