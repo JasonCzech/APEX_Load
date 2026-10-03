@@ -6,6 +6,8 @@ Source note: consolidated 2026-09-24 from the former `RUNTIME_TELEMETRY_SLA_PLAN
 
 The [feature completion specification](FEATURE_COMPLETION_SPEC.md) evaluates the published 2026-10-02 implementation and defines full remaining requirements, interfaces, release sequencing and acceptance for Event Hubs/messaging, browser evidence/intelligence, telemetry reporting, native analytics and authoring cleanup. Implementation was authorized 2026-10-02; it is not a support-promotion record; source-backed corrections there supersede older design assumptions.
 
+The [R0 prerequisite verification](qa/reviews/feature-completion-r0-2026-10-02/README.md) cleared the outstanding malformed-counter API/race and actual PostgreSQL release-26 migration gates against immutable baseline `025d5ed9`. New completion-program contracts and runtime slices remain in progress; this does not promote pending provider, browser or native-platform acceptance.
+
 ## Track status
 
 | Track | Status | Open work |
