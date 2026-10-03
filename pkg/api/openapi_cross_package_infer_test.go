@@ -2,6 +2,7 @@ package api
 
 import (
 	"go/ast"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -82,6 +83,10 @@ func TestOpenAPICrossPackageModelSchemasAreResolved(t *testing.T) {
 				actions := schema.Properties["actions"]
 				if actions.Items == nil || actions.Items.Properties["type"].Type != "string" {
 					t.Fatalf("script actions schema = %#v, want typed action items", actions)
+				}
+				assertOptionalHTTPVersionSchema(t, actions.Items.Properties["http_version"])
+				if containsOpenAPIField(actions.Items.Required, "http_version") {
+					t.Fatal("omitzero HTTP version override must be optional")
 				}
 			},
 		},
@@ -311,4 +316,47 @@ func containsOpenAPIField(fields []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func assertOptionalHTTPVersionSchema(t *testing.T, schema oasSchema) {
+	t.Helper()
+	if schema.Type != "string" || schema.Nullable || !reflect.DeepEqual(schema.Enum, []string{"auto", "1.1", "2"}) || len(schema.Properties) != 0 {
+		t.Fatalf("HTTP version wire schema = %#v, want non-null strict scalar enum", schema)
+	}
+}
+
+func TestOptionalHTTPVersionOpenAPIWireSchema(t *testing.T) {
+	for _, pkg := range []string{"dsl", "protocol"} {
+		t.Run(pkg, func(t *testing.T) {
+			assertOptionalHTTPVersionSchema(t, openAPISchemaForASTType(
+				&ast.SelectorExpr{X: ast.NewIdent(pkg), Sel: ast.NewIdent("OptionalHTTPVersion")}, nil, map[string]bool{}, 0,
+			))
+			assertOptionalHTTPVersionSchema(t, openAPISchemaForASTTypeInPackage(
+				ast.NewIdent("OptionalHTTPVersion"), nil, map[string]bool{}, 0, pkg,
+			))
+		})
+	}
+}
+
+func TestGeneratedOpenAPIScriptHTTPVersionIsOptionalScalar(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document oasDoc
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	operation := document.Paths["/api/v1/scripts/export/k6"]["post"]
+	if operation.RequestBody == nil {
+		t.Fatal("missing export request schema")
+	}
+	actions := operation.RequestBody.Content["application/json"].Schema.Properties["script"].Properties["actions"]
+	if actions.Items == nil {
+		t.Fatal("missing typed script actions")
+	}
+	assertOptionalHTTPVersionSchema(t, actions.Items.Properties["http_version"])
+	if containsOpenAPIField(actions.Items.Required, "http_version") {
+		t.Fatal("omitted HTTP override must inherit")
+	}
 }

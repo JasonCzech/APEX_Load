@@ -34,6 +34,15 @@ func BuildProtocolEvidence(action *Action, result *Result) map[string]any {
 		"target":    evidenceTarget(action, result),
 		"status":    evidenceStatus(result),
 	}
+	if result.HTTPVersionPolicy != "" {
+		evidence["http_version_policy"] = result.HTTPVersionPolicy
+	}
+	if result.HTTPVersionNegotiated != "" {
+		evidence["http_version_negotiated"] = result.HTTPVersionNegotiated
+	}
+	if result.HTTPVersionSource != "" {
+		evidence["http_version_source"] = result.HTTPVersionSource
+	}
 	if len(result.WarningCodes) > 0 {
 		evidence["warnings"] = result.WarningCodes
 	}

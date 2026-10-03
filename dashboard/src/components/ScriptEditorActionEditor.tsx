@@ -23,7 +23,7 @@ function isHTTPRuntimeAction(action: Action): boolean {
   return HTTP_RUNTIME_ACTION_TYPES.has(action.type)
 }
 
-export function ActionEditor({ inspector = false, initialSection = 'request', onOpenBody, action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, isBrowserScript, isJmsScript, isSoapScript, issues }: {
+export function ActionEditor({ inspector = false, initialSection = 'request', onOpenBody, action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, scriptHTTPVersion, isBrowserScript, isJmsScript, isSoapScript, issues }: {
   inspector?: boolean
   initialSection?: string
   onOpenBody?: () => void
@@ -45,6 +45,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
   onBeginParameterEdit: (draft: ActionEditorParameterDraft) => void
   methodColor: (m: string) => string
   protocol: string
+  scriptHTTPVersion?: string
   isBrowserScript: boolean
   isJmsScript: boolean
   isSoapScript: boolean
@@ -189,6 +190,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
           ) : (
             <HttpActionFields
               protocol={protocol}
+              scriptHTTPVersion={scriptHTTPVersion}
               action={action}
               index={index}
               isBrowserScript={isBrowserScript}

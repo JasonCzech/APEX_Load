@@ -10,7 +10,7 @@ import { errorHandlingSectionIsPinned } from './newTestRunModel'
 import { QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
 import type { ScenarioSnapshotSource } from './useExecutionScenarioPreviewModel'
 import { formatTimeCompact } from '../utils/timeUtils'
-import { formatHTTPVersion } from './httpVersionModel'
+import { formatScriptHTTPVersion } from './httpVersionModel'
 import { formatPacingTiming } from './runtimeTiming'
 
 interface Props {
@@ -713,7 +713,7 @@ export default function TestExecutionScenarioPreview({
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">HTTP Runtime</span>
-                            <span className="scenario-script-detail-value">{detail ? `${formatHTTPVersion(detail.script?.config?.http?.version)} · ${detail.script?.config?.http?.max_conns_per_host || 100} conns/host` : 'Not exposed by run snapshot'}</span>
+                            <span className="scenario-script-detail-value">{detail ? `${formatScriptHTTPVersion(detail.protocol, detail.script?.config?.http?.version)} · ${detail.script?.config?.http?.max_conns_per_host || 100} conns/host` : 'Not exposed by run snapshot'}</span>
                           </div>
                         </div>
 

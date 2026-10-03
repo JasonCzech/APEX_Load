@@ -30,6 +30,8 @@ import (
 )
 
 func init() {
+	protocol.Register("http/1.1", func() protocol.Protocol { return &HTTP{aliasVersion: VersionHTTP11} })
+	protocol.Register("http/2", func() protocol.Protocol { return &HTTP{aliasVersion: VersionHTTP2} })
 	protocol.Register("http", func() protocol.Protocol {
 		return &HTTP{}
 	})
@@ -42,6 +44,9 @@ type HTTP struct {
 	outcome                replayOutcomePolicy
 	authDelay              time.Duration
 
+	aliasVersion               string
+	policyPools                map[string]*httpPolicyPool
+	connections                *httpConnectionBudget
 	client                     *http.Client
 	oauthClient                *http.Client
 	transport                  *http.Transport
@@ -142,6 +147,16 @@ func (h *HTTP) ParallelSafe() bool { return true }
 func (h *HTTP) SharedSessionConcurrentSafe() bool { return h != nil && h.client != nil }
 
 func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
+	if h.aliasVersion != "" {
+		if raw, exists := config["http_version"]; !exists || raw == nil || raw == "" {
+			copyConfig := make(map[string]any, len(config)+1)
+			for key, value := range config {
+				copyConfig[key] = value
+			}
+			copyConfig["http_version"] = h.aliasVersion
+			config = copyConfig
+		}
+	}
 	if err := validateHTTPRuntimeConfigBounds(config); err != nil {
 		return err
 	}
@@ -169,54 +184,8 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 		return err
 	}
 
-	h.transport = newTransport(transportSettings, tlsCfg)
-	if enabled, _ := config["dns_cache"].(bool); enabled {
-		h.transport.DialContext = familyDialContext(cachedDNSDialer(h.transport.DialContext, transportSettings.connectTimeout), transportSettings.ipVersion)
-	}
-	h.httpVersion, err = applyHTTPVersion(h.transport, config)
-	if err != nil {
+	if err := h.initializeHTTPPolicyPools(ctx, config, transportSettings, tlsCfg); err != nil {
 		return err
-	}
-	applyNetworkSimulation(h.transport, config)
-	if err := applyProxy(h.transport, config); err != nil {
-		return err
-	}
-	if len(h.allowedTargetHosts) > 0 {
-		h.transport.Proxy = protocol.NewTargetPolicyProxy(h.transport.Proxy, h.allowedTargetHosts)
-	}
-
-	jar := buildCookieJar(config)
-	h.maxRedirects = parseMaxRedirects(config)
-
-	h.client = &http.Client{
-		Transport: h.transport,
-		Jar:       jar,
-		Timeout:   h.requestTimeout,
-	}
-	applyRedirectPolicy(h.client, h.maxRedirects)
-	h.oauthClient = hardenedOAuthHTTPClient(h.client)
-	if h.oauthClient != nil {
-		h.oauthTransport, _ = h.oauthClient.Transport.(*http.Transport)
-	}
-	if protocol.ConfigString(config, "proxy_mode") == "pac" {
-		source, err := fetchPAC(ctx, protocol.ConfigString(config, "proxy_pac_url"), h.allowedTargetHosts)
-		if err != nil {
-			return err
-		}
-		h.client.Transport = &pacRoundTripper{source: source, allowed: h.allowedTargetHosts, base: h.transport}
-		if h.oauthClient != nil && h.oauthTransport != nil {
-			h.oauthClient.Transport = &pacRoundTripper{source: source, allowed: h.allowedTargetHosts, base: h.oauthTransport}
-		}
-	}
-	if len(h.allowedTargetHosts) > 0 {
-		h.client.Transport = protocol.NewTargetPolicyRoundTripper(h.client.Transport, h.allowedTargetHosts)
-		if h.oauthClient != nil {
-			h.oauthClient.Transport = protocol.NewTargetPolicyRoundTripper(h.oauthClient.Transport, h.allowedTargetHosts)
-		}
-	}
-	h.client.Transport = withoutImplicitUserAgent(h.client.Transport)
-	if h.oauthClient != nil {
-		h.oauthClient.Transport = withoutImplicitUserAgent(h.oauthClient.Transport)
 	}
 
 	h.defaultHeaders = buildDefaultHeaders(config)
@@ -272,7 +241,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 				result.Success = false
 				result.ErrorMessage = errPageDeadline.Error()
 				result.Duration = time.Since(result.StartTime)
-				result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+				result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result)
 			}
 		}()
 	}
@@ -285,7 +254,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.StatusCode = http.StatusBadRequest
 		result.ErrorMessage = err.Error()
 		result.Duration = time.Since(result.StartTime)
-		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result)
 		return result, nil
 	}
 	if skip, _ := action.Params["legacy_html_check"].(bool); skip && !h.outcome.legacyChecks && !hasAuraSuccessAssertion(action.Assertions) {
@@ -293,6 +262,19 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.ProtocolEvidence = map[string]any{"legacy_html_check": "disabled"}
 		return result, nil
 	}
+	policy, policyErr := h.effectiveHTTPVersion(action)
+	if policyErr == nil {
+		policyErr = h.validateHTTPVersionTLS(policy, h.resolveURL(action.Target))
+	}
+	if policyErr != nil {
+		result.StatusCode = http.StatusBadRequest
+		result.ErrorMessage = policyErr.Error()
+		return result, nil
+	}
+	h = h.forHTTPVersion(policy)
+	ctx = context.WithValue(ctx, httpVersionCacheKey{}, policy)
+	result.HTTPVersionPolicy = policy
+	defer func() { result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result) }()
 	defaultHeaders := h.defaultHeaders
 	defaultHeaderList := h.defaultHeaderList
 	if action.ResolvedDefaultHeaders {
@@ -306,7 +288,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.StatusCode = http.StatusBadRequest
 		result.ErrorMessage = err.Error()
 		result.Duration = time.Since(result.StartTime)
-		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result)
 		return result, nil
 	}
 
@@ -374,7 +356,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.Duration = time.Since(result.StartTime)
 		result.ErrorMessage = actionAuthErr.Error()
 		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
-		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result)
 		return result, nil
 	}
 	if actionAuthOverride {
@@ -596,6 +578,17 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			if req != nil && req.ContentLength > 0 {
 				result.BytesSent += req.ContentLength
 			}
+		}
+	}
+	if cacheHit {
+		result.HTTPVersionSource = "cache"
+	} else {
+		result.HTTPVersionSource = "wire"
+		switch {
+		case resp.ProtoMajor == 1 && resp.ProtoMinor == 1:
+			result.HTTPVersionNegotiated = VersionHTTP11
+		case resp.ProtoMajor == 2 && resp.ProtoMinor == 0:
+			result.HTTPVersionNegotiated = VersionHTTP2
 		}
 	}
 	if !cacheHit && staleCacheEntry != nil && resp != nil && resp.StatusCode == http.StatusNotModified {
@@ -945,6 +938,9 @@ func validateHTTPActionBounds(action *protocol.Action) error {
 	if action == nil {
 		return fmt.Errorf("http action is required")
 	}
+	if err := action.HTTPVersion.Validate(); err != nil {
+		return err
+	}
 	if err := ValidateMethod(ResolveMethod(action.Method, action.Type)); err != nil {
 		return err
 	}
@@ -1286,7 +1282,9 @@ func (h *HTTP) Teardown(_ context.Context) error {
 			_ = jar.clear()
 		}
 	}
-	if h.transport != nil {
+	if h.connections != nil {
+		h.connections.closeIdle()
+	} else if h.transport != nil {
 		h.transport.CloseIdleConnections()
 	}
 	if h.oauthTransport != nil && h.oauthTransport != h.transport {
@@ -1298,7 +1296,9 @@ func (h *HTTP) Teardown(_ context.Context) error {
 // CloseIdleConnections implements protocol.ConnectionController. It affects
 // only currently-idle pooled connections and leaves active requests alone.
 func (h *HTTP) CloseIdleConnections(_ context.Context) error {
-	if h.transport != nil {
+	if h.connections != nil {
+		h.connections.closeIdle()
+	} else if h.transport != nil {
 		h.transport.CloseIdleConnections()
 	}
 	if h.oauthTransport != nil && h.oauthTransport != h.transport {

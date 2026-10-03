@@ -126,9 +126,11 @@ func TestActionContainsUnresolvedParameterChecksResolvedDefaultHeaders(t *testin
 // for speed, so this test fails when the struct gains or loses a field, forcing
 // a decision about whether the new field can carry an interpolated value.
 func TestActionUnresolvedParameterScanCoversEveryStringField(t *testing.T) {
-	// Fields the scan intentionally ignores because they cannot hold a string.
+	// Fields the scan intentionally ignores because they are numeric/boolean
+	// settings or strictly validated policy scalars that cannot be interpolated.
 	nonStringFields := map[string]bool{
-		"TimeoutMs": true, "MaxRedirects": true, "DiscardResponseBodyOnSuccess": true,
+		"HTTPVersion": true, // Strict leaf enum; invalid/template values fail before traffic.
+		"TimeoutMs":   true, "MaxRedirects": true, "DiscardResponseBodyOnSuccess": true,
 		"Capture":                    true, // BrowserCaptureOptions is all bools
 		"CaptureMessageDetail":       true,
 		"CaptureResourceDetails":     true,

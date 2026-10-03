@@ -1427,6 +1427,9 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 	}
 	switch value := expr.(type) {
 	case *ast.Ident:
+		if value.Name == "OptionalHTTPVersion" && (currentPackage == "dsl" || currentPackage == "protocol") {
+			return optionalHTTPVersionOpenAPISchema()
+		}
 		switch value.Name {
 		case "string":
 			return oasSchema{Type: "string"}
@@ -1483,6 +1486,9 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 		return oasSchema{}
 	case *ast.SelectorExpr:
 		if pkg, ok := value.X.(*ast.Ident); ok {
+			if (pkg.Name == "dsl" || pkg.Name == "protocol") && value.Sel.Name == "OptionalHTTPVersion" {
+				return optionalHTTPVersionOpenAPISchema()
+			}
 			if pkg.Name == "time" && value.Sel.Name == "Time" {
 				return oasSchema{Type: "string", Format: "date-time"}
 			}
@@ -1644,6 +1650,16 @@ func protocolRuntimeCapacityOpenAPISchema() oasSchema {
 	}
 }
 
+// OptionalHTTPVersion has private presence state but marshals as a strict JSON
+// string. Advertise its wire contract rather than its implementation struct.
+func optionalHTTPVersionOpenAPISchema() oasSchema {
+	return oasSchema{
+		Type:        "string",
+		Enum:        []string{"auto", "1.1", "2"},
+		Description: "Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.",
+	}
+}
+
 func jsonFieldName(field *ast.Field) (string, bool, bool) {
 	// encoding/json never serializes unexported fields, even when they carry an
 	// explicit tag. Exposing them here advertised process-only implementation
@@ -1669,7 +1685,7 @@ func jsonFieldName(field *ast.Field) (string, bool, bool) {
 				if name != "" {
 					omitEmpty := false
 					for _, option := range strings.Split(jsonTag, ",")[1:] {
-						if option == "omitempty" {
+						if option == "omitempty" || option == "omitzero" {
 							omitEmpty = true
 							break
 						}

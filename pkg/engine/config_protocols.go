@@ -78,6 +78,8 @@ func appendHTTPConfig(cfg map[string]any, script *dsl.Script) {
 	}
 	if httpCfg.Version != "" {
 		cfg["http_version"] = httpCfg.Version
+	} else if version := dsl.InheritedHTTPVersion(script); version != "" {
+		cfg["http_version"] = version
 	}
 	if httpCfg.MaxRedirects != nil {
 		cfg["max_redirects"] = float64(*httpCfg.MaxRedirects)

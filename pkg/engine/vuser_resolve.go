@@ -277,6 +277,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		Name:                         action.Name,
 		Type:                         action.Type,
 		Method:                       action.Method,
+		HTTPVersion:                  action.HTTPVersion,
 		Target:                       target,
 		RedactedTarget:               redactedTarget,
 		Selector:                     selector,

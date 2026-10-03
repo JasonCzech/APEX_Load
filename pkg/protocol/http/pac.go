@@ -229,9 +229,11 @@ func parsePACRoutes(value string, allowed []string) ([]*url.URL, error) {
 }
 
 type pacRoundTripper struct {
-	source  string
-	allowed []string
-	base    *http.Transport
+	source   string
+	allowed  []string
+	base     *http.Transport
+	budget   *httpConnectionBudget
+	baseDial func(context.Context, string, string) (net.Conn, error)
 }
 
 func (p *pacRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -256,11 +258,23 @@ func (p *pacRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	for i, route := range routes {
 		tr := p.base.Clone()
+		if p.budget != nil {
+			policy := "auto"
+			if tr.Protocols != nil && !tr.Protocols.HTTP2() {
+				policy = VersionHTTP11
+			} else if tr.Protocols != nil && !tr.Protocols.HTTP1() {
+				policy = VersionHTTP2
+			}
+			freezePolicyALPN(tr, policy)
+		}
 		tr.Proxy = http.ProxyURL(route)
 		if route == nil {
 			tr.Proxy = nil
 		}
 		dial := tr.DialContext
+		if p.baseDial != nil {
+			dial = p.baseDial
+		}
 		if dial == nil {
 			dial = (&net.Dialer{}).DialContext
 		}
@@ -293,12 +307,21 @@ func (p *pacRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 		}
 		bodyOwned = false
-		resp, e := tr.RoundTrip(attempt)
+		var owner *httpConnectionOwner
+		var roundTripper http.RoundTripper = tr
+		if p.budget != nil {
+			owner = p.budget.track(tr, tr.DialContext)
+			roundTripper = owner
+		}
+		resp, e := roundTripper.RoundTrip(attempt)
 		if e == nil {
-			resp.Body = &pacResponseBody{ReadCloser: resp.Body, transport: tr}
+			resp.Body = &pacResponseBody{ReadCloser: resp.Body, transport: tr, owner: owner}
 			return resp, nil
 		}
 		tr.CloseIdleConnections()
+		if owner != nil {
+			owner.retire()
+		}
 		err = e
 		// Only fail over connection-establishment errors. Never replay a request
 		// after an ambiguous server-side write/read failure.
@@ -319,10 +342,14 @@ func (p *pacRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 type pacResponseBody struct {
 	io.ReadCloser
 	transport *http.Transport
+	owner     *httpConnectionOwner
 }
 
 func (b *pacResponseBody) Close() error {
 	err := b.ReadCloser.Close()
 	b.transport.CloseIdleConnections()
+	if b.owner != nil {
+		b.owner.retire()
+	}
 	return err
 }

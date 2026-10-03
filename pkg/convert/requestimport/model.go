@@ -19,11 +19,13 @@ import (
 // SourceRef is the shared source-provenance shape used by credential bindings.
 type SourceRef = credentialpolicy.SourceRef
 
-// Header is one active, ordered HTTP header occurrence.
+// Header is one ordered HTTP header occurrence. A disabled occurrence still
+// shadows inherited/default map values while contributing no wire bytes.
 type Header struct {
-	Name   string    `json:"name"`
-	Value  string    `json:"value"`
-	Source SourceRef `json:"source,omitempty"`
+	Name    string    `json:"name"`
+	Value   string    `json:"value"`
+	Enabled *bool     `json:"enabled,omitempty"`
+	Source  SourceRef `json:"source,omitempty"`
 }
 
 // HeaderList is the authoritative logical occurrence representation for
@@ -62,6 +64,9 @@ func (headers HeaderList) Summary() map[string]string {
 	out := make(map[string]string, len(headers))
 	spelling := make(map[string]string, len(headers))
 	for _, header := range headers {
+		if header.Enabled != nil && !*header.Enabled {
+			continue
+		}
 		name := strings.TrimSpace(header.Name)
 		if name == "" {
 			continue
@@ -83,6 +88,9 @@ func (headers HeaderList) Summary() map[string]string {
 func (headers HeaderList) Has(name string) bool {
 	name = strings.TrimSpace(name)
 	for _, header := range headers {
+		if header.Enabled != nil && !*header.Enabled {
+			continue
+		}
 		if strings.EqualFold(strings.TrimSpace(header.Name), name) {
 			return true
 		}

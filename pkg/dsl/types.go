@@ -1044,12 +1044,13 @@ func (headers HeaderList) ToMap() map[string]string {
 }
 
 type Action struct {
-	PacingIDs []string `json:"pacing_ids,omitempty"`
-	Name      string   `json:"name"`
-	Type      string   `json:"type"`
-	Method    string   `json:"method,omitempty"`
-	Target    string   `json:"target"`
-	Selector  string   `json:"selector,omitempty"`
+	PacingIDs   []string            `json:"pacing_ids,omitempty"`
+	Name        string              `json:"name"`
+	Type        string              `json:"type"`
+	Method      string              `json:"method,omitempty"`
+	HTTPVersion OptionalHTTPVersion `json:"http_version,omitzero"`
+	Target      string              `json:"target"`
+	Selector    string              `json:"selector,omitempty"`
 	// ObjectRef binds this action to a named object in a project-scoped object
 	// repository instead of (or as a fallback to) an inline selector. The
 	// controller resolves it at script-preparation time into a concrete selector

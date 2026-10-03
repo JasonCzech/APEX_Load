@@ -4,6 +4,7 @@ import type { ReplayOptionsState } from './scriptEditorState'
 import { compareRuns, eventLocation, readProfiles, safeProfile, variablesAt, type DebugRunRecord } from './debuggerExperience'
 import { omitUnavailableReplayReport, RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
+import { HTTPVersionReplayEvidence } from './HTTPVersionReplayEvidence'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import { formatReplayHeaders } from './scriptEditorUtils'
@@ -55,6 +56,7 @@ function HistoricalEvidence({ report }: { report: BrowserReplayReport }) {
   if (report.protocol === 'browser') return <BrowserReplayDebugger report={report} running={false} />
   return <div className="debug-history-evidence"><label>Historical execution<select value={selected} onChange={e => setSelected(Number(e.target.value))}>{report.events.map((e, index) => <option value={index} key={index}>{eventLocation(e)} · {e.action_name} · {e.success ? 'Passed' : 'Failed'}</option>)}</select></label>{event ? <>
     <p>{event.error_message || `${event.method || event.action_type} ${event.target}`}</p><p>Response status: {event.status_code ?? 'Not captured'}</p>
+    <HTTPVersionReplayEvidence evidence={event.protocol_evidence} />
     <div className="debug-history-columns"><section><h4>Request</h4><SnapshotTextPreview text={`${event.method || event.action_type} ${event.target}\n${formatReplayHeaders(event.snapshot?.request_headers || event.headers)}`} /><SnapshotBodyPreview body={event.snapshot?.request_body || event.body} emptyMessage="No request body retained" /></section><section><h4>Response</h4><SnapshotTextPreview text={formatReplayHeaders(event.snapshot?.response_headers)} /><SnapshotBodyPreview body={event.snapshot?.response_body} headers={event.snapshot?.response_headers} emptyMessage={`Response body: ${event.snapshot?.response_body_state || event.response_body_state || 'not retained'}`} /></section></div>
     {event.protocol_evidence && <details><summary>Protocol evidence</summary><SnapshotBodyPreview body={JSON.stringify(event.protocol_evidence, null, 2)} /></details>}<details><summary>Extracted variables</summary><SnapshotBodyPreview body={JSON.stringify(event.extractions || {}, null, 2)} /></details>
   </> : <p>No retained executions.</p>}</div>

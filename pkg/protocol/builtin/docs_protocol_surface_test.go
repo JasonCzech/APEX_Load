@@ -20,6 +20,8 @@ var protocolDocAliases = map[string][]string{
 	"eventhubs":      {"eventhubs", "Event Hubs"},
 	"grpc":           {"grpc", "gRPC"},
 	"http":           {"http", "HTTP"},
+	"http/1.1":       {"http/1.1", "HTTP/1.1"},
+	"http/2":         {"http/2", "HTTP/2"},
 	"java_http":      {"java_http", "Java-over-HTTP", "Java over HTTP"},
 	"java_vuser":     {"java_vuser", "Java Vuser"},
 	"jms-ibmmq":      {"jms-ibmmq", "IBM MQ"},

@@ -94,6 +94,9 @@ func (s ActionSpec) EngineAction() bool {
 // "jms-solace", "jms-ibmmq") onto their family ("jms").
 func ProtocolFamily(protocol string) string {
 	trimmed := strings.TrimSpace(protocol)
+	if trimmed == "http/1.1" || trimmed == "http/2" {
+		return "http"
+	}
 	if strings.HasPrefix(trimmed, "jms-") {
 		return "jms"
 	}

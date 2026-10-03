@@ -1,6 +1,6 @@
 import type { ClientMetrics } from './metrics'
 import type { RedactionRule } from './runtimeSettings'
-import type { BrowserConfig, ReplayPreflight, ScriptDefinition } from './scripts'
+import type { BrowserConfig, HTTPActionVersion, ReplayPreflight, ScriptDefinition } from './scripts'
 
 /** Transport and view contracts for browser replay and script debugging. */
 export interface BrowserReplayConsoleEntry {
@@ -56,6 +56,9 @@ export interface ReplayArtifactManifest {
 }
 
 export interface ProtocolEvidence {
+  http_version_policy?: HTTPActionVersion
+  http_version_negotiated?: '1.1' | '2'
+  http_version_source?: 'wire' | 'cache'
   protocol?: string
   operation?: string
   target?: string

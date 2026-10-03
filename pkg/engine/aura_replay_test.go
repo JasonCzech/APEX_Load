@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -15,9 +16,11 @@ import (
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
+var registerAuraReplayHTTPProtocol, registerAuraLargeHTTPProtocol sync.Once
+
 func TestReplayAuraValidatesActualOutgoingRequestAndPreservesHTTPStatus(t *testing.T) {
 	protocolName := "aura-replay-local-http"
-	protocol.Register(protocolName, func() protocol.Protocol { return &httpprotocol.HTTP{} })
+	registerAuraReplayHTTPProtocol.Do(func() { protocol.Register(protocolName, func() protocol.Protocol { return &httpprotocol.HTTP{} }) })
 	for _, tc := range []struct {
 		name    string
 		mode    string
@@ -110,7 +113,7 @@ func TestReplayAuraValidatesActualOutgoingRequestAndPreservesHTTPStatus(t *testi
 
 func TestReplayAuraLargeBatchDisclosesRetainedEvidenceLimits(t *testing.T) {
 	protocolName := "aura-large-local-http"
-	protocol.Register(protocolName, func() protocol.Protocol { return &httpprotocol.HTTP{} })
+	registerAuraLargeHTTPProtocol.Do(func() { protocol.Register(protocolName, func() protocol.Protocol { return &httpprotocol.HTTP{} }) })
 	for _, allErrors := range []bool{false, true} {
 		t.Run(fmt.Sprintf("all-errors-%v", allErrors), func(t *testing.T) {
 			requests := make([]map[string]any, aura.MaxActions)

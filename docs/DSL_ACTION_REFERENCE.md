@@ -864,6 +864,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -883,6 +884,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -902,6 +904,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -921,6 +924,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -940,6 +944,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -959,6 +964,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -978,6 +984,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -1029,6 +1036,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -1048,6 +1056,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -1067,6 +1076,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -1086,6 +1096,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -1105,6 +1116,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -1124,6 +1136,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -1143,6 +1156,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -1717,6 +1731,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -1736,6 +1751,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -1755,6 +1771,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -1774,6 +1791,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -1793,6 +1811,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -1812,6 +1831,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
@@ -1831,6 +1851,7 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
+| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |

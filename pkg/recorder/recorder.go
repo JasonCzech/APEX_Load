@@ -67,6 +67,8 @@ type RecordedRequest struct {
 	Seq                     int                        `json:"seq"`
 	Timestamp               time.Time                  `json:"timestamp"`
 	Method                  string                     `json:"method"`
+	RequestHTTPVersion      string                     `json:"request_http_version,omitempty"`
+	ResponseHTTPVersion     string                     `json:"response_http_version,omitempty"`
 	URL                     string                     `json:"url"`
 	Scheme                  string                     `json:"scheme,omitempty"`
 	Path                    string                     `json:"path"`
@@ -1349,6 +1351,8 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		Seq:                     s.seq + 1,
 		Timestamp:               opts.requestStartedAt,
 		Method:                  req.Method,
+		RequestHTTPVersion:      observedHTTPVersion(req.Proto, req.ProtoMajor, req.ProtoMinor),
+		ResponseHTTPVersion:     observedHTTPVersion(resp.Proto, resp.ProtoMajor, resp.ProtoMinor),
 		URL:                     req.URL.String(),
 		Scheme:                  parsed.Scheme,
 		Path:                    parsed.Path,
@@ -1500,6 +1504,7 @@ func estimateRecordedRequestBytes(request RecordedRequest) int64 {
 	bytes := int64(1024)
 	for _, value := range []string{
 		request.Method, request.URL, request.Scheme, request.Path, request.QueryString,
+		request.RequestHTTPVersion, request.ResponseHTTPVersion,
 		request.Host, request.Body, request.BodyEncoding, request.ContentType,
 		request.ResponseBody, request.ResponseBodyEncoding, request.StepName,
 		request.TransactionName, request.Note, request.ResourceType,

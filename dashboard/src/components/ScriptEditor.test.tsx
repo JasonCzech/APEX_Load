@@ -1504,6 +1504,51 @@ describe('ScriptEditor', () => {
     expect(actionNameToggle?.getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('edits a nested request HTTP policy with script defaults and saves Inherit by removing only that property', async () => {
+    const request = {
+      name: 'Version_Leaf', type: 'POST', method: 'POST', target: '/leaf', http_version: '1.1',
+      body_encoding: 'base64', body: 'YQ==', timeout_ms: 1200,
+      header_list: [{ name: 'X-Trace', value: 'keep' }], vendor_extension: { keep: true },
+      metadata: { 'har.request.http_version': 'HTTP/2', 'har.response.http_version': 'HTTP/1.1' },
+    }
+    const sibling = { name: 'Other_Leaf', type: 'GET', target: '/other', http_version: '2' }
+    const sequenceScript = {
+      ...initialScript, protocol: 'http/1.1',
+      config: { ...initialScript.config, http: { ...initialScript.config.http, version: '2' } },
+      actions: [{ name: 'Version_Group', type: 'http_sequence', target: '/group', params: { requests: [request, sibling], future_option: true }, metadata: { keep: 'parent' } }],
+    } as ScriptDefinition
+    await act(async () => { root.render(<ScriptEditor initialScript={sequenceScript} projectId="project-1" />) })
+    const expand = Array.from(container.querySelectorAll<HTMLButtonElement>('.action-name-toggle')).find(button => button.textContent?.trim() === 'Version_Group')!
+    await act(async () => { expand.click() })
+    const leaf = Array.from(container.querySelectorAll<HTMLElement>('.action-item-nested')).find(row => row.textContent?.includes('Version_Leaf'))!
+    await act(async () => { leaf.click() })
+    const region = container.querySelector('[aria-label="Request HTTP version policy"]')!
+    const version = region.querySelector<HTMLSelectElement>('select')!
+    expect(version.value).toBe('1.1')
+    expect(version.options[0].textContent).toContain('HTTP/2 required')
+    expect(region.textContent).toContain('Captured request HTTP versionHTTP/2')
+    expect(region.textContent).toContain('Captured response HTTP versionHTTP/1.1')
+    await act(async () => { version.value = 'auto'; version.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(JSON.parse(container.querySelector<HTMLTextAreaElement>('.script-code-pane textarea')!.value).http_version).toBe('auto')
+    await act(async () => { version.value = 'inherit'; version.dispatchEvent(new Event('change', { bubbles: true })) })
+    const selected = JSON.parse(container.querySelector<HTMLTextAreaElement>('.script-code-pane textarea')!.value)
+    expect(selected).not.toHaveProperty('http_version')
+    expect(selected.vendor_extension).toEqual({ keep: true })
+    expect(region.textContent).toContain('Authored policy: Inherit script setting (HTTP/2 required')
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click(); await Promise.resolve() })
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    const payload = apiMock.createScript.mock.calls[0][0] as ScriptDefinition
+    const savedRequests = payload.actions[0].params!.requests as typeof request[]
+    expect(savedRequests[0]).toEqual(Object.fromEntries(Object.entries(request).filter(([key]) => key !== 'http_version')))
+    expect(savedRequests[0]).not.toHaveProperty('http_version')
+    expect(savedRequests[1]).toEqual(sibling)
+    expect(payload.actions[0].params!.future_option).toBe(true)
+    expect(payload.actions[0].metadata).toEqual({ keep: 'parent' })
+    expect(payload.protocol).toBe('http/1.1')
+    expect(payload.config.http!.version).toBe('2')
+    expect(request.http_version).toBe('1.1')
+  })
+
   it('shows selected parent action JSON by default with a full-script override', async () => {
     const sequenceScript: ScriptDefinition = {
       ...initialScript,

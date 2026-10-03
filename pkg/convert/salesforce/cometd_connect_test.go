@@ -148,7 +148,7 @@ func syntheticFormEncodedCometdCapture() []byte {
 		}
 		wire, _ := json.Marshal([]any{message})
 		responseWire, _ := json.Marshal([]any{response})
-		entries = append(entries, map[string]any{"request": map[string]any{"method": "POST", "url": endpoint, "headers": []any{map[string]any{"name": "Content-Type", "value": "application/x-www-form-urlencoded"}}, "postData": map[string]any{"mimeType": "application/x-www-form-urlencoded", "text": "mess%61ge=" + url.QueryEscape(string(wire)) + siblings}}, "response": map[string]any{"status": 200, "content": map[string]any{"mimeType": "application/json", "text": string(responseWire)}}})
+		entries = append(entries, map[string]any{"request": map[string]any{"method": "POST", "url": endpoint, "httpVersion": "HTTP/1.1", "headers": []any{map[string]any{"name": "Content-Type", "value": "application/x-www-form-urlencoded"}}, "postData": map[string]any{"mimeType": "application/x-www-form-urlencoded", "text": "mess%61ge=" + url.QueryEscape(string(wire)) + siblings}}, "response": map[string]any{"status": 200, "content": map[string]any{"mimeType": "application/json", "text": string(responseWire)}}})
 	}
 	capture, _ := json.Marshal(map[string]any{"log": map[string]any{"entries": entries}})
 	return capture

@@ -1958,6 +1958,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -3172,6 +3179,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -3511,6 +3525,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -12114,6 +12135,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -13297,6 +13325,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -13626,6 +13661,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -14131,6 +14173,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -15314,6 +15363,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -15643,6 +15699,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -15947,6 +16010,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -17161,6 +17231,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -17500,6 +17577,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -57095,6 +57179,8 @@ paths:
                           type: string
                         query_string:
                           type: string
+                        request_http_version:
+                          type: string
                         resource_type:
                           type: string
                         response_body:
@@ -57116,6 +57202,8 @@ paths:
                             type: array
                             items:
                               type: string
+                        response_http_version:
+                          type: string
                         response_time_ms:
                           type: number
                           format: double
@@ -57568,6 +57656,8 @@ paths:
                           type: string
                         query_string:
                           type: string
+                        request_http_version:
+                          type: string
                         resource_type:
                           type: string
                         response_body:
@@ -57589,6 +57679,8 @@ paths:
                             type: array
                             items:
                               type: string
+                        response_http_version:
+                          type: string
                         response_time_ms:
                           type: number
                           format: double
@@ -57776,6 +57868,8 @@ paths:
                     type: string
                   query_string:
                     type: string
+                  request_http_version:
+                    type: string
                   resource_type:
                     type: string
                   response_body:
@@ -57797,6 +57891,8 @@ paths:
                       type: array
                       items:
                         type: string
+                  response_http_version:
+                    type: string
                   response_time_ms:
                     type: number
                     format: double
@@ -57996,6 +58092,8 @@ paths:
                           type: string
                         query_string:
                           type: string
+                        request_http_version:
+                          type: string
                         resource_type:
                           type: string
                         response_body:
@@ -58017,6 +58115,8 @@ paths:
                             type: array
                             items:
                               type: string
+                        response_http_version:
+                          type: string
                         response_time_ms:
                           type: number
                           format: double
@@ -58227,6 +58327,8 @@ paths:
                           type: string
                         query_string:
                           type: string
+                        request_http_version:
+                          type: string
                         resource_type:
                           type: string
                         response_body:
@@ -58248,6 +58350,8 @@ paths:
                             type: array
                             items:
                               type: string
+                        response_http_version:
+                          type: string
                         response_time_ms:
                           type: number
                           format: double
@@ -146129,6 +146233,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -147573,6 +147684,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -147935,6 +148053,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -148455,6 +148580,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -149669,6 +149801,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -150008,6 +150147,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -150659,6 +150805,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -151873,6 +152026,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -152212,6 +152372,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -152538,6 +152705,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -153982,6 +154156,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -154344,6 +154525,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -154862,6 +155050,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -156076,6 +156271,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -156415,6 +156617,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -157027,6 +157236,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -158241,6 +158457,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -158580,6 +158803,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -159057,6 +159287,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -160240,6 +160477,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -160569,6 +160813,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -162746,6 +162997,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -163929,6 +164187,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -164258,6 +164523,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -166938,6 +167210,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -168121,6 +168400,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -168450,6 +168736,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -168966,6 +169259,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -170149,6 +170449,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -170478,6 +170785,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -172517,6 +172831,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -173731,6 +174052,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -174070,6 +174398,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -175082,6 +175417,13 @@ paths:
                         type: object
                         additionalProperties:
                           type: string
+                      http_version:
+                        type: string
+                        description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                        enum:
+                          - auto
+                          - "1.1"
+                          - "2"
                       max_redirects:
                         type: integer
                         format: int64
@@ -175339,6 +175681,13 @@ paths:
                         type: object
                         additionalProperties:
                           type: string
+                      http_version:
+                        type: string
+                        description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                        enum:
+                          - auto
+                          - "1.1"
+                          - "2"
                       max_redirects:
                         type: integer
                         format: int64
@@ -175653,6 +176002,13 @@ paths:
                         type: object
                         additionalProperties:
                           type: string
+                      http_version:
+                        type: string
+                        description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                        enum:
+                          - auto
+                          - "1.1"
+                          - "2"
                       max_redirects:
                         type: integer
                         format: int64
@@ -176067,6 +176423,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -177281,6 +177644,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -177620,6 +177990,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -177911,6 +178288,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -179125,6 +179509,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -179464,6 +179855,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -179846,6 +180244,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -181060,6 +181465,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -181399,6 +181811,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -181709,6 +182128,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -182892,6 +183318,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -183221,6 +183654,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -183484,6 +183924,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -184698,6 +185145,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -185037,6 +185491,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -185614,6 +186075,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -185910,6 +186378,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -186119,6 +186594,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -186264,6 +186746,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -186560,6 +187049,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -186769,6 +187265,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -187158,6 +187661,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -188372,6 +188882,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -188711,6 +189228,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -189332,6 +189856,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -190515,6 +191046,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -190844,6 +191382,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -192506,6 +193051,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -193689,6 +194241,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -194018,6 +194577,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -194293,6 +194859,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -195507,6 +196080,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -195846,6 +196426,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -196335,6 +196922,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -197549,6 +198143,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -197888,6 +198489,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -198410,6 +199018,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -199593,6 +200208,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -199922,6 +200544,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -201660,6 +202289,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -202843,6 +203479,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -203172,6 +203815,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -203725,6 +204375,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -204010,6 +204667,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -204212,6 +204876,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -204413,6 +205084,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -205468,6 +206146,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -205675,6 +206360,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -206074,6 +206766,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -207257,6 +207956,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -207586,6 +208292,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -208275,6 +208988,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -209330,6 +210050,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -209537,6 +210264,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -209962,6 +210696,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -211017,6 +211758,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -211224,6 +211972,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -211995,6 +212750,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -213178,6 +213940,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -213507,6 +214276,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -214082,6 +214858,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -214367,6 +215150,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -214569,6 +215359,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -214895,6 +215692,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -216078,6 +216882,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -216407,6 +217218,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -217192,6 +218010,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -218375,6 +219200,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -218704,6 +219536,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -219032,6 +219871,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -219317,6 +220163,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -219519,6 +220372,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -220546,6 +221406,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -221760,6 +222627,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -222099,6 +222973,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -222361,6 +223242,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -223575,6 +224463,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -223914,6 +224809,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -224162,6 +225064,13 @@ paths:
                                     type: object
                                     additionalProperties:
                                       type: string
+                                  http_version:
+                                    type: string
+                                    description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                    enum:
+                                      - auto
+                                      - "1.1"
+                                      - "2"
                                   max_redirects:
                                     type: integer
                                     format: int64
@@ -225237,6 +226146,13 @@ paths:
                                     type: object
                                     additionalProperties:
                                       type: string
+                                  http_version:
+                                    type: string
+                                    description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                    enum:
+                                      - auto
+                                      - "1.1"
+                                      - "2"
                                   max_redirects:
                                     type: integer
                                     format: int64
@@ -225451,6 +226367,13 @@ paths:
                                     type: object
                                     additionalProperties:
                                       type: string
+                                  http_version:
+                                    type: string
+                                    description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                    enum:
+                                      - auto
+                                      - "1.1"
+                                      - "2"
                                   max_redirects:
                                     type: integer
                                     format: int64
@@ -225671,6 +226594,13 @@ paths:
                                     type: object
                                     additionalProperties:
                                       type: string
+                                  http_version:
+                                    type: string
+                                    description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                    enum:
+                                      - auto
+                                      - "1.1"
+                                      - "2"
                                   max_redirects:
                                     type: integer
                                     format: int64
@@ -226746,6 +227676,13 @@ paths:
                                     type: object
                                     additionalProperties:
                                       type: string
+                                  http_version:
+                                    type: string
+                                    description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                    enum:
+                                      - auto
+                                      - "1.1"
+                                      - "2"
                                   max_redirects:
                                     type: integer
                                     format: int64
@@ -226960,6 +227897,13 @@ paths:
                                     type: object
                                     additionalProperties:
                                       type: string
+                                  http_version:
+                                    type: string
+                                    description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                    enum:
+                                      - auto
+                                      - "1.1"
+                                      - "2"
                                   max_redirects:
                                     type: integer
                                     format: int64
@@ -227548,6 +228492,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -228762,6 +229713,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -229101,6 +230059,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -229363,6 +230328,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -230577,6 +231549,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -230916,6 +231895,13 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                http_version:
+                                  type: string
+                                  description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                  enum:
+                                    - auto
+                                    - "1.1"
+                                    - "2"
                                 max_redirects:
                                   type: integer
                                   format: int64
@@ -231164,6 +232150,13 @@ paths:
                                     type: object
                                     additionalProperties:
                                       type: string
+                                  http_version:
+                                    type: string
+                                    description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                    enum:
+                                      - auto
+                                      - "1.1"
+                                      - "2"
                                   max_redirects:
                                     type: integer
                                     format: int64
@@ -232239,6 +233232,13 @@ paths:
                                     type: object
                                     additionalProperties:
                                       type: string
+                                  http_version:
+                                    type: string
+                                    description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                    enum:
+                                      - auto
+                                      - "1.1"
+                                      - "2"
                                   max_redirects:
                                     type: integer
                                     format: int64
@@ -232453,6 +233453,13 @@ paths:
                                     type: object
                                     additionalProperties:
                                       type: string
+                                  http_version:
+                                    type: string
+                                    description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                    enum:
+                                      - auto
+                                      - "1.1"
+                                      - "2"
                                   max_redirects:
                                     type: integer
                                     format: int64
@@ -232673,6 +233680,13 @@ paths:
                                     type: object
                                     additionalProperties:
                                       type: string
+                                  http_version:
+                                    type: string
+                                    description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                    enum:
+                                      - auto
+                                      - "1.1"
+                                      - "2"
                                   max_redirects:
                                     type: integer
                                     format: int64
@@ -233748,6 +234762,13 @@ paths:
                                     type: object
                                     additionalProperties:
                                       type: string
+                                  http_version:
+                                    type: string
+                                    description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                    enum:
+                                      - auto
+                                      - "1.1"
+                                      - "2"
                                   max_redirects:
                                     type: integer
                                     format: int64
@@ -233962,6 +234983,13 @@ paths:
                                     type: object
                                     additionalProperties:
                                       type: string
+                                  http_version:
+                                    type: string
+                                    description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                                    enum:
+                                      - auto
+                                      - "1.1"
+                                      - "2"
                                   max_redirects:
                                     type: integer
                                     format: int64
@@ -234584,6 +235612,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -235767,6 +236802,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -236096,6 +237138,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -236346,6 +237395,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -237560,6 +238616,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -237899,6 +238962,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -238258,6 +239328,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -239441,6 +240518,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -239770,6 +240854,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -239929,6 +241020,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -240984,6 +242082,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -241191,6 +242296,13 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            http_version:
+                              type: string
+                              description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                              enum:
+                                - auto
+                                - "1.1"
+                                - "2"
                             max_redirects:
                               type: integer
                               format: int64
@@ -241524,6 +242636,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -242707,6 +243826,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -243036,6 +244162,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -243534,6 +244667,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -244717,6 +245857,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -245046,6 +246193,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -246788,6 +247942,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -247971,6 +249132,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -248300,6 +249468,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -248592,6 +249767,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -249775,6 +250957,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -250104,6 +251293,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -250431,6 +251627,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -251875,6 +253078,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64
@@ -252237,6 +253447,13 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
                           max_redirects:
                             type: integer
                             format: int64

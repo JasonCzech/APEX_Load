@@ -65,7 +65,7 @@ describe('debugger operator experience', () => {
   })
   it('hides unavailable history detail and comparison bodies even when a caller retains an older raw report', () => {
     const detail = 'synthetic-history-runtime-detail'
-    const retained = { ...report([event({ body: detail, snapshot: { response_body: detail }, extractions: { ordinary: detail } })]),
+    const retained = { ...report([event({ body: detail, snapshot: { response_body: detail }, extractions: { ordinary: detail }, protocol_evidence: { http_version_policy: '2', http_version_negotiated: '2', http_version_source: 'wire' } })]),
       runtime_evidence_unavailable: true, dropped_event_count: 4, truncated_event_evidence_count: 2, final_variables: { ordinary: detail }, runtime_profile: { name: detail } }
     const html = renderToStaticMarkup(<DebugRunHistory runs={[{ id: 'run1', report: retained, options: DEFAULT_REPLAY_OPTIONS,
       breakpoints: [], target: 'authored-target.test', draft: true, failurePolicy: 'Stop on error' }]} current={retained} />)
@@ -75,6 +75,15 @@ describe('debugger operator experience', () => {
     expect(html).toContain('2 execution details truncated')
     expect(html).not.toContain(detail)
     expect(html).not.toContain('Historical execution')
+    expect(html).not.toContain('HTTP version evidence')
+  })
+
+  it('shows qualified negotiated HTTP evidence in retained run history', () => {
+    const replay = report([event({ protocol_evidence: { http_version_policy: 'auto', http_version_negotiated: '1.1', http_version_source: 'wire' } })])
+    const html = renderToStaticMarkup(<DebugRunHistory runs={[{ id: 'run1', report: replay, options: DEFAULT_REPLAY_OPTIONS, breakpoints: [], target: 'localhost', draft: true, failurePolicy: 'Stop on error' }]} current={replay} />)
+    expect(html).toContain('HTTP version evidence')
+    expect(html).toContain('Replay policy</dt><dd>Auto-negotiate')
+    expect(html).toContain('Actual negotiated HTTP version</dt><dd>HTTP/1.1')
   })
 
   it('renders protocol-appropriate history and navigable timeline controls', () => {

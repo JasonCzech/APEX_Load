@@ -1,0 +1,178 @@
+{
+  "slice": 7,
+  "evidence_scope": "Four complete supplied HAR captures inspected and converted offline; no live target or physical-device replay qualification. Truncated KM capture excluded.",
+  "traffic_executed": false,
+  "capture_inspection": {
+    "capture_inspection_only": true,
+    "traffic_executed": false,
+    "captures": [
+      {
+        "capture": "WLS",
+        "har_documents": 1,
+        "entries": 158,
+        "request_states": {
+          "unavailable": 158
+        },
+        "response_states": {
+          "unavailable": 158
+        },
+        "paired_states": {
+          "unavailable/unavailable": 158
+        }
+      },
+      {
+        "capture": "CM",
+        "har_documents": 1,
+        "entries": 301,
+        "request_states": {
+          "unavailable": 294,
+          "1.1": 7
+        },
+        "response_states": {
+          "unavailable": 294,
+          "1.1": 7
+        },
+        "paired_states": {
+          "unavailable/unavailable": 294,
+          "1.1/1.1": 7
+        }
+      },
+      {
+        "capture": "Desktop",
+        "har_documents": 1,
+        "entries": 347,
+        "request_states": {
+          "1.1": 71,
+          "2": 276
+        },
+        "response_states": {
+          "1.1": 71,
+          "2": 276
+        },
+        "paired_states": {
+          "1.1/1.1": 71,
+          "2/2": 276
+        }
+      },
+      {
+        "capture": "Login",
+        "har_documents": 1,
+        "entries": 273,
+        "request_states": {
+          "1.1": 273
+        },
+        "response_states": {
+          "1.1": 273
+        },
+        "paired_states": {
+          "1.1/1.1": 273
+        }
+      }
+    ],
+    "entries_total": 1079,
+    "complete_capture_selection": true
+  },
+  "actual_conversion": {
+    "traffic_executed": false,
+    "include_static_assets": true,
+    "captures": [
+      {
+        "capture": "WLS",
+        "har_documents": 1,
+        "entries": 158,
+        "imported": true,
+        "emitted_http_leaves": 158,
+        "leaf_policies": {
+          "inherit": 158
+        },
+        "request_capture_states": {
+          "unavailable": 158
+        },
+        "http_version_gate_reasons": {
+          "http_version_unavailable": 158
+        },
+        "all_review_gated_leaves": 158,
+        "proxy_connect_entries": 0,
+        "websocket_upgrade_entries": 0,
+        "unemitted_entries": 0,
+        "conversion_failures": 0
+      },
+      {
+        "capture": "CM",
+        "har_documents": 1,
+        "entries": 301,
+        "imported": true,
+        "emitted_http_leaves": 301,
+        "leaf_policies": {
+          "1.1": 7,
+          "inherit": 294
+        },
+        "request_capture_states": {
+          "available": 7,
+          "unavailable": 294
+        },
+        "http_version_gate_reasons": {
+          "http_version_unavailable": 294
+        },
+        "all_review_gated_leaves": 294,
+        "proxy_connect_entries": 0,
+        "websocket_upgrade_entries": 0,
+        "unemitted_entries": 0,
+        "conversion_failures": 0
+      },
+      {
+        "capture": "Desktop",
+        "har_documents": 1,
+        "entries": 347,
+        "imported": true,
+        "emitted_http_leaves": 347,
+        "leaf_policies": {
+          "1.1": 71,
+          "2": 276
+        },
+        "request_capture_states": {
+          "available": 347
+        },
+        "http_version_gate_reasons": {},
+        "all_review_gated_leaves": 274,
+        "proxy_connect_entries": 0,
+        "websocket_upgrade_entries": 0,
+        "unemitted_entries": 0,
+        "conversion_failures": 0
+      },
+      {
+        "capture": "Login",
+        "har_documents": 1,
+        "entries": 273,
+        "imported": true,
+        "emitted_http_leaves": 195,
+        "leaf_policies": {
+          "1.1": 195
+        },
+        "request_capture_states": {
+          "available": 195
+        },
+        "http_version_gate_reasons": {},
+        "all_review_gated_leaves": 15,
+        "proxy_connect_entries": 78,
+        "websocket_upgrade_entries": 0,
+        "unemitted_entries": 78,
+        "conversion_failures": 0
+      }
+    ]
+  },
+  "summary": {
+    "inspected_entries": 1079,
+    "emitted_http_request_leaves": 1001,
+    "excluded_connect_tunnel_entries": 78,
+    "excluded_websocket_upgrade_entries": 0,
+    "conversion_failures": 0,
+    "leaf_policies": {
+      "1.1": 273,
+      "2": 276,
+      "inherit": 452
+    },
+    "http_version_unavailable_review_gates": 452
+  },
+  "qualification": "Supported capture observations are preserved as authored request policies; unavailable observations retain review gates. Other import review gates remain independent. CONNECT tunnel setup is excluded from application HTTP actions."
+}

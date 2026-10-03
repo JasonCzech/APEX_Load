@@ -39,6 +39,15 @@
                 "description": "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative.",
                 "type": "object"
               },
+              "http_version": {
+                "description": "Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid.",
+                "enum": [
+                  "auto",
+                  "1.1",
+                  "2"
+                ],
+                "type": "string"
+              },
               "method": {
                 "description": "Explicit HTTP method override; defaults to the action type.",
                 "type": "string"
@@ -101,6 +110,15 @@
               "headers": {
                 "description": "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative.",
                 "type": "object"
+              },
+              "http_version": {
+                "description": "Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid.",
+                "enum": [
+                  "auto",
+                  "1.1",
+                  "2"
+                ],
+                "type": "string"
               },
               "method": {
                 "description": "Explicit HTTP method override; defaults to the action type.",
@@ -165,6 +183,15 @@
                 "description": "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative.",
                 "type": "object"
               },
+              "http_version": {
+                "description": "Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid.",
+                "enum": [
+                  "auto",
+                  "1.1",
+                  "2"
+                ],
+                "type": "string"
+              },
               "method": {
                 "description": "Explicit HTTP method override; defaults to the action type.",
                 "type": "string"
@@ -227,6 +254,15 @@
               "headers": {
                 "description": "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative.",
                 "type": "object"
+              },
+              "http_version": {
+                "description": "Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid.",
+                "enum": [
+                  "auto",
+                  "1.1",
+                  "2"
+                ],
+                "type": "string"
               },
               "method": {
                 "description": "Explicit HTTP method override; defaults to the action type.",
@@ -291,6 +327,15 @@
                 "description": "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative.",
                 "type": "object"
               },
+              "http_version": {
+                "description": "Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid.",
+                "enum": [
+                  "auto",
+                  "1.1",
+                  "2"
+                ],
+                "type": "string"
+              },
               "method": {
                 "description": "Explicit HTTP method override; defaults to the action type.",
                 "type": "string"
@@ -354,6 +399,15 @@
                 "description": "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative.",
                 "type": "object"
               },
+              "http_version": {
+                "description": "Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid.",
+                "enum": [
+                  "auto",
+                  "1.1",
+                  "2"
+                ],
+                "type": "string"
+              },
               "method": {
                 "description": "Explicit HTTP method override; defaults to the action type.",
                 "type": "string"
@@ -416,6 +470,15 @@
               "headers": {
                 "description": "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative.",
                 "type": "object"
+              },
+              "http_version": {
+                "description": "Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid.",
+                "enum": [
+                  "auto",
+                  "1.1",
+                  "2"
+                ],
+                "type": "string"
               },
               "method": {
                 "description": "Explicit HTTP method override; defaults to the action type.",
@@ -6437,6 +6500,14 @@
           },
           "type": "object"
         },
+        "http_version": {
+          "enum": [
+            "auto",
+            "1.1",
+            "2"
+          ],
+          "type": "string"
+        },
         "max_redirects": {
           "maximum": 50,
           "minimum": -1,
@@ -8468,6 +8539,11 @@
           "type": "array"
         }
       },
+      "type": "object"
+    },
+    "OptionalHTTPVersion": {
+      "additionalProperties": false,
+      "properties": {},
       "type": "object"
     },
     "PacingConfig": {

@@ -19,6 +19,14 @@ func (h *HTTP) ValidateSharedSessionAction(action *protocol.Action) error {
 	if err := validateHTTPActionBounds(action); err != nil {
 		return err
 	}
+	policy, err := h.effectiveHTTPVersion(action)
+	if err != nil {
+		return err
+	}
+	if err := h.validateHTTPVersionTLS(policy, h.resolveURL(action.Target)); err != nil {
+		return err
+	}
+	h = h.forHTTPVersion(policy)
 	if _, _, err := buildActionAuthHeader(action.Auth); err != nil {
 		return fmt.Errorf("HTTP action authentication is invalid")
 	}

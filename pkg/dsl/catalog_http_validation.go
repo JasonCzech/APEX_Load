@@ -123,6 +123,15 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 		childDecodeErr = json.Unmarshal(payload, &decodedChild)
 	}
 	knownMalformedField := false
+	if raw, exists := request["http_version"]; exists {
+		var version OptionalHTTPVersion
+		if err := decodeHTTPSequenceChildField(raw, &version); err != nil {
+			knownMalformedField = true
+			issues = append(issues, childLabel+".http_version must be auto, 1.1, or 2")
+		} else if err := version.Validate(); err != nil {
+			issues = append(issues, childLabel+": "+err.Error())
+		}
+	}
 	if raw, ok := request["headers"]; ok && raw != nil {
 		var headers map[string]string
 		if err := decodeHTTPSequenceChildField(raw, &headers); err != nil {

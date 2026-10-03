@@ -32,7 +32,7 @@ func validateHTTPHeaderContractIssues(script *Script) []string {
 		return nil
 	}
 
-	version := script.Config.HTTP.Version
+	version := InheritedHTTPVersion(script)
 	defaultListNames := make(map[string]struct{}, len(script.Config.HTTP.DefaultHeaderList))
 	for _, header := range script.Config.HTTP.DefaultHeaderList {
 		if name := strings.ToLower(strings.TrimSpace(header.Name)); name != "" {
@@ -41,16 +41,14 @@ func validateHTTPHeaderContractIssues(script *Script) []string {
 			defaultListNames[name] = struct{}{}
 		}
 	}
-	issues := validateHTTPHeaderMapIssues(
-		"config.http.default_headers",
-		effectiveHTTPConfigHeaderMap(script.Config.HTTP, defaultListNames),
-		version,
-	)
-	issues = append(issues, validateHTTPHeaderListIssues(
-		"config.http.default_header_list",
-		script.Config.HTTP.DefaultHeaderList,
-		version,
-	)...)
+	// Global defaults retain structural validation. Their version-dependent
+	// semantics are checked after precedence at each executable request leaf.
+	defaultMap := effectiveHTTPConfigHeaderMap(script.Config.HTTP, nil)
+	defaultList := protocolHTTPHeaderList(script.Config.HTTP.DefaultHeaderList)
+	structuralMap := httpprotocol.HeaderMapIssuesForVersionWithUnresolvedTemplates(effectiveHTTPConfigHeaderMap(script.Config.HTTP, defaultListNames), "2")
+	structuralList := httpprotocol.HeaderListIssuesForVersionWithUnresolvedTemplates(defaultList, "2")
+	issues := formatHTTPHeaderIssues("config.http.default_headers", structuralHTTPHeaderIssues(structuralMap))
+	issues = append(issues, formatHTTPHeaderIssues("config.http.default_header_list", structuralHTTPHeaderIssues(structuralList))...)
 
 	type pendingAction struct {
 		path   string
@@ -71,7 +69,7 @@ func validateHTTPHeaderContractIssues(script *Script) []string {
 		current := pending[0]
 		pending = pending[1:]
 		label := actionLabel(current.path, current.action)
-		issues = append(issues, validateHTTPActionHeaderContractIssues(label, current.action, version)...)
+		issues = append(issues, validateHTTPActionHeaderContractIssues(label, current.action, version, defaultMap, defaultList)...)
 
 		if current.action.Control != nil {
 			for _, branch := range current.action.Control.ActionBranches() {
@@ -84,7 +82,7 @@ func validateHTTPHeaderContractIssues(script *Script) []string {
 			}
 		}
 		if strings.EqualFold(strings.TrimSpace(current.action.Type), "http_sequence") {
-			issues = append(issues, validateHTTPSequenceHeaderContractIssues(label, current.action, version)...)
+			issues = append(issues, validateHTTPSequenceHeaderContractIssues(label, current.action, version, defaultMap, defaultList)...)
 		}
 	}
 	return issues
@@ -125,10 +123,43 @@ func addTypedHTTPConfigHeader(headers map[string]string, name, value string) {
 	headers[name] = value
 }
 
-func validateHTTPActionHeaderContractIssues(label string, action Action, version string) []string {
+func protocolHTTPHeaderList(headers HeaderList) protocol.HeaderList {
+	projected := make(protocol.HeaderList, 0, len(headers))
+	for _, header := range headers {
+		projected = append(projected, protocol.HeaderEntry{Name: header.Name, Value: header.Value, Enabled: header.Enabled})
+	}
+	return projected
+}
+
+func structuralHTTPHeaderIssues(issues []httpprotocol.HeaderListIssue) []httpprotocol.HeaderListIssue {
+	result := make([]httpprotocol.HeaderListIssue, 0, len(issues))
+	for _, issue := range issues {
+		if issue.Code != httpprotocol.HeaderListIssueHopByHopUnsupported && issue.Code != httpprotocol.HeaderListIssueExpectContinueUnsupported {
+			result = append(result, issue)
+		}
+	}
+	return result
+}
+
+func validateHTTPActionHeaderContractIssues(label string, action Action, inherited string, defaults map[string]string, defaultList protocol.HeaderList) []string {
+	version, err := EffectiveHTTPVersion(action, inherited)
+	if err != nil {
+		version = "2"
+	}
 	issues := validateHTTPHeaderMapIssues(label+".headers", unshadowedHTTPHeaderMap(action.Headers, action.HeaderList), version)
 	issues = append(issues, validateHTTPHeaderListIssues(label+".header_list", action.HeaderList, version)...)
 	issues = append(issues, validateImportFidelityMetadataIssues(label, action.Metadata)...)
+	if !isEngineActionType(action.Type) && CanonicalActionType(action.Type) != "http_oauth2_token" && !strings.EqualFold(action.Type, "http_sequence") {
+		headers, mapIssues := httpprotocol.EffectiveAuthoredHeaderList(defaults, defaultList, action.Headers, protocolHTTPHeaderList(action.HeaderList))
+		effectiveIssues := append(mapIssues, httpprotocol.HeaderListIssuesForVersionWithUnresolvedTemplates(headers, version)...)
+		if action.Metadata[importHeaderFidelityMetadataKey] != nil && hasDurableExecutionBlocker(action.Metadata) {
+			// A validated durable import marker may preserve active inherited bytes
+			// that require review. Structural errors are never waived; runtime still
+			// performs the strict effective-header check before any group traffic.
+			effectiveIssues = structuralHTTPHeaderIssues(effectiveIssues)
+		}
+		issues = append(issues, formatHTTPHeaderIssues(label+".effective_headers", effectiveIssues)...)
+	}
 	return issues
 }
 
@@ -193,7 +224,7 @@ func formatHTTPHeaderIssues(label string, runtimeIssues []httpprotocol.HeaderLis
 	return issues
 }
 
-func validateHTTPSequenceHeaderContractIssues(label string, action Action, version string) []string {
+func validateHTTPSequenceHeaderContractIssues(label string, action Action, version string, defaults map[string]string, defaultList protocol.HeaderList) []string {
 	rawRequests, exists := action.Params["requests"]
 	if !exists {
 		return nil
@@ -222,7 +253,7 @@ func validateHTTPSequenceHeaderContractIssues(label string, action Action, versi
 		child, shapeIssues := decodeHTTPSequenceChildHeaders(label, index, rawRequest)
 		issues = append(issues, shapeIssues...)
 		childLabel := fmt.Sprintf("%s.params.requests[%d] %q", label, index, child.Name)
-		issues = append(issues, validateHTTPActionHeaderContractIssues(childLabel, child, version)...)
+		issues = append(issues, validateHTTPActionHeaderContractIssues(childLabel, child, version, defaults, defaultList)...)
 	}
 	return issues
 }
@@ -247,9 +278,16 @@ func decodeHTTPSequenceChildHeaders(label string, index int, rawRequest any) (Ac
 		}
 	}
 
-	child := Action{Name: stringAnyValue(request["name"])}
+	child := Action{Name: stringAnyValue(request["name"]), Type: stringAnyValue(request["type"]), Method: stringAnyValue(request["method"])}
 	childLabel := fmt.Sprintf("%s.params.requests[%d] %q", label, index, child.Name)
 	var issues []string
+	if raw, exists := request["http_version"]; exists {
+		if err := decodeHTTPSequenceChildField(raw, &child.HTTPVersion); err != nil {
+			issues = append(issues, childLabel+".http_version must be auto, 1.1, or 2")
+		} else if err := child.HTTPVersion.Validate(); err != nil {
+			issues = append(issues, childLabel+": "+err.Error())
+		}
+	}
 	if raw, exists := request["headers"]; exists && raw != nil {
 		if err := decodeHTTPSequenceChildField(raw, &child.Headers); err != nil {
 			issues = append(issues, childLabel+".headers must be an object with string values")
@@ -429,10 +467,10 @@ func validateImportHTTPVersionFidelityMarker(label string, raw any) (string, []s
 	reason, _ := marker["reason_code"].(string)
 	reason = strings.TrimSpace(reason)
 	switch reason {
-	case "unsupported_http_version", "http_version_not_preserved":
+	case "unsupported_http_version", "http_version_not_preserved", "malformed_http_version", "http_version_unavailable", "proxy_http_version_legs_differ", "malformed_http_version_provenance":
 	default:
 		issues = append(issues, fmt.Sprintf(
-			"%s: %s.reason_code must be one of %q or %q",
+			"%s: %s.reason_code must be a supported HTTP version fidelity reason (including %q or %q)",
 			label,
 			importHTTPVersionFidelityMetadataKey,
 			"unsupported_http_version",

@@ -75,6 +75,10 @@ const testCatalog: DslActionCatalog = {
 afterEach(() => setCachedDslActionCatalog(null))
 
 describe('dslProtocolFamily', () => {
+  it.each(['http/1.1', 'http/2', ' http/2 '])('resolves %s to the HTTP action family', protocol => {
+    expect(dslProtocolFamily(protocol)).toBe('http')
+  })
+
   it('collapses jms provider protocols onto the jms family', () => {
     expect(dslProtocolFamily('jms-solace')).toBe('jms')
     expect(dslProtocolFamily('jms-servicebus')).toBe('jms')
@@ -107,6 +111,12 @@ describe('dslActionTypesForProtocol', () => {
 
     const kafkaTypes = dslActionTypesForProtocol('kafka').map(spec => spec.type)
     expect(kafkaTypes).toContain('source_transaction')
+  })
+
+  it.each(['http/1.1', 'http/2'])('offers the same catalog actions for %s as canonical HTTP', protocol => {
+    setCachedDslActionCatalog({ ...testCatalog, actions: [...testCatalog.actions, { type: 'GET', protocols: ['http'], summary: 'HTTP read.', fields: [] }] })
+    expect(dslActionTypesForProtocol(protocol).map(spec => spec.type)).toEqual(dslActionTypesForProtocol('http').map(spec => spec.type))
+    expect(dslActionTypesForProtocol(protocol).map(spec => spec.type)).toContain('GET')
   })
 
   it('returns empty without a catalog', () => {

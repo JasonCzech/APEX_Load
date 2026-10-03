@@ -218,6 +218,30 @@ describe('TestExecutionScenarioPreview', () => {
     expect(onExpandedScenarioScriptChange).toHaveBeenCalledTimes(1)
   })
 
+  it.each([
+    { protocol: 'http', version: undefined, expected: 'Auto-negotiate (HTTP/2 or HTTP/1.1)' },
+    { protocol: 'http/1.1', version: '', expected: 'HTTP/1.1 required' },
+    { protocol: 'http/2', version: undefined, expected: 'HTTP/2 required (no fallback)' },
+    { protocol: 'http/2', version: '1.1', expected: 'HTTP/1.1 required' },
+    { protocol: 'http/1.1', version: 'HTTP/2', expected: 'HTTP/2 required (no fallback)' },
+    { protocol: 'http/2', version: 'auto', expected: 'Unsupported script HTTP version' },
+    { protocol: 'http/2', version: null, expected: 'Unsupported script HTTP version' },
+  ])('shows the snapshot effective global policy for $protocol with $version', async ({ protocol, version, expected }) => {
+    const group = { name: 'Version', script_id: 'script-1', script_name: 'Version script', protocol, vusers: 1 }
+    const detail = { id: 'script-1', name: 'Version script', protocol, script: { config: { http: { version, max_conns_per_host: 7 } }, actions: [] } }
+    await act(async () => root.render(<TestExecutionScenarioPreview
+      test={{ id: 'version-test', name: 'Version', status: 'QUEUED', total_vusers: 1, duration: '1m', groups: [group] } as never}
+      startCapacityConflict={null} startShakeoutConflict={null} startFeedback="" onDismissStartConflict={vi.fn()}
+      onConfirmStartAnyway={vi.fn()} onContinueAfterShakeoutFailure={vi.fn()} onCancelShakeoutRun={vi.fn()}
+      queuedScenarioPreview={{ points: [{ second: 0, group0: 1, total: 1 }], totalVUsers: 1, totalSeconds: 60, steadySeconds: 60, startDelaySeconds: 0, preBaselineSeconds: 0, postBaselineSeconds: 0 }}
+      queuedScenarioRows={[{ group, detail: detail as never, actionCount: 0, initCount: 0, teardownCount: 0, dataSourceCount: 0 }]}
+      snapshotSource="immutable_manifest" snapshotLoading={false} snapshotError="" expandedScenarioScript="Version"
+      onExpandedScenarioScriptChange={vi.fn()} onEditScript={vi.fn()} groupColors={['#0a84ff']} />))
+    const card = Array.from(container.querySelectorAll('.scenario-script-detail-card')).find(item => item.querySelector('.scenario-script-detail-label')?.textContent === 'HTTP Runtime')!
+    expect(card.querySelector('.scenario-script-detail-value')?.textContent).toBe(`${expected} · 7 conns/host`)
+    expect(detail.script.config.http.version).toBe(version)
+  })
+
   it('resolves error handling section-wise, never inheriting the half the winning section omits', async () => {
     // The controller applies error_handling as a whole SECTION: mergeRuntimeSettings swaps the
     // run-level section for the group's outright, and applyRuntimeOverrides then assigns

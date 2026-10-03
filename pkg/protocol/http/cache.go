@@ -324,7 +324,8 @@ func responseAllowsAuthenticatedCache(headers http.Header) bool {
 }
 
 func httpCacheKey(req *http.Request) string {
-	return req.Method + " " + req.URL.String()
+	policy, _ := req.Context().Value(httpVersionCacheKey{}).(string)
+	return policy + "\x00" + req.Method + " " + req.URL.String()
 }
 
 func (c *httpResponseCache) remove(key string) {

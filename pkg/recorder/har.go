@@ -2,10 +2,13 @@ package recorder
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 )
 
 type harArchive struct {
@@ -32,15 +35,16 @@ type harPage struct {
 }
 
 type harEntry struct {
-	StartedDateTime   time.Time             `json:"startedDateTime"`
-	Time              float64               `json:"time"`
-	Request           harRequest            `json:"request"`
-	Response          harResponse           `json:"response"`
-	Cache             struct{}              `json:"cache"`
-	Timings           harTiming             `json:"timings"`
-	PageRef           string                `json:"pageref,omitempty"`
-	Comment           string                `json:"comment,omitempty"`
-	WebSocketMessages []harWebSocketMessage `json:"_webSocketMessages,omitempty"`
+	StartedDateTime       time.Time             `json:"startedDateTime"`
+	Time                  float64               `json:"time"`
+	Request               harRequest            `json:"request"`
+	Response              harResponse           `json:"response"`
+	Cache                 struct{}              `json:"cache"`
+	Timings               harTiming             `json:"timings"`
+	PageRef               string                `json:"pageref,omitempty"`
+	Comment               string                `json:"comment,omitempty"`
+	WebSocketMessages     []harWebSocketMessage `json:"_webSocketMessages,omitempty"`
+	HTTPVersionProvenance map[string]any        `json:"_apexload_http_version,omitempty"`
 }
 
 type harRequest struct {
@@ -115,7 +119,7 @@ func ExportHAR(session *Session, includeExcluded bool) ([]byte, error) {
 			Version: "1.2",
 			Creator: harCreator{
 				Name:    "APEX Load Recorder",
-				Version: "1.0",
+				Version: "2.0",
 			},
 			Pages: []harPage{
 				{
@@ -145,7 +149,7 @@ func exportHAREntry(req RecordedRequest, pageID string) harEntry {
 		Request: harRequest{
 			Method:      req.Method,
 			URL:         req.URL,
-			HTTPVersion: "HTTP/1.1",
+			HTTPVersion: exportedObservedHTTPVersion(req.RequestHTTPVersion),
 			Cookies:     headerCookies(req.HeadersMulti, "Cookie"),
 			Headers:     harHeaders(req.HeadersMulti),
 			QueryString: harQueryString(req.URL, req.QueryString),
@@ -155,7 +159,7 @@ func exportHAREntry(req RecordedRequest, pageID string) harEntry {
 		Response: harResponse{
 			Status:      req.StatusCode,
 			StatusText:  http.StatusText(req.StatusCode),
-			HTTPVersion: "HTTP/1.1",
+			HTTPVersion: exportedObservedHTTPVersion(req.ResponseHTTPVersion),
 			Cookies:     responseCookies(req.ResponseHeadersMulti),
 			Headers:     harHeaders(req.ResponseHeadersMulti),
 			Content: harContent{
@@ -173,8 +177,9 @@ func exportHAREntry(req RecordedRequest, pageID string) harEntry {
 			Wait:    req.ResponseTimeMs,
 			Receive: 0,
 		},
-		PageRef: pageID,
-		Comment: req.Note,
+		PageRef:               pageID,
+		Comment:               req.Note,
+		HTTPVersionProvenance: requestimport.ProxyHTTPVersionProvenance(),
 	}
 	for _, msg := range req.WebSocketMessages {
 		entry.WebSocketMessages = append(entry.WebSocketMessages, harWebSocketMessage{
@@ -196,6 +201,23 @@ func exportHAREntry(req RecordedRequest, pageID string) harEntry {
 		entry.Response.Content.Comment = "response body truncated by recorder capture limit"
 	}
 	return entry
+}
+
+func observedHTTPVersion(value string, major, minor int) string {
+	if value != "" {
+		return exportedObservedHTTPVersion(value)
+	}
+	if major > 0 && major <= 9 && minor >= 0 && minor <= 9 {
+		return fmt.Sprintf("HTTP/%d.%d", major, minor)
+	}
+	return "unknown"
+}
+
+func exportedObservedHTTPVersion(value string) string {
+	if len(value) > 256 || strings.TrimSpace(value) == "" {
+		return "unknown"
+	}
+	return value
 }
 
 func harWebSocketMessageType(direction string) string {

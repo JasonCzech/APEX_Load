@@ -37,7 +37,7 @@ describe('runtime evidence omission projection', () => {
       future_detail: detail,
       events: [{ ...report().events[0], event_id: 'event-1', request_index: 1, request_count: 2, leaf_ordinal: 3, step_path: ['requests[1]'],
         status_code: 200, parent_action_name: detail, source_action_name: detail, body: detail, headers: { echo: detail },
-        extractions: { ordinary: detail }, snapshot: { response_body: detail }, protocol_evidence: { future_detail: detail },
+        extractions: { ordinary: detail }, snapshot: { response_body: detail }, protocol_evidence: { http_version_policy: '2' as const, http_version_negotiated: '2' as const, http_version_source: 'wire' as const, future_detail: detail },
         diagnosis: { category: 'runtime', severity: 'error', cause: detail }, future_detail: detail }],
     }
     const projected = omitUnavailableReplayReport(input)
@@ -46,6 +46,7 @@ describe('runtime evidence omission projection', () => {
       request_count: 2, leaf_ordinal: 3, step_path: ['requests[1]'], status_code: 200, success: true, duration_ms: 1 })
     expect(JSON.stringify(projected)).not.toContain(detail)
     expect(projected.final_variables).toBeUndefined()
+    expect(projected.events[0].protocol_evidence).toBeUndefined()
     expect(omitUnavailableReplayReport(projected)).toEqual(projected)
     expect(JSON.stringify(input)).toContain(detail)
   })

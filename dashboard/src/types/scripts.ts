@@ -133,11 +133,15 @@ export interface CorrelationDiagnoseResponse {
   truncated?: boolean
 }
 
+export type HTTPActionVersion = 'auto' | '1.1' | '2'
+
 export interface ScriptActionDefinition {
   pacing_ids?: string[]
   name: string
   type: string
   method?: string
+  /** Omit to inherit the script HTTP policy; explicit auto overrides an exact default. */
+  http_version?: HTTPActionVersion
   target: string
   selector?: string
   // object_ref binds an element-targeting browser action to a named object in a

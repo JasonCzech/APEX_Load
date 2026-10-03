@@ -12,6 +12,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -170,6 +171,14 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		}
 
 		action.Extractors = append(action.Extractors, correlationApplication.extractors[req.Seq]...)
+		capture := requestimport.ReviewHTTPVersionCapture(exportedObservedHTTPVersion(req.RequestHTTPVersion), true, exportedObservedHTTPVersion(req.ResponseHTTPVersion), true, requestimport.ProxyHTTPVersionProvenance(), true, false)
+		requestimport.ApplyHTTPVersionCapture(&action, capture, requestimport.SourceRef{Format: "recording", ItemID: fmt.Sprintf("request-%d", req.Seq), Pointer: "request_http_version"})
+		if capture.Version != "" {
+			action.HTTPVersion, _ = dsl.NewHTTPVersionOverride(capture.Version)
+		}
+		if capture.ReasonCode != "" {
+			result.Warnings = append(result.Warnings, "Captured HTTP version evidence requires review before replay ("+capture.ReasonCode+").")
+		}
 
 		if shouldAssertRecordedStatus(req.StatusCode) {
 			action.Assertions = append(action.Assertions, dsl.Assertion{
@@ -216,6 +225,9 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		}
 	}
 
+	if _, _, err := requestimport.ApplyRuntimeFidelityReview(script, requestimport.RuntimeFidelityOptions{SourceProfile: "recording"}); err != nil {
+		result.Warnings = append(result.Warnings, "Recording HTTP fidelity review could not inspect the script; repair its structure before replay.")
+	}
 	result.Script = script
 	return result
 }

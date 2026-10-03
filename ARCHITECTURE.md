@@ -151,7 +151,7 @@ Metrics flow through buffered channels and are aggregated into streaming percent
 
 Protocols implement the compiled-in `pkg/protocol.Protocol` interface and are registered in `pkg/protocol/registry.go`. Current protocol/runtime surfaces include:
 
-- HTTP/1.1 and HTTP/2
+- HTTP/1.1 and HTTP/2 (`http` negotiates; `http/1.1` and `http/2` supply exact inherited defaults)
 - SOAP and WSDL import
 - Java-over-HTTP bounded codec support
 - Java Vuser (`java_vuser`): governed JVM sidecar runner; disabled unless an operator sets `APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true` on the generator

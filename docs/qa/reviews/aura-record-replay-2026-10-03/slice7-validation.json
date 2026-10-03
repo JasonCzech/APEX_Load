@@ -1,0 +1,146 @@
+{
+  "slice": 7,
+  "status": "complete",
+  "source_review": "root_and_independent_re_reviews_zero_remaining_actionable_findings",
+  "capture_inventory": {
+    "entries": 1079,
+    "http_1_1": 351,
+    "http_2": 276,
+    "unavailable": 452
+  },
+  "evidence_scope": "offline capture inspection and synthetic desktop/loopback; no live Salesforce or physical iPad claim",
+  "cache_cleanup": {
+    "obsolete_closed_slice6_bytes_reclaimed": 2374824654,
+    "shared_or_current_artifacts_removed": 0,
+    "final_shared_cache_cleanup": "deferred until all dependent session builds complete",
+    "obsolete_slice7_pre_repair_bytes_reclaimed": 1278714854
+  },
+  "checks": {
+    "importer_recorder_full": {
+      "result": "passed",
+      "test_packages": 35,
+      "log": "/private/tmp/apex-aura-slice7-importer-final-full.log",
+      "includes_final_inactive_content_type_repair": true
+    },
+    "dashboard_unit": {
+      "result": "passed",
+      "tests": 495,
+      "files": 16
+    },
+    "dashboard_typecheck": "passed_after_generated_contract_update",
+    "dashboard_global_lint": "passed",
+    "dashboard_production_build": "passed",
+    "generated_dsl_api_coverage": "passed_api_freshness_and_full_dsl_schemagen",
+    "qa_generated_freshness": {
+      "result": "passed_final_source",
+      "log": "/private/tmp/apex-aura-slice7-qa-regate-commit-final.log"
+    },
+    "documentation_check": {
+      "result": "passed",
+      "active_markdown_files": 103,
+      "log": "/private/tmp/apex-aura-slice7-docs-commit-final.log"
+    },
+    "core_allocator_regressions": {
+      "result": "passed",
+      "shuffled_runs": 10,
+      "seconds": 3.852,
+      "log": "/private/tmp/apex-aura-slice7-core-allocator-focused-3.log"
+    },
+    "browser_both_auth_profiles": {
+      "result": "passed",
+      "cases_each": 11,
+      "skips": 0,
+      "retries": 0,
+      "dev_admin_seconds": 34.6,
+      "local_auth_reported_duration": "1.8m",
+      "dev_admin_log": "/private/tmp/apex-aura-slice7-browser-regate-dev-admin.log",
+      "local_auth_log": "/private/tmp/apex-aura-slice7-browser-regate-local-auth.log",
+      "coverage": [
+        "real_mixed_TLS_HTTP1_HTTP2_concurrent_shared_session_and_joined_consumption",
+        "persisted_inherit_property_removal_and_explicit_policy_save_reopen",
+        "actual_Auto_HTTP1_only_fallback",
+        "current_retained_wire_receipts_and_export",
+        "shared_settings_and_sidebar_flows"
+      ],
+      "fixture_repair": "Save explicit policy before returning to inherited baseline; original test attempted to save a correctly clean editor."
+    },
+    "api_contract_tests": {
+      "result": "passed",
+      "seconds": 10.539,
+      "log": "/private/tmp/apex-aura-slice7-api-contract-replay-final.log",
+      "includes": [
+        "optional_closed_scalar",
+        "cross_package_script_contracts",
+        "generated_swagger_and_endpoint_catalog_freshness",
+        "actual_unsaved_and_stored_replay_reports",
+        "nested_review_gate_retention"
+      ]
+    },
+    "offline_import_counts": {
+      "result": "passed",
+      "coverage": "slice7-source-coverage.json",
+      "inspected_entries": 1079,
+      "emitted_http_request_leaves": 1001,
+      "excluded_connect_tunnel_entries": 78,
+      "excluded_websocket_upgrade_entries": 0,
+      "conversion_failures": 0,
+      "leaf_policies": {
+        "1.1": 273,
+        "2": 276,
+        "inherit": 452
+      },
+      "http_version_unavailable_review_gates": 452
+    },
+    "core_full": {
+      "result": "passed",
+      "test_packages": 22,
+      "log": "/private/tmp/apex-aura-slice7-core-full-2.log"
+    },
+    "core_engine_after_test_fixture_repair": {
+      "result": "passed",
+      "seconds": 48.737,
+      "log": "/private/tmp/apex-aura-slice7-core-engine-full-final.log"
+    },
+    "core_targeted_race": {
+      "result": "passed",
+      "test_packages": 7,
+      "shuffled_runs": 3,
+      "engine_seconds": 64.49,
+      "engine_log": "/private/tmp/apex-aura-slice7-core-engine-race-final.log",
+      "other_six_packages_log": "/private/tmp/apex-aura-slice7-core-race-final.log",
+      "note": "Combined initial selection failed only on fixed test fixture duplicate registration; all six other packages passed, then engine full and repeated race passed after repair."
+    },
+    "importer_targeted_race": {
+      "result": "passed",
+      "shuffled_runs": 3,
+      "packages": {
+        "requestimport_seconds": 2.518,
+        "sample_har_seconds": 15.081,
+        "enterprise_archive_seconds": 544.62,
+        "salesforce_seconds": 2.429,
+        "recorder_seconds": 1.59
+      },
+      "completed_three_package_log": "/private/tmp/apex-aura-slice7-importer-final-race.log",
+      "focused_remaining_two_package_log": "/private/tmp/apex-aura-slice7-importer-final-focused-race.log",
+      "note": "Broad remaining Salesforce/recorder tail interrupted after three completed passes; relevant version/native-wrapper/recorder/header/folding paths then passed targeted repeated races."
+    },
+    "coverage_generated_freshness": "passed_final_source",
+    "whitespace": "passed"
+  },
+  "visual_review": {
+    "result": "zero_actionable_findings",
+    "reviewers": [
+      "root",
+      "independent_ui_peer"
+    ],
+    "original_resolution": true,
+    "synthetic_images": [
+      "screenshots/slice7-dev-admin-http-version-desktop.png",
+      "screenshots/slice7-dev-admin-http-version-narrow.png",
+      "screenshots/slice7-dev-admin-http-version-replay-desktop.png",
+      "screenshots/slice7-local-auth-http-version-desktop.png",
+      "screenshots/slice7-local-auth-http-version-narrow.png",
+      "screenshots/slice7-local-auth-http-version-replay-desktop.png"
+    ]
+  }
+}

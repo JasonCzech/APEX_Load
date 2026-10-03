@@ -151,6 +151,7 @@ import {
 import { actionRequestCount, actionExtractorCount, isControlAction, isReviewGatedJavaScriptAction, actionExecutionBlockers, actionRequiresReview, actionSelectorFallbackCount, actionTypeSummary, actionRowLabel, headerListToCompatibilityMap } from './scriptActionHelpers'
 import { authoringSessionIdempotencyKey, scriptRequiresJavaVuserAuthoringApproval } from './javaVuserApprovalGate'
 import { ActionEditor, ValidationEvidencePanel } from './ScriptEditorActionEditor'
+import { setHTTPActionVersion } from './httpActionVersionModel'
 import { isBuiltinParameterType, applyParameterTypeDefaults } from './scriptParameterFormat'
 import {
   createScriptEditorDispatchers,
@@ -2477,7 +2478,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   }
 
   const updatePhaseAction = (phase: ScriptActionPhase, idx: number, field: keyof Action, value: unknown) => {
-    updatePhaseActionObject(phase, idx, action => ({ ...action, [field]: value }))
+    updatePhaseActionObject(phase, idx, action => field === 'http_version'
+      ? setHTTPActionVersion(action, value as Action['http_version'])
+      : { ...action, [field]: value })
   }
 
   const updateAction = (idx: number, field: keyof Action, value: unknown) => {
@@ -5181,6 +5184,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           onBeginParameterEdit={(draft) => openParameterizeChoice({ ...draft, phase: activeInspectorScope.phase, stepPath: authorCodeFocus?.stepPath })}
           methodColor={methodColor}
           protocol={script.protocol}
+          scriptHTTPVersion={script.config.http?.version}
           isBrowserScript={isBrowserScript}
           isJmsScript={isJmsScript}
           isSoapScript={isSoapScript}
