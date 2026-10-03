@@ -307,7 +307,7 @@ jobs:
       - name: Require real React recording and replay
         env:
           APEXLOAD_BROWSER_TESTS: require
-        run: go test -count=1 -timeout=2m ./pkg/recorder/browser -run '^TestRecordAndReplayReactSPAWithPollingAndDynamicAuraSelectors$'
+        run: go test -count=1 -timeout=2m ./pkg/recorder/browser -run '^TestRecordAndReplayReact(SPAWithPollingAndDynamicAuraSelectors|AuraWithSessionCorrelation)$'
 
       - name: Run race tests
         run: |
