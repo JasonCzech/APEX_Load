@@ -25,6 +25,9 @@ func schemaCreateTableStatements() []string {
             project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
             revision BIGINT NOT NULL, payload TEXT NOT NULL
         )`,
+		`CREATE TABLE IF NOT EXISTS object_activity_migrations (id TEXT PRIMARY KEY)`,
+		`CREATE TABLE IF NOT EXISTS object_activity_events (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id TEXT NOT NULL, resource_name TEXT NOT NULL, action TEXT NOT NULL, actor_subject TEXT NOT NULL, created_at DATETIME NOT NULL, status TEXT NOT NULL DEFAULT 'success', payload TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS object_archive_states (resource_type TEXT NOT NULL, resource_id TEXT NOT NULL, incarnation TEXT NOT NULL, archived_at DATETIME, restored_at DATETIME, PRIMARY KEY(resource_type, resource_id))`,
 		`CREATE TABLE IF NOT EXISTS analysis_cleanup_jobs (
             kind TEXT NOT NULL, project_id TEXT NOT NULL, resource_id TEXT NOT NULL,
             not_before DATETIME NOT NULL, PRIMARY KEY(kind,resource_id)
@@ -1677,6 +1680,8 @@ func schemaCreateTableStatements() []string {
 // columns added here (e.g. boolean flags added to existing tables).
 func schemaColumnMigrations() []optionalSchemaMigration {
 	return []optionalSchemaMigration{
+		{name: "object_activity_events.status", query: `ALTER TABLE object_activity_events ADD COLUMN status TEXT NOT NULL DEFAULT 'success'`},
+		{name: "object_archive_states.restored_at", query: `ALTER TABLE object_archive_states ADD COLUMN restored_at DATETIME`},
 		{name: "run_archive_collection_intents.cache_limit_bytes", query: `ALTER TABLE run_archive_collection_intents ADD COLUMN cache_limit_bytes BIGINT NOT NULL DEFAULT 0`},
 		{name: "run_archive_collection_intents.cached_sources_json", query: `ALTER TABLE run_archive_collection_intents ADD COLUMN cached_sources_json TEXT NOT NULL DEFAULT '{}'`},
 		{name: "scenarios.termination_mode", query: `ALTER TABLE scenarios ADD COLUMN termination_mode TEXT NOT NULL DEFAULT 'duration'`},
@@ -1933,6 +1938,8 @@ var dataPoolRowsPageIndex = schemaIndex{
 // migrations. Unique indexes guard against duplicate reference keys; partial
 // indexes skip NULL/empty values so legacy rows awaiting backfill do not collide.
 var schemaIndexes = []schemaIndex{
+	{`CREATE INDEX IF NOT EXISTS idx_object_activity_scope_time ON object_activity_events(project_id,created_at,id)`, "idx_object_activity_scope_time"},
+	{`CREATE INDEX IF NOT EXISTS idx_object_activity_resource_time ON object_activity_events(project_id,resource_type,resource_id,created_at)`, "idx_object_activity_resource_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_preparations_test ON preparations(test_id, expires_at)`, "idx_preparations_test"},
 	{`CREATE INDEX IF NOT EXISTS idx_analysis_imports_project ON analysis_imports(project_id, state)`, "idx_analysis_imports_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_monitor_sources_project ON monitor_sources(project_id)`, "idx_monitor_sources_project"},
@@ -2160,6 +2167,9 @@ func (s *SQLiteStore) init() error {
 		return err
 	}
 	if err := s.applyTimescaleDB(); err != nil {
+		return err
+	}
+	if err := s.backfillObjectActivity(); err != nil {
 		return err
 	}
 	return s.recordSchemaReleases()

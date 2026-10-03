@@ -8868,6 +8868,10 @@
           },
           "type": "array"
         },
+        "archived_at": {
+          "format": "date-time",
+          "type": "string"
+        },
         "config": {
           "$ref": "#/$defs/ScriptConfig"
         },

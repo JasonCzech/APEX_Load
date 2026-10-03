@@ -187,6 +187,8 @@ const CommandCenterPrototype = lazy(
 const TestHub = lazy(() => import("./components/TestHub"));
 const TestExecution = lazy(() => import("./components/TestExecution"));
 const RunReportPage = lazy(() => import("./components/RunReportPage"));
+import ActivityWarning from "./components/ActivityWarning";
+const ActivityPage = lazy(() => import("./components/ActivityPage"));
 const ResultsPage = lazy(() => import("./components/ResultsPage"));
 const NewTestPage = lazy(() => import("./components/NewTestPage"));
 const MonitoringPage = lazy(() => import("./components/MonitoringPage"));
@@ -3171,6 +3173,7 @@ function AppShell({
           tabIndex={-1}
           aria-labelledby="app-page-title"
         >
+          <ActivityWarning />
           <span
             className="app-route-announcement"
             role="status"
@@ -3537,6 +3540,7 @@ function AppShell({
                   onAuthoringStateChange={handleScriptsAuthoringStateChange}
                 />
               )}
+              {view.page === "activity" && !routeAssetScopeBlocked && <ActivityPage key={activeProject?.id} projectId={activeProject?.id} projectName={activeProject?.name} />}
               {view.page === "results" && !routeAssetScopeBlocked && (
                 <ResultsPage
                   testStatuses={testStatuses}

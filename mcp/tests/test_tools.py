@@ -148,3 +148,33 @@ def test_api_guide_resource_uses_repo_documentation():
 
     assert "APEX Load API User Guide" in text
     assert "MCP" in text or "Service-account" in text
+
+@pytest.mark.parametrize("name,path", [
+    ("script_archive", "/scripts/script-1/archive"),
+    ("script_restore", "/scripts/script-1/restore"),
+    ("scenario_archive", "/scenarios/script-1/archive"),
+    ("scenario_restore", "/scenarios/script-1/restore"),
+])
+@pytest.mark.asyncio
+async def test_object_archive_tools_forward_optimistic_version(name, path):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == "/api/v1" + path
+        assert json.loads(request.content) == {"updated_at": "2026-10-02T00:00:00Z"}
+        return httpx.Response(200, json={"id": "script-1"})
+
+    client = APEXLoadClient(APEXLoadClientConfig(base_url="http://storm.test/api/v1"), transport=httpx.MockTransport(handler))
+    result = json.loads(await run_endpoint_tool(tool(name), path_params={"id": "script-1"}, payload={"updated_at": "2026-10-02T00:00:00Z"}, confirm=True, client=client))
+    assert result["ok"] is True
+
+@pytest.mark.asyncio
+async def test_project_activity_tool_forwards_resource_filters():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/projects/project-1/activity"
+        assert request.url.params["resource_type"] == "script"
+        assert request.url.params["offset"] == "25"
+        return httpx.Response(200, json={"events": []})
+
+    client = APEXLoadClient(APEXLoadClientConfig(base_url="http://storm.test/api/v1"), transport=httpx.MockTransport(handler))
+    result = json.loads(await run_endpoint_tool(tool("project_activity"), path_params={"id": "project-1"}, query={"resource_type": "script", "offset": 25}, client=client))
+    assert result["ok"] is True

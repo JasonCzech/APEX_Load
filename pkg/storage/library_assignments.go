@@ -177,6 +177,9 @@ func (s *SQLiteStore) ReplaceLibraryAssignment(kind, id, projectID string, appli
 	if err := lock(`UPDATE `+items+` SET updated_at = updated_at WHERE id = ?`, id); err != nil {
 		return nil, nil, err
 	}
+	if err := ensureObjectActiveTx(tx, kind, id); err != nil {
+		return nil, nil, err
+	}
 	var owner string
 	if kind == "script" {
 		err = tx.QueryRow(`SELECT COALESCE(project_id, '') FROM scripts WHERE id = ?`, id).Scan(&owner)

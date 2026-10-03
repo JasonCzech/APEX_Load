@@ -927,7 +927,7 @@ describe('TestHub', () => {
     await flushPromises()
 
     expect(apiMock.listScenarios).toHaveBeenCalledWith('project-1')
-    expect(apiMock.listScripts).toHaveBeenCalledWith('project-1')
+    expect(apiMock.listScripts).toHaveBeenCalledWith('project-1', undefined, { archiveState: 'all' })
     expect(apiMock.listDataPools).toHaveBeenCalledWith('project-1')
     expect(apiMock.listLoadModelTemplates).toHaveBeenCalled()
     expect(apiMock.getLoadModelSupportMatrix).toHaveBeenCalled()
@@ -1836,6 +1836,23 @@ describe('TestHub', () => {
         }),
       ]),
     }))
+  })
+
+  it('preserves existing archived script references when the scenario draft refreshes', async () => {
+    const script = { id: 'script-1', name: 'Archived checkout', protocol: 'http', version: '1', archived_at: '2026-10-02T00:00:00Z', created_at: '' }
+    apiMock.listScripts.mockImplementation((_project, _folder, options) => Promise.resolve({ scripts: options?.archiveState === 'all' ? [script] : [], count: 1 }))
+    const stored: StoredScenario = { id: 'existing', name: 'Existing scenario', duration: '5m', scripts: [{ order: 0, script_id: 'script-1', vusers: 12 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    const props = { testStatuses: {}, onSelectTest: vi.fn(), initialView: 'library' as const }
+    await act(async () => root.render(<TestHub {...props} />))
+    await flushPromises()
+    await clickButton('Edit')
+    await clickWizardStep('Start')
+    expect(container.querySelector('.scenario-script-select-button')?.textContent).toContain('Archived checkout')
+    await act(async () => root.render(<TestHub {...props} featurePolicySignal={1} />))
+    await flushPromises()
+    expect(container.querySelector('.scenario-script-select-button')?.textContent).toContain('Archived checkout')
+    expect(container.querySelector('.scenario-script-select-button')?.textContent).toContain('Archived')
   })
 
   it.each(['Scenario Library', 'Execution Plans'])('does not resurrect a canceled saved scenario as a new draft after visiting %s', async destination => {

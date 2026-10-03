@@ -141,6 +141,25 @@ func (s *Server) handleListExternalResultImports(w http.ResponseWriter, r *http.
 	for _, imported := range imports {
 		s.enrichExternalResultImportView(imported)
 	}
+	if activityStore, ok := s.store.(storage.ObjectActivityStore); ok {
+		grouped := map[string][]string{}
+		for _, imported := range imports {
+			grouped[imported.ProjectID] = append(grouped[imported.ProjectID], imported.ID)
+		}
+		for project, ids := range grouped {
+			summaries, err := activityStore.ObjectActivitySummaries(project, "external_result_import", ids)
+			if err != nil {
+				continue
+			}
+			for _, imported := range imports {
+				if imported.ProjectID == project {
+					if summary, ok := summaries[imported.ID]; ok {
+						imported.Activity = &summary
+					}
+				}
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"imports":  imports,
 		"count":    len(imports),

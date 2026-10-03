@@ -999,6 +999,7 @@ func (tr *TestRunner) createTestWithIDAndTermAttempt(req CreateTestRequest, broa
 		rollbackErr := tr.rollbackRuntimeOverrideSecretAttempt(test.ProjectID, test.ID, runtimeSecretAttempt, "test_persistence_failed")
 		return nil, errors.Join(persistErr, rollbackErr)
 	}
+	tr.recordTestCreationActivity(test, req.creationActor)
 	if err := tr.completeRuntimeOverrideSecretAttempt(runtimeSecretAttempt); err != nil {
 		// The durable test is the source of truth. Recovery observes it and only
 		// removes the value-free journal; it never compensates committed secrets.
@@ -1242,6 +1243,14 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		}
 		scenarioProjectID = normalizeProjectID(scenario.ProjectID)
 		req = createTestRequestFromScenarioRevision(req, scenario, revisionSource)
+	}
+	archiveScripts := []string{tr.resolveRefKeyLocked(req.ScriptID)}
+	for _, group := range req.Groups {
+		archiveScripts = append(archiveScripts, tr.resolveRefKeyLocked(group.ScriptID))
+	}
+	archiveScripts = append(archiveScripts, storage.ExecutionSourceScriptIDs(req.MaterializationKey)...)
+	if err := tr.checkArchivedExecution(req.ScenarioID, archiveScripts); err != nil {
+		return nil, err
 	}
 	// Normalize after scenario/revision inheritance, but before general request
 	// validation, pool lookup, or group compilation. This keeps direct and plan
@@ -1506,6 +1515,8 @@ var errServiceAccountRuntimeSecretWrite = errors.New("service accounts cannot cr
 var errUnattributedRuntimeSecretWrite = errors.New("runtime credentials cannot create project secrets without durable human actor attribution; update the schedule or rerun the execution plan as an authorized user")
 
 type testCreationActor struct {
+	// InitiatedBy distinguishes automatic activity from the retained authorization actor.
+	InitiatedBy string
 	Type        string
 	Subject     string
 	DisplayName string
@@ -1519,6 +1530,7 @@ func normalizeTestCreationActor(actor testCreationActor) testCreationActor {
 	actor.Type = strings.ToLower(strings.TrimSpace(actor.Type))
 	actor.Subject = strings.TrimSpace(actor.Subject)
 	actor.DisplayName = strings.TrimSpace(actor.DisplayName)
+	actor.InitiatedBy = strings.TrimSpace(actor.InitiatedBy)
 	if actor.Type == "" {
 		actor.Type = "system"
 	}

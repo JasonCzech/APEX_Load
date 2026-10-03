@@ -1,3 +1,5 @@
+import ObjectHistory from './ObjectHistory'
+import ObjectArchiveControls from './ObjectArchiveControls'
 import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
 import { suggestedApplication, suggestedReleases } from './libraryLaunchAssignments'
 import CaptureSelectionHelp from './CaptureSelectionHelp'
@@ -591,7 +593,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   useEffect(() => {
     let cancelled = false
     setApplications([]); setAssignmentScripts([])
-    void Promise.all([api.listApplications(activeProjectID), api.listScripts(activeProjectID)]).then(([apps, scripts]) => {
+    void Promise.all([api.listApplications(activeProjectID), api.listScripts(activeProjectID, undefined, { archiveState: 'all' })]).then(([apps, scripts]) => {
       if (!cancelled) { setApplications(apps.applications || []); setAssignmentScripts(scripts.scripts || []) }
     }).catch(() => { /* Workspace selection remains usable if suggestions cannot load. */ })
     return () => { cancelled = true }
@@ -832,12 +834,12 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       return
     }
     try {
-      const res = await api.listScenarios(projectID)
+      const res = await api.listScenarios(projectID, 'all')
       if (
         scenarioRequestGenerationRef.current !== requestGeneration
         || activeProjectIDRef.current !== projectID
       ) return
-      const next = res.scenarios || []
+      const next = (res.scenarios || []).filter(item => !item.archived_at || item.id === initialScenarioId || item.id === activeScenarioIDRef.current)
       setScenarioState({ projectID, scenarios: next, loaded: true })
       setScenarioId(prev => {
         if (next.some(item => item.id === prev)) return prev
@@ -994,6 +996,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   }, [api, inventoryRefresh])
 
   const scenario = useMemo(() => scenarios.find(item => item.id === scenarioId), [scenarios, scenarioId])
+  const archivedDependencies = assignmentScripts.filter(script => script.archived_at && scenario?.scripts.some(group => group.script_id === script.id))
   const suggestedForScenario = useRef('')
   useEffect(() => { suggestedForScenario.current = '' }, [activeProjectID])
   useEffect(() => {
@@ -1334,13 +1337,14 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     return checks
   }, [activeApplication, release, scenario])
   const canManageTests = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'), [effectiveAuthAccessResources])
+  const canManageSchedules = canManageTests && !scenario?.archived_at
   const canManageProjects = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_projects'), [effectiveAuthAccessResources])
   const timeslotValidationError = selectedTimeslotId && !bindableTimeslots.some(slot => slot.id === selectedTimeslotId) ? 'The saved capacity reservation is unavailable. Refresh capacity or explicitly choose another reservation before launching.' : ''
   const runSetupValidationError = useMemo(
     () => timeslotValidationError || validateRunSetup(scenario, effectiveScenarioGroups),
     [effectiveScenarioGroups, scenario, timeslotValidationError],
   )
-  const canLaunch = readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError && !captureNeedsReview
+  const canLaunch = !scenario?.archived_at && archivedDependencies.length === 0 && readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError && !captureNeedsReview
   const buildCurrentRunCreatePayload = useCallback((
     currentRunDefaults: RunDefaultOverrides,
     currentGroupOverrides: Record<string, GroupRunOverride>,
@@ -2389,7 +2393,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   }
 
   const submitSchedule = async (): Promise<boolean> => {
-	if (!canManageTests) {
+	if (!canManageSchedules) {
 	  setError('Current session cannot manage scenario schedules for this project.')
 	  return false
 	}
@@ -2470,7 +2474,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   }
 
   const toggleSchedule = async (schedule: ScenarioSchedule) => {
-	if (!canManageTests) {
+	if (!canManageSchedules) {
 	  setError('Current session cannot manage scenario schedules for this project.')
 	  return
 	}
@@ -2503,7 +2507,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   }
 
   const deleteSchedule = async (scheduleId: string) => {
-	if (!canManageTests) {
+	if (!canManageSchedules) {
 	  setError('Current session cannot manage scenario schedules for this project.')
 	  return
 	}
@@ -2758,7 +2762,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                       Cancel Edit
                     </button>
                   )}
-                  <button type="button" className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting || !canManageTests || schedulePreviewPending || Boolean(scheduleFormError) || (!editingScheduleId && !scheduleDraft.release_id)}>
+                  <button type="button" className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting || !canManageSchedules || schedulePreviewPending || Boolean(scheduleFormError) || (!editingScheduleId && !scheduleDraft.release_id)}>
                     {editingScheduleId ? 'Update Schedule' : 'Save Schedule'}
                   </button>
                 </div>
@@ -2803,8 +2807,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     )}
                   </div>
                   <div className="cron-field-stack">
-                    <CronBuilder value={scheduleDraft.cron_expr} disabled={!canManageTests} onChange={(expr) => setScheduleDraft(prev => ({ ...prev, cron_expr: expr }))} />
-<details><summary>Advanced cron expression</summary>                    <input className="settings-input cron-raw-input" value={scheduleDraft.cron_expr} disabled={!canManageTests} onChange={(event) => setScheduleDraft(prev => ({ ...prev, cron_expr: event.target.value }))} placeholder="0 9 * * 1-5" aria-label="Raw cron expression" aria-invalid={Boolean(currentSchedulePreview?.error) || !scheduleDraft.cron_expr.trim()} aria-describedby={currentSchedulePreview?.error || !scheduleDraft.cron_expr.trim() ? "new-test-cron-error" : undefined} /></details>
+                    <CronBuilder value={scheduleDraft.cron_expr} disabled={!canManageSchedules} onChange={(expr) => setScheduleDraft(prev => ({ ...prev, cron_expr: expr }))} />
+<details><summary>Advanced cron expression</summary>                    <input className="settings-input cron-raw-input" value={scheduleDraft.cron_expr} disabled={!canManageSchedules} onChange={(event) => setScheduleDraft(prev => ({ ...prev, cron_expr: event.target.value }))} placeholder="0 9 * * 1-5" aria-label="Raw cron expression" aria-invalid={Boolean(currentSchedulePreview?.error) || !scheduleDraft.cron_expr.trim()} aria-describedby={currentSchedulePreview?.error || !scheduleDraft.cron_expr.trim() ? "new-test-cron-error" : undefined} /></details>
                     {!scheduleDraft.cron_expr.trim() && <p id="new-test-cron-error" role="alert">Enter a schedule frequency or cron expression.</p>}
                     {schedulePreviewPending && <p role="status">Refreshing next runs…</p>}
                     {currentSchedulePreview && (
@@ -2881,7 +2885,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   description="Runs never fire during these windows. Leave days unselected to apply every day."
                   windows={scheduleDraft.blackout_windows}
                   fallbackTimezone={scheduleDraft.timezone}
-                  disabled={!canManageTests}
+                  disabled={!canManageSchedules}
                   onChange={next => setScheduleDraft(prev => ({ ...prev, blackout_windows: next }))}
                 />
                 <ScheduleWindowListEditor
@@ -2889,7 +2893,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   description="Shared maintenance windows that also block runs. Leave days unselected to apply every day."
                   windows={scheduleDraft.maintenance_windows}
                   fallbackTimezone={scheduleDraft.timezone}
-                  disabled={!canManageTests}
+                  disabled={!canManageSchedules}
                   onChange={next => setScheduleDraft(prev => ({ ...prev, maintenance_windows: next }))}
                 />
                 <ScheduleWindowListEditor
@@ -2897,7 +2901,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   description="When set, runs fire only inside these windows. Leave days unselected to apply every day."
                   windows={scheduleDraft.availability_windows}
                   fallbackTimezone={scheduleDraft.timezone}
-                  disabled={!canManageTests}
+                  disabled={!canManageSchedules}
                   onChange={next => setScheduleDraft(prev => ({ ...prev, availability_windows: next }))}
                 />
                 <div className="setting-row">
@@ -2911,7 +2915,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                       className="settings-input"
                       aria-label="Pause from"
                       value={scheduleDraft.disabled_from}
-                      disabled={!canManageTests}
+                      disabled={!canManageSchedules}
                       onChange={(event) => setScheduleDraft(prev => ({ ...prev, disabled_from: event.target.value }))}
                     />
                     <input
@@ -2919,7 +2923,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                       className="settings-input"
                       aria-label="Pause until"
                       value={scheduleDraft.disabled_until}
-                      disabled={!canManageTests}
+                      disabled={!canManageSchedules}
                       onChange={(event) => setScheduleDraft(prev => ({ ...prev, disabled_until: event.target.value }))}
                     />
                   </div>
@@ -3029,9 +3033,9 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                                     </>
                                   )}
                                   <button className="btn btn-secondary" onClick={() => toggleScheduleOccurrences(item)}>{expandedScheduleId === item.id ? 'Hide Audit' : 'Audit Trail'}</button>
-                                  <button className="btn btn-secondary" onClick={() => editSchedule(item)} disabled={!canManageTests}>Edit</button>
-                                  <button className="btn btn-secondary" onClick={() => toggleSchedule(item)} disabled={!canManageTests}>{item.enabled ? 'Pause' : 'Enable'}</button>
-                                  <button className="btn btn-secondary" onClick={() => setConfirmDeleteScheduleId(item.id)} disabled={!canManageTests}>Delete</button>
+                                  <button className="btn btn-secondary" onClick={() => editSchedule(item)} disabled={!canManageSchedules}>Edit</button>
+                                  <button className="btn btn-secondary" onClick={() => toggleSchedule(item)} disabled={!canManageSchedules}>{item.enabled ? 'Pause' : 'Enable'}</button>
+                                  <button className="btn btn-secondary" onClick={() => setConfirmDeleteScheduleId(item.id)} disabled={!canManageSchedules}>Delete</button>
                                 </div>
                               </td>
                             </tr>
@@ -3122,6 +3126,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
         <div className="new-test-main">
           {scenario && <section className="new-test-selected" aria-label="Selected scenario">
             <span>Selected scenario</span><strong>{scenarioIdentity(scenario)}</strong>
+            <ObjectArchiveControls resourceType="scenario" resourceId={scenario.id} archivedAt={scenario.archived_at} updatedAt={scenario.updated_at} canManage={canManageTests} onChanged={refresh} />
+            <ObjectHistory key={scenario.id} projectId={scenario.project_id} resourceType="scenario" resourceId={scenario.id} activity={scenario.activity} />
+            {scenario.archived_at && <p role="alert">This scenario is archived. Restore it to create a run.</p>}
+            {archivedDependencies.map(script => <p role="alert" key={script.id}>Archived script <a href={`#/scripts?mode=edit&scriptId=${encodeURIComponent(script.id)}&projectId=${encodeURIComponent(activeProjectID)}`}>{script.name}</a> blocks execution. Restore it before launching.</p>)}
             <span>{formatScenarioWorkloadSummary(scenario)} · {scenario.duration} · Results release: {release?.name || 'Select a release'}</span>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setScenarioQuery(scenario.id); setScenarioReleaseFilter(''); setExpandedScenarioId(scenario.id) }}>Show selected scenario</button>
           </section>}

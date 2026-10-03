@@ -892,6 +892,7 @@ export interface ScriptParameterDefinition {
 }
 
 export interface ScriptDefinition {
+  archived_at?: string
   id?: string
   ref_key?: string
   name: string

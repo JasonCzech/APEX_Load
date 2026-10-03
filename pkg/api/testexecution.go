@@ -2471,6 +2471,14 @@ func (tr *TestRunner) prepareTestStartLockedWithExpectedTermAndEvidence(id strin
 	if !testexec.IsStartableTestStatus(test.Status) {
 		return nil, testexec.StartableTestStatusError(test.Status)
 	}
+	archiveScripts := []string{}
+	for _, group := range test.Groups {
+		archiveScripts = append(archiveScripts, group.ScriptID)
+	}
+	archiveScripts = append(archiveScripts, storage.ExecutionSourceScriptIDs(test.MaterializationKey)...)
+	if err := tr.checkArchivedExecution(test.ScenarioID, archiveScripts); err != nil {
+		return nil, err
+	}
 	if err := tr.projectDeletionErrorLocked(test.ProjectID); err != nil {
 		return nil, err
 	}
@@ -2545,6 +2553,7 @@ func (tr *TestRunner) prepareTestStartLockedWithExpectedTermAndEvidence(id strin
 		previousCancel()
 	}
 	releasePassiveOperationTokenLocked(test)
+	tr.recordTestStartActivity(test, opts.actor)
 	return test, nil
 }
 
@@ -6617,6 +6626,12 @@ func (tr *TestRunner) deferPendingPromotionGateWithTerm(id, message string, leas
 func (tr *TestRunner) recordSystemTestAudit(action string, status string, test *ManagedTest, details map[string]any) {
 	if tr == nil || tr.scenarioStore == nil || test == nil {
 		return
+	}
+	if lifecycleActivityAction(action) == "start" && test != nil {
+		tr.recordTestStartActivity(test, testCreationActor{})
+	}
+	if normalized := lifecycleActivityAction(action); normalized != "" && normalized != "start" {
+		tr.recordBackgroundActivity(&storage.ObjectActivityEvent{ID: uuid.NewString(), Action: normalized, Status: status, ActorType: "system", ActorSubject: "test-runner", ActorDisplayName: "Test Runner", InitiatedBy: test.CreatedBySubject, ProjectID: test.ProjectID, ResourceType: "test", ResourceID: test.ID, ResourceName: test.Name, CreatedAt: time.Now().UTC()})
 	}
 	if err := tr.scenarioStore.SaveAuditEvent(&storage.AuditEvent{
 		ID:               uuid.New().String(),

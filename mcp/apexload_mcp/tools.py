@@ -67,6 +67,7 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
 
     EndpointTool("project_list", "GET", "/projects", f"{READ} List projects."),
     EndpointTool("project_create", "POST", "/projects", f"{DESTRUCTIVE} Create a project.", True, True),
+    EndpointTool("project_activity", "GET", "/projects/{id}/activity", f"{READ} Query disclosure-safe project object history, including deleted objects."),
     EndpointTool("project_get", "GET", "/projects/{id}", f"{READ} Get a project."),
     EndpointTool("project_update", "PUT", "/projects/{id}", f"{DESTRUCTIVE} Update project governance or metadata.", True, True),
     EndpointTool("project_github_policy_get", "GET", "/projects/{id}/github/policy", f"{READ} Get project GitHub Enterprise repository policy."),
@@ -93,6 +94,8 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
 
     EndpointTool("script_list", "GET", "/scripts", f"{READ} List scripts.", default_project=True),
     EndpointTool("script_create", "POST", "/scripts", f"{WRITE} Create a script.", True, False, True),
+    EndpointTool("script_archive", "POST", "/scripts/{id}/archive", f"{WRITE} Archive a script; provide its current updated_at in body.", True),
+    EndpointTool("script_restore", "POST", "/scripts/{id}/restore", f"{WRITE} Restore a script; provide its current updated_at in body.", True),
     EndpointTool("script_get", "GET", "/scripts/{id}", f"{READ} Get a script."),
     EndpointTool("script_update", "PUT", "/scripts/{id}", f"{WRITE} Update a script.", True),
     EndpointTool("script_delete", "DELETE", "/scripts/{id}", f"{DESTRUCTIVE} Delete a script.", True, True),
@@ -141,6 +144,8 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
     EndpointTool("scenario_list", "GET", "/scenarios", f"{READ} List scenarios.", default_project=True),
     EndpointTool("scenario_create", "POST", "/scenarios", f"{WRITE} Create a scenario.", True, False, True),
     EndpointTool("scenario_validate_load_model", "POST", "/scenarios/validate-load-model", "Validate a scenario load model without saving."),
+    EndpointTool("scenario_archive", "POST", "/scenarios/{id}/archive", f"{WRITE} Archive a scenario; provide its current updated_at in body.", True),
+    EndpointTool("scenario_restore", "POST", "/scenarios/{id}/restore", f"{WRITE} Restore a scenario; provide its current updated_at in body.", True),
     EndpointTool("scenario_get", "GET", "/scenarios/{id}", f"{READ} Get a scenario."),
     EndpointTool("scenario_update", "PUT", "/scenarios/{id}", f"{WRITE} Update a scenario.", True),
     EndpointTool("scenario_delete", "DELETE", "/scenarios/{id}", f"{DESTRUCTIVE} Delete a scenario.", True, True),

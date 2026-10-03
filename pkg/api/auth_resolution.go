@@ -490,6 +490,10 @@ func serviceAccountAllowsScopes(account *AuthenticatedServiceAccount, required [
 	for _, want := range required {
 		allowed := false
 		for _, scope := range scopes {
+			if want == "object-activity:read" && (scope == "read" || scope == "results:read") {
+				allowed = true
+				break
+			}
 			if scope == "*" || scope == "automation:*" || scope == want {
 				allowed = true
 				break

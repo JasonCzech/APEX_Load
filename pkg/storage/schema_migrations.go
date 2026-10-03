@@ -51,6 +51,8 @@ var schemaReleases = []schemaRelease{
 	{Version: 24, Name: "native-interval-evidence", Fingerprint: "6c0d32e793c1de36cc7089696093f731d5ac200e1823f84c90933c96673c43f5"},
 	{Version: 25, Name: "run-timeline-annotations", Fingerprint: "f4dcd23df64db606ba53343accd751975904ae7eb338eb657342fe72369fb9d2"},
 	{Version: 26, Name: "retained-drop-counter-availability", Fingerprint: "364669cc553fcaa50eb2af5453de91428115c016fa47232c647175808c335dca"},
+	{Version: 27, Name: "object-activity-and-archives", Fingerprint: "10e70e6ffc7829b2d9e594c854903b1db57d4807b1c2878cea751e0eeb37d1d2"},
+	{Version: 28, Name: "archive-restoration-schedule-boundary", Fingerprint: "ba1ac64df70d019c92b5aaae2e4d6ed14f927d8fa4b30d9083a1f533e71981ed"},
 }
 
 type SchemaMigrationRecord struct {
@@ -122,6 +124,7 @@ func schemaConvergenceFingerprint() string {
 		"default-domain-project-application",
 		"postgres-foreign-keys",
 		"timescaledb",
+		"object-activity-legacy-backfill",
 	} {
 		write("phase", phase, "")
 	}

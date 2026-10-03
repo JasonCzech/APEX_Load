@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -68,10 +69,15 @@ func prepareScenarioForSave(scenario *Scenario) ([]byte, []byte, []byte, []byte,
 // this invariant rather than trusting an API-layer cache.
 func projectIDForScenarioScriptsTx(tx *storeTx, scripts []ScenarioScript) (string, error) {
 	projectID := ""
-	for _, scenarioScript := range scripts {
+	ordered := append([]ScenarioScript(nil), scripts...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ScriptID < ordered[j].ScriptID })
+	for _, scenarioScript := range ordered {
 		scriptID := strings.TrimSpace(scenarioScript.ScriptID)
 		if scriptID == "" {
 			return "", errors.New("scenario script id is required")
+		}
+		if err := ensureObjectActiveTx(tx, "script", scriptID); err != nil {
+			return "", err
 		}
 		var candidate string
 		if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM scripts WHERE id = ?`, scriptID).Scan(&candidate); err != nil {
@@ -160,6 +166,9 @@ func validateScenarioScriptJSON(scenarioID string, scripts []ScenarioScript) err
 }
 
 func saveScenarioTx(tx *storeTx, scenario *Scenario, scripts []ScenarioScript, assignmentJSON, goalJSON, runtimeJSON, trafficJSON []byte) error {
+	if err := ensureObjectActiveTx(tx, "scenario", scenario.ID); err != nil {
+		return err
+	}
 	if err := validateScenarioScriptJSON(scenario.ID, scripts); err != nil {
 		return err
 	}
@@ -268,6 +277,9 @@ func (s *SQLiteStore) UpdateScenarioWithDataPoolBindingsIfUnchanged(scenario *Sc
 	if err := validateScenarioProjectRewriteTx(tx, scenario.ID, scripts); err != nil {
 		return false, err
 	}
+	if err := ensureObjectActiveTx(tx, "scenario", scenario.ID); err != nil {
+		return false, err
+	}
 	var currentUpdatedAt time.Time
 	var currentUpdatedRaw string
 	if err := tx.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT) FROM scenarios WHERE id = ?`, scenario.ID).Scan(&currentUpdatedAt, &currentUpdatedRaw); err != nil {
@@ -323,8 +335,8 @@ func (s *SQLiteStore) SaveScenarioWithDataPoolBindings(scenario *Scenario, scrip
 func (s *SQLiteStore) GetScenario(id string) (*Scenario, []ScenarioScript, error) {
 	var scenario Scenario
 	var assignmentJSON, goalJSON, runtimeJSON, trafficJSON string
-	err := s.db.QueryRow(`SELECT id, COALESCE(ref_key, ''), name, COALESCE(workload_shape_id, ''), duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(traffic_profile_json, ''), created_at, updated_at FROM scenarios WHERE id = ?`, id).Scan(
-		&scenario.ID, &scenario.RefKey, &scenario.Name, &scenario.WorkloadShapeID, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.TerminationMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &trafficJSON, &scenario.CreatedAt, &scenario.UpdatedAt)
+	err := s.db.QueryRow(`SELECT id, COALESCE(ref_key, ''), name, COALESCE(workload_shape_id, ''), duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(traffic_profile_json, ''), created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='scenario' AND a.resource_id=scenarios.id AND `+archiveIncarnationMatch(s.db.dialect, "a.incarnation", "scenarios.created_at")+`) FROM scenarios WHERE id = ?`, id).Scan(
+		&scenario.ID, &scenario.RefKey, &scenario.Name, &scenario.WorkloadShapeID, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.TerminationMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &trafficJSON, &scenario.CreatedAt, &scenario.UpdatedAt, &scenario.ArchivedAt)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -339,7 +351,7 @@ func (s *SQLiteStore) GetScenario(id string) (*Scenario, []ScenarioScript, error
 }
 
 func (s *SQLiteStore) ListScenarios() ([]*Scenario, error) {
-	rows, err := s.db.Query(`SELECT id, COALESCE(ref_key, ''), name, COALESCE(workload_shape_id, ''), duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(traffic_profile_json, ''), created_at, updated_at FROM scenarios ORDER BY updated_at DESC`)
+	rows, err := s.db.Query(`SELECT id, COALESCE(ref_key, ''), name, COALESCE(workload_shape_id, ''), duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(traffic_profile_json, ''), created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='scenario' AND a.resource_id=scenarios.id AND ` + archiveIncarnationMatch(s.db.dialect, "a.incarnation", "scenarios.created_at") + `) FROM scenarios ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +360,7 @@ func (s *SQLiteStore) ListScenarios() ([]*Scenario, error) {
 	for rows.Next() {
 		var scenario Scenario
 		var assignmentJSON, goalJSON, runtimeJSON, trafficJSON string
-		if err := rows.Scan(&scenario.ID, &scenario.RefKey, &scenario.Name, &scenario.WorkloadShapeID, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.TerminationMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &trafficJSON, &scenario.CreatedAt, &scenario.UpdatedAt); err != nil {
+		if err := rows.Scan(&scenario.ID, &scenario.RefKey, &scenario.Name, &scenario.WorkloadShapeID, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.TerminationMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &trafficJSON, &scenario.CreatedAt, &scenario.UpdatedAt, &scenario.ArchivedAt); err != nil {
 			return nil, err
 		}
 		if err := decodeScenarioJSON(&scenario, assignmentJSON, goalJSON, runtimeJSON, trafficJSON); err != nil {
@@ -530,6 +542,9 @@ func (s *SQLiteStore) SaveScenarioDataPoolBindings(scenarioID string, bindings [
 		return err
 	}
 	defer tx.Rollback()
+	if err := ensureObjectActiveTx(tx, "scenario", scenarioID); err != nil {
+		return err
+	}
 	if err := saveScenarioDataPoolBindingsTx(tx, scenarioID, bindings); err != nil {
 		return err
 	}
@@ -569,6 +584,9 @@ func (s *SQLiteStore) UpdateScenarioDataPoolBindingsIfUnchanged(scenarioID strin
 	}
 	if !updatedAt.After(currentUpdatedAt) {
 		updatedAt = currentUpdatedAt.Add(time.Microsecond)
+	}
+	if err := ensureObjectActiveTx(tx, "scenario", scenarioID); err != nil {
+		return time.Time{}, false, err
 	}
 	result, err := tx.Exec(`UPDATE scenarios SET updated_at = ? WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, updatedAt, scenarioID, currentUpdatedRaw)
 	if err != nil {

@@ -112,6 +112,7 @@ export default function ScriptsAuthoringShell({
             authoringNotice={authoringState.authoringNotice}
             editingId={authoringState.editingId}
             editingScript={authoringState.editingScript}
+            editingActivity={authoringState.editingActivity}
             projectId={projectId}
             activeProject={activeProject}
             onSaved={onSaved}

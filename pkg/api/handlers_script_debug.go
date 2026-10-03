@@ -94,6 +94,10 @@ func (s *Server) handleStartScriptDebugScript(w http.ResponseWriter, r *http.Req
 	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
 		return
 	}
+	if err := s.runner.checkArchivedExecution("", []string{stored.ID}); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	if err := storedScriptReplayGateError(stored.Script); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -159,6 +163,10 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 		return
 	}
 	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
+	if err := s.runner.checkArchivedExecution("", []string{stored.ID}); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
 	if err := storedScriptReplayGateError(stored.Script); err != nil {
@@ -267,6 +275,12 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	if id != "" {
+		if err := s.runner.checkArchivedExecution("", []string{id}); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+	}
 	req.Preflight = preflight
 	req.SecretResolver = secretResolver
 	req.executionContext, req.releaseExecutionContext = s.runner.executionOperationContext(context.Background())

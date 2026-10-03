@@ -468,6 +468,7 @@ func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
 }
 
 type ManagedTest struct {
+	Activity      *ObjectActivitySummary `json:"activity,omitempty"`
 	preparationID string
 	// Protected by tr.mu; checks only generator control-plane reservations.
 	preparationPeerCheck func(context.Context) error
@@ -1275,6 +1276,8 @@ type GroupLiveMetrics struct {
 }
 
 type StoredScript struct {
+	ArchivedAt          *time.Time                 `json:"archived_at,omitempty"`
+	Activity            *ObjectActivitySummary     `json:"activity,omitempty"`
 	LibraryAssignment   *storage.LibraryAssignment `json:"library_assignment,omitempty"`
 	ID                  string                     `json:"id"`
 	RefKey              string                     `json:"ref_key,omitempty"`
@@ -1294,6 +1297,8 @@ type StoredScript struct {
 }
 
 type StoredScenario struct {
+	ArchivedAt         *time.Time                        `json:"archived_at,omitempty"`
+	Activity           *ObjectActivitySummary            `json:"activity,omitempty"`
 	TerminationMode    string                            `json:"termination_mode,omitempty"`
 	LibraryAssignment  *storage.LibraryAssignment        `json:"library_assignment,omitempty"`
 	ID                 string                            `json:"id"`

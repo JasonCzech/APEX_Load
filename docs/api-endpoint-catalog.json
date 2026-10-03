@@ -2937,6 +2937,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/projects/{id}/activity",
+      "operationId": "handleProjectActivity",
+      "summary": "Project Activity",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: determined from the request"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/projects/{id}/entitlements/usage",
       "operationId": "handleGetProjectEntitlementsUsage",
       "summary": "Get Project Entitlements Usage",
@@ -3836,6 +3846,16 @@
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/scenarios/{id}/archive",
+      "operationId": "handleArchiveObject",
+      "summary": "Archive Object",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/scenarios/{id}/comparison-policy",
       "operationId": "handleGetBaselineComparisonPolicy",
@@ -3900,6 +3920,16 @@
       "path": "/api/v1/scenarios/{id}/monitor-bindings",
       "operationId": "handleMonitorBindings_2",
       "summary": "Monitor Bindings",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scenarios/{id}/restore",
+      "operationId": "handleArchiveObject_2",
+      "summary": "Archive Object",
       "category": "Test Execution",
       "public": false,
       "authenticated": true,
@@ -4967,6 +4997,16 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/scripts/{id}/archive",
+      "operationId": "handleArchiveObject_3",
+      "summary": "Archive Object",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/scripts/{id}/browser-replay/sessions",
       "operationId": "handleStartBrowserReplayScript",
       "summary": "Start Browser Replay Script",
@@ -5184,6 +5224,16 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/restore",
+      "operationId": "handleArchiveObject_4",
+      "summary": "Archive Object",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
     },
     {
       "method": "GET",

@@ -911,6 +911,9 @@ func (s *SQLiteStore) CommitGitHubScriptImport(script *dsl.Script, link *GitHubS
 	if err != nil {
 		return GitHubScriptImportConflict, err
 	}
+	if err := ensureObjectActiveTx(tx, "script", script.ID); err != nil {
+		return GitHubScriptImportConflict, err
+	}
 	scriptChanged := currentFingerprint != desiredFingerprint
 	if !scriptChanged {
 		script.UpdatedAt = current.UpdatedAt

@@ -89,6 +89,10 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
 		return
 	}
+	if err := s.runner.checkArchivedExecution("", []string{stored.ID}); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	if err := storedScriptReplayGateError(stored.Script); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -193,6 +197,12 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 	defer cancelReplay()
 	leaseFailure := watchReplaySessionLease(replayCtx, cancelReplay, leaseSignal)
 
+	if id != "" {
+		if err := s.runner.checkArchivedExecution("", []string{id}); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+	}
 	report, err := s.runner.replayScriptDefinitionContext(replayCtx, script, engine.ReplayOptions{
 		ReplaySessionID: replaySessionID,
 		GroupName:       req.GroupName,

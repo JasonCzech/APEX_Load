@@ -773,6 +773,7 @@ export interface RunContinuityStatus {
 }
 
 export interface TestSummary {
+  activity?: import("./types/objectActivity").ObjectActivitySummary
   termination_mode?: "duration" | "iterations"
   id: string
   ref_key?: string
@@ -2663,6 +2664,7 @@ export interface ReleaseSLAGovernanceResponse {
 }
 
 export interface ExternalResultImport {
+  activity?: import('./types/objectActivity').ObjectActivitySummary
   id: string
   provider: 'k6' | 'jmeter' | 'gatling' | string
   name: string

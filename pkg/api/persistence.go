@@ -460,6 +460,7 @@ func (tr *TestRunner) buildStoredScenarioFromPartsLocked(scenario *storage.Scena
 		Scripts:          refs,
 		Schedules:        schedules,
 		DataPools:        dataPools,
+		ArchivedAt:       scenario.ArchivedAt,
 		CreatedAt:        scenario.CreatedAt,
 		UpdatedAt:        scenario.UpdatedAt,
 		ScriptCount:      len(refs),

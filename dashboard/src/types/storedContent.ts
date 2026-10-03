@@ -1,3 +1,4 @@
+import type { ObjectActivitySummary } from './objectActivity'
 import type { AuthoringHealth } from './authoring'
 import type { ScenarioDataPoolBinding } from './dataPools'
 import type { GoalConfig, ScenarioMode } from './goals'
@@ -26,6 +27,8 @@ export interface ScenarioRef {
 }
 
 export interface StoredScript {
+  archived_at?: string
+  activity?: ObjectActivitySummary
   id: string
   ref_key?: string
   name: string
@@ -45,6 +48,8 @@ export interface StoredScript {
 }
 
 export interface StoredScenario {
+  archived_at?: string
+  activity?: ObjectActivitySummary
   termination_mode?: 'duration' | 'iterations'
   id: string
   ref_key?: string

@@ -78,6 +78,7 @@ type ScriptListResponse = {
 }
 
 type ScriptListOptions = {
+  archiveState?: "active" | "archived" | "all"
   limit?: number
   offset?: number
   search?: string
@@ -358,6 +359,7 @@ function buildScriptQuery(projectId?: string, folderId?: string | null, options?
   if (options?.limit !== undefined) query.set('limit', String(options.limit))
   if (options?.offset !== undefined) query.set('offset', String(options.offset))
   if (options?.search?.trim()) query.set('q', options.search.trim())
+  if (options?.archiveState) query.set("archive_state", options.archiveState)
   const suffix = query.toString()
   return suffix ? `?${suffix}` : ''
 }
@@ -1463,7 +1465,7 @@ export function useScriptApi() {
     [],
   )
 
-  const listScenarios = useCallback((projectId?: string) => request<ScenarioListResponse>(`/scenarios${buildScenarioQuery(projectId)}`), [])
+  const listScenarios = useCallback((projectId?: string, archiveState?: "active" | "archived" | "all") => request<ScenarioListResponse>(`/scenarios${buildScenarioQuery(projectId)}${archiveState ? `${projectId ? "&" : "?"}archive_state=${archiveState}` : ""}`), [])
 
   const createScenario = useCallback(
     (data: ScenarioUpsertRequest) => request<StoredScenario>('/scenarios', { method: 'POST', body: JSON.stringify(data) }),

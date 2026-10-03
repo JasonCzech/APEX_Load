@@ -417,6 +417,16 @@ func (svc *githubSyncService) runImport(ctx context.Context, client *githubClien
 		case storage.GitHubScriptImportUpdated:
 			job.Updated++
 		}
+		if outcome == storage.GitHubScriptImportCreated || outcome == storage.GitHubScriptImportUpdated {
+			event := &storage.ObjectActivityEvent{ID: uuid.NewString(), Action: "modify", ActorType: "system", ActorSubject: "github-sync", ActorDisplayName: "GitHub Sync", InitiatedBy: job.StartedBy, ProjectID: job.ProjectID, ResourceType: "script", ResourceID: stored.ID, ResourceName: disclosureSafeScriptName(stored.Name, stored.Script), Status: "success", ChangedFields: []string{"content_or_settings"}, CreatedAt: time.Now().UTC()}
+			if outcome == storage.GitHubScriptImportCreated {
+				event.Action = "create"
+				event.ChangedFields = nil
+				event.CreatedAt = stored.CreatedAt
+				event.ID = "create:script:" + stored.ID + ":" + stored.CreatedAt.UTC().Format(time.RFC3339Nano)
+			}
+			svc.runner.recordBackgroundActivity(event)
+		}
 		job.Processed++
 	}
 }

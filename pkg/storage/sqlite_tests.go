@@ -142,6 +142,9 @@ func (s *SQLiteStore) validateExistingTestStartPlacement(executor testSaveExecut
 	if !ok {
 		return errors.New("test start identity validation requires a transaction")
 	}
+	if err := ensureTestSourcesActiveTx(tx, test); err != nil {
+		return err
+	}
 	return validateExistingTestStartIdentity(tx, s.db.dialect, test)
 }
 
@@ -225,6 +228,11 @@ func (s *SQLiteStore) createTestIfAbsentWithExecutor(executor testSaveExecutor, 
 	// INSERT ... ON CONFLICT DO NOTHING below.
 	if exists {
 		return false, nil
+	}
+	if tx, ok := executor.(*storeTx); ok {
+		if err := ensureTestSourcesActiveTx(tx, test); err != nil {
+			return false, err
+		}
 	}
 	if err := lockActiveReleaseForNewTest(executor, test); err != nil {
 		return false, err

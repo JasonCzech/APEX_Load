@@ -264,6 +264,12 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "CI script selection changed while the run was being created")
 			return
 		}
+		if !resolvedInline {
+			if err := s.runner.checkArchivedExecution("", []string{strings.TrimPrefix(resolvedIdentity, "script_id:")}); err != nil {
+				writeError(w, http.StatusConflict, err.Error())
+				return
+			}
+		}
 		resolver, err := s.ciRunSecretResolver(req)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())

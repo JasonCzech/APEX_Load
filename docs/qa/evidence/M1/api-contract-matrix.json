@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 650,
+    "routes": 655,
     "public": 24,
-    "protected": 626,
-    "rbac": 624,
+    "protected": 631,
+    "rbac": 629,
     "handler_authenticated": 2,
     "role_metadata_missing": 0,
-    "green": 650,
+    "green": 655,
     "partial": 0,
     "missing": 0
   },
@@ -6623,6 +6623,33 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/projects/{id}/activity",
+      "operation_id": "handleProjectActivity",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: determined from the request",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "object-activity:read"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/projects/{id}/entitlements/usage",
       "operation_id": "handleGetProjectEntitlementsUsage",
       "public": false,
@@ -8896,6 +8923,31 @@
       "service_account_scope": "tests:run"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/scenarios/{id}/archive",
+      "operation_id": "handleArchiveObject",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "tests:run"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/scenarios/{id}/comparison-policy",
       "operation_id": "handleGetBaselineComparisonPolicy",
@@ -9055,6 +9107,31 @@
       "method": "PUT",
       "path": "/api/v1/scenarios/{id}/monitor-bindings",
       "operation_id": "handleMonitorBindings_2",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "tests:run"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scenarios/{id}/restore",
+      "operation_id": "handleArchiveObject_2",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -11717,6 +11794,31 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/scripts/{id}/archive",
+      "operation_id": "handleArchiveObject_3",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "scripts:write"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/scripts/{id}/browser-replay/sessions",
       "operation_id": "handleStartBrowserReplayScript",
       "public": false,
@@ -12261,6 +12363,31 @@
       "state": "GREEN",
       "enforcement": "authentication middleware and access catalog",
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "scripts:write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/restore",
+      "operation_id": "handleArchiveObject_4",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write",
       "anonymous_assertion": "HTTP 401 before handler",
       "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
       "allowed_roles": {

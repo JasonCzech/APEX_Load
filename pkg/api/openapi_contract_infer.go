@@ -140,6 +140,7 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		applyDataPoolImportExportContract(route, &contract)
 		applyGenericImportBatchContract(route, &contract)
 		applyEnterpriseArchiveCollectionContract(route, &contract)
+		applyObjectActivityContract(route, &contract)
 		contracts[route.Method+" "+route.Path] = contract
 	}
 	return contracts, nil
@@ -242,6 +243,11 @@ var explicitRouteContractTypes = map[string]struct {
 	responseTypes       map[int]string
 	responseDescription string
 }{
+	"GET /api/v1/projects/{id}/activity":  {responseTypes: map[int]string{200: "ObjectActivityListResponse"}},
+	"POST /api/v1/scripts/{id}/archive":   {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScript"}},
+	"POST /api/v1/scripts/{id}/restore":   {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScript"}},
+	"POST /api/v1/scenarios/{id}/archive": {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScenario"}},
+	"POST /api/v1/scenarios/{id}/restore": {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScenario"}},
 	"POST /api/v1/auth/ci/github/exchange": {
 		requestType: "githubCIExchangeRequest",
 	},
@@ -1966,4 +1972,17 @@ func openAPIHTTPStatus(expr ast.Expr) (int, bool) {
 func receiverIsImportUpload(expr ast.Expr, variables map[string]bool) bool {
 	ident, ok := expr.(*ast.Ident)
 	return ok && variables[ident.Name]
+}
+
+func applyObjectActivityContract(route discoveredRoute, contract *inferredRouteContract) {
+	if route.Method == "GET" && (route.Path == "/api/v1/scripts" || route.Path == "/api/v1/scenarios") {
+		contract.QueryParameters = append(contract.QueryParameters, oasParameter{Name: "archive_state", In: "query", Description: "Filter archived objects; defaults to active.", Schema: oasParamSchema{Type: "string", Enum: []string{"active", "archived", "all"}}})
+	}
+	if route.Path != "/api/v1/projects/{id}/activity" {
+		return
+	}
+	contract.QueryParameters = nil
+	for _, name := range []string{"action", "actor_subject", "created_after", "created_before", "limit", "offset", "q", "resource_id", "resource_type"} {
+		contract.QueryParameters = append(contract.QueryParameters, oasParameter{Name: name, In: "query", Description: "Project activity filter or pagination.", Schema: queryParameterSchema(route, name, false)})
+	}
 }

@@ -728,16 +728,17 @@ type ExternalResultImportFilter struct {
 }
 
 type ExternalResultImport struct {
-	ID            string         `json:"id"`
-	Provider      string         `json:"provider"`
-	Name          string         `json:"name"`
-	ProjectID     string         `json:"project_id,omitempty"`
-	ApplicationID string         `json:"application_id,omitempty"`
-	ReleaseID     string         `json:"release_id,omitempty"`
-	ScenarioID    string         `json:"scenario_id,omitempty"`
-	Source        string         `json:"source,omitempty"`
-	Summary       map[string]any `json:"summary,omitempty"`
-	RawResult     map[string]any `json:"raw_result,omitempty"`
+	Activity      *ObjectActivitySummary `json:"activity,omitempty"`
+	ID            string                 `json:"id"`
+	Provider      string                 `json:"provider"`
+	Name          string                 `json:"name"`
+	ProjectID     string                 `json:"project_id,omitempty"`
+	ApplicationID string                 `json:"application_id,omitempty"`
+	ReleaseID     string                 `json:"release_id,omitempty"`
+	ScenarioID    string                 `json:"scenario_id,omitempty"`
+	Source        string                 `json:"source,omitempty"`
+	Summary       map[string]any         `json:"summary,omitempty"`
+	RawResult     map[string]any         `json:"raw_result,omitempty"`
 	// ArchiveRecord is durable internal storage metadata for an imported APEX
 	// Load evidence bundle. It is intentionally omitted from API JSON so object
 	// backend bucket/container details and local cache paths are not exposed.
@@ -833,22 +834,23 @@ type Release struct {
 }
 
 type Scenario struct {
-	TerminationMode  string    `json:"termination_mode,omitempty"`
-	ID               string    `json:"id"`
-	RefKey           string    `json:"ref_key,omitempty"`
-	Name             string    `json:"name"`
-	WorkloadShapeID  string    `json:"workload_shape_id,omitempty"`
-	Duration         string    `json:"duration"`
-	StartDelay       string    `json:"start_delay,omitempty"`
-	ScenarioMode     string    `json:"scenario_mode,omitempty"`
-	ScriptShakeout   bool      `json:"script_shakeout,omitempty"`
-	ResourceBaseline bool      `json:"resource_baseline,omitempty"`
-	Assignment       any       `json:"assignment,omitempty"`
-	GoalConfig       any       `json:"goal_config,omitempty"`
-	RuntimeSettings  any       `json:"runtime_settings,omitempty"`
-	TrafficProfile   any       `json:"traffic_profile,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ArchivedAt       *time.Time `json:"archived_at,omitempty"`
+	TerminationMode  string     `json:"termination_mode,omitempty"`
+	ID               string     `json:"id"`
+	RefKey           string     `json:"ref_key,omitempty"`
+	Name             string     `json:"name"`
+	WorkloadShapeID  string     `json:"workload_shape_id,omitempty"`
+	Duration         string     `json:"duration"`
+	StartDelay       string     `json:"start_delay,omitempty"`
+	ScenarioMode     string     `json:"scenario_mode,omitempty"`
+	ScriptShakeout   bool       `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool       `json:"resource_baseline,omitempty"`
+	Assignment       any        `json:"assignment,omitempty"`
+	GoalConfig       any        `json:"goal_config,omitempty"`
+	RuntimeSettings  any        `json:"runtime_settings,omitempty"`
+	TrafficProfile   any        `json:"traffic_profile,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 type ScenarioScript struct {

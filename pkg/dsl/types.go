@@ -77,6 +77,7 @@ const (
 )
 
 type Script struct {
+	ArchivedAt    *time.Time      `json:"archived_at,omitempty"`
 	ID            string          `json:"id"`
 	RefKey        string          `json:"ref_key,omitempty"`
 	Name          string          `json:"name"`

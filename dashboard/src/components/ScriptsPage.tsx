@@ -162,6 +162,9 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const { activeProject } = useProject()
   const activeProjectId = activeProject?.id
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
+  const [archiveState, setArchiveState] = useState<'active' | 'archived' | 'all'>('active')
+  const archiveStateRef = useRef(archiveState)
+  archiveStateRef.current = archiveState
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [scriptsLoading, setScriptsLoading] = useState(true)
   const [scriptsLoadFailed, setScriptsLoadFailed] = useState(false)
@@ -379,6 +382,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   }, [api, fetchSecretStatusesForPlans])
 
   const refresh = useCallback(async () => {
+    const requestedArchiveState = archiveStateRef.current
     const projectId = activeProjectId
     const scope = { ...projectScopeRef.current }
     const requestGeneration = ++scriptsRequestGenerationRef.current
@@ -390,7 +394,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     setScriptsLoading(true)
     setScriptsLoadFailed(false)
     try {
-      const res = await api.listScripts(projectId)
+      const res = await (requestedArchiveState === 'active' ? api.listScripts(projectId) : api.listScripts(projectId, undefined, { archiveState: requestedArchiveState }))
       if (!isProjectScopeCurrent(scope) || scriptsRequestGenerationRef.current !== requestGeneration) return
       setScripts(res.scripts || [])
       setScriptsLoadError('')
@@ -781,7 +785,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     remoteItemHref: federation.remoteItemHref,
   }), [federation, federationRemoteRows])
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => { refresh() }, [refresh, archiveState])
   useEffect(() => { refreshAuthoringSessions() }, [refreshAuthoringSessions])
   useEffect(() => {
     let cancelled = false
@@ -1134,8 +1138,8 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
           )}
           <LibraryFederationControls
             kind="script"
-            filtersActive={assignedApplicationFilter !== 'all' || assignedReleaseFilter !== 'all' || Boolean(libraryQuery.trim()) || healthFilter !== 'all' || releaseFilter !== 'all' || folderFilter !== 'all' || federation.sourceFilter !== 'all'}
-            onResetFilters={() => { setAssignedApplicationFilter('all'); setAssignedReleaseFilter('all'); setLibraryQuery(''); setHealthFilter('all'); setReleaseFilter('all'); setFolderFilter('all'); federation.setSourceFilter('all') }}
+            filtersActive={archiveState !== 'active' || assignedApplicationFilter !== 'all' || assignedReleaseFilter !== 'all' || Boolean(libraryQuery.trim()) || healthFilter !== 'all' || releaseFilter !== 'all' || folderFilter !== 'all' || federation.sourceFilter !== 'all'}
+            onResetFilters={() => { setArchiveState('active'); setAssignedApplicationFilter('all'); setAssignedReleaseFilter('all'); setLibraryQuery(''); setHealthFilter('all'); setReleaseFilter('all'); setFolderFilter('all'); federation.setSourceFilter('all') }}
             primaryAction={canManageScripts && <button className="btn btn-primary" type="button" onClick={openCreateOptions}>Create script</button>}
             federation={federation}
             projectName={activeProject?.name}
@@ -1153,6 +1157,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
                 </label>)}
             filterControls={(
               <>
+            <label>Script archive state <select className="settings-input" value={archiveState} onChange={event => setArchiveState(event.target.value as typeof archiveState)}><option value="active">Active</option><option value="archived">Archived</option><option value="all">All</option></select></label>
               <LibraryAssignmentFilters items={scripts} application={assignedApplicationFilter} release={assignedReleaseFilter} onApplication={setAssignedApplicationFilter} onRelease={setAssignedReleaseFilter} />
                 <label className="project-redaction-rule-field">
                   <span>Run release</span>
@@ -1226,6 +1231,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
               </BulkActions>
           )}
           <ScriptsLibraryTable
+            onArchiveChanged={refresh}
             scripts={sortedScripts}
             sortField={sortField}
             sortDirection={sortDirection}

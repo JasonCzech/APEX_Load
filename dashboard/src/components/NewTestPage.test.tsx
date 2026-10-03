@@ -274,6 +274,20 @@ describe('NewTestPage', () => {
     })
   })
 
+  it('keeps archived scenario execution and schedule changes read-only', async () => {
+    const initial = await apiMock.listScenarios()
+    initial.scenarios[0].archived_at = '2026-10-02T00:00:00Z'
+    apiMock.listScenarios.mockResolvedValue(initial)
+    await act(async () => root.render(<NewTestPage activeApplication={{ id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }} activeRelease={{ id: 'release-1', name: 'Release', application_id: 'app-1', created_at: '', updated_at: '' }} releases={[]} initialScenarioId="scenario-1" onSelectTest={vi.fn()} onCreateRelease={vi.fn()} />))
+    await flushPromises()
+    expect(container.textContent).toContain('This scenario is archived')
+    const start = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start Now')!
+    expect(start.disabled).toBe(true)
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Schedules')!.click())
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Raw cron expression"]')?.disabled).toBe(true)
+    expect(apiMock.createScenarioSchedule).not.toHaveBeenCalled()
+  })
+
   it('suggests assigned applications but requires release selection and clears it on application override', async () => {
     const initial = await apiMock.listScenarios()
     initial.scenarios[0].library_assignment = { application: { id: 'app-2', name: 'Assigned App' }, releases: [{ id: 'release-2', name: 'Assigned Release', application_id: 'app-2' }], revision: 1 }
@@ -912,7 +926,7 @@ describe('NewTestPage', () => {
 
     await flushPromises()
 
-    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-1')
+    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-1', 'all')
 
     const duplicateKeyWarning = consoleErrorSpy.mock.calls.some(([message]: unknown[]) =>
       typeof message === 'string' && message.includes('Encountered two children with the same key'),
@@ -4293,7 +4307,7 @@ describe('NewTestPage', () => {
       renderPage()
       await Promise.resolve()
     })
-    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-1')
+    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-1', 'all')
 
     projectMock.activeProject = { id: 'project-2', name: 'Project Two', created_at: '', updated_at: '' }
     await act(async () => {
@@ -4301,7 +4315,7 @@ describe('NewTestPage', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-2')
+    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-2', 'all')
     expect(container.textContent).toContain('Project Two Scenario')
 
     await act(async () => {

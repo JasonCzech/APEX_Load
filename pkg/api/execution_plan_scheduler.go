@@ -287,6 +287,7 @@ func executionPlanScheduleOccurrenceCreationActor(occurrence *storage.ExecutionP
 		Type:        occurrence.ActorType,
 		Subject:     occurrence.ActorSubject,
 		DisplayName: occurrence.ActorDisplayName,
+		InitiatedBy: occurrence.ActorSubject,
 	})
 }
 
@@ -891,6 +892,13 @@ func (tr *TestRunner) materializeClaimedExecutionPlanScheduleOccurrence(schedule
 	if plan == nil {
 		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "blocked", "plan_not_found", "", "execution plan not found", leaseTerm)
 	}
+	if archiveErr := tr.checkArchivedExecutionPlan(plan, occurrence.PlannedAt); archiveErr != nil {
+		if errors.Is(archiveErr, storage.ErrObjectArchived) {
+			occurrence.ConflictSummary = archiveErr.Error()
+			return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "skipped", "object_archived", "", archiveErr.Error(), leaseTerm)
+		}
+		return archiveErr
+	}
 	runName := renderExecutionPlanScheduleRunName(schedule, plan, occurrence.PlannedAt)
 	if !tr.executionLeaseTermCurrent(leaseTerm) {
 		// Keep the correlated claim materializing. The next leader can safely
@@ -910,6 +918,10 @@ func (tr *TestRunner) materializeClaimedExecutionPlanScheduleOccurrence(schedule
 			if persisted, loadErr := tr.execPlanRunStore.GetExecutionPlanRun(occurrence.RunID); loadErr == nil && persisted != nil {
 				persistedRunID = persisted.ID
 			}
+		}
+		if errors.Is(err, storage.ErrObjectArchived) {
+			occurrence.ConflictSummary = err.Error()
+			return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "skipped", "object_archived", persistedRunID, err.Error(), leaseTerm)
 		}
 		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "failed", "materialize_failed", persistedRunID, err.Error(), leaseTerm)
 	}
@@ -1096,6 +1108,9 @@ func (tr *TestRunner) advanceExecutionPlanScheduleAfterOccurrence(schedule *stor
 		return nil
 	}
 	advanceFrom := plannedAt
+	if occurrence != nil && occurrence.ReasonCode == "object_archived" {
+		advanceFrom = now
+	}
 	if normalizeScenarioScheduleMissedRunPolicy(schedule.MissedRunPolicy) == "catch_up_once" && plannedAt.Before(now) {
 		advanceFrom = now
 	}

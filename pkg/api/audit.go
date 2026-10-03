@@ -29,7 +29,11 @@ func (s *Server) completeRequiredAuditOperation(r *http.Request, operationID, ac
 	if operationID == "" {
 		return errors.New("audit operation id is required")
 	}
-	return s.persistAuditEvent(r, action, status, resourceType, resourceID, projectID, operationAuditDetails(operationID, outcome, details))
+	err := s.persistAuditEvent(r, action, status, resourceType, resourceID, projectID, operationAuditDetails(operationID, outcome, details))
+	if err == nil {
+		s.recordObjectActivity(r, action, status, resourceType, resourceID, projectID, details)
+	}
+	return err
 }
 
 func operationAuditDetails(operationID, outcome string, details map[string]any) map[string]any {
@@ -45,7 +49,9 @@ func operationAuditDetails(operationID, outcome string, details map[string]any) 
 func (s *Server) recordAuditEvent(r *http.Request, action string, status string, resourceType string, resourceID string, projectID string, details map[string]any) {
 	if err := s.persistAuditEvent(r, action, status, resourceType, resourceID, projectID, details); err != nil {
 		slog.Warn("failed to persist audit event", "action", action, "resource_type", resourceType, "resource_id", resourceID, "error", err)
+		s.activityWarning(r, err)
 	}
+	s.recordObjectActivity(r, action, status, resourceType, resourceID, projectID, details)
 }
 
 // persistAuditEvent is the fail-closed counterpart to recordAuditEvent. Callers
@@ -103,6 +109,10 @@ func (s *Server) persistAuditEventWithProjectSnapshot(r *http.Request, action st
 }
 
 func (s *Server) resolveAuditActor(r *http.Request) (string, string, string) {
+	if claims, ok := ciClaimsFromContext(r.Context()); ok {
+		return "service_account", "github-ci:" + claims.RepositoryID + ":" + claims.WorkflowRef, "GitHub Actions · " + claims.Repository
+	}
+
 	if account, ok := AuthenticatedServiceAccountFromContext(r.Context()); ok {
 		return "service_account", "service-account:" + account.ID, account.Name
 	}

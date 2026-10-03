@@ -20,6 +20,7 @@ describe('app topbar helpers', () => {
     expect(pageTitleForView({ page: 'tests', scenarioView: 'builder' })).toBe('Scenario Builder')
     expect(pageTitleForView({ page: 'scripts', mode: 'create' })).toBe('Create Script')
     expect(pageTitleForView({ page: 'report', testId: 'run-1' })).toBe('Run Results')
+    expect(pageTitleForView({ page: 'activity' })).toBe('Activity')
     expect(pageTitleForView({ page: 'results' })).toBe('Results Library')
     expect(pageTitleForView({ page: 'fleet' })).toBe('Fleet')
     expect(pageTitleForView({ page: 'monitoring', category: 'telemetry' })).toBe('Telemetry')

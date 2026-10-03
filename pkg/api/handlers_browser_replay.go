@@ -72,6 +72,10 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
 		return
 	}
+	if err := s.runner.checkArchivedExecution("", []string{stored.ID}); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	if err := storedScriptReplayGateError(stored.Script); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -169,6 +173,12 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 		return
 	}
 
+	if id != "" {
+		if err := s.runner.checkArchivedExecution("", []string{id}); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+	}
 	req.Preflight = preflight
 	req.SecretResolver = secretResolver
 	req.executionContext, req.releaseExecutionContext = s.runner.executionOperationContext(context.Background())
