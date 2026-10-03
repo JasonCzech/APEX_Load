@@ -12,7 +12,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postgresForeignKeySpecs returned error: %v", err)
 	}
-	if got, want := len(specs), 119; got != want {
+	if got, want := len(specs), 121; got != want {
 		t.Fatalf("foreign key count = %d, want %d", got, want)
 	}
 
@@ -35,6 +35,8 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	}
 
 	for key, want := range map[string]string{
+		"monitor_collection_leases.project_id":                  "projects.id",
+		"monitor_management_polls.project_id":                   "projects.id",
 		"run_annotations.test_id":                               "tests.id",
 		"run_annotations.project_id":                            "projects.id",
 		"run_archive_replica_holds.test_id":                     "tests.id",
@@ -100,6 +102,9 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 		if target := got.references + "." + got.refColumn; target != want {
 			t.Errorf("foreign key %s targets %s, want %s", key, target, want)
 		}
+	}
+	if _, exists := byColumn["monitor_management_polls.id"]; exists {
+		t.Error("management poll identity must not reference a project or run identity")
 	}
 	if got := byColumn["elk_connections.project_id"].onDelete; got != "CASCADE" {
 		t.Errorf("elk_connections.project_id on delete = %q, want CASCADE", got)

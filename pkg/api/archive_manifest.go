@@ -46,6 +46,7 @@ func archiveManifestArtifactNames(manifest *RunArchiveManifest) (map[string]stru
 		manifest.ELKEvidenceFile,
 		manifest.DynatraceEvidenceFile,
 		manifest.MonitorEvidenceFile,
+		manifest.MonitorManagementFile,
 		"manifest.json",
 	} {
 		if strings.TrimSpace(name) == "" {
@@ -101,6 +102,19 @@ func validateRunArchiveManifestArtifacts(manifest *RunArchiveManifest) error {
 	}
 	if manifest.MonitorEvidenceFile, err = optionalArchiveArtifactName("monitor_evidence_file", manifest.MonitorEvidenceFile); err != nil {
 		return err
+	}
+	if manifest.MonitorManagementFile, err = optionalArchiveArtifactName("monitor_management_file", manifest.MonitorManagementFile); err != nil {
+		return err
+	}
+	if manifest.MonitorManagementSnapshotCount < 0 || manifest.MonitorManagementRowCount < 0 {
+		return fmt.Errorf("invalid monitor management counts")
+	}
+	if manifest.MonitorManagementFile == "" {
+		if manifest.MonitorManagementVersion != 0 || manifest.MonitorManagementSnapshotCount != 0 || manifest.MonitorManagementRowCount != 0 {
+			return fmt.Errorf("monitor management metadata requires an artifact")
+		}
+	} else if manifest.MonitorManagementVersion != 1 {
+		return fmt.Errorf("unsupported monitor management version")
 	}
 	return nil
 }

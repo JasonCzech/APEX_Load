@@ -1,14 +1,19 @@
+import ManagementCollectionState from "./ManagementCollectionState"
+import RunManagementEvidence from "./RunManagementEvidence"
 import SeriesChartExport from "./SeriesChartExport"
 import { useEffect, useRef, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import DependencyEvidence from './DependencyEvidence'
 import { request } from '../hooks/apiClient'
+import type { JsonSuccessResponseBody } from '../types/generated/openapi'
 import type { AnalysisCapabilities, AnalysisPoint } from '../types/analysis'
 import type { MetricsHistoryPoint, MonitoringCollectorListResponse } from '../types'
 
-interface Source { credential_ref?: string; collector_public_key?: string; service?: string; id: string; name: string; project_id?: string; revision: number; collector_id: string; pack: string; destination?: string; interval_seconds: number; enabled: boolean }
+type Source = JsonSuccessResponseBody<'handleMonitorSources', '200'>[number]
 interface Bindings { revision: number; sources: { source_id: string; required: boolean }[] }
 interface Job { id: string; source: Source; state: string; next_sequence: number; coverage_reason?: string }
+const emptySource = (): Source => ({ project_id: '', id: '', name: '', revision: 0, collector_id: '', pack: 'linux-hosts', interval_seconds: 15, enabled: true })
+const sourcePacks = ['linux-hosts', 'go-runtime', 'prometheus', 'ssh-linux', 'otel-metrics', 'jmx', 'jdbc', 'cloudwatch', 'azure-monitor']
 const sourcesPath = (project: string) => `/projects/${encodeURIComponent(project)}/monitor-sources`
 
 function useMonitoringEnabled(projectId?: string) {
@@ -21,11 +26,14 @@ export function RunMonitorSources({ projectId, canManage = false }: { projectId?
   const enabled = useMonitoringEnabled(projectId)
   const [sources, setSources] = useState<Source[]>([])
   const [collectors, setCollectors] = useState<MonitoringCollectorListResponse['collectors']>([])
-  const [draft, setDraft] = useState<Source>({ id: '', name: '', revision: 0, collector_id: '', pack: 'linux-hosts', interval_seconds: 15, enabled: true })
+  const [draft, setDraft] = useState<Source>(emptySource)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [refresh, setRefresh] = useState(0)
   const operation = useRef<AbortController>()
+  useEffect(() => {
+    operation.current?.abort(); setDraft(emptySource()); setCollectors([]); setError(''); setBusy(false)
+  }, [projectId])
   useEffect(() => {
     const c = new AbortController(); setSources([])
     if (enabled && projectId) void Promise.all([request<Source[]>(sourcesPath(projectId), { signal: c.signal }), request<MonitoringCollectorListResponse>(`/monitoring/collectors?project_id=${encodeURIComponent(projectId)}`, { signal: c.signal })]).then(([s, collectors]) => { if (!c.signal.aborted) { setSources(s); setCollectors(collectors.collectors) } }).catch(e => { if (!c.signal.aborted) setError(String(e)) })
@@ -37,18 +45,19 @@ export function RunMonitorSources({ projectId, canManage = false }: { projectId?
     try {
       const path = `${sourcesPath(projectId)}${draft.id ? `/${encodeURIComponent(draft.id)}` : ''}${remove ? `?revision=${draft.revision}` : ''}`
       await request(path, { method: remove ? 'DELETE' : draft.id ? 'PUT' : 'POST', signal: c.signal, ...(remove ? {} : { body: JSON.stringify({ ...draft, id: draft.id || undefined }) }) })
-      if (!c.signal.aborted) { setDraft({ ...draft, id: '', revision: 0, name: '' }); setRefresh(x => x + 1) }
+      if (!c.signal.aborted) { setDraft(emptySource()); setRefresh(x => x + 1) }
     } catch (e) { if (!c.signal.aborted) setError(String(e)) } finally { if (!c.signal.aborted) setBusy(false) }
   }
   return <section className="analysis-workspace" aria-label="Run monitor sources">
     <p>Sources are captured when a run starts. Edits apply to subsequent runs. Collection continues through pauses.</p>
     {error && <p role="alert">{error}</p>}
+    {draft.id && draft.management_scope && <ManagementCollectionState key={`${projectId}:${draft.id}`} projectId={projectId} sourceId={draft.id} canManage={canManage} />}
     <ul>{sources.map(source => <li key={source.id}>{source.name} · {source.pack} · revision {source.revision} · {source.enabled ? 'enabled' : 'disabled'} {canManage && <button type="button" disabled={busy} onClick={() => setDraft(source)}>Edit {source.name}</button>}</li>)}</ul>
     {canManage && <fieldset disabled={busy}>
       <legend>{draft.id ? 'Edit source' : 'New source'}</legend>
       <label>Name<input value={draft.name} maxLength={256} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
       <label>Collector<select value={draft.collector_id} onChange={e => setDraft({ ...draft, collector_id: e.target.value })}><option value="">Select a collector</option>{collectors.map(c => <option key={c.id} value={c.id}>{c.name} · {c.health}</option>)}</select></label>
-      <label>Pack<select value={draft.pack} onChange={e => setDraft({ ...draft, pack: e.target.value, interval_seconds: ['cloudwatch', 'azure-monitor'].includes(e.target.value) ? Math.max(60, draft.interval_seconds) : draft.interval_seconds, destination: '', credential_ref: '', collector_public_key: '' })}>{['linux-hosts', 'go-runtime', 'prometheus', 'ssh-linux', 'otel-metrics', 'jmx', 'jdbc', 'cloudwatch', 'azure-monitor'].map(p => <option key={p}>{p}</option>)}</select></label>
+      <label>Pack<select value={draft.pack} onChange={e => setDraft({ ...draft, pack: e.target.value, interval_seconds: ['cloudwatch', 'azure-monitor'].includes(e.target.value) ? Math.max(60, draft.interval_seconds) : draft.interval_seconds, destination: '', credential_ref: '', collector_public_key: '', management_scope: undefined, management_identity: undefined })}>{!sourcePacks.includes(draft.pack) && <option value={draft.pack} disabled>{draft.pack} (configured management pack)</option>}{sourcePacks.map(p => <option key={p}>{p}</option>)}</select></label>
       {!['linux-hosts', 'go-runtime'].includes(draft.pack) && <label>Approved destination<input type="url" value={draft.destination ?? ''} onChange={e => setDraft({ ...draft, destination: e.target.value })} /></label>}
       <label>Dependency identity<input value={draft.service ?? ''} maxLength={128} onChange={e => setDraft({ ...draft, service: e.target.value })} /><small>Exact dependency label used to link collected evidence.</small></label>
       {['ssh-linux', 'jmx', 'jdbc'].includes(draft.pack) && <>
@@ -58,7 +67,7 @@ export function RunMonitorSources({ projectId, canManage = false }: { projectId?
       <label>Collection interval (seconds)<input type="number" min={1} max={3600} value={draft.interval_seconds} onChange={e => setDraft({ ...draft, interval_seconds: Number(e.target.value) })} /></label>
       <label><input type="checkbox" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })} />Enabled</label>
       <button type="button" disabled={!draft.name || !draft.collector_id} onClick={() => void save()}>Save monitor source</button>
-      {draft.id && <><button type="button" onClick={() => void save(true)}>Delete source</button><button type="button" onClick={() => setDraft({ ...draft, id: '', name: '', revision: 0 })}>New source</button></>}
+      {draft.id && <><button type="button" onClick={() => void save(true)}>Delete source</button><button type="button" onClick={() => setDraft(emptySource())}>New source</button></>}
     </fieldset>}
   </section>
 }
@@ -107,7 +116,7 @@ export function RunMonitorTimeline({ projectId, testId, history }: { projectId?:
     if (enabled) void request<Job[]>(`/tests/${encodeURIComponent(testId)}/monitors`, { signal: c.signal }).then(j => { if (!c.signal.aborted) setJobs(j) }).catch(e => { if (!c.signal.aborted) setError(String(e)) })
     return () => { c.abort(); controller.current?.abort() }
   }, [testId, enabled])
-  if (!enabled || !jobs.length) return null
+  if (!enabled || !jobs.length) return <RunManagementEvidence projectId={projectId} testId={testId} />
   const load = async () => {
     controller.current?.abort(); const c = new AbortController(); controller.current = c; setBusy(true); setError('')
     try {
@@ -133,6 +142,7 @@ export function RunMonitorTimeline({ projectId, testId, history }: { projectId?:
   for (const point of history) if (point.timestampMs !== undefined && (!loadedWindow || (point.timestampMs >= Date.parse(loadedWindow.from) && point.timestampMs <= Date.parse(loadedWindow.to)))) rows.push({ time: point.timestampMs, latency: point.avgMs })
   rows.sort((a, b) => a.time - b.time)
   return <section className="tx-section" aria-label="Run monitor evidence">
+    <RunManagementEvidence projectId={projectId} testId={testId} />
     <DependencyEvidence testId={testId} projectId={projectId} select={(source, metric, from, to) => { controller.current?.abort(); setBusy(false); setSource(source); setMetric(metric); setDimensions('{}'); setWindow({ from, to }); setPoints([]) }} />
     <h3>Run monitor evidence</h3>{window && <p>Selected interval: {window.from} – {window.to} <button type="button" onClick={() => { setWindow(undefined); setPoints([]) }}>Clear time window</button></p>}<p>Aligned by elapsed wall time, including pauses. Associations do not establish causation.</p>
     <ul>{jobs.map(j => <li key={j.id}>{j.source.name} · {j.state} · {j.next_sequence} accepted batches{j.coverage_reason ? ` · ${j.coverage_reason}` : ''}</li>)}</ul>

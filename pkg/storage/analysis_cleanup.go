@@ -43,7 +43,7 @@ func (s *SQLiteStore) ListAnalysisCleanupJobs(now time.Time, limit int) ([]Analy
 	rows, err := s.db.Query(`SELECT j.kind,j.project_id,j.resource_id,j.not_before FROM analysis_cleanup_jobs j
         LEFT JOIN analysis_imports d ON j.kind='dataset' AND d.id=j.resource_id
         LEFT JOIN tests t ON j.kind='monitor' AND t.id=j.resource_id
-        WHERE j.not_before<=? AND ((j.kind='dataset' AND (d.id IS NULL OR d.state IN ('cancelled','deleted','deleting'))) OR (j.kind='monitor' AND t.id IS NULL))
+        WHERE j.not_before<=? AND ((j.kind='dataset' AND (d.id IS NULL OR d.state IN ('cancelled','deleted','deleting'))) OR (j.kind='monitor' AND t.id IS NULL) OR j.kind='monitor-object')
         ORDER BY j.not_before,j.resource_id LIMIT ?`, now.UTC(), limit)
 	if err != nil {
 		return nil, err

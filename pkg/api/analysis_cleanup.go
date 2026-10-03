@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -29,6 +31,36 @@ func (s *Server) retryAnalysisCleanup(ctx context.Context) error {
 		}
 	}
 	for _, j := range jobs {
+		if j.Kind == "monitor-object" {
+			management, ok := s.store.(storage.ManagementMonitorStore)
+			if !ok {
+				return errors.New("management object reference storage unavailable")
+			}
+			if len(j.ResourceID) > 4096 {
+				return errors.New("invalid monitor object cleanup reference")
+			}
+			var reference storage.MonitorObjectCleanupReference
+			if json.Unmarshal([]byte(j.ResourceID), &reference) != nil || !validMonitorArtifactKey(reference.ArtifactKey) {
+				return errors.New("invalid monitor object cleanup reference")
+			}
+			owner, _ := monitorArtifactKey(j.ProjectID, reference.RunID, nil)
+			if reference.RunID == "" || filepath.Dir(owner) != filepath.Dir(reference.ArtifactKey) {
+				return errors.New("monitor object cleanup ownership mismatch")
+			}
+			referenced, err := management.IsMonitorArtifactReferenced(j.ProjectID, reference.ArtifactKey)
+			if err != nil {
+				return err
+			}
+			if !referenced {
+				if err = deleteMonitorObject(ctx, reference.ArtifactKey); err != nil {
+					return err
+				}
+			}
+			if err = store.CompleteAnalysisCleanupJob(j); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := deleteAnalysisNamespace(ctx, j); err != nil {
 			return err
 		}
@@ -106,4 +138,41 @@ func deleteAnalysisNamespace(ctx context.Context, j storage.AnalysisCleanupJob) 
 		}
 	}
 	return errors.New("analytical cleanup will continue on next sweep")
+}
+
+// A single orphan is reclaimed after the durable writer grace. A receipt
+// reference check above protects all accepted objects in still-live runs.
+func deleteMonitorObject(ctx context.Context, key string) error {
+	if !validMonitorArtifactKey(key) || strings.Contains(key, "\\") {
+		return errors.New("invalid monitor cleanup key")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	backend := currentArchiveBackend()
+	if backend.Backend == archiveBackendFilesystem {
+		root, err := os.OpenRoot(filepath.Join(backend.LocalRoot, "_analysis"))
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		defer root.Close()
+		err = root.Remove(key)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	bucket, err := backend.openBucket(ctx)
+	if err != nil {
+		return err
+	}
+	defer bucket.Close()
+	err = bucket.Delete(ctx, filepath.ToSlash(filepath.Join(backend.Prefix, "_analysis", key)))
+	if gcerrors.Code(err) == gcerrors.NotFound {
+		return nil
+	}
+	return err
 }

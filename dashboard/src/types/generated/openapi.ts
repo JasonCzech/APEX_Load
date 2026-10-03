@@ -3096,6 +3096,8 @@ export interface operations {
                 "batches"?: number;
                 "binding_revision"?: number;
                 "job_id"?: string;
+                "management_incomplete_snapshots"?: number;
+                "management_snapshots"?: number;
                 "reason"?: string;
                 "source_id"?: string;
                 "source_revision"?: number;
@@ -3103,6 +3105,10 @@ export interface operations {
               }>;
               "monitor_evidence_count"?: number;
               "monitor_evidence_file"?: string;
+              "monitor_management_file"?: string;
+              "monitor_management_row_count"?: number;
+              "monitor_management_snapshot_count"?: number;
+              "monitor_management_version"?: number;
               "provenance"?: {
                 "application_id"?: string;
                 "assignment"?: (Record<string, unknown>) | null;
@@ -7168,6 +7174,9 @@ export interface operations {
             "heavy_jobs": number;
             "max_import_bytes": number;
             "memory_limit": string;
+            "messaging_management_enabled": boolean;
+            "messaging_management_packs": Array<string>;
+            "messaging_management_version": number;
             "metric_catalog": {
               "bounds": {
                 "buckets": number;
@@ -50652,6 +50661,8 @@ export interface operations {
               "batches": number;
               "binding_revision": number;
               "job_id": string;
+              "management_incomplete_snapshots"?: number;
+              "management_snapshots"?: number;
               "reason"?: string;
               "source_id": string;
               "source_revision": number;
@@ -50659,6 +50670,10 @@ export interface operations {
             }>;
             "monitor_evidence_count"?: number;
             "monitor_evidence_file"?: string;
+            "monitor_management_file"?: string;
+            "monitor_management_row_count"?: number;
+            "monitor_management_snapshot_count"?: number;
+            "monitor_management_version"?: number;
             "provenance"?: {
               "application_id"?: string;
               "assignment"?: ({
@@ -53692,6 +53707,8 @@ export interface operations {
                 "batches": number;
                 "binding_revision": number;
                 "job_id": string;
+                "management_incomplete_snapshots"?: number;
+                "management_snapshots"?: number;
                 "reason"?: string;
                 "source_id": string;
                 "source_revision": number;
@@ -53699,6 +53716,10 @@ export interface operations {
               }>;
               "monitor_evidence_count"?: number;
               "monitor_evidence_file"?: string;
+              "monitor_management_file"?: string;
+              "monitor_management_row_count"?: number;
+              "monitor_management_snapshot_count"?: number;
+              "monitor_management_version"?: number;
               "provenance"?: {
                 "application_id"?: string;
                 "assignment"?: ({
@@ -71936,6 +71957,215 @@ export interface operations {
       };
     };
   };
+  "handleManagementCollectionState": {
+    parameters: {
+      "path": {
+        "id": string;
+        "source_id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "collector_id"?: string;
+            "collector_instance_id"?: string;
+            "deadline"?: (string) | null;
+            "generation"?: string;
+            "grant_issued": boolean;
+            "poll_id"?: string;
+            "poll_sequence"?: string;
+            "source_revision"?: number;
+            "state": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleManagementCollectionState_2": {
+    parameters: {
+      "path": {
+        "id": string;
+        "source_id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "collector_id"?: string;
+          "collector_instance_id"?: string;
+          "generation"?: string;
+          "poll_id"?: string;
+          "process_stopped"?: boolean;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "collector_id"?: string;
+            "collector_instance_id"?: string;
+            "deadline"?: (string) | null;
+            "generation"?: string;
+            "grant_issued": boolean;
+            "poll_id"?: string;
+            "poll_sequence"?: string;
+            "source_revision"?: number;
+            "state": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleManagementPoll": {
+    parameters: {
+      "path": {
+        "id": string;
+        "job_id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "completion_confirmed"?: boolean;
+          "generation"?: string;
+          "instance_id"?: string;
+          "nonce"?: string;
+          "operation"?: string;
+          "poll_id"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "grant"?: ({
+              "payload": string;
+              "signature": string;
+            }) | null;
+            "state": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleMaterializeAndRunExecutionPlan": {
     parameters: {
       "path": {
@@ -72279,6 +72509,240 @@ export interface operations {
       };
     };
   };
+  "handleMonitorManagement": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "cursor"?: string;
+        "entity_id"?: string;
+        "from"?: string;
+        "limit"?: number;
+        "source_id"?: string;
+        "to"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "cursor"?: string;
+            "entity_id"?: string;
+            "has_more": boolean;
+            "records": Array<{
+              "evidence": {
+                "attribution"?: ({
+                  "collector_id": string;
+                  "job_id": string;
+                  "project_id": string;
+                  "received_at": string;
+                  "run_id": string;
+                  "scenario_id"?: string;
+                  "source_id": string;
+                  "source_revision": number;
+                }) | null;
+                "messaging_management"?: ({
+                  "captured_at": string;
+                  "collector_id": string;
+                  "collector_instance_id": string;
+                  "completed_at": string;
+                  "elapsed_ms"?: (number) | null;
+                  "expected_entities": number;
+                  "generation": string;
+                  "identity_hash": string;
+                  "incomplete": boolean;
+                  "interval_seconds": number;
+                  "inventory_complete": boolean;
+                  "kind": string;
+                  "missed_ticks": string;
+                  "page_count": number;
+                  "poll_id": string;
+                  "poll_sequence": string;
+                  "provider": string;
+                  "request_count": number;
+                  "rows": Array<{
+                    "entity": {
+                      "kafka"?: ({
+                        "group": string;
+                        "partition": number;
+                        "topic": string;
+                      }) | null;
+                      "service_bus"?: ({
+                        "queue"?: string;
+                        "subscription"?: string;
+                        "topic"?: string;
+                      }) | null;
+                      "solace"?: ({
+                        "queue"?: string;
+                        "topic_endpoint"?: string;
+                        "vpn": string;
+                      }) | null;
+                    };
+                    "kafka_offsets"?: ({
+                      "committed_leader_epoch": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "committed_next": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "high_watermark_next": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "last_stable_next": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "leader_epoch": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "log_end_next": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "topic_id"?: string;
+                    }) | null;
+                    "observation_age_ms"?: (number) | null;
+                    "observed_at"?: (string) | null;
+                    "reason"?: string;
+                    "service_bus_runtime"?: ({
+                      "active": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "dead_letter": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "deferred": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "scheduled": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "size_bytes": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "total": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "transfer": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "transfer_dead_letter": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                    }) | null;
+                    "solace_semp"?: ({
+                      "dead_message_queue"?: string;
+                      "depth": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                    }) | null;
+                    "state": string;
+                  }>;
+                  "scope_hash": string;
+                  "source_id": string;
+                  "source_revision": number;
+                  "started_at": string;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
+                "points": Array<{
+                  "active_runtime_ms"?: (number) | null;
+                  "dataset_id"?: string;
+                  "derivation"?: Array<{
+                    "algorithm": string;
+                    "bucket_seconds"?: number;
+                    "operation": string;
+                  }>;
+                  "dimensions"?: Record<string, string>;
+                  "host"?: string;
+                  "input_kind"?: string;
+                  "kind": string;
+                  "metric_name": string;
+                  "metric_version"?: string;
+                  "population"?: string;
+                  "project_id": string;
+                  "quality": string;
+                  "received_at"?: string;
+                  "relative_time_ms"?: (number) | null;
+                  "run_id"?: string;
+                  "scenario_id"?: string;
+                  "schema_version": string;
+                  "service"?: string;
+                  "source": string;
+                  "timestamp_utc": string;
+                  "unit"?: string;
+                  "value"?: (number) | null;
+                }>;
+                "version": number;
+              };
+              "job_id": string;
+              "received_at": string;
+              "sequence": string;
+            }>;
+            "version": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleMonitorSources": {
     parameters: {
       "path": {
@@ -72292,7 +72756,50 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": Array<{
+            "collector_id": string;
+            "collector_public_key"?: string;
+            "credential_ref"?: string;
+            "destination"?: string;
+            "enabled": boolean;
+            "id": string;
+            "interval_seconds": number;
+            "management_identity"?: ({
+              "credential_ref"?: string;
+              "credential_version"?: string;
+              "mode": string;
+              "policy_revision": string;
+              "principal": string;
+            }) | null;
+            "management_scope"?: ({
+              "entities": Array<{
+                "kafka"?: ({
+                  "group": string;
+                  "partition": number;
+                  "topic": string;
+                }) | null;
+                "service_bus"?: ({
+                  "queue"?: string;
+                  "subscription"?: string;
+                  "topic"?: string;
+                }) | null;
+                "solace"?: ({
+                  "queue"?: string;
+                  "topic_endpoint"?: string;
+                  "vpn": string;
+                }) | null;
+              }>;
+              "isolation"?: string;
+              "kind": string;
+              "provider": string;
+              "version": number;
+            }) | null;
+            "name": string;
+            "pack": string;
+            "project_id": string;
+            "revision": number;
+            "service"?: string;
+          }>;
         };
       };
       "204": {
@@ -72324,6 +72831,11 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -72352,6 +72864,36 @@ export interface operations {
           "enabled"?: boolean;
           "id"?: string;
           "interval_seconds"?: number;
+          "management_identity"?: ({
+            "credential_ref"?: string;
+            "credential_version"?: string;
+            "mode"?: string;
+            "policy_revision"?: string;
+            "principal"?: string;
+          }) | null;
+          "management_scope"?: ({
+            "entities"?: Array<{
+              "kafka"?: ({
+                "group"?: string;
+                "partition"?: number;
+                "topic"?: string;
+              }) | null;
+              "service_bus"?: ({
+                "queue"?: string;
+                "subscription"?: string;
+                "topic"?: string;
+              }) | null;
+              "solace"?: ({
+                "queue"?: string;
+                "topic_endpoint"?: string;
+                "vpn"?: string;
+              }) | null;
+            }>;
+            "isolation"?: string;
+            "kind"?: string;
+            "provider"?: string;
+            "version"?: number;
+          }) | null;
           "name"?: string;
           "pack"?: string;
           "project_id"?: string;
@@ -72363,7 +72905,50 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "collector_id": string;
+            "collector_public_key"?: string;
+            "credential_ref"?: string;
+            "destination"?: string;
+            "enabled": boolean;
+            "id": string;
+            "interval_seconds": number;
+            "management_identity"?: ({
+              "credential_ref"?: string;
+              "credential_version"?: string;
+              "mode": string;
+              "policy_revision": string;
+              "principal": string;
+            }) | null;
+            "management_scope"?: ({
+              "entities": Array<{
+                "kafka"?: ({
+                  "group": string;
+                  "partition": number;
+                  "topic": string;
+                }) | null;
+                "service_bus"?: ({
+                  "queue"?: string;
+                  "subscription"?: string;
+                  "topic"?: string;
+                }) | null;
+                "solace"?: ({
+                  "queue"?: string;
+                  "topic_endpoint"?: string;
+                  "vpn": string;
+                }) | null;
+              }>;
+              "isolation"?: string;
+              "kind": string;
+              "provider": string;
+              "version": number;
+            }) | null;
+            "name": string;
+            "pack": string;
+            "project_id": string;
+            "revision": number;
+            "service"?: string;
+          }) | null;
         };
       };
       "204": {
@@ -72395,6 +72980,11 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -72424,6 +73014,36 @@ export interface operations {
           "enabled"?: boolean;
           "id"?: string;
           "interval_seconds"?: number;
+          "management_identity"?: ({
+            "credential_ref"?: string;
+            "credential_version"?: string;
+            "mode"?: string;
+            "policy_revision"?: string;
+            "principal"?: string;
+          }) | null;
+          "management_scope"?: ({
+            "entities"?: Array<{
+              "kafka"?: ({
+                "group"?: string;
+                "partition"?: number;
+                "topic"?: string;
+              }) | null;
+              "service_bus"?: ({
+                "queue"?: string;
+                "subscription"?: string;
+                "topic"?: string;
+              }) | null;
+              "solace"?: ({
+                "queue"?: string;
+                "topic_endpoint"?: string;
+                "vpn"?: string;
+              }) | null;
+            }>;
+            "isolation"?: string;
+            "kind"?: string;
+            "provider"?: string;
+            "version"?: number;
+          }) | null;
           "name"?: string;
           "pack"?: string;
           "project_id"?: string;
@@ -72435,7 +73055,50 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "collector_id": string;
+            "collector_public_key"?: string;
+            "credential_ref"?: string;
+            "destination"?: string;
+            "enabled": boolean;
+            "id": string;
+            "interval_seconds": number;
+            "management_identity"?: ({
+              "credential_ref"?: string;
+              "credential_version"?: string;
+              "mode": string;
+              "policy_revision": string;
+              "principal": string;
+            }) | null;
+            "management_scope"?: ({
+              "entities": Array<{
+                "kafka"?: ({
+                  "group": string;
+                  "partition": number;
+                  "topic": string;
+                }) | null;
+                "service_bus"?: ({
+                  "queue"?: string;
+                  "subscription"?: string;
+                  "topic"?: string;
+                }) | null;
+                "solace"?: ({
+                  "queue"?: string;
+                  "topic_endpoint"?: string;
+                  "vpn": string;
+                }) | null;
+              }>;
+              "isolation"?: string;
+              "kind": string;
+              "provider": string;
+              "version": number;
+            }) | null;
+            "name": string;
+            "pack": string;
+            "project_id": string;
+            "revision": number;
+            "service"?: string;
+          }) | null;
         };
       };
       "204": {
@@ -72467,6 +73130,11 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -72496,6 +73164,36 @@ export interface operations {
           "enabled"?: boolean;
           "id"?: string;
           "interval_seconds"?: number;
+          "management_identity"?: ({
+            "credential_ref"?: string;
+            "credential_version"?: string;
+            "mode"?: string;
+            "policy_revision"?: string;
+            "principal"?: string;
+          }) | null;
+          "management_scope"?: ({
+            "entities"?: Array<{
+              "kafka"?: ({
+                "group"?: string;
+                "partition"?: number;
+                "topic"?: string;
+              }) | null;
+              "service_bus"?: ({
+                "queue"?: string;
+                "subscription"?: string;
+                "topic"?: string;
+              }) | null;
+              "solace"?: ({
+                "queue"?: string;
+                "topic_endpoint"?: string;
+                "vpn"?: string;
+              }) | null;
+            }>;
+            "isolation"?: string;
+            "kind"?: string;
+            "provider"?: string;
+            "version"?: number;
+          }) | null;
           "name"?: string;
           "pack"?: string;
           "project_id"?: string;
@@ -72507,7 +73205,50 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "collector_id": string;
+            "collector_public_key"?: string;
+            "credential_ref"?: string;
+            "destination"?: string;
+            "enabled": boolean;
+            "id": string;
+            "interval_seconds": number;
+            "management_identity"?: ({
+              "credential_ref"?: string;
+              "credential_version"?: string;
+              "mode": string;
+              "policy_revision": string;
+              "principal": string;
+            }) | null;
+            "management_scope"?: ({
+              "entities": Array<{
+                "kafka"?: ({
+                  "group": string;
+                  "partition": number;
+                  "topic": string;
+                }) | null;
+                "service_bus"?: ({
+                  "queue"?: string;
+                  "subscription"?: string;
+                  "topic"?: string;
+                }) | null;
+                "solace"?: ({
+                  "queue"?: string;
+                  "topic_endpoint"?: string;
+                  "vpn": string;
+                }) | null;
+              }>;
+              "isolation"?: string;
+              "kind": string;
+              "provider": string;
+              "version": number;
+            }) | null;
+            "name": string;
+            "pack": string;
+            "project_id": string;
+            "revision": number;
+            "service"?: string;
+          }) | null;
         };
       };
       "204": {
@@ -72539,6 +73280,11 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -79097,7 +79843,17 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -99731,10 +100487,147 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "evidence_version"?: number;
           "job"?: {
             "payload"?: string;
             "signature"?: string;
           };
+          "management_grant"?: ({
+            "payload"?: string;
+            "signature"?: string;
+          }) | null;
+          "messaging_management"?: ({
+            "captured_at"?: string;
+            "collector_id"?: string;
+            "collector_instance_id"?: string;
+            "completed_at"?: string;
+            "elapsed_ms"?: (number) | null;
+            "expected_entities"?: number;
+            "generation"?: string;
+            "identity_hash"?: string;
+            "incomplete"?: boolean;
+            "interval_seconds"?: number;
+            "inventory_complete"?: boolean;
+            "kind"?: string;
+            "missed_ticks"?: string;
+            "page_count"?: number;
+            "poll_id"?: string;
+            "poll_sequence"?: string;
+            "provider"?: string;
+            "request_count"?: number;
+            "rows"?: Array<{
+              "entity"?: {
+                "kafka"?: ({
+                  "group"?: string;
+                  "partition"?: number;
+                  "topic"?: string;
+                }) | null;
+                "service_bus"?: ({
+                  "queue"?: string;
+                  "subscription"?: string;
+                  "topic"?: string;
+                }) | null;
+                "solace"?: ({
+                  "queue"?: string;
+                  "topic_endpoint"?: string;
+                  "vpn"?: string;
+                }) | null;
+              };
+              "kafka_offsets"?: ({
+                "committed_leader_epoch"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "committed_next"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "high_watermark_next"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "last_stable_next"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "leader_epoch"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "log_end_next"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "topic_id"?: string;
+              }) | null;
+              "observation_age_ms"?: (number) | null;
+              "observed_at"?: (string) | null;
+              "reason"?: string;
+              "service_bus_runtime"?: ({
+                "active"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "dead_letter"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "deferred"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "scheduled"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "size_bytes"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "total"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "transfer"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "transfer_dead_letter"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+              }) | null;
+              "solace_semp"?: ({
+                "dead_message_queue"?: string;
+                "depth"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+              }) | null;
+              "state"?: string;
+            }>;
+            "scope_hash"?: string;
+            "source_id"?: string;
+            "source_revision"?: number;
+            "started_at"?: string;
+            "unavailable_reason"?: string;
+            "version"?: number;
+          }) | null;
           "points"?: Array<{
             "active_runtime_ms"?: (number) | null;
             "dataset_id"?: string;
@@ -99778,6 +100671,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "403": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -99794,6 +100692,11 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -131984,6 +132887,9 @@ export interface paths {
   "/api/v1/monitoring/collectors/{id}/jobs": {
     "get": operations["handlePollRunMonitorJobs"];
   };
+  "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/management-polls": {
+    "post": operations["handleManagementPoll"];
+  };
   "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/samples": {
     "post": operations["handleRunMonitorSamples"];
   };
@@ -132092,6 +132998,10 @@ export interface paths {
   "/api/v1/projects/{id}/monitor-sources/{source_id}": {
     "put": operations["handleMonitorSources_4"];
     "delete": operations["handleMonitorSources_3"];
+  };
+  "/api/v1/projects/{id}/monitor-sources/{source_id}/management-state": {
+    "get": operations["handleManagementCollectionState"];
+    "post": operations["handleManagementCollectionState_2"];
   };
   "/api/v1/projects/{id}/monitoring/dynatrace-connections": {
     "get": operations["handleListDynatraceConnections"];
@@ -132942,6 +133852,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/metrics": {
     "get": operations["handleGetMetrics"];
+  };
+  "/api/v1/tests/{id}/monitor-management": {
+    "get": operations["handleMonitorManagement"];
   };
   "/api/v1/tests/{id}/monitor-series": {
     "get": operations["handleRunMonitorSeries"];

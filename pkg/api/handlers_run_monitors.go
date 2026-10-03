@@ -60,7 +60,9 @@ func (s *Server) handleMonitorSources(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 500, "cannot load monitor sources")
 			return
 		}
-		writeJSON(w, 200, sources)
+		var sourcesResponse []storage.MonitorSource
+		sourcesResponse = sources
+		writeJSON(w, 200, sourcesResponse)
 		return
 	}
 	if r.Method == http.MethodDelete {
@@ -104,6 +106,32 @@ func (s *Server) handleMonitorSources(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if source.ManagementScope != nil || source.ManagementIdentity != nil {
+		if !messagingManagementEnabled(project) {
+			writeError(w, 409, "messaging management is not enabled for this project")
+			return
+		}
+		if source.ManagementIdentity == nil {
+			writeError(w, 400, "management identity is required")
+			return
+		}
+		if source.ManagementIdentity.CredentialRef != "" {
+			key, keyErr := monitorSigningKey()
+			if keyErr != nil {
+				writeError(w, 503, "management signing unavailable")
+				return
+			}
+			_, version, resolveErr := s.resolveManagementCredential(r.Context(), source, key)
+			if resolveErr != nil {
+				writeError(w, 400, "management credential unavailable or incompatible")
+				return
+			}
+			source.ManagementIdentity.CredentialVersion = version
+		} else if source.ManagementIdentity.CredentialVersion != "" {
+			writeError(w, 400, "management credential version requires a credential reference")
+			return
+		}
+	}
 	saved, err := store.SaveMonitorSource(source, source.Revision)
 	if err != nil {
 		status := 400
@@ -114,7 +142,9 @@ func (s *Server) handleMonitorSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAuditEvent(r, "monitor.source.save", "success", "monitor_source", saved.ID, project, map[string]any{"revision": saved.Revision})
-	writeJSON(w, 200, saved)
+	var savedSourceResponse *storage.MonitorSource
+	savedSourceResponse = saved
+	writeJSON(w, 200, savedSourceResponse)
 }
 
 func (s *Server) handleMonitorBindings(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +227,22 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 			writeError(w, 403, "collector signing-key readiness rejected")
 			return
 		}
-		if err := store.SaveCollectorRunReadiness(c.ProjectID, c.ID, ad.Packs, ad.Destinations, now); err != nil {
+		var readinessErr error
+		if ad.InstanceID != "" {
+			managementStore, ok := s.store.(storage.ManagementMonitorStore)
+			if !ok {
+				writeError(w, 501, "management collector readiness storage unavailable")
+				return
+			}
+			scopes := []storage.ManagementReadinessScope{}
+			for _, scope := range ad.ManagementScopes {
+				scopes = append(scopes, storage.ManagementReadinessScope{ScopeHash: scope.ScopeHash, IdentityHash: scope.IdentityHash})
+			}
+			readinessErr = managementStore.SaveCollectorManagementReadiness(c.ProjectID, c.ID, storage.CollectorManagementReadiness{InstanceID: ad.InstanceID, Capabilities: ad.Capabilities, Scopes: scopes, Packs: ad.Packs, Destinations: ad.Destinations, SeenAt: now})
+		} else {
+			readinessErr = store.SaveCollectorRunReadiness(c.ProjectID, c.ID, ad.Packs, ad.Destinations, now)
+		}
+		if readinessErr != nil {
 			writeError(w, 400, "invalid collector readiness")
 			return
 		}
@@ -214,6 +259,15 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 			lease = j.ExpiresAt
 		}
 		job := collectoragent.RunJob{ID: j.ID, ProjectID: j.ProjectID, RunID: j.RunID, ScenarioID: j.ScenarioID, CollectorID: j.Source.CollectorID, SourceID: j.Source.ID, SourceRevision: j.Source.Revision, Pack: j.Source.Pack, Destination: j.Source.Destination, IntervalSeconds: j.Source.IntervalSeconds, StartedAt: j.StartedAt, ExpiresAt: j.ExpiresAt, LeaseExpiresAt: lease, NextSequence: j.NextSequence}
+		if j.Source.ManagementScope != nil && j.Source.ManagementIdentity != nil {
+			scopeHash, scopeErr := j.Source.ManagementScope.Hash()
+			identityHash, identityErr := j.Source.ManagementIdentity.Fingerprint()
+			if scopeErr != nil || identityErr != nil {
+				writeError(w, 503, "invalid management source snapshot")
+				return
+			}
+			job.Management = &collectoragent.ManagementJob{Version: 1, ScopeHash: scopeHash, IdentityHash: identityHash}
+		}
 		if j.Source.CredentialRef != "" {
 			// Return a signed unavailable job instead of failing the collector's
 			// entire poll. Healthy overlapping runs must continue collecting.
@@ -248,16 +302,17 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 	if c == nil {
 		return
 	}
-	store := s.runMonitorStore(w, c.ProjectID)
-	if store == nil {
-		return
-	}
-	if !s.requireAnalysisBackend(w) {
-		return
-	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var batch collectoragent.RunSampleBatch
 	if !decodeJSONBody(w, r, &batch) {
+		return
+	}
+	if batch.EvidenceVersion != 0 || batch.MessagingManagement != nil || batch.ManagementGrant != nil {
+		s.handleManagementSamples(w, r, c, batch)
+		return
+	}
+	store := s.runMonitorStore(w, c.ProjectID)
+	if store == nil || !s.requireAnalysisBackend(w) {
 		return
 	}
 	key, err := monitorSigningKey()
@@ -274,6 +329,10 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 	job, err := store.GetRunMonitorJob(c.ProjectID, grant.ID)
 	if err != nil {
 		writeError(w, 404, "monitor job unavailable")
+		return
+	}
+	if job.Source.ManagementScope != nil || grant.Management != nil {
+		writeError(w, 400, "management source requires typed poll evidence")
 		return
 	}
 	if job.Source.CollectorID != c.ID || job.Source.ID != grant.SourceID || job.Source.Revision != grant.SourceRevision || job.RunID != grant.RunID || job.ScenarioID != grant.ScenarioID || len(batch.Points) < 1 || len(batch.Points) > 512 || batch.Sequence < 0 || batch.Sequence > grant.NextSequence {
@@ -397,17 +456,12 @@ func (s *Server) handleRunMonitorSeries(w http.ResponseWriter, r *http.Request) 
 	}
 	points := []analysis.MetricPoint{}
 	for _, receipt := range receipts {
-		body, err := readMonitorArtifact(r.Context(), receipt.ArtifactKey, receipt.Digest)
+		evidence, err := readMonitorEvidence(r.Context(), project, r.PathValue("id"), receipt)
 		if err != nil {
 			writeError(w, 503, "monitor evidence unavailable or corrupt")
 			return
 		}
-		var batch []analysis.MetricPoint
-		if json.Unmarshal(body, &batch) != nil {
-			writeError(w, 503, "invalid monitor evidence")
-			return
-		}
-		for _, p := range batch {
+		for _, p := range evidence.Points {
 			if p.MetricName != metric || p.Source != source || !matchesAnalysisDimensions(p, selection) || (!from.IsZero() && p.TimestampUTC.Before(from)) || (!to.IsZero() && p.TimestampUTC.After(to)) {
 				continue
 			}

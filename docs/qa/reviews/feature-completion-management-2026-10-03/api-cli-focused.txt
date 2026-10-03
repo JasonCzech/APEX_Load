@@ -1,0 +1,2 @@
+ok  	github.com/jasonczech/apexload/pkg/api	3.582s
+ok  	github.com/jasonczech/apexload/cmd/apexctl	0.798s

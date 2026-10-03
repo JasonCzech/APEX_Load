@@ -21,15 +21,16 @@ import (
 // AdapterTarget is a local operator approval. A signed job cannot add a remote
 // identity, executable, driver, command, query, or credential destination.
 type AdapterTarget struct {
-	Cloud           *CloudQuery `json:"cloud,omitempty"`
-	Pack            string      `json:"pack"`
-	Destination     string      `json:"destination"`
-	HostKey         string      `json:"host_key,omitempty"`
-	JavaExecutable  string      `json:"java_executable,omitempty"`
-	HelperClassPath string      `json:"helper_class_path,omitempty"`
-	QueryPack       string      `json:"query_pack,omitempty"`
-	TLSCAFile       string      `json:"tls_ca_file,omitempty"`
-	JVMTrustStore   string      `json:"jvm_trust_store,omitempty"`
+	Management      *ManagementTarget `json:"management,omitempty"`
+	Cloud           *CloudQuery       `json:"cloud,omitempty"`
+	Pack            string            `json:"pack"`
+	Destination     string            `json:"destination"`
+	HostKey         string            `json:"host_key,omitempty"`
+	JavaExecutable  string            `json:"java_executable,omitempty"`
+	HelperClassPath string            `json:"helper_class_path,omitempty"`
+	QueryPack       string            `json:"query_pack,omitempty"`
+	TLSCAFile       string            `json:"tls_ca_file,omitempty"`
+	JVMTrustStore   string            `json:"jvm_trust_store,omitempty"`
 }
 
 func LoadAdapterTargets(path string) ([]AdapterTarget, error) {
@@ -110,8 +111,11 @@ func (a *Agent) approvedDestinations() []string {
 		destinations = append(destinations, a.cfg.PrometheusURL)
 	}
 	for _, target := range a.cfg.AdapterTargets {
+		if target.Management != nil && (!hasConfiguredPack(a.cfg.Packs, target.Pack) || a.management == nil || a.management.observers[target.Pack] == nil) {
+			continue
+		}
 		destination := target.Destination
-		if target.Pack == "ssh-linux" || target.Pack == "jmx" || target.Pack == "jdbc" {
+		if target.Pack == "ssh-linux" || target.Pack == "jmx" || target.Pack == "jdbc" || target.Management != nil && target.Management.Identity.CredentialRef != "" {
 			if key, err := ecdh.X25519().NewPrivateKey(a.cfg.CredentialPrivateKey); err == nil {
 				destination += "#" + base64.StdEncoding.EncodeToString(key.PublicKey().Bytes())
 			}
@@ -128,6 +132,26 @@ func validateAdapterTargets(cfg Config) error {
 	}
 	seen := map[string]bool{}
 	for _, target := range cfg.AdapterTargets {
+		if target.Management != nil || isManagementPack(target.Pack) {
+			endpoint, err := url.Parse(target.Destination)
+			if err != nil || endpoint.Scheme != "management" || !managementAlias(endpoint.Hostname()) || endpoint.Host != endpoint.Hostname() || endpoint.Port() != "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.ForceQuery || strings.Contains(target.Destination, "#") || endpoint.Fragment != "" || endpoint.Path != "" || endpoint.Opaque != "" || !managementLabel(target.Destination, 2048) {
+				return errors.New("management destination must be a public alias")
+			}
+			if seen[target.Pack+"\x00"+target.Destination] {
+				return errors.New("duplicate adapter destination")
+			}
+			seen[target.Pack+"\x00"+target.Destination] = true
+			if err := validateManagementTarget(target.Pack, target.Management); err != nil {
+				return err
+			}
+			if cfg.SpoolDirectory == "" || len(cfg.ControllerPublicKey) == 0 {
+				return errors.New("management targets require signed jobs and durable spool")
+			}
+			if target.Management.Identity.CredentialRef != "" && len(cfg.CredentialPrivateKey) != 32 {
+				return errors.New("management secret identity requires collector encryption key")
+			}
+			continue
+		}
 		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[target.Pack]
 		endpoint, err := url.Parse(target.Destination)
 		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && endpoint.Path != "" {

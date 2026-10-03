@@ -82,6 +82,10 @@ type RunArchiveManifest struct {
 	DynatraceEvidenceFile             string                             `json:"dynatrace_evidence_file,omitempty"`
 	MonitorEvidenceFile               string                             `json:"monitor_evidence_file,omitempty"`
 	MonitorEvidenceCount              int64                              `json:"monitor_evidence_count,omitempty"`
+	MonitorManagementFile             string                             `json:"monitor_management_file,omitempty"`
+	MonitorManagementVersion          uint32                             `json:"monitor_management_version,omitempty"`
+	MonitorManagementSnapshotCount    int64                              `json:"monitor_management_snapshot_count,omitempty"`
+	MonitorManagementRowCount         int64                              `json:"monitor_management_row_count,omitempty"`
 	MonitorCoverage                   []RunMonitorCoverage               `json:"monitor_coverage,omitempty"`
 	Artifacts                         []RunArchiveArtifact               `json:"artifacts,omitempty"`
 	TransactionCount                  int64                              `json:"transaction_count"`

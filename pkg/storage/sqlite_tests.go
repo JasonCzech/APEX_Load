@@ -1558,6 +1558,10 @@ func (s *SQLiteStore) DeleteTest(id string) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := lockMonitorTestProjectTx(tx, id); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+
 	if s.db.dialect == storeDialectPostgres {
 		var timeslotID *string
 		if err := tx.QueryRow(`SELECT timeslot_id FROM tests WHERE id = ?`, id).Scan(&timeslotID); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -1603,6 +1607,12 @@ func (s *SQLiteStore) DeleteTestIfLeaseHeld(id, leaseName, leaseOwnerID string) 
 	}
 	if !held {
 		return LeaseFencedDeleteFenced, nil
+	}
+	if err := lockMonitorTestProjectTx(tx, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return LeaseFencedDeleteMissing, nil
+		}
+		return LeaseFencedDeleteFenced, err
 	}
 	if s.db.dialect == storeDialectPostgres {
 		var timeslotID *string
@@ -2417,4 +2427,15 @@ func marshalNullableJSON(value any) (any, error) {
 		return nil, nil
 	}
 	return string(encoded), nil
+}
+
+// Monitor publication and deletion share the project fence before locking the
+// test/reservation rows, so a deleted run cannot regain a fresh receipt.
+func lockMonitorTestProjectTx(tx *storeTx, id string) error {
+	var project string
+	if err := tx.QueryRow(`SELECT COALESCE(project_id,'') FROM tests WHERE id=?`, id).Scan(&project); err != nil {
+		return err
+	}
+	_, err := lockProjectForOwnedMutation(tx, project)
+	return err
 }

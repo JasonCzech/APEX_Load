@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"sort"
 	"time"
@@ -127,12 +126,12 @@ func (s *Server) handleDependencyEvidence(w http.ResponseWriter, r *http.Request
 				writeError(w, 422, "dependency evidence exceeds the byte limit")
 				return
 			}
-			var points []analysis.MetricPoint
-			if json.Unmarshal(body, &points) != nil {
+			evidenceBody, err := decodeMonitorEvidenceBody(body, project, r.PathValue("id"), receipt)
+			if err != nil {
 				writeError(w, 503, "invalid monitor artifact")
 				return
 			}
-			for _, point := range points {
+			for _, point := range evidenceBody.Points {
 				if point.Source == job.Source.ID && !point.TimestampUTC.Before(from) && !point.TimestampUTC.After(current.Timestamp) {
 					if monitorPointQuality(point, receipt.ReceivedAt) == analysis.QualityValid {
 						names[point.MetricName] = true

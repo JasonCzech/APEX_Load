@@ -2581,9 +2581,19 @@
       "operationId": "handlePollRunMonitorJobs",
       "summary": "Poll Run Monitor Jobs",
       "category": "Operations \u0026 Observability",
-      "public": true,
-      "authenticated": false,
-      "access": "Public (no authentication required)"
+      "public": false,
+      "authenticated": true,
+      "access": "Collector token via Bearer or X-APEXLoad-API-Key"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/management-polls",
+      "operationId": "handleManagementPoll",
+      "summary": "Management Poll",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Collector token via Bearer or X-APEXLoad-API-Key"
     },
     {
       "method": "POST",
@@ -2591,9 +2601,9 @@
       "operationId": "handleRunMonitorSamples",
       "summary": "Run Monitor Samples",
       "category": "Operations \u0026 Observability",
-      "public": true,
-      "authenticated": false,
-      "access": "Public (no authentication required)"
+      "public": false,
+      "authenticated": true,
+      "access": "Collector token via Bearer or X-APEXLoad-API-Key"
     },
     {
       "method": "GET",
@@ -3050,6 +3060,26 @@
       "path": "/api/v1/projects/{id}/monitor-sources/{source_id}",
       "operationId": "handleMonitorSources_4",
       "summary": "Monitor Sources",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitor-sources/{source_id}/management-state",
+      "operationId": "handleManagementCollectionState",
+      "summary": "Management Collection State",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitor-sources/{source_id}/management-state",
+      "operationId": "handleManagementCollectionState_2",
+      "summary": "Management Collection State",
       "category": "Workspace \u0026 Assets",
       "public": false,
       "authenticated": true,
@@ -6194,6 +6224,16 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/monitor-management",
+      "operationId": "handleMonitorManagement",
+      "summary": "Monitor Management",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
     },
     {
       "method": "GET",

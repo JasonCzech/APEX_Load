@@ -140,6 +140,7 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		applyDataPoolImportExportContract(route, &contract)
 		applyGenericImportBatchContract(route, &contract)
 		applyEnterpriseArchiveCollectionContract(route, &contract)
+		applyMonitorManagementContract(route, &contract, typeDefinitions)
 		contracts[route.Method+" "+route.Path] = contract
 	}
 	return contracts, nil
@@ -1433,6 +1434,9 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 		case "any", "interface{}":
 			return oasSchema{}
 		}
+		if completeBoundedEvidenceModel(currentPackage, value.Name) {
+			depth = 0
+		}
 		if depth > 8 {
 			additional := true
 			return oasSchema{Type: "object", Description: "Go type: " + value.Name, AdditionalProperties: &additional}
@@ -1510,7 +1514,7 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 				// These bounded evidence records sit inside deeply nested run
 				// responses. Resolve their complete contract with a fresh depth
 				// budget; retain the cycle guard and the general model limit.
-				if pkg.Name == "protocol" && (value.Sel.Name == "GRPCDiagnostics" || value.Sel.Name == "GRPCSummary" || value.Sel.Name == "WebSocketDiagnostics" || value.Sel.Name == "WebSocketSummary" || value.Sel.Name == "ServerTelemetry") {
+				if completeBoundedEvidenceModel(pkg.Name, value.Sel.Name) {
 					modelDepth = 0
 				}
 				schema := openAPISchemaForASTTypeInPackage(definition, typeDefinitions, visiting, modelDepth, pkg.Name)

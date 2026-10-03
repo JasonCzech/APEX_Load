@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -226,15 +225,11 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 				break
 			}
 			for _, receipt := range receipts {
-				body, err := readMonitorArtifact(ctx, receipt.ArtifactKey, receipt.Digest)
+				evidence, err := readMonitorEvidence(ctx, project, selection.RunID, receipt)
 				if err != nil {
-					return nil, "", errors.New("monitor artifact unavailable")
+					return nil, "", errors.New("monitor evidence unavailable or corrupt")
 				}
-				var batch []analysis.MetricPoint
-				if json.Unmarshal(body, &batch) != nil {
-					return nil, "", errors.New("invalid monitor evidence")
-				}
-				for _, p := range batch {
+				for _, p := range evidence.Points {
 					if p.Source == selection.SourceID && p.MetricName == selection.Metric && matchesAnalysisDimensions(p, selection) {
 						p.ReceivedAt = receipt.ReceivedAt
 						p.Quality = monitorPointQuality(p, receipt.ReceivedAt)

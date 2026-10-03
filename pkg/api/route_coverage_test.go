@@ -21,9 +21,12 @@ var intentionallyPublicAPIRoutes = map[string]bool{
 	// heartbeat; tokens identify the collector and project, never a browser user.
 	"GET /api/v1/monitoring/collectors/{id}/jobs":                   true,
 	"POST /api/v1/monitoring/collectors/{id}/jobs/{job_id}/samples": true,
-	"GET /api/v1/auth/login":                                        true,
-	"POST /api/v1/auth/login":                                       true,
-	"GET /api/v1/auth/callback":                                     true,
+	// Poll authority requires the collector bearer token in-handler, then exact
+	// immutable source/job/instance ownership; browser roles grant no authority.
+	"POST /api/v1/monitoring/collectors/{id}/jobs/{job_id}/management-polls": true,
+	"GET /api/v1/auth/login":    true,
+	"POST /api/v1/auth/login":   true,
+	"GET /api/v1/auth/callback": true,
 	// Desktop callback finalization is anonymous at the HTTP auth layer but is
 	// protected by the per-tab capability and one-time server-side OAuth state.
 	"POST /api/v1/auth/callback":        true,

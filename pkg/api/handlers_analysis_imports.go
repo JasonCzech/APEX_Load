@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/analysis"
 	analytics "github.com/jasonczech/apexload/pkg/analysis/duckdb"
+	"github.com/jasonczech/apexload/pkg/collectoragent"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -122,22 +123,26 @@ func (s *Server) loadAnalysisImportMetadata(w http.ResponseWriter, r *http.Reque
 // of runtime capture and query availability. A catalog entry alone does not
 // advertise a generator, dataset or provider capability.
 type AnalysisCapabilitiesResponse struct {
-	DiagnosticsEnabled bool                   `json:"diagnostics_enabled"`
-	MonitoringEnabled  bool                   `json:"monitoring_enabled"`
-	PreparationEnabled bool                   `json:"preparation_enabled"`
-	NativeParquet      bool                   `json:"native_parquet"`
-	Enabled            bool                   `json:"enabled"`
-	ChunkBytes         int64                  `json:"chunk_bytes"`
-	MaxImportBytes     int64                  `json:"max_import_bytes"`
-	HeavyJobs          int                    `json:"heavy_jobs"`
-	Threads            int                    `json:"threads"`
-	MemoryLimit        string                 `json:"memory_limit"`
-	MetricCatalog      analysis.MetricCatalog `json:"metric_catalog"`
+	DiagnosticsEnabled         bool                   `json:"diagnostics_enabled"`
+	MessagingManagementEnabled bool                   `json:"messaging_management_enabled"`
+	MessagingManagementVersion uint32                 `json:"messaging_management_version"`
+	MessagingManagementPacks   []string               `json:"messaging_management_packs"`
+	MonitoringEnabled          bool                   `json:"monitoring_enabled"`
+	PreparationEnabled         bool                   `json:"preparation_enabled"`
+	NativeParquet              bool                   `json:"native_parquet"`
+	Enabled                    bool                   `json:"enabled"`
+	ChunkBytes                 int64                  `json:"chunk_bytes"`
+	MaxImportBytes             int64                  `json:"max_import_bytes"`
+	HeavyJobs                  int                    `json:"heavy_jobs"`
+	Threads                    int                    `json:"threads"`
+	MemoryLimit                string                 `json:"memory_limit"`
+	MetricCatalog              analysis.MetricCatalog `json:"metric_catalog"`
 }
 
 func (s *Server) handleAnalysisCapabilities(w http.ResponseWriter, r *http.Request) {
 	project := r.URL.Query().Get("project_id")
 	writeJSON(w, 200, AnalysisCapabilitiesResponse{
+		MessagingManagementEnabled: messagingManagementEnabled(project), MessagingManagementVersion: analysis.MessagingManagementVersion, MessagingManagementPacks: collectoragent.ManagementPacks(),
 		DiagnosticsEnabled: diagnosticsProjectEnabled(project), MonitoringEnabled: runMonitoringEnabled(project), PreparationEnabled: preparationProjectEnabled(project),
 		NativeParquet: analytics.Available(), Enabled: analysisProjectEnabled(project), ChunkBytes: analysisUploadChunk, MaxImportBytes: analysisImportMaxBytes,
 		HeavyJobs: 1, Threads: 2, MemoryLimit: "2GiB", MetricCatalog: analysis.Catalog(),

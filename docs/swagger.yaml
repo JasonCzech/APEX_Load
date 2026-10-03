@@ -27,6 +27,16 @@ components:
       type: apiKey
       name: X-APEXLoad-Bridge-Token
       in: header
+    collectorApiKeyAuth:
+      description: The same collector-scoped capability token in the API-key header; a project API key does not authorize this channel.
+      type: apiKey
+      name: X-APEXLoad-API-Key
+      in: header
+    collectorBearerAuth:
+      description: Collector-scoped token issued by collector enrollment; browser sessions and user/service-account bearer credentials do not authorize this channel.
+      type: http
+      scheme: bearer
+      bearerFormat: Collector capability token
     oidcSession:
       type: apiKey
       name: apexload_auth_session
@@ -8748,6 +8758,12 @@ paths:
                                 format: int64
                               job_id:
                                 type: string
+                              management_incomplete_snapshots:
+                                type: integer
+                                format: int64
+                              management_snapshots:
+                                type: integer
+                                format: int64
                               reason:
                                 type: string
                               source_id:
@@ -8762,6 +8778,17 @@ paths:
                           format: int64
                         monitor_evidence_file:
                           type: string
+                        monitor_management_file:
+                          type: string
+                        monitor_management_row_count:
+                          type: integer
+                          format: int64
+                        monitor_management_snapshot_count:
+                          type: integer
+                          format: int64
+                        monitor_management_version:
+                          type: integer
+                          format: int64
                         provenance:
                           type: object
                           properties:
@@ -18207,6 +18234,15 @@ paths:
                     format: int64
                   memory_limit:
                     type: string
+                  messaging_management_enabled:
+                    type: boolean
+                  messaging_management_packs:
+                    type: array
+                    items:
+                      type: string
+                  messaging_management_version:
+                    type: integer
+                    format: int64
                   metric_catalog:
                     type: object
                     properties:
@@ -18419,6 +18455,9 @@ paths:
                   - heavy_jobs
                   - max_import_bytes
                   - memory_limit
+                  - messaging_management_enabled
+                  - messaging_management_packs
+                  - messaging_management_version
                   - metric_catalog
                   - monitoring_enabled
                   - native_parquet
@@ -49343,6 +49382,9 @@ paths:
         default:
           description: Additional handler-defined response.
       x-roles: Collector token via Bearer or X-APEXLoad-API-Key
+      security:
+        - collectorBearerAuth: []
+        - collectorApiKeyAuth: []
       parameters:
         - name: id
           in: path
@@ -49355,7 +49397,7 @@ paths:
   /api/v1/monitoring/collectors/{id}/jobs:
     get:
       summary: Poll Run Monitor Jobs
-      description: '**Access Control:** Public (no authentication required)'
+      description: '**Access Control:** Collector token via Bearer or X-APEXLoad-API-Key'
       operationId: handlePollRunMonitorJobs
       responses:
         "200":
@@ -49380,8 +49422,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "403":
-          description: Forbidden
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "501":
+          description: Not Implemented
           content:
             application/json:
               schema:
@@ -49394,8 +49448,10 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Public (no authentication required)
-      security: []
+      x-roles: Collector token via Bearer or X-APEXLoad-API-Key
+      security:
+        - collectorBearerAuth: []
+        - collectorApiKeyAuth: []
       parameters:
         - name: id
           in: path
@@ -49411,10 +49467,119 @@ paths:
       tags:
         - Monitoring
       x-handler: handlePollRunMonitorJobs
+  /api/v1/monitoring/collectors/{id}/jobs/{job_id}/management-polls:
+    post:
+      summary: Management Poll
+      description: '**Access Control:** Collector token via Bearer or X-APEXLoad-API-Key'
+      operationId: handleManagementPoll
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                completion_confirmed:
+                  type: boolean
+                generation:
+                  type: string
+                instance_id:
+                  type: string
+                nonce:
+                  type: string
+                operation:
+                  type: string
+                poll_id:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  grant:
+                    type: object
+                    properties:
+                      payload:
+                        type: string
+                      signature:
+                        type: string
+                    required:
+                      - payload
+                      - signature
+                    nullable: true
+                  state:
+                    type: string
+                required:
+                  - state
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "501":
+          description: Not Implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: Collector token via Bearer or X-APEXLoad-API-Key
+      security:
+        - collectorBearerAuth: []
+        - collectorApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
+      x-handler: handleManagementPoll
   /api/v1/monitoring/collectors/{id}/jobs/{job_id}/samples:
     post:
       summary: Run Monitor Samples
-      description: '**Access Control:** Public (no authentication required)'
+      description: '**Access Control:** Collector token via Bearer or X-APEXLoad-API-Key'
       operationId: handleRunMonitorSamples
       requestBody:
         required: true
@@ -49423,6 +49588,9 @@ paths:
             schema:
               type: object
               properties:
+                evidence_version:
+                  type: integer
+                  format: int64
                 job:
                   type: object
                   properties:
@@ -49430,6 +49598,294 @@ paths:
                       type: string
                     signature:
                       type: string
+                management_grant:
+                  type: object
+                  properties:
+                    payload:
+                      type: string
+                    signature:
+                      type: string
+                  nullable: true
+                messaging_management:
+                  type: object
+                  properties:
+                    captured_at:
+                      type: string
+                      format: date-time
+                    collector_id:
+                      type: string
+                    collector_instance_id:
+                      type: string
+                    completed_at:
+                      type: string
+                      format: date-time
+                    elapsed_ms:
+                      type: integer
+                      format: int64
+                      nullable: true
+                    expected_entities:
+                      type: integer
+                      format: int64
+                    generation:
+                      type: string
+                    identity_hash:
+                      type: string
+                    incomplete:
+                      type: boolean
+                    interval_seconds:
+                      type: integer
+                      format: int64
+                    inventory_complete:
+                      type: boolean
+                    kind:
+                      type: string
+                    missed_ticks:
+                      type: string
+                    page_count:
+                      type: integer
+                      format: int64
+                    poll_id:
+                      type: string
+                    poll_sequence:
+                      type: string
+                    provider:
+                      type: string
+                    request_count:
+                      type: integer
+                      format: int64
+                    rows:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          entity:
+                            type: object
+                            properties:
+                              kafka:
+                                type: object
+                                properties:
+                                  group:
+                                    type: string
+                                  partition:
+                                    type: integer
+                                    format: int64
+                                  topic:
+                                    type: string
+                                nullable: true
+                              service_bus:
+                                type: object
+                                properties:
+                                  queue:
+                                    type: string
+                                  subscription:
+                                    type: string
+                                  topic:
+                                    type: string
+                                nullable: true
+                              solace:
+                                type: object
+                                properties:
+                                  queue:
+                                    type: string
+                                  topic_endpoint:
+                                    type: string
+                                  vpn:
+                                    type: string
+                                nullable: true
+                          kafka_offsets:
+                            type: object
+                            properties:
+                              committed_leader_epoch:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                              committed_next:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                              high_watermark_next:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                              last_stable_next:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                              leader_epoch:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                              log_end_next:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                              topic_id:
+                                type: string
+                            nullable: true
+                          observation_age_ms:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          observed_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          reason:
+                            type: string
+                          service_bus_runtime:
+                            type: object
+                            properties:
+                              active:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                              dead_letter:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                              deferred:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                              scheduled:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                              size_bytes:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                              total:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                              transfer:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                              transfer_dead_letter:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                            nullable: true
+                          solace_semp:
+                            type: object
+                            properties:
+                              dead_message_queue:
+                                type: string
+                              depth:
+                                type: object
+                                properties:
+                                  reason:
+                                    type: string
+                                  state:
+                                    type: string
+                                  value:
+                                    type: string
+                                    nullable: true
+                            nullable: true
+                          state:
+                            type: string
+                    scope_hash:
+                      type: string
+                    source_id:
+                      type: string
+                    source_revision:
+                      type: integer
+                      format: int64
+                    started_at:
+                      type: string
+                      format: date-time
+                    unavailable_reason:
+                      type: string
+                    version:
+                      type: integer
+                      format: int64
+                  nullable: true
                 points:
                   type: array
                   items:
@@ -49516,8 +49972,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "403":
-          description: Forbidden
+          description: Authenticated principal lacks the required role or service-account scope.
           content:
             application/json:
               schema:
@@ -49540,6 +50002,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "501":
+          description: Not Implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -49548,8 +50016,10 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Public (no authentication required)
-      security: []
+      x-roles: Collector token via Bearer or X-APEXLoad-API-Key
+      security:
+        - collectorBearerAuth: []
+        - collectorApiKeyAuth: []
       parameters:
         - name: id
           in: path
@@ -54222,11 +54692,127 @@ paths:
       operationId: handleMonitorSources
       responses:
         "200":
-          description: OK
+          description: Project monitor sources, including immutable approved management scope and identity when configured.
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: array
+                items:
+                  type: object
+                  properties:
+                    collector_id:
+                      type: string
+                    collector_public_key:
+                      type: string
+                    credential_ref:
+                      type: string
+                    destination:
+                      type: string
+                    enabled:
+                      type: boolean
+                    id:
+                      type: string
+                    interval_seconds:
+                      type: integer
+                      format: int64
+                    management_identity:
+                      type: object
+                      properties:
+                        credential_ref:
+                          type: string
+                        credential_version:
+                          type: string
+                        mode:
+                          type: string
+                        policy_revision:
+                          type: string
+                        principal:
+                          type: string
+                      required:
+                        - mode
+                        - policy_revision
+                        - principal
+                      nullable: true
+                    management_scope:
+                      type: object
+                      properties:
+                        entities:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              kafka:
+                                type: object
+                                properties:
+                                  group:
+                                    type: string
+                                  partition:
+                                    type: integer
+                                    format: int64
+                                  topic:
+                                    type: string
+                                required:
+                                  - group
+                                  - partition
+                                  - topic
+                                nullable: true
+                              service_bus:
+                                type: object
+                                properties:
+                                  queue:
+                                    type: string
+                                  subscription:
+                                    type: string
+                                  topic:
+                                    type: string
+                                nullable: true
+                              solace:
+                                type: object
+                                properties:
+                                  queue:
+                                    type: string
+                                  topic_endpoint:
+                                    type: string
+                                  vpn:
+                                    type: string
+                                required:
+                                  - vpn
+                                nullable: true
+                        isolation:
+                          type: string
+                        kind:
+                          type: string
+                        provider:
+                          type: string
+                        version:
+                          type: integer
+                          format: int64
+                      required:
+                        - entities
+                        - kind
+                        - provider
+                        - version
+                      nullable: true
+                    name:
+                      type: string
+                    pack:
+                      type: string
+                    project_id:
+                      type: string
+                    revision:
+                      type: integer
+                      format: int64
+                    service:
+                      type: string
+                  required:
+                    - collector_id
+                    - enabled
+                    - id
+                    - interval_seconds
+                    - name
+                    - pack
+                    - project_id
+                    - revision
         "204":
           description: No Content
         "400":
@@ -54261,6 +54847,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:
@@ -54309,6 +54901,69 @@ paths:
                 interval_seconds:
                   type: integer
                   format: int64
+                management_identity:
+                  type: object
+                  properties:
+                    credential_ref:
+                      type: string
+                    credential_version:
+                      type: string
+                    mode:
+                      type: string
+                    policy_revision:
+                      type: string
+                    principal:
+                      type: string
+                  nullable: true
+                management_scope:
+                  type: object
+                  properties:
+                    entities:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          kafka:
+                            type: object
+                            properties:
+                              group:
+                                type: string
+                              partition:
+                                type: integer
+                                format: int64
+                              topic:
+                                type: string
+                            nullable: true
+                          service_bus:
+                            type: object
+                            properties:
+                              queue:
+                                type: string
+                              subscription:
+                                type: string
+                              topic:
+                                type: string
+                            nullable: true
+                          solace:
+                            type: object
+                            properties:
+                              queue:
+                                type: string
+                              topic_endpoint:
+                                type: string
+                              vpn:
+                                type: string
+                            nullable: true
+                    isolation:
+                      type: string
+                    kind:
+                      type: string
+                    provider:
+                      type: string
+                    version:
+                      type: integer
+                      format: int64
+                  nullable: true
                 name:
                   type: string
                 pack:
@@ -54326,7 +54981,122 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  collector_id:
+                    type: string
+                  collector_public_key:
+                    type: string
+                  credential_ref:
+                    type: string
+                  destination:
+                    type: string
+                  enabled:
+                    type: boolean
+                  id:
+                    type: string
+                  interval_seconds:
+                    type: integer
+                    format: int64
+                  management_identity:
+                    type: object
+                    properties:
+                      credential_ref:
+                        type: string
+                      credential_version:
+                        type: string
+                      mode:
+                        type: string
+                      policy_revision:
+                        type: string
+                      principal:
+                        type: string
+                    required:
+                      - mode
+                      - policy_revision
+                      - principal
+                    nullable: true
+                  management_scope:
+                    type: object
+                    properties:
+                      entities:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            kafka:
+                              type: object
+                              properties:
+                                group:
+                                  type: string
+                                partition:
+                                  type: integer
+                                  format: int64
+                                topic:
+                                  type: string
+                              required:
+                                - group
+                                - partition
+                                - topic
+                              nullable: true
+                            service_bus:
+                              type: object
+                              properties:
+                                queue:
+                                  type: string
+                                subscription:
+                                  type: string
+                                topic:
+                                  type: string
+                              nullable: true
+                            solace:
+                              type: object
+                              properties:
+                                queue:
+                                  type: string
+                                topic_endpoint:
+                                  type: string
+                                vpn:
+                                  type: string
+                              required:
+                                - vpn
+                              nullable: true
+                      isolation:
+                        type: string
+                      kind:
+                        type: string
+                      provider:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - entities
+                      - kind
+                      - provider
+                      - version
+                    nullable: true
+                  name:
+                    type: string
+                  pack:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                  service:
+                    type: string
+                required:
+                  - collector_id
+                  - enabled
+                  - id
+                  - interval_seconds
+                  - name
+                  - pack
+                  - project_id
+                  - revision
+                nullable: true
         "204":
           description: No Content
         "400":
@@ -54361,6 +55131,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:
@@ -54410,6 +55186,69 @@ paths:
                 interval_seconds:
                   type: integer
                   format: int64
+                management_identity:
+                  type: object
+                  properties:
+                    credential_ref:
+                      type: string
+                    credential_version:
+                      type: string
+                    mode:
+                      type: string
+                    policy_revision:
+                      type: string
+                    principal:
+                      type: string
+                  nullable: true
+                management_scope:
+                  type: object
+                  properties:
+                    entities:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          kafka:
+                            type: object
+                            properties:
+                              group:
+                                type: string
+                              partition:
+                                type: integer
+                                format: int64
+                              topic:
+                                type: string
+                            nullable: true
+                          service_bus:
+                            type: object
+                            properties:
+                              queue:
+                                type: string
+                              subscription:
+                                type: string
+                              topic:
+                                type: string
+                            nullable: true
+                          solace:
+                            type: object
+                            properties:
+                              queue:
+                                type: string
+                              topic_endpoint:
+                                type: string
+                              vpn:
+                                type: string
+                            nullable: true
+                    isolation:
+                      type: string
+                    kind:
+                      type: string
+                    provider:
+                      type: string
+                    version:
+                      type: integer
+                      format: int64
+                  nullable: true
                 name:
                   type: string
                 pack:
@@ -54427,7 +55266,122 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  collector_id:
+                    type: string
+                  collector_public_key:
+                    type: string
+                  credential_ref:
+                    type: string
+                  destination:
+                    type: string
+                  enabled:
+                    type: boolean
+                  id:
+                    type: string
+                  interval_seconds:
+                    type: integer
+                    format: int64
+                  management_identity:
+                    type: object
+                    properties:
+                      credential_ref:
+                        type: string
+                      credential_version:
+                        type: string
+                      mode:
+                        type: string
+                      policy_revision:
+                        type: string
+                      principal:
+                        type: string
+                    required:
+                      - mode
+                      - policy_revision
+                      - principal
+                    nullable: true
+                  management_scope:
+                    type: object
+                    properties:
+                      entities:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            kafka:
+                              type: object
+                              properties:
+                                group:
+                                  type: string
+                                partition:
+                                  type: integer
+                                  format: int64
+                                topic:
+                                  type: string
+                              required:
+                                - group
+                                - partition
+                                - topic
+                              nullable: true
+                            service_bus:
+                              type: object
+                              properties:
+                                queue:
+                                  type: string
+                                subscription:
+                                  type: string
+                                topic:
+                                  type: string
+                              nullable: true
+                            solace:
+                              type: object
+                              properties:
+                                queue:
+                                  type: string
+                                topic_endpoint:
+                                  type: string
+                                vpn:
+                                  type: string
+                              required:
+                                - vpn
+                              nullable: true
+                      isolation:
+                        type: string
+                      kind:
+                        type: string
+                      provider:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - entities
+                      - kind
+                      - provider
+                      - version
+                    nullable: true
+                  name:
+                    type: string
+                  pack:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                  service:
+                    type: string
+                required:
+                  - collector_id
+                  - enabled
+                  - id
+                  - interval_seconds
+                  - name
+                  - pack
+                  - project_id
+                  - revision
+                nullable: true
         "204":
           description: No Content
         "400":
@@ -54462,6 +55416,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:
@@ -54515,6 +55475,69 @@ paths:
                 interval_seconds:
                   type: integer
                   format: int64
+                management_identity:
+                  type: object
+                  properties:
+                    credential_ref:
+                      type: string
+                    credential_version:
+                      type: string
+                    mode:
+                      type: string
+                    policy_revision:
+                      type: string
+                    principal:
+                      type: string
+                  nullable: true
+                management_scope:
+                  type: object
+                  properties:
+                    entities:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          kafka:
+                            type: object
+                            properties:
+                              group:
+                                type: string
+                              partition:
+                                type: integer
+                                format: int64
+                              topic:
+                                type: string
+                            nullable: true
+                          service_bus:
+                            type: object
+                            properties:
+                              queue:
+                                type: string
+                              subscription:
+                                type: string
+                              topic:
+                                type: string
+                            nullable: true
+                          solace:
+                            type: object
+                            properties:
+                              queue:
+                                type: string
+                              topic_endpoint:
+                                type: string
+                              vpn:
+                                type: string
+                            nullable: true
+                    isolation:
+                      type: string
+                    kind:
+                      type: string
+                    provider:
+                      type: string
+                    version:
+                      type: integer
+                      format: int64
+                  nullable: true
                 name:
                   type: string
                 pack:
@@ -54532,7 +55555,122 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  collector_id:
+                    type: string
+                  collector_public_key:
+                    type: string
+                  credential_ref:
+                    type: string
+                  destination:
+                    type: string
+                  enabled:
+                    type: boolean
+                  id:
+                    type: string
+                  interval_seconds:
+                    type: integer
+                    format: int64
+                  management_identity:
+                    type: object
+                    properties:
+                      credential_ref:
+                        type: string
+                      credential_version:
+                        type: string
+                      mode:
+                        type: string
+                      policy_revision:
+                        type: string
+                      principal:
+                        type: string
+                    required:
+                      - mode
+                      - policy_revision
+                      - principal
+                    nullable: true
+                  management_scope:
+                    type: object
+                    properties:
+                      entities:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            kafka:
+                              type: object
+                              properties:
+                                group:
+                                  type: string
+                                partition:
+                                  type: integer
+                                  format: int64
+                                topic:
+                                  type: string
+                              required:
+                                - group
+                                - partition
+                                - topic
+                              nullable: true
+                            service_bus:
+                              type: object
+                              properties:
+                                queue:
+                                  type: string
+                                subscription:
+                                  type: string
+                                topic:
+                                  type: string
+                              nullable: true
+                            solace:
+                              type: object
+                              properties:
+                                queue:
+                                  type: string
+                                topic_endpoint:
+                                  type: string
+                                vpn:
+                                  type: string
+                              required:
+                                - vpn
+                              nullable: true
+                      isolation:
+                        type: string
+                      kind:
+                        type: string
+                      provider:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - entities
+                      - kind
+                      - provider
+                      - version
+                    nullable: true
+                  name:
+                    type: string
+                  pack:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                  service:
+                    type: string
+                required:
+                  - collector_id
+                  - enabled
+                  - id
+                  - interval_seconds
+                  - name
+                  - pack
+                  - project_id
+                  - revision
+                nullable: true
         "204":
           description: No Content
         "400":
@@ -54571,6 +55709,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
@@ -54594,6 +55738,214 @@ paths:
       tags:
         - Projects
       x-handler: handleMonitorSources
+  /api/v1/projects/{id}/monitor-sources/{source_id}/management-state:
+    get:
+      summary: Management Collection State
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleManagementCollectionState
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collector_id:
+                    type: string
+                  collector_instance_id:
+                    type: string
+                  deadline:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  generation:
+                    type: string
+                  grant_issued:
+                    type: boolean
+                  poll_id:
+                    type: string
+                  poll_sequence:
+                    type: string
+                  source_revision:
+                    type: integer
+                    format: int64
+                  state:
+                    type: string
+                required:
+                  - grant_issued
+                  - state
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "501":
+          description: Not Implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: source_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleManagementCollectionState
+    post:
+      summary: Management Collection State
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleManagementCollectionState_2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                collector_id:
+                  type: string
+                collector_instance_id:
+                  type: string
+                generation:
+                  type: string
+                poll_id:
+                  type: string
+                process_stopped:
+                  type: boolean
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collector_id:
+                    type: string
+                  collector_instance_id:
+                    type: string
+                  deadline:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  generation:
+                    type: string
+                  grant_issued:
+                    type: boolean
+                  poll_id:
+                    type: string
+                  poll_sequence:
+                    type: string
+                  source_revision:
+                    type: integer
+                    format: int64
+                  state:
+                    type: string
+                required:
+                  - grant_issued
+                  - state
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "501":
+          description: Not Implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: source_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleManagementCollectionState
   /api/v1/projects/{id}/monitoring/dynatrace-connections:
     get:
       summary: List Dynatrace Connections
@@ -277874,6 +279226,12 @@ paths:
                           format: int64
                         job_id:
                           type: string
+                        management_incomplete_snapshots:
+                          type: integer
+                          format: int64
+                        management_snapshots:
+                          type: integer
+                          format: int64
                         reason:
                           type: string
                         source_id:
@@ -277895,6 +279253,17 @@ paths:
                     format: int64
                   monitor_evidence_file:
                     type: string
+                  monitor_management_file:
+                    type: string
+                  monitor_management_row_count:
+                    type: integer
+                    format: int64
+                  monitor_management_snapshot_count:
+                    type: integer
+                    format: int64
+                  monitor_management_version:
+                    type: integer
+                    format: int64
                   provenance:
                     type: object
                     properties:
@@ -288403,6 +289772,12 @@ paths:
                               format: int64
                             job_id:
                               type: string
+                            management_incomplete_snapshots:
+                              type: integer
+                              format: int64
+                            management_snapshots:
+                              type: integer
+                              format: int64
                             reason:
                               type: string
                             source_id:
@@ -288424,6 +289799,17 @@ paths:
                         format: int64
                       monitor_evidence_file:
                         type: string
+                      monitor_management_file:
+                        type: string
+                      monitor_management_row_count:
+                        type: integer
+                        format: int64
+                      monitor_management_snapshot_count:
+                        type: integer
+                        format: int64
+                      monitor_management_version:
+                        type: integer
+                        format: int64
                       provenance:
                         type: object
                         properties:
@@ -328483,6 +329869,610 @@ paths:
       tags:
         - Tests
       x-handler: handleGetMetrics
+  /api/v1/tests/{id}/monitor-management:
+    get:
+      summary: Monitor Management
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleMonitorManagement
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cursor:
+                    type: string
+                  entity_id:
+                    type: string
+                  has_more:
+                    type: boolean
+                  records:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        evidence:
+                          type: object
+                          properties:
+                            attribution:
+                              type: object
+                              properties:
+                                collector_id:
+                                  type: string
+                                job_id:
+                                  type: string
+                                project_id:
+                                  type: string
+                                received_at:
+                                  type: string
+                                  format: date-time
+                                run_id:
+                                  type: string
+                                scenario_id:
+                                  type: string
+                                source_id:
+                                  type: string
+                                source_revision:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - collector_id
+                                - job_id
+                                - project_id
+                                - received_at
+                                - run_id
+                                - source_id
+                                - source_revision
+                              nullable: true
+                            messaging_management:
+                              type: object
+                              properties:
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                collector_id:
+                                  type: string
+                                collector_instance_id:
+                                  type: string
+                                completed_at:
+                                  type: string
+                                  format: date-time
+                                elapsed_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                expected_entities:
+                                  type: integer
+                                  format: int64
+                                generation:
+                                  type: string
+                                identity_hash:
+                                  type: string
+                                incomplete:
+                                  type: boolean
+                                interval_seconds:
+                                  type: integer
+                                  format: int64
+                                inventory_complete:
+                                  type: boolean
+                                kind:
+                                  type: string
+                                missed_ticks:
+                                  type: string
+                                page_count:
+                                  type: integer
+                                  format: int64
+                                poll_id:
+                                  type: string
+                                poll_sequence:
+                                  type: string
+                                provider:
+                                  type: string
+                                request_count:
+                                  type: integer
+                                  format: int64
+                                rows:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      entity:
+                                        type: object
+                                        properties:
+                                          kafka:
+                                            type: object
+                                            properties:
+                                              group:
+                                                type: string
+                                              partition:
+                                                type: integer
+                                                format: int64
+                                              topic:
+                                                type: string
+                                            required:
+                                              - group
+                                              - partition
+                                              - topic
+                                            nullable: true
+                                          service_bus:
+                                            type: object
+                                            properties:
+                                              queue:
+                                                type: string
+                                              subscription:
+                                                type: string
+                                              topic:
+                                                type: string
+                                            nullable: true
+                                          solace:
+                                            type: object
+                                            properties:
+                                              queue:
+                                                type: string
+                                              topic_endpoint:
+                                                type: string
+                                              vpn:
+                                                type: string
+                                            required:
+                                              - vpn
+                                            nullable: true
+                                      kafka_offsets:
+                                        type: object
+                                        properties:
+                                          committed_leader_epoch:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                          committed_next:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                          high_watermark_next:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                          last_stable_next:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                          leader_epoch:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                          log_end_next:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                          topic_id:
+                                            type: string
+                                        required:
+                                          - committed_leader_epoch
+                                          - committed_next
+                                          - high_watermark_next
+                                          - last_stable_next
+                                          - leader_epoch
+                                          - log_end_next
+                                        nullable: true
+                                      observation_age_ms:
+                                        type: integer
+                                        format: int64
+                                        nullable: true
+                                      observed_at:
+                                        type: string
+                                        format: date-time
+                                        nullable: true
+                                      reason:
+                                        type: string
+                                      service_bus_runtime:
+                                        type: object
+                                        properties:
+                                          active:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                          dead_letter:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                          deferred:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                          scheduled:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                          size_bytes:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                          total:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                          transfer:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                          transfer_dead_letter:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                        required:
+                                          - active
+                                          - dead_letter
+                                          - deferred
+                                          - scheduled
+                                          - size_bytes
+                                          - total
+                                          - transfer
+                                          - transfer_dead_letter
+                                        nullable: true
+                                      solace_semp:
+                                        type: object
+                                        properties:
+                                          dead_message_queue:
+                                            type: string
+                                          depth:
+                                            type: object
+                                            properties:
+                                              reason:
+                                                type: string
+                                              state:
+                                                type: string
+                                              value:
+                                                type: string
+                                                nullable: true
+                                            required:
+                                              - state
+                                        required:
+                                          - depth
+                                        nullable: true
+                                      state:
+                                        type: string
+                                    required:
+                                      - entity
+                                      - state
+                                scope_hash:
+                                  type: string
+                                source_id:
+                                  type: string
+                                source_revision:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                unavailable_reason:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - captured_at
+                                - collector_id
+                                - collector_instance_id
+                                - completed_at
+                                - expected_entities
+                                - generation
+                                - identity_hash
+                                - incomplete
+                                - interval_seconds
+                                - inventory_complete
+                                - kind
+                                - missed_ticks
+                                - page_count
+                                - poll_id
+                                - poll_sequence
+                                - provider
+                                - request_count
+                                - rows
+                                - scope_hash
+                                - source_id
+                                - source_revision
+                                - started_at
+                                - version
+                              nullable: true
+                            points:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  active_runtime_ms:
+                                    type: integer
+                                    format: int64
+                                    nullable: true
+                                  dataset_id:
+                                    type: string
+                                  derivation:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        algorithm:
+                                          type: string
+                                        bucket_seconds:
+                                          type: integer
+                                          format: int64
+                                        operation:
+                                          type: string
+                                      required:
+                                        - algorithm
+                                        - operation
+                                  dimensions:
+                                    type: object
+                                    additionalProperties:
+                                      type: string
+                                  host:
+                                    type: string
+                                  input_kind:
+                                    type: string
+                                  kind:
+                                    type: string
+                                  metric_name:
+                                    type: string
+                                  metric_version:
+                                    type: string
+                                  population:
+                                    type: string
+                                  project_id:
+                                    type: string
+                                  quality:
+                                    type: string
+                                  received_at:
+                                    type: string
+                                    format: date-time
+                                  relative_time_ms:
+                                    type: integer
+                                    format: int64
+                                    nullable: true
+                                  run_id:
+                                    type: string
+                                  scenario_id:
+                                    type: string
+                                  schema_version:
+                                    type: string
+                                  service:
+                                    type: string
+                                  source:
+                                    type: string
+                                  timestamp_utc:
+                                    type: string
+                                    format: date-time
+                                  unit:
+                                    type: string
+                                  value:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                required:
+                                  - kind
+                                  - metric_name
+                                  - project_id
+                                  - quality
+                                  - schema_version
+                                  - source
+                                  - timestamp_utc
+                            version:
+                              type: integer
+                              format: int64
+                          required:
+                            - points
+                            - version
+                        job_id:
+                          type: string
+                        received_at:
+                          type: string
+                          format: date-time
+                        sequence:
+                          type: string
+                      required:
+                        - evidence
+                        - job_id
+                        - received_at
+                        - sequence
+                  version:
+                    type: integer
+                    format: int64
+                required:
+                  - has_more
+                  - records
+                  - version
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "501":
+          description: Not Implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: entity_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: from
+          in: query
+          description: Optional UTC capture-time boundary; from is inclusive and to is exclusive.
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          description: 'Maximum receipts scanned per page: 1 through 100, default 20. Response bytes are bounded to 2 MiB; continue using the returned opaque cursor.'
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: source_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: to
+          in: query
+          description: Optional UTC capture-time boundary; from is inclusive and to is exclusive.
+          required: false
+          schema:
+            type: string
+            format: date-time
+      tags:
+        - Tests
+      x-handler: handleMonitorManagement
   /api/v1/tests/{id}/monitor-series:
     get:
       summary: Run Monitor Series

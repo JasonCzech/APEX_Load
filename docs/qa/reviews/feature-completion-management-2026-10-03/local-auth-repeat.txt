@@ -1,0 +1,14 @@
+Building controller...
+Starting controller on http://127.0.0.1:18888 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.njaKf140gU)...
+Controller healthy.
+Starting controller on http://127.0.0.1:18888 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.njaKf140gU)...
+Controller healthy.
+Auth profile verified: local-auth.
+
+Running 1 test using 1 worker
+
+(node:13555) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/workflow-local-auth.spec.ts:7:1 › [U01] sign in, build workspace, import, edit, launch, stop and retrieve the same run (22.4s)
+
+  1 passed (24.4s)

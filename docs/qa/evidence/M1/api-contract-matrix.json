@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 651,
-    "public": 24,
-    "protected": 627,
-    "rbac": 625,
-    "handler_authenticated": 2,
+    "routes": 655,
+    "public": 22,
+    "protected": 633,
+    "rbac": 628,
+    "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 651,
+    "green": 655,
     "partial": 0,
     "missing": 0
   },
@@ -5744,26 +5744,39 @@
       "method": "GET",
       "path": "/api/v1/monitoring/collectors/{id}/jobs",
       "operation_id": "handlePollRunMonitorJobs",
-      "public": true,
-      "authenticated": false,
+      "public": false,
+      "authenticated": true,
       "state": "GREEN",
-      "enforcement": "public",
-      "access": "Public (no authentication required)",
-      "anonymous_assertion": "route is registered without HTTP auth middleware",
-      "role_assertion": "not applicable to public route",
+      "enforcement": "handler-specific capability authentication",
+      "access": "Collector token via Bearer or X-APEXLoad-API-Key",
+      "anonymous_assertion": "HTTP 401 without collector token; HTTP 200 with valid collector bearer token",
+      "role_assertion": "not applicable; route authenticates a collector capability rather than an RBAC role",
+      "allowed_roles": {}
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/management-polls",
+      "operation_id": "handleManagementPoll",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "handler-specific capability authentication",
+      "access": "Collector token via Bearer or X-APEXLoad-API-Key",
+      "anonymous_assertion": "HTTP 401 without collector token; HTTP 200 with valid collector bearer token",
+      "role_assertion": "not applicable; route authenticates a collector capability rather than an RBAC role",
       "allowed_roles": {}
     },
     {
       "method": "POST",
       "path": "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/samples",
       "operation_id": "handleRunMonitorSamples",
-      "public": true,
-      "authenticated": false,
+      "public": false,
+      "authenticated": true,
       "state": "GREEN",
-      "enforcement": "public",
-      "access": "Public (no authentication required)",
-      "anonymous_assertion": "route is registered without HTTP auth middleware",
-      "role_assertion": "not applicable to public route",
+      "enforcement": "handler-specific capability authentication",
+      "access": "Collector token via Bearer or X-APEXLoad-API-Key",
+      "anonymous_assertion": "HTTP 401 without collector token; HTTP 200 with valid collector bearer token",
+      "role_assertion": "not applicable; route authenticates a collector capability rather than an RBAC role",
       "allowed_roles": {}
     },
     {
@@ -6890,6 +6903,56 @@
       "method": "PUT",
       "path": "/api/v1/projects/{id}/monitor-sources/{source_id}",
       "operation_id": "handleMonitorSources_4",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitor-sources/{source_id}/management-state",
+      "operation_id": "handleManagementCollectionState",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitor-sources/{source_id}/management-state",
+      "operation_id": "handleManagementCollectionState_2",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -14533,6 +14596,33 @@
       "state": "GREEN",
       "enforcement": "authentication middleware and access catalog",
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/monitor-management",
+      "operation_id": "handleMonitorManagement",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read",
       "anonymous_assertion": "HTTP 401 before handler",
       "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
       "allowed_roles": {

@@ -57,6 +57,8 @@ type Config struct {
 
 // Agent pushes heartbeats to the controller on an interval.
 type Agent struct {
+	management     *managementScheduler
+	spoolBudget    *collectorSpoolBudget
 	cfg            Config
 	client         *http.Client
 	pendingBatches map[string]*RunSampleBatch
@@ -115,6 +117,10 @@ func New(cfg Config) (*Agent, error) {
 	cfg.CredentialPrivateKey = append([]byte(nil), cfg.CredentialPrivateKey...)
 	cfg.AdapterTargets = append([]AdapterTarget(nil), cfg.AdapterTargets...)
 	for i := range cfg.AdapterTargets {
+		if cfg.AdapterTargets[i].Management != nil {
+			cloned := cfg.AdapterTargets[i].Management.clone()
+			cfg.AdapterTargets[i].Management = &cloned
+		}
 		if cfg.AdapterTargets[i].Cloud != nil {
 			body, _ := json.Marshal(cfg.AdapterTargets[i].Cloud)
 			var cloned CloudQuery
@@ -157,6 +163,15 @@ func New(cfg Config) (*Agent, error) {
 				return nil, fmt.Errorf("prometheus pack requires prometheus URL")
 			}
 		default:
+			if isManagementPack(pack) && registeredManagementObservers()[pack] != nil {
+				approved := false
+				for _, target := range cfg.AdapterTargets {
+					approved = approved || target.Pack == pack && target.Management != nil
+				}
+				if approved {
+					continue
+				}
+			}
 			return nil, fmt.Errorf("unsupported metric pack %q", pack)
 		}
 	}
@@ -184,7 +199,15 @@ func New(cfg Config) (*Agent, error) {
 		cfg.OTLP.requireJournal = true
 	}
 	cfg.ControllerPublicKey = append(ed25519.PublicKey(nil), cfg.ControllerPublicKey...)
-	return &Agent{cfg: cfg, client: client, pendingBatches: map[string]*RunSampleBatch{}, nextCollection: map[string]time.Time{}}, nil
+	agent := &Agent{cfg: cfg, client: client, pendingBatches: map[string]*RunSampleBatch{}, nextCollection: map[string]time.Time{}, spoolBudget: newCollectorSpoolBudget()}
+	if len(cfg.ControllerPublicKey) > 0 {
+		instance, err := newCollectorInstanceID()
+		if err != nil {
+			return nil, err
+		}
+		agent.management = newManagementScheduler(agent, instance)
+	}
+	return agent, nil
 }
 
 // validateControllerURL rejects a controller URL that would leak the collector
@@ -234,6 +257,12 @@ func (a *Agent) Run(ctx context.Context) error {
 	defer unlock()
 	if err = a.loadSpool(); err != nil {
 		return err
+	}
+	if a.management != nil {
+		if err = a.management.loadSpool(); err != nil {
+			return err
+		}
+		defer a.management.close()
 	}
 	if a.cfg.OTLP != nil {
 		if err := a.cfg.OTLP.openJournal(a.spoolPath() + ".otlp"); err != nil {

@@ -36,3 +36,30 @@ it('exposes credential enrollment only for remote adapters', async () => {
   await act(async () => { pack.value = 'otel-metrics'; pack.dispatchEvent(new Event('change', { bubbles: true })) })
   expect(container.textContent).not.toContain('Collector X25519 public key')
 })
+
+
+it('preserves an existing management pack and clears its identity when creating a new source or switching projects', async () => {
+  const scope = { version: 1, kind: 'kafka_offsets', provider: 'broker', isolation: 'read_uncommitted', entities: [{ kafka: { topic: 'orders', partition: 0, group: 'workers' } }] }
+  const source = { id: 'managed', project_id: 'a', name: 'Approved offsets', revision: 4, collector_id: 'collector', pack: 'kafka-offsets', interval_seconds: 10, enabled: true, destination: 'management://broker', management_scope: scope, management_identity: { mode: 'anonymous', principal: 'approved', policy_revision: 'v1' } }
+  request.mockImplementation(async (path: string) => {
+    if (path.includes('capabilities')) return { monitoring_enabled: true }
+    if (path.includes('collectors?')) return { collectors: [] }
+    if (path.includes('management-state')) return { state: 'unavailable' }
+    return path.includes('/projects/a/') ? [source] : []
+  })
+  const click = async (label: string) => act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === label)!.click())
+  await act(async () => root.render(<RunMonitorSources projectId="a" canManage />))
+  await click('Edit Approved offsets')
+  const pack = container.querySelectorAll('select')[1]
+  expect(pack.value).toBe('kafka-offsets')
+  expect(container.querySelector('input[type=url]')?.getAttribute('value')).toBe('management://broker')
+  await click('New source')
+  expect(pack.value).toBe('linux-hosts')
+  expect(container.textContent).not.toContain('Management collection ownership')
+  await click('Edit Approved offsets')
+  await act(async () => root.render(<RunMonitorSources projectId="b" canManage />))
+  expect(container.querySelector<HTMLInputElement>('input')?.value).toBe('')
+  expect(container.querySelectorAll('select')[1].value).toBe('linux-hosts')
+  expect(container.textContent).not.toContain('Approved offsets')
+  expect(container.textContent).not.toContain('Management collection ownership')
+})

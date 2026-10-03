@@ -21,6 +21,7 @@ import (
 // RunJob grants a short collection lease for one immutable run/source binding.
 // Destination is also checked against local operator configuration before I/O.
 type RunJob struct {
+	Management        *ManagementJob     `json:"management,omitempty"`
 	UnavailableReason string             `json:"unavailable_reason,omitempty"`
 	Credentials       *SealedCredentials `json:"credentials,omitempty"`
 	ID                string             `json:"id"`
@@ -45,9 +46,12 @@ type SignedRunJob struct {
 }
 
 type RunSampleBatch struct {
-	Job      SignedRunJob           `json:"job"`
-	Sequence int64                  `json:"sequence"`
-	Points   []analysis.MetricPoint `json:"points"`
+	EvidenceVersion     uint32                                `json:"evidence_version,omitempty"`
+	MessagingManagement *analysis.MessagingManagementSnapshot `json:"messaging_management,omitempty"`
+	ManagementGrant     *SignedManagementPoll                 `json:"management_grant,omitempty"`
+	Job                 SignedRunJob                          `json:"job"`
+	Sequence            int64                                 `json:"sequence"`
+	Points              []analysis.MetricPoint                `json:"points"`
 }
 
 func SignRunJob(job RunJob, key ed25519.PrivateKey) (SignedRunJob, error) {
@@ -79,6 +83,21 @@ func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, 
 	if (job.Pack == "cloudwatch" || job.Pack == "azure-monitor") && job.IntervalSeconds < 60 {
 		return RunJob{}, errors.New("cloud collection interval must be at least 60 seconds")
 	}
+	if job.Management != nil {
+		if !managementLabel(job.ID, 1024) {
+			return RunJob{}, errors.New("invalid management job identity")
+		}
+		for _, identity := range []string{job.ProjectID, job.RunID, job.CollectorID, job.SourceID} {
+			if !managementLabel(identity, 256) {
+				return RunJob{}, errors.New("invalid management job identity")
+			}
+		}
+		if job.Management.Version != 1 || !isManagementPack(job.Pack) || !managementHash(job.Management.ScopeHash) || !managementHash(job.Management.IdentityHash) || job.IntervalSeconds < 10 || job.Pack == "solace-semp" && job.IntervalSeconds < 30 {
+			return RunJob{}, errors.New("invalid management job approval")
+		}
+	} else if isManagementPack(job.Pack) {
+		return RunJob{}, errors.New("management job requires explicit versioned approval")
+	}
 	return job, nil
 }
 
@@ -93,6 +112,7 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 	now := time.Now().UTC()
 	active := map[string]bool{}
 	var failures []error
+	managementJobs := []SignedRunJob{}
 	for _, envelope := range signed {
 		err := func() error {
 			job, err := VerifyRunJob(envelope, a.cfg.ControllerPublicKey, a.cfg.CollectorID, now)
@@ -100,6 +120,10 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 				return err
 			}
 			active[job.ID] = true
+			if job.Management != nil {
+				managementJobs = append(managementJobs, envelope)
+				return nil
+			}
 			if job.UnavailableReason != "" {
 				return errors.New("monitor job is temporarily unavailable")
 			}
@@ -122,6 +146,14 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 				if until := a.nextCollection[job.ID]; now.Before(until) {
 					return nil
 				}
+				if err := a.spoolBudget.reserveFresh("legacy-active:"+job.ID, []string{job.ID}); err != nil {
+					return err
+				}
+				defer func() {
+					if a.pendingBatches[job.ID] == nil {
+						a.spoolBudget.release("legacy-active:" + job.ID)
+					}
+				}()
 				var points []analysis.MetricPoint
 				if adapterApproved {
 					// Cloud throttling and delayed/empty data must not turn the
@@ -271,6 +303,11 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 			delete(a.nextCollection, id)
 		}
 	}
+	if a.management != nil {
+		if err := a.management.update(ctx, managementJobs); err != nil {
+			failures = append(failures, err)
+		}
+	}
 	return errors.Join(append(failures, a.saveSpool())...)
 }
 
@@ -291,6 +328,11 @@ func (a *Agent) jobRequest(ctx context.Context, method, path string, body, resul
 	req.Header.Set("Content-Type", "application/json")
 	if path == "jobs" {
 		ad := RunJobReadiness{Packs: a.cfg.Packs, SigningKey: base64.StdEncoding.EncodeToString(a.cfg.ControllerPublicKey)}
+		if a.management != nil {
+			ad.InstanceID = a.management.instance
+			ad.Capabilities = []string{FeatureMessagingManagementEvidenceV1}
+			ad.ManagementScopes = a.management.readiness()
+		}
 		ad.Destinations = a.approvedDestinations()
 		payload, _ := json.Marshal(ad)
 		req.Header.Set("X-APEX-Monitor-Readiness", string(payload))
@@ -320,9 +362,12 @@ func (a *Agent) jobRequest(ctx context.Context, method, path string, body, resul
 }
 
 type RunJobReadiness struct {
-	Packs        []string `json:"packs"`
-	Destinations []string `json:"destinations"`
-	SigningKey   string   `json:"signing_key"`
+	InstanceID       string                     `json:"instance_id,omitempty"`
+	Capabilities     []string                   `json:"capabilities,omitempty"`
+	ManagementScopes []ManagementReadinessScope `json:"management_scopes,omitempty"`
+	Packs            []string                   `json:"packs"`
+	Destinations     []string                   `json:"destinations"`
+	SigningKey       string                     `json:"signing_key"`
 }
 
 func normalizeAdapterPoint(point *analysis.MetricPoint) error {

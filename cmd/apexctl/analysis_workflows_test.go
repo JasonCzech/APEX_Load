@@ -62,3 +62,26 @@ func TestWorkflowRejectsIncompleteCommandsWithoutNetwork(t *testing.T) {
 		}
 	}
 }
+
+func TestMonitorManagementQueryPreservesExactValues(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/tests/run/monitor-management" || r.URL.Query().Get("source_id") != "source" || r.URL.Query().Get("limit") != "3" || r.URL.Query().Get("cursor") != "opaque" {
+			t.Errorf("unexpected query %s", r.URL)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"records":[{"value":"9007199254740993"},{"value":"0"}],"has_more":false}`))
+	}))
+	defer server.Close()
+	var output bytes.Buffer
+	if err := executeWorkflowCommand(context.Background(), "monitor", []string{"management", "--id", "run", "--source-id", "source", "--limit", "3", "--cursor", "opaque", "--from", "2026-10-01T00:00:00Z", "--to", "2026-10-02T00:00:00Z", "--api", server.URL}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"9007199254740993"`) || !strings.Contains(output.String(), `"0"`) {
+		t.Fatalf("exact values lost: %s", output.String())
+	}
+	for _, args := range [][]string{{"management"}, {"management", "--id", "run", "--limit", "101"}, {"management", "--id", "run", "--from", "invalid"}, {"management", "--id", "run", "--from", "2026-10-02T00:00:00Z", "--to", "2026-10-01T00:00:00Z"}} {
+		if err := executeWorkflowCommand(context.Background(), "monitor", args, &bytes.Buffer{}); err == nil {
+			t.Fatalf("accepted invalid query %v", args)
+		}
+	}
+}

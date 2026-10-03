@@ -1,0 +1,3 @@
+
+> apexload-dashboard@0.1.0 typecheck
+> tsc --noEmit --pretty false -p tsconfig.json && tsc --noEmit --pretty false -p tsconfig.node.json

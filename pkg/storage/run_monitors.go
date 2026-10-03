@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/analysis"
 )
 
 // ErrMonitorRevision means a configuration changed after the caller read it.
@@ -34,6 +36,9 @@ func (s *SQLiteStore) SaveTestWithRunMonitors(test *TestRecord, leaseName, lease
 		if err != nil || !held {
 			return false, err
 		}
+	}
+	if _, err = lockProjectForOwnedMutation(tx, test.ProjectID); err != nil {
+		return false, err
 	}
 	if err = s.saveTestWithExecutor(tx, test); err != nil {
 		return false, err
@@ -59,6 +64,9 @@ func (s *SQLiteStore) SaveTestWithRunMonitors(test *TestRecord, leaseName, lease
 
 const MaxRunMonitorSources = 32
 
+// Assigned capacity includes immutable jobs committed before execution starts.
+const MaxCollectorAssignedMonitorJobs = 32
+
 type RunMonitorStore interface {
 	SaveCollectorRunReadiness(string, string, []string, []string, time.Time) error
 	SaveMonitorSource(MonitorSource, int64) (*MonitorSource, error)
@@ -78,18 +86,20 @@ type RunMonitorStore interface {
 // MonitorSource contains only public collection configuration. Credentials are
 // resolved on the assigned collector; bearer tokens must never enter this row.
 type MonitorSource struct {
-	CredentialRef      string `json:"credential_ref,omitempty"`
-	CollectorPublicKey string `json:"collector_public_key,omitempty"`
-	Service            string `json:"service,omitempty"`
-	ID                 string `json:"id"`
-	ProjectID          string `json:"project_id"`
-	Name               string `json:"name"`
-	Revision           int64  `json:"revision"`
-	CollectorID        string `json:"collector_id"`
-	Pack               string `json:"pack"`
-	Destination        string `json:"destination,omitempty"`
-	IntervalSeconds    int    `json:"interval_seconds"`
-	Enabled            bool   `json:"enabled"`
+	ManagementScope    *analysis.ManagementScope    `json:"management_scope,omitempty"`
+	ManagementIdentity *analysis.ManagementIdentity `json:"management_identity,omitempty"`
+	CredentialRef      string                       `json:"credential_ref,omitempty"`
+	CollectorPublicKey string                       `json:"collector_public_key,omitempty"`
+	Service            string                       `json:"service,omitempty"`
+	ID                 string                       `json:"id"`
+	ProjectID          string                       `json:"project_id"`
+	Name               string                       `json:"name"`
+	Revision           int64                        `json:"revision"`
+	CollectorID        string                       `json:"collector_id"`
+	Pack               string                       `json:"pack"`
+	Destination        string                       `json:"destination,omitempty"`
+	IntervalSeconds    int                          `json:"interval_seconds"`
+	Enabled            bool                         `json:"enabled"`
 }
 
 type MonitorBinding struct {
@@ -122,12 +132,17 @@ type RunMonitorJob struct {
 }
 
 type MonitorBatchReceipt struct {
-	JobID       string    `json:"job_id"`
-	Sequence    int64     `json:"sequence"`
-	Digest      string    `json:"digest"`
-	ArtifactKey string    `json:"artifact_key"`
-	SampleCount int       `json:"sample_count"`
-	ReceivedAt  time.Time `json:"received_at"`
+	EvidenceVersion         *int64    `json:"evidence_version,omitempty"`
+	ManagementSnapshotCount *int64    `json:"management_snapshot_count,omitempty"`
+	ManagementRowCount      *int64    `json:"management_row_count,omitempty"`
+	CollectionGeneration    *int64    `json:"collection_generation,omitempty,string"`
+	ManagementPollID        *string   `json:"management_poll_id,omitempty"`
+	JobID                   string    `json:"job_id"`
+	Sequence                int64     `json:"sequence"`
+	Digest                  string    `json:"digest"`
+	ArtifactKey             string    `json:"artifact_key"`
+	SampleCount             int       `json:"sample_count"`
+	ReceivedAt              time.Time `json:"received_at"`
 }
 
 // StartRunMonitors snapshots every binding exactly once, including an empty
@@ -265,6 +280,11 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 				}
 			}
 		}
+		if job.CoverageReason == "" && job.Source.ManagementScope != nil {
+			if err = managementReadinessTx(tx, job.Source, "", started); err != nil {
+				job.CoverageReason = "collector_management_configuration_unavailable"
+			}
+		}
 		if job.CoverageReason != "" {
 			if job.Required {
 				return nil, fmt.Errorf("required monitor %s: %s", binding.SourceID, job.CoverageReason)
@@ -272,6 +292,39 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 			job.State = "incomplete"
 		}
 		jobs = append(jobs, job)
+	}
+	// Required sources take the finite assignment capacity before optional
+	// sources, independent of authoring order. The project fence serializes
+	// concurrent starts and includes jobs already committed by prelaunch work.
+	// Admission reserves slots immediately, including before a future
+	// execution barrier. Historical recovery remains conservative as well.
+	assignmentTime := started.UTC()
+	if now := time.Now().UTC(); now.Before(assignmentTime) {
+		assignmentTime = now
+	}
+	assigned := map[string]int{}
+	for _, required := range []bool{true, false} {
+		for i := range jobs {
+			job := &jobs[i]
+			if job.Required != required || job.State != "collecting" {
+				continue
+			}
+			count, known := assigned[job.Source.CollectorID]
+			if !known {
+				if err = tx.QueryRow(`SELECT COUNT(*) FROM run_monitor_jobs j JOIN tests t ON t.id=j.test_id WHERE j.project_id=? AND j.collector_id=? AND j.state='collecting' AND j.expires_at>? AND t.status NOT IN ('COMPLETE','FAILED','ABORTED')`, project, job.Source.CollectorID, assignmentTime).Scan(&count); err != nil {
+					return nil, err
+				}
+			}
+			if count >= MaxCollectorAssignedMonitorJobs {
+				if required {
+					return nil, fmt.Errorf("required monitor %s: collector_capacity", job.Source.ID)
+				}
+				job.State, job.CoverageReason = "incomplete", "collector_capacity"
+			} else {
+				count++
+			}
+			assigned[job.Source.CollectorID] = count
+		}
 	}
 	if _, err = tx.Exec(`INSERT INTO run_monitor_sessions (test_id, project_id, started_at, binding_revision) VALUES (?, ?, ?, ?)`, run, project, started.UTC(), b.Revision); err != nil {
 		return nil, err
@@ -281,7 +334,15 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 		if err != nil {
 			return nil, err
 		}
-		if _, err = tx.Exec(`INSERT INTO run_monitor_jobs (id, project_id, test_id, collector_id, state, next_sequence, expires_at, payload) VALUES (?, ?, ?, ?, ?, 0, ?, ?)`, job.ID, project, run, job.Source.CollectorID, job.State, job.ExpiresAt, string(body)); err != nil {
+		configuration := ""
+		if job.Source.ManagementScope != nil {
+			scope, identity, configErr := managementSourceHashes(job.Source)
+			if configErr != nil {
+				return nil, configErr
+			}
+			configuration = managementConfigurationKey(job.Source, scope, identity)
+		}
+		if _, err = tx.Exec(`INSERT INTO run_monitor_jobs (id, project_id, test_id, collector_id, state, next_sequence, expires_at, payload, source_id, management_config_key) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`, job.ID, project, run, job.Source.CollectorID, job.State, job.ExpiresAt, string(body), job.Source.ID, nullableString(configuration)); err != nil {
 			return nil, err
 		}
 	}
@@ -346,6 +407,9 @@ func (s *SQLiteStore) GetRunMonitorJob(project, id string) (*RunMonitorJob, erro
 // identical batches are acknowledged even after collection stops; conflicts
 // or gaps are rejected without advancing the collector cursor.
 func (s *SQLiteStore) AcceptMonitorBatch(project, collector string, b MonitorBatchReceipt) error {
+	if b.EvidenceVersion != nil || b.ManagementSnapshotCount != nil || b.ManagementRowCount != nil || b.CollectionGeneration != nil || b.ManagementPollID != nil {
+		return errors.New("management receipts require cohort publication")
+	}
 	digest, err := hex.DecodeString(b.Digest)
 	if err != nil || len(digest) != 32 || b.Sequence < 0 || b.Sequence >= 1<<62 || b.SampleCount < 1 || b.SampleCount > 512 || b.ReceivedAt.IsZero() || len(b.ArtifactKey) == 0 || len(b.ArtifactKey) > 2048 {
 		return errors.New("invalid monitor batch receipt")
@@ -358,11 +422,18 @@ func (s *SQLiteStore) AcceptMonitorBatch(project, collector string, b MonitorBat
 	if _, err = lockProjectForOwnedMutation(tx, project); err != nil {
 		return err
 	}
-	var state, runStatus string
+	var state, runStatus, jobPayload string
 	var next int64
 	var expires time.Time
-	if err = tx.QueryRow(`SELECT j.state, j.next_sequence, j.expires_at,t.status FROM run_monitor_jobs j JOIN tests t ON t.id=j.test_id WHERE j.id=? AND j.project_id=? AND j.collector_id=?`, b.JobID, project, collector).Scan(&state, &next, &expires, &runStatus); err != nil {
+	if err = tx.QueryRow(`SELECT j.state, j.next_sequence, j.expires_at,t.status,j.payload FROM run_monitor_jobs j JOIN tests t ON t.id=j.test_id WHERE j.id=? AND j.project_id=? AND j.collector_id=?`, b.JobID, project, collector).Scan(&state, &next, &expires, &runStatus, &jobPayload); err != nil {
 		return err
+	}
+	var job RunMonitorJob
+	if err = json.Unmarshal([]byte(jobPayload), &job); err != nil {
+		return err
+	}
+	if job.Source.ManagementScope != nil {
+		return errors.New("management jobs require cohort publication")
 	}
 	var priorDigest, priorKey string
 	var priorCount int
@@ -392,7 +463,7 @@ func (s *SQLiteStore) ListMonitorBatchReceipts(project, run string, afterJob str
 	if limit < 1 || limit > 1000 {
 		return nil, errors.New("monitor receipt page must contain 1-1000 records")
 	}
-	rows, err := s.db.Query(`SELECT b.job_id, b.sequence, b.digest, b.artifact_key, b.sample_count, b.received_at FROM run_monitor_batches b JOIN run_monitor_jobs j ON j.id=b.job_id WHERE j.project_id=? AND j.test_id=? AND (b.job_id>? OR (b.job_id=? AND b.sequence>?)) ORDER BY b.job_id, b.sequence LIMIT ?`, project, run, afterJob, afterJob, afterSequence, limit)
+	rows, err := s.db.Query(`SELECT b.job_id, b.sequence, b.digest, b.artifact_key, b.sample_count, b.received_at, b.evidence_version,b.management_snapshot_count,b.management_row_count,b.collection_generation,b.management_poll_id FROM run_monitor_batches b JOIN run_monitor_jobs j ON j.id=b.job_id WHERE j.project_id=? AND j.test_id=? AND (b.job_id>? OR (b.job_id=? AND b.sequence>?)) ORDER BY b.job_id, b.sequence LIMIT ?`, project, run, afterJob, afterJob, afterSequence, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +471,7 @@ func (s *SQLiteStore) ListMonitorBatchReceipts(project, run string, afterJob str
 	result := []MonitorBatchReceipt{}
 	for rows.Next() {
 		var b MonitorBatchReceipt
-		if err := rows.Scan(&b.JobID, &b.Sequence, &b.Digest, &b.ArtifactKey, &b.SampleCount, &b.ReceivedAt); err != nil {
+		if err := rows.Scan(&b.JobID, &b.Sequence, &b.Digest, &b.ArtifactKey, &b.SampleCount, &b.ReceivedAt, &b.EvidenceVersion, &b.ManagementSnapshotCount, &b.ManagementRowCount, &b.CollectionGeneration, &b.ManagementPollID); err != nil {
 			return nil, err
 		}
 		result = append(result, b)
@@ -427,6 +498,9 @@ func (s *SQLiteStore) StopRunMonitors(project, run string, at time.Time) error {
 }
 
 func (m MonitorSource) Validate() error {
+	if m.ManagementScope != nil || m.ManagementIdentity != nil {
+		return validateManagementMonitorSource(m)
+	}
 	for _, v := range []string{m.ID, m.ProjectID, m.CollectorID, m.Name} {
 		if strings.TrimSpace(v) == "" || len(v) > 256 {
 			return errors.New("monitor source identity must contain 1-256 bytes")
@@ -511,6 +585,10 @@ func (s *SQLiteStore) SaveMonitorSource(m MonitorSource, expected int64) (*Monit
 	if err != nil {
 		return nil, err
 	}
+	if m.ManagementScope != nil && len(payload) > 16<<10 {
+		return nil, errors.New("management source exceeds 16 KiB")
+	}
+
 	var result sql.Result
 	if expected == 0 {
 		var count int
@@ -676,7 +754,7 @@ func validateRemoteMonitorDestination(pack, destination string) error {
 }
 
 func (m MonitorSource) ReadinessDestination() string {
-	if m.CredentialRef != "" {
+	if m.CredentialRef != "" || m.ManagementIdentity != nil && m.ManagementIdentity.CredentialRef != "" {
 		return m.Destination + "#" + m.CollectorPublicKey
 	}
 	return m.Destination

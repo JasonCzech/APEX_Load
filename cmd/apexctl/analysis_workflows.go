@@ -54,7 +54,12 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	ceiling := flags.Int("spot-ceiling", 0, "maximum spot percentage")
 	mode := flags.String("mode", "live", "live or archive processor evidence")
 	group := flags.String("group", "", "processor execution group")
-	sourceID := flags.String("source-id", "", "immutable processor source identity")
+	sourceID := flags.String("source-id", "", "immutable monitor or processor source identity")
+	entityID := flags.String("entity-id", "", "approved management entity identity")
+	cursor := flags.String("cursor", "", "opaque management receipt cursor")
+	from := flags.String("from", "", "inclusive management capture timestamp (RFC3339)")
+	to := flags.String("to", "", "exclusive management capture timestamp (RFC3339)")
+	limit := flags.Int("limit", 20, "management receipt page size (1 through 100)")
 	at := flags.String("at", "", "dependency observation timestamp (RFC3339)")
 	failOnRegression := flags.Bool("fail-on-regression", false, "fail CI for regression or unavailable baseline evidence")
 	ttl := flags.Duration("ttl", 30*time.Minute, "readiness lifetime")
@@ -146,6 +151,46 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 			if action == "bind" {
 				method = http.MethodPut
 			}
+		case "collection", "release-collection":
+			if err := requireID(); err != nil {
+				return err
+			}
+			if *project == "" {
+				return errors.New("--project is required")
+			}
+			path = "/api/v1/projects/" + url.PathEscape(*project) + "/monitor-sources/" + url.PathEscape(*id) + "/management-state"
+			if action == "release-collection" {
+				method = http.MethodPost
+			}
+		case "management":
+			if err := requireID(); err != nil {
+				return err
+			}
+			if len(*sourceID) > 256 || len(*entityID) > 64 || len(*cursor) > 2048 || *limit < 1 || *limit > 100 {
+				return errors.New("management query exceeds limits")
+			}
+			values := url.Values{"limit": {strconv.Itoa(*limit)}}
+			for key, value := range map[string]string{"source_id": *sourceID, "entity_id": *entityID, "cursor": *cursor} {
+				if value != "" {
+					values.Set(key, value)
+				}
+			}
+			var bounds [2]time.Time
+			for i, raw := range []string{*from, *to} {
+				if raw == "" {
+					continue
+				}
+				parsed, err := time.Parse(time.RFC3339Nano, raw)
+				if err != nil {
+					return errors.New("--from and --to must be RFC3339 timestamps")
+				}
+				bounds[i] = parsed.UTC()
+				values.Set([]string{"from", "to"}[i], bounds[i].Format(time.RFC3339Nano))
+			}
+			if !bounds[0].IsZero() && !bounds[1].IsZero() && !bounds[1].After(bounds[0]) {
+				return errors.New("management query requires --to after --from")
+			}
+			path = "/api/v1/tests/" + url.PathEscape(*id) + "/monitor-management?" + values.Encode()
 		case "dependencies":
 			if err := requireID(); err != nil {
 				return err
@@ -164,7 +209,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 			}
 			path = "/api/v1/tests/" + url.PathEscape(*id) + "/monitors"
 		default:
-			return errors.New("monitor actions: sources, create-source, bindings, bind, run, dependencies")
+			return errors.New("monitor actions: sources, create-source, bindings, bind, run, dependencies, management, collection, release-collection")
 		}
 		if method != http.MethodGet && len(body) == 0 {
 			return errors.New("--file JSON configuration is required")
