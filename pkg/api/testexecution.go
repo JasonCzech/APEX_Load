@@ -5470,6 +5470,7 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 	alreadyTerminal := isTerminalTestStatus(test.Status)
 	status := test.Status
 	specs := test.groupSpecs
+	resourcePeaks, resourcePeakErr := runtimeReservationGroups(test, false)
 	runtimeSecrets := make([]map[string]string, len(test.Groups))
 	for index := range test.Groups {
 		runtimeSecrets[index] = test.Groups[index].runtimeSecretValues
@@ -5478,6 +5479,9 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 
 	if boundsErr != nil {
 		return nil, boundsErr
+	}
+	if resourcePeakErr != nil {
+		return nil, resourcePeakErr
 	}
 	if alreadyTerminal {
 		// The runtime this engine needs has already been released, so there is
@@ -5491,6 +5495,9 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 		return nil, err
 	}
 	for index := range groups {
+		if index < len(resourcePeaks) {
+			groups[index].RuntimeResourcePeakVUsers = resourcePeaks[index].VUsers
+		}
 		groups[index].ScenarioID = strings.TrimSpace(test.ScenarioID)
 		groups[index].RunID = test.ID
 		projectID := test.ProjectID
@@ -5663,6 +5670,33 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 	}
 	tr.mu.Unlock()
 
+	if err := mge.ReserveRuntimeResources(ctx); err != nil {
+		return ctx, nil, nil, false, fmt.Errorf("local runtime resource admission: %w", err)
+	}
+	{
+		demands := mge.RuntimeResourceDemands()
+		currentVUsers := mge.GetGroupVUsers()
+		tr.mu.Lock()
+		if tr.tests[test.ID] != test || test.executionCtx != ctx || ctx.Err() != nil {
+			tr.mu.Unlock()
+			return ctx, nil, nil, false, errors.New("preparation execution no longer current")
+		}
+		peaks, peakErr := runtimeReservationGroups(test, false)
+		if peakErr != nil {
+			tr.mu.Unlock()
+			return ctx, nil, nil, false, peakErr
+		}
+		test.GeneratorShards = localRuntimeResourceAllocations(peaks, demands, currentVUsers)
+		if test.preparationID != "" {
+			test.preparationPeerCheck = func(context.Context) error {
+				if !mge.RuntimeResourceReservationsCurrent() {
+					return errors.New("prepared runtime resource reservation unavailable")
+				}
+				return nil
+			}
+		}
+		tr.mu.Unlock()
+	}
 	if err := tr.awaitPreparedStart(test); err != nil {
 		return ctx, nil, nil, false, err
 	}

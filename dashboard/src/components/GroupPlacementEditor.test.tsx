@@ -587,3 +587,15 @@ it.each(['ready', 'exhausted', 'missing profile', 'dedicated'] as const)('checks
   expect(container.querySelector<HTMLInputElement>('.new-test-generator-option input')!.disabled).toBe(state !== 'ready')
   expect(container.textContent).toContain(`${state === 'ready' ? 2 : 0} host ceiling`)
 })
+
+it('keeps producer and observer hosts selectable while showing processor reservation pressure', () => {
+  const generator = runtimeCapacityGenerator([{ protocol: 'eventhubs', available: true, max_vusers: 0, available_vusers: 0,
+    resource_contract: 'eventhubs_processor_reservations_v1', resources: { available: true, max_processors: 4, available_processors: 0, reserved_processors: 4, active_processors: 2, draining_processors: 2, max_workers: 32, available_workers: 0, reserved_workers: 32, active_workers: 8, draining_workers: 16, max_partitions_per_processor: 8 } }])
+  generator.supported_protocols = ['eventhubs']
+  act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'specific_hosts', selected_targets: [] }} generatorInventory={[generator]} protocol="eventhubs" />))
+  const option = container.querySelector('.new-test-generator-option')!
+  expect(option.querySelector('input')!.disabled).toBe(false)
+  expect(option.textContent).toContain('100 capacity')
+  expect(option.textContent).toContain('0/4 processors, 0/32 workers available')
+  expect(option.textContent).toContain('2 processors/16 workers draining')
+})

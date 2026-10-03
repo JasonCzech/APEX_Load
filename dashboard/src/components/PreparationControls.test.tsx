@@ -58,3 +58,12 @@ it('submits explicit ephemeral capacity and spot limits', async () => {
   const posted = request.mock.calls.find(([, opts]) => opts?.method === 'POST')!
   expect(JSON.parse(posted[1].body)).toMatchObject({ capacity: { selection: 'ephemeral', spot: 'required', spot_ceiling_percent: 50 } })
 })
+
+it('shows immutable requested and admitted processor resources on a prepared run', async () => {
+  const claim = { contract: 'eventhubs_processor_reservations_v1', protocol: 'eventhubs', peak_vusers: 2, requested: { processors: 2, workers: 8, max_partitions_per_processor: 4 } }
+  request.mockImplementation(async (path: string) => path.includes('capabilities') ? { preparation_enabled: true } : { id: 'prep', state: 'ready', execution_revision: 'hash', allocation: [{ group: 'processor', target: 'generator-a', vusers: 2, runtime_resource_claim: claim, runtime_resource_admission: { claim, admitted: claim.requested, current: true } }] })
+  await act(async () => root.render(<PreparationControls projectId="p" testId="run" status="INITIALIZING" />))
+  expect(container.textContent).toContain('Requested processors / workers2 / 8')
+  expect(container.textContent).toContain('Admitted processors / workers2 / 8')
+  expect(container.textContent).toContain('Partition ceiling per processor4')
+})

@@ -71,6 +71,8 @@ message PreparationCheckRequest {
   map<string, int32> expected_groups = 3;
   bytes run_supervision_token = 4;
   bool renew_staging = 5;
+  // Exact immutable claims for every resource-backed prepared group.
+  map<string, RuntimeResourceClaim> expected_runtime_resources = 6;
 }
 
 message CapacityVector {
@@ -213,6 +215,44 @@ message WorkAssignment {
   JavaHostSelection java_host = 41;
   // Defer runtime preflight and all target interaction until CommitWork.
   bool prepare_only = 42;
+  // Immutable, capability-negotiated lifetime peak and resource intent.
+  // The generator recomputes demand; this wire claim never grants a lease.
+  RuntimeResourceClaim runtime_resource_claim = 43;
+}
+
+// Additive process resources, plus a nonadditive per-processor partition ceiling.
+message RuntimeResourceDemand {
+  int64 processors = 1;
+  int64 workers = 2;
+  int64 max_partitions_per_processor = 3;
+}
+message RuntimeResourceClaim {
+  string contract = 1;
+  string protocol = 2;
+  // Planned shard lifetime concurrency; independent of the initial count.
+  int32 peak_vusers = 3;
+  RuntimeResourceDemand requested = 4;
+}
+message RuntimeResourceAdmission {
+  RuntimeResourceClaim claim = 1;
+  RuntimeResourceDemand admitted = 2;
+  bool current = 3;
+}
+// Reserved is the total charge, including active and draining children.
+// Active and draining are breakdowns, never additional charges to subtract.
+message RuntimeResourceCapacity {
+  bool available = 1;
+  int64 max_processors = 2;
+  int64 available_processors = 3;
+  int64 reserved_processors = 4;
+  int64 active_processors = 5;
+  int64 draining_processors = 6;
+  int64 max_workers = 7;
+  int64 available_workers = 8;
+  int64 reserved_workers = 9;
+  int64 active_workers = 10;
+  int64 draining_workers = 11;
+  int64 max_partitions_per_processor = 12;
 }
 
 // Operator approval binds immutable source and the complete placement profile.
@@ -271,6 +311,7 @@ message WorkCommitAck {
   string error_message = 2;
   bool run_supervision_armed = 3;
   int64 run_supervision_ttl_milliseconds = 4;
+  map<string, RuntimeResourceAdmission> runtime_resource_admissions = 5;
 }
 
 enum RunSupervisionState {
@@ -389,6 +430,7 @@ message AssignmentAck {
   string error_message = 2;
   int32 available_capacity = 3;
   JavaHostPlacement java_host = 4;
+  RuntimeResourceAdmission runtime_resource_admission = 5;
 }
 
 message VUserAdjustment {
@@ -753,6 +795,8 @@ message ProtocolRuntimeCapacity {
   // generator reports idle, persistent, or legacy so the controller never
   // co-locates incompatible Java lifecycle modes in shared JVM process slots.
   string occupancy_mode = 6;
+  string resource_contract = 7;
+  RuntimeResourceCapacity resources = 8;
 }
 
 // GeneratorSafetyExitEvidence is the token-free durable explanation for the

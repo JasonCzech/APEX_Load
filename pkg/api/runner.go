@@ -4,6 +4,7 @@ import (
 	"context"
 	cryptorand "crypto/rand"
 	"errors"
+	pb "github.com/jasonczech/apexload/api/proto"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -785,6 +786,10 @@ type TestGroup struct {
 	// instead of retaining the full parsed script graph.
 	javaVuserCapacityPlan      engine.JavaVuserCapacityPlan
 	javaVuserCapacityPlanKnown bool
+	runtimeResourcePlan        engine.RuntimeResourcePlan
+	runtimeResourcePlanKnown   bool
+	runtimeResourcePlanError   string
+	messagingRuntimeFeatures   []string
 	// baseScript is the immutable executable input before test/group runtime
 	// overrides. It lets a revised queued copy apply intentional runtime edits
 	// without recompiling mutable script or data-pool resources. Older rows may
@@ -802,14 +807,16 @@ type TestGroup struct {
 }
 
 type GeneratorShardSummary struct {
-	JavaHost      *JavaHostPlacementSummary `json:"java_host,omitempty"`
-	Group         string                    `json:"group"`
-	Target        string                    `json:"target"`
-	VUsers        int                       `json:"vusers"`
-	ShardStrategy string                    `json:"shard_strategy,omitempty"`
-	ShardOrdinal  uint32                    `json:"shard_ordinal,omitempty"`
-	ShardCount    uint32                    `json:"shard_count,omitempty"`
-	VUserIDOffset uint64                    `json:"vuser_id_offset,omitempty"`
+	RuntimeResourceClaim     *pb.RuntimeResourceClaim     `json:"runtime_resource_claim,omitempty"`
+	RuntimeResourceAdmission *pb.RuntimeResourceAdmission `json:"runtime_resource_admission,omitempty"`
+	JavaHost                 *JavaHostPlacementSummary    `json:"java_host,omitempty"`
+	Group                    string                       `json:"group"`
+	Target                   string                       `json:"target"`
+	VUsers                   int                          `json:"vusers"`
+	ShardStrategy            string                       `json:"shard_strategy,omitempty"`
+	ShardOrdinal             uint32                       `json:"shard_ordinal,omitempty"`
+	ShardCount               uint32                       `json:"shard_count,omitempty"`
+	VUserIDOffset            uint64                       `json:"vuser_id_offset,omitempty"`
 }
 
 type RunLogicGoalSnapshot struct {

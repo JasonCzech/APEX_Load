@@ -374,6 +374,7 @@ func (s *Service) detachFencedTestsLocked(testIDs []string, maximumGeneration ui
 		}
 		s.markStoppingLocked(testID, assignment.executionGeneration)
 		persistentJavaDrainToken := s.reserveAssignmentJavaDrainLocked(assignment)
+		releaseAssignmentRuntimeResources(assignment)
 		s.clearTestExecutionLeaseLocked(testID)
 		s.retainRunSupervisionDrainLocked(testID, assignment)
 		delete(s.assignments, testID)

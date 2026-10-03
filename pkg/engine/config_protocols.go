@@ -794,6 +794,9 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 
 func appendEventHubsConfig(cfg map[string]any, script *dsl.Script) {
 	ehCfg := script.Config.EventHubs
+	if ehCfg.ProcessorMaxPartitions > 0 {
+		cfg["eventhubs_processor_max_partitions"] = ehCfg.ProcessorMaxPartitions
+	}
 	if ehCfg.OwnerLevel != nil {
 		cfg["eventhubs_owner_level"] = *ehCfg.OwnerLevel
 	}

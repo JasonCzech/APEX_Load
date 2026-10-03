@@ -133,11 +133,23 @@ func TestMetricsCollectorStopFlushesTrailingPartialWindow(t *testing.T) {
 	mc.Stop()
 }
 
+func waitForMetricsCollectorSnapshot(t *testing.T, mc *MetricsCollector) MetricsSnapshot {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if snap, ok := mc.LatestSnapshot(); ok {
+			return snap
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for a published metrics snapshot")
+	return MetricsSnapshot{}
+}
+
 func TestMetricsCollector_AggregateProducesSnapshot(t *testing.T) {
 	mc := NewMetricsCollector(100)
-	mc.Start(50 * time.Millisecond)
-	defer mc.Stop()
-
+	// Queue all samples before aggregation so they belong to one window even
+	// when the test goroutine is delayed by other package work.
 	for i := 0; i < 10; i++ {
 		mc.Record(&protocol.Result{
 			ActionName: "test",
@@ -146,12 +158,9 @@ func TestMetricsCollector_AggregateProducesSnapshot(t *testing.T) {
 		})
 	}
 
-	time.Sleep(150 * time.Millisecond)
-
-	snap, ok := mc.LatestSnapshot()
-	if !ok {
-		t.Fatal("expected a snapshot after aggregation")
-	}
+	mc.Start(50 * time.Millisecond)
+	defer mc.Stop()
+	snap := waitForMetricsCollectorSnapshot(t, mc)
 	if snap.Transactions != 0 {
 		t.Errorf("transactions = %d, want 0 for raw action samples", snap.Transactions)
 	}
@@ -170,12 +179,7 @@ func TestMetricsCollector_AggregateProducesIdleSnapshot(t *testing.T) {
 	mc.Start(50 * time.Millisecond)
 	defer mc.Stop()
 
-	time.Sleep(120 * time.Millisecond)
-
-	snap, ok := mc.LatestSnapshot()
-	if !ok {
-		t.Fatal("expected an idle snapshot after aggregation")
-	}
+	snap := waitForMetricsCollectorSnapshot(t, mc)
 	if snap.Transactions != 0 {
 		t.Errorf("transactions = %d, want 0", snap.Transactions)
 	}
@@ -228,16 +232,18 @@ func TestMetricsCollector_EmptyWindowSnapshotEmission(t *testing.T) {
 			mc.Start(20 * time.Millisecond)
 			defer mc.Stop()
 
-			// Several ticks elapse with nothing recorded — every window is empty.
-			time.Sleep(90 * time.Millisecond)
-
-			snap, ok := mc.LatestSnapshot()
-			if ok != tt.wantSnapshot {
-				t.Fatalf("LatestSnapshot ok = %v, want %v", ok, tt.wantSnapshot)
-			}
 			if !tt.wantSnapshot {
+				// Preserve a multi-tick observation period for the negative idle
+				// case: it must not publish an empty snapshot.
+				time.Sleep(90 * time.Millisecond)
+				if _, ok := mc.LatestSnapshot(); ok {
+					t.Fatal("idle window unexpectedly published a snapshot")
+				}
 				return
 			}
+			// A positive assertion requires completed publication, rather than
+			// assuming resource sampling finishes within a fixed tick count.
+			snap := waitForMetricsCollectorSnapshot(t, mc)
 			if snap.Transactions != 0 || snap.Errors != 0 {
 				t.Errorf("empty-window snapshot tx/err = %d/%d, want 0/0", snap.Transactions, snap.Errors)
 			}

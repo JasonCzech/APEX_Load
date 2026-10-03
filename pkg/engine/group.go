@@ -21,7 +21,14 @@ const maxMultiGroupRuntimeSecretRedactionBytes = 32 << 20
 var ErrInitialRampInProgress = errors.New("initial vuser ramp is still in progress")
 
 type GroupConfig struct {
-	Name string
+	// RuntimeResourcePeakVUsers pins the admitted closed population ceiling.
+	// Zero uses VUsers; open workloads use their independent in-flight bound.
+	RuntimeResourcePeakVUsers int
+	// RuntimeResourcePeakFrozen rejects growth beyond the staged peak, including zero.
+	RuntimeResourcePeakFrozen bool
+	// RuntimeResourceReservation is trusted process-owned staging state, never DSL.
+	RuntimeResourceReservation protocol.RuntimeResourceReservation
+	Name                       string
 	// TransactionResponseTimeSLAMs is the already-resolved response-time SLA
 	// for every named business transaction in this group. Zero disables it.
 	TransactionResponseTimeSLAMs float64
@@ -93,16 +100,17 @@ type MultiGroupConfig struct {
 }
 
 type MultiGroupEngine struct {
-	brokerRunUsed   atomic.Bool
-	terminationMode string
-	groups          []GroupConfig
-	duration        time.Duration
-	preBaseline     time.Duration
-	postBaseline    time.Duration
-	metrics         *MetricsCollector
-	cancel          context.CancelFunc
-	readyCh         chan struct{}
-	readyOnce       sync.Once
+	runtimeResources *engineRuntimeResources
+	brokerRunUsed    atomic.Bool
+	terminationMode  string
+	groups           []GroupConfig
+	duration         time.Duration
+	preBaseline      time.Duration
+	postBaseline     time.Duration
+	metrics          *MetricsCollector
+	cancel           context.CancelFunc
+	readyCh          chan struct{}
+	readyOnce        sync.Once
 
 	// Dynamic control state
 	mu                     sync.Mutex
@@ -470,7 +478,12 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		}
 		cfg.Groups[i].RedactionConfig = attachRuntimeSecretRedaction(cfg.Groups[i].RedactionConfig, runtimeConfig)
 	}
+	runtimeResources, resourceErr := newEngineRuntimeResources(cfg.Groups)
+	if resourceErr != nil {
+		return nil, resourceErr
+	}
 	mge := &MultiGroupEngine{
+		runtimeResources:      runtimeResources,
 		groups:                cfg.Groups,
 		duration:              cfg.Duration,
 		terminationMode:       cfg.TerminationMode,
@@ -556,10 +569,17 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	// Ready is both a successful control boundary and a terminal release for
 	// callers already waiting on a committed engine. Every return path—including
 	// preflight failure or a graceful stop latched before Run—must unblock it.
-	defer mge.readyOnce.Do(func() { close(mge.readyCh) })
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if err := mge.runtimeResources.beginRun(); err != nil {
+		if !errors.Is(err, errRuntimeResourceExecutionConsumed) {
+			mge.readyOnce.Do(func() { close(mge.readyCh) })
+		}
+		return nil, err
+	}
+	defer mge.readyOnce.Do(func() { close(mge.readyCh) })
+	defer mge.runtimeResources.release()
 	remote := false
 	for _, group := range mge.groups {
 		remote = remote || group.javaBroker != nil
@@ -576,6 +596,9 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	coordinatedStart := !executionStart.IsZero()
 	futureCoordinatedStartAtEntry := coordinatedStart && executionStart.After(runEnteredAt)
 	if err := mge.importExecutionGateError("launch"); err != nil {
+		return nil, err
+	}
+	if err := mge.runtimeResources.adopt(ctx); err != nil {
 		return nil, err
 	}
 	sourceScripts := make([]*dsl.Script, len(mge.groups))
@@ -1614,6 +1637,9 @@ func (mge *MultiGroupEngine) unregisterVUserLocked(vuserID int) {
 	delete(mge.vuserStopping, vuserID)
 	mge.releaseVUserIDLocked(vuserID)
 	mge.signalVUserChangeLocked()
+	if err := mge.reconcileRuntimeResourceCapacityLocked(); err != nil {
+		slog.Error("failed to reconcile runtime resources after teardown", "err", err)
+	}
 	if err := mge.reconcileJavaVuserCapacityLocked(); err != nil {
 		// Teardown only reduces live demand. Treat an increase request here as
 		// an invariant violation while retaining the existing reservation.
@@ -1765,6 +1791,8 @@ type groupLifecycleBlockOutcome struct {
 }
 
 func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx context.Context, group GroupConfig, protoConfig map[string]any, actions []dsl.Action, phase string) groupLifecycleBlockOutcome {
+	actionCtx = mge.runtimeResources.bind(actionCtx, group.Name)
+	boundaryCtx = mge.runtimeResources.bind(boundaryCtx, group.Name)
 	if len(actions) == 0 {
 		return groupLifecycleBlockOutcome{completed: true}
 	}
@@ -1934,7 +1962,7 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 	if gracefulCtx == nil {
 		gracefulCtx = baseCtx
 	}
-	vuCtx, vuCancel := context.WithCancel(parentCtx)
+	vuCtx, vuCancel := context.WithCancel(mge.runtimeResources.bind(parentCtx, group.Name))
 	// shedCtx interrupts the in-flight iteration body on scale/ramp-down and on
 	// hard stops. It is a child of baseCtx (NOT loopCtx, so NOT a descendant of
 	// vuCtx): a shared-goal exhaustion cancels loopCtx — and thus vuCtx — which
@@ -1942,7 +1970,7 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 	// VUser that already claimed a goal reservation finishes its current
 	// iteration. cancelVUser sheds load promptly by cancelling BOTH shedCtx (the
 	// running iteration) and vuCtx (no further iterations).
-	shedCtx, shedCancel := context.WithCancel(baseCtx)
+	shedCtx, shedCancel := context.WithCancel(mge.runtimeResources.bind(baseCtx, group.Name))
 	// Boundary cancellation is distinct from vuCtx. The shared goal limiter
 	// cancels loopCtx/vuCtx after exhaustion, but a VUser that already reserved an
 	// iteration is entitled to finish every action. Only explicit graceful stop,
@@ -2446,10 +2474,10 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 	if parentCtx == nil {
 		parentCtx = mge.baseCtx
 	}
-	vuCtx, vuCancel := context.WithCancel(parentCtx)
+	vuCtx, vuCancel := context.WithCancel(mge.runtimeResources.bind(parentCtx, group.Name))
 	// See spawnVUser: shedCtx interrupts the running iteration on stop/hard-stop
 	// without being tripped by a shared-goal soft stop.
-	shedCtx, shedCancel := context.WithCancel(mge.baseCtx)
+	shedCtx, shedCancel := context.WithCancel(mge.runtimeResources.bind(mge.baseCtx, group.Name))
 	boundaryCtx, boundaryCancel := context.WithCancel(shedCtx)
 	stopGracefulLink := context.AfterFunc(mge.gracefulCtx, boundaryCancel)
 	cancelVUser := func() {
@@ -2771,6 +2799,12 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 			return err
 		}
 	}
+	if delta > 0 {
+		required := max(targetVUsers, int(mge.liveVUsersByGroupLocked()[group.Name])+delta)
+		if err := mge.runtimeResources.resize(mge.baseCtx, group.Name, required); err != nil {
+			return err
+		}
+	}
 	group.VUsers = targetVUsers
 
 	if delta > 0 {
@@ -2781,6 +2815,9 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 		spawnedIDs := make([]int, 0, delta)
 		rollbackScaleUp := func() {
 			group.VUsers = currentVUsers
+			if err := mge.reconcileRuntimeResourceCapacityLocked(); err != nil {
+				slog.Error("failed to reconcile runtime resources after scale rollback", "err", err)
+			}
 			for _, id := range spawnedIDs {
 				if cancel := mge.vuserCancels[id]; cancel != nil {
 					mge.vuserStopping[id] = true

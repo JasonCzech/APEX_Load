@@ -13,6 +13,9 @@ The shared analytical contract slice adds a canonical metric/operation catalog, 
 The shared messaging evidence foundation adds optional v2 operation populations, mergeable bounded duration histograms, scoped reliability counters, explicit unavailable reasons and mixed-peer coverage. Engine/RPC/archive adapters preserve it with bounded retention and capability advertisement. Accepted sends and observed deliveries remain evidence even if a later assertion, extraction, reply or settlement fails; actual transport failures retain their eligible population. [Review and checks](qa/reviews/feature-completion-messaging-2026-10-03/README.md) distinguish local/tagged suites from pending real-provider qualification. Full MSG-1/MSG-2 workflows, management observations, clock-qualified enqueue/end-to-end age and broker certification remain open.
 
 
+The Event Hubs processor capacity slice exposes process-wide processor/worker ceilings, immutable per-processor partition demand, scheduled/adaptive/open-workload peak admission, target-free local/distributed preparation, single-use execution adoption, exact readiness checks and requested/admitted dashboard evidence. Cleanup preserves draining charge until owned work/transport exits; processor generator-loss evacuation remains unavailable pending a qualified recovery contract. [Review and checks](qa/reviews/feature-completion-eh-capacity-2026-10-03/README.md) track local and tagged verification separately from live Azure qualification. EH-2 progress/lag and EH-3 rebalance/crash/takeover acceptance remain open. The next evidence slice also fixes messaging loss on database-history reload and distributed action-only live projection; these review findings remain pending until their regression tests pass.
+
+
 ## Track status
 
 | Track | Status | Open work |

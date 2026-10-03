@@ -623,6 +623,7 @@ export interface KafkaConfig {
 }
 
 export interface EventHubsConfig {
+  processor_max_partitions?: number
   owner_level?: number | null
   consumer_mode?: string
   checkpoint_container_url?: string

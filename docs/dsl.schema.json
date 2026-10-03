@@ -7466,6 +7466,11 @@
         "partition_key": {
           "type": "string"
         },
+        "processor_max_partitions": {
+          "maximum": 32,
+          "minimum": 0,
+          "type": "integer"
+        },
         "start_position": {
           "type": "string"
         },

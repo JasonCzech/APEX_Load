@@ -300,6 +300,12 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 	if assignment.executionGeneration != request.GetExecutionGeneration() {
 		return commitTransition{err: status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", assignment.executionGeneration)}
 	}
+	for name, claim := range assignment.groupRuntimeResourceClaims {
+		execution := service.executions[testID][name]
+		if (!assignment.committed || execution != nil && !execution.started.Load()) && !ValidRuntimeResourceAdmission(claim, runtimeResourceAdmission(claim, assignment.groupRuntimeResources[name])) {
+			return commitTransition{err: status.Error(codes.FailedPrecondition, "runtime resource reservation is no longer current")}
+		}
+	}
 	if assignment.requireTestExecutionLease && !service.testExecutionLeaseCurrentLocked(testID, assignment.executionGeneration, now) {
 		return commitTransition{err: status.Error(codes.FailedPrecondition, "test assignment execution lease is missing or expired")}
 	}
@@ -342,6 +348,9 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 			}
 			if execution.started.Load() {
 				continue
+			}
+			if !execution.engine.RuntimeResourceReservationsCurrent() {
+				return commitTransition{err: status.Error(codes.FailedPrecondition, "engine runtime resource reservation is no longer current")}
 			}
 			scriptID := assignment.groupScripts[groupName]
 			cached, cachedOK := service.scriptCache.get(scriptID)
@@ -529,6 +538,7 @@ func (service *Service) commitValidatedWork(ctx context.Context, request *pb.Wor
 			// controller's 30s safety minimum immediately after it is armed.
 			supervisionTTL = supervision.ttl
 		}
+		resourceAdmissions := service.runtimeResourceAdmissionsLocked(service.assignments[request.GetTestId()])
 		service.mu.Unlock()
 		if transition.lifecycle != nil {
 			service.publishLifecycleTransitionLocked(transition.lifecycle)
@@ -540,7 +550,7 @@ func (service *Service) commitValidatedWork(ctx context.Context, request *pb.Wor
 		}
 		switch transition.kind {
 		case commitTransitionAccepted:
-			return &pb.WorkCommitAck{Accepted: true, RunSupervisionArmed: supervisionArmed, RunSupervisionTtlMilliseconds: supervisionTTL.Milliseconds()}, nil
+			return &pb.WorkCommitAck{Accepted: true, RuntimeResourceAdmissions: resourceAdmissions, RunSupervisionArmed: supervisionArmed, RunSupervisionTtlMilliseconds: supervisionTTL.Milliseconds()}, nil
 		case commitTransitionRejected:
 			return &pb.WorkCommitAck{Accepted: false, ErrorMessage: transition.errorMessage}, nil
 		case commitTransitionWait:
@@ -558,7 +568,7 @@ func (service *Service) commitValidatedWork(ctx context.Context, request *pb.Wor
 			for _, event := range transition.starts {
 				service.startExecutionEvent(event)
 			}
-			return &pb.WorkCommitAck{Accepted: true, RunSupervisionArmed: supervisionArmed, RunSupervisionTtlMilliseconds: supervisionTTL.Milliseconds()}, nil
+			return &pb.WorkCommitAck{Accepted: true, RuntimeResourceAdmissions: resourceAdmissions, RunSupervisionArmed: supervisionArmed, RunSupervisionTtlMilliseconds: supervisionTTL.Milliseconds()}, nil
 		default:
 			return nil, status.Error(codes.Internal, "assignment coordinator returned an invalid commit decision")
 		}
@@ -722,6 +732,7 @@ func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Servi
 	assignment, _ = coordinator.beginStopping(testID, assignment.executionGeneration, assignment)
 	service.assignments[testID] = assignment
 	persistentJavaDrainToken := service.reserveAssignmentJavaDrainLocked(assignment)
+	releaseAssignmentRuntimeResources(assignment)
 	service.clearTestExecutionLeaseLocked(testID)
 	service.retainRunSupervisionDrainLocked(testID, assignment)
 	delete(service.assignments, testID)
@@ -1183,6 +1194,9 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 	currentGroupVUsers, ok := assignment.groups[request.GetGroupName()]
 	if !ok {
 		return scaleTransitionDecision{err: status.Error(codes.NotFound, "group assignment not found")}
+	}
+	if peak, managed := assignment.groupRuntimeResourcePeaks[request.GetGroupName()]; managed && request.GetTargetVusers() > peak {
+		return scaleTransitionDecision{err: status.Error(codes.FailedPrecondition, "runtime resource immutable peak exceeded")}
 	}
 	if err := service.validatePodCapacityAssignmentLocked(testID, request.GetGroupName(), request.GetTargetVusers()); err != nil {
 		return scaleTransitionDecision{err: status.Error(codes.ResourceExhausted, err.Error())}

@@ -24,6 +24,12 @@ func validateEventHubsScriptIssues(script *Script) []string {
 	}
 
 	eh := script.Config.EventHubs
+	if eh.ProcessorMaxPartitions < 0 || eh.ProcessorMaxPartitions > 32 {
+		issues = append(issues, "config.eventhubs.processor_max_partitions must be between 0 and 32 (zero uses the default)")
+	}
+	if eh.ProcessorMaxPartitions != 0 && eh.ConsumerMode != "processor" {
+		issues = append(issues, "config.eventhubs.processor_max_partitions requires processor mode")
+	}
 	if err := eventhubsprotocol.ValidateExclusiveSettings(eh.ConsumerMode, eh.EventHub, eh.ConsumerGroup, eh.PartitionID, eh.OwnerLevel, eh.Mock); err != nil {
 		issues = append(issues, err.Error())
 	}

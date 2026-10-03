@@ -86,6 +86,8 @@ export interface JavaHostPlacementSummary {
 }
 
 export interface GeneratorShardSummary {
+  runtime_resource_claim?: import('./runtimeResources').RuntimeResourceClaim
+  runtime_resource_admission?: import('./runtimeResources').RuntimeResourceAdmission
   java_host?: JavaHostPlacementSummary
   group: string
   target: string

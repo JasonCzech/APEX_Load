@@ -35,9 +35,13 @@ func newRealClient(cfg config) eventHubsClient {
 const realEventHubsAvailable = true
 
 type realClient struct {
-	processorMu sync.Mutex
-	processor   *eventHubsProcessor
-	cfg         config
+	processorMu            processorLifecycleGate
+	processor              *eventHubsProcessor
+	processorCancel        context.CancelFunc
+	processorOwnedConsumer *azeventhubs.ConsumerClient
+	processorProperties    func(context.Context, *azeventhubs.ConsumerClient) (azeventhubs.EventHubProperties, error)
+	closeTimeout           time.Duration
+	cfg                    config
 
 	mu            sync.Mutex
 	cred          azcore.TokenCredential
@@ -221,12 +225,18 @@ func (c *realClient) HealthCheck(ctx context.Context) error {
 }
 
 func (c *realClient) Teardown(ctx context.Context) error {
+	closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(resourceContext(ctx)), c.cleanupTimeout())
+	defer closeCancel()
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		return nil
+		return c.waitProcessorCleanup(ctx)
 	}
 	c.closed = true
+	if c.processorCancel != nil {
+		c.processorCancel()
+	}
+	ownedConsumer := c.processorOwnedConsumer
 	partitions := c.partitions
 	consumers := c.consumers
 	producers := c.producers
@@ -234,18 +244,21 @@ func (c *realClient) Teardown(ctx context.Context) error {
 	c.consumers = make(map[string]*azeventhubs.ConsumerClient)
 	c.producers = make(map[string]*azeventhubs.ProducerClient)
 	c.mu.Unlock()
-	c.processorMu.Lock()
-	processor := c.processor
-	c.processorMu.Unlock()
-	if processor != nil {
-		processor.cancel()
-	}
-	closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(ctx), eventHubsCloseTimeout)
-	defer closeCancel()
+	var processor *eventHubsProcessor
 	var firstErr error
+	if err := c.processorMu.Lock(closeCtx); err != nil {
+		firstErr = errors.New("Event Hubs processor cleanup deadline exceeded")
+	} else {
+		processor = c.processor
+		c.processorMu.Unlock()
+		if processor != nil {
+			processor.cancel()
+		}
+	}
 	if processor != nil {
 		select {
 		case <-processor.done:
+			firstErr = processor.cleanupError()
 		case <-closeCtx.Done():
 			firstErr = fmt.Errorf("Event Hubs processor cleanup deadline exceeded")
 		}
@@ -257,8 +270,13 @@ func (c *realClient) Teardown(ctx context.Context) error {
 			}
 		}
 	}
-	for _, cc := range consumers {
-		if cc != nil {
+	for key, cc := range consumers {
+		// Only startProcessor can create the fixed processor consumer. Ownership
+		// may transfer after this snapshot or even after the gate deadline, so
+		// its immutable key also belongs exclusively to startup/session cleanup.
+		// A duplicate SDK Close can block on its namespace lock after our budget.
+		processorKey := c.cfg.ConsumerMode == "processor" && key == c.cfg.EventHub+"\x00"+c.cfg.ConsumerGroup
+		if cc != nil && !processorKey && cc != ownedConsumer && (processor == nil || cc != processor.consumer) {
 			if err := cc.Close(closeCtx); err != nil && firstErr == nil {
 				firstErr = err
 			}
@@ -272,6 +290,31 @@ func (c *realClient) Teardown(ctx context.Context) error {
 		}
 	}
 	return firstErr
+}
+
+func (c *realClient) cleanupTimeout() time.Duration {
+	if c.closeTimeout > 0 {
+		return c.closeTimeout
+	}
+	return eventHubsCloseTimeout
+}
+func (c *realClient) waitProcessorCleanup(ctx context.Context) error {
+	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(resourceContext(ctx)), c.cleanupTimeout())
+	defer cancel()
+	if err := c.processorMu.Lock(closeCtx); err != nil {
+		return errors.New("Event Hubs processor cleanup deadline exceeded")
+	}
+	processor := c.processor
+	c.processorMu.Unlock()
+	if processor == nil {
+		return nil
+	}
+	select {
+	case <-processor.done:
+		return processor.cleanupError()
+	case <-closeCtx.Done():
+		return errors.New("Event Hubs processor cleanup deadline exceeded")
+	}
 }
 
 func (c *realClient) resourceKeyBytesLocked() int {

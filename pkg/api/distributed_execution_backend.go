@@ -251,6 +251,10 @@ func cloneProtocolRuntimeCapacities(values []generatorrpc.ProtocolRuntimeCapacit
 	copy(out, values)
 	for index := range out {
 		out[index].Features = append([]string(nil), values[index].Features...)
+		if values[index].Resources != nil {
+			resources := *values[index].Resources
+			out[index].Resources = &resources
+		}
 	}
 	return out
 }
@@ -1185,14 +1189,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	}
 	configurePodLoads(podSettings, loadByTarget)
 	defaultLoadByTarget := loadSnapshotsForTargets(loadByTarget, allowedTargets)
-	reservationGroups := test.Groups
-	if podSettings.CapacityPlanning.PodReservationsEnabled {
-		reservationGroups, err = podReservationGroups(test)
-		if err != nil {
-			cleanup(false)
-			tr.failTestBeforeRunAndLog(test, err.Error())
-			return
-		}
+	reservationGroups, err := runtimeReservationGroups(test, podSettings.CapacityPlanning.PodReservationsEnabled)
+	if err != nil {
+		cleanup(false)
+		tr.failTestBeforeRunAndLog(test, err.Error())
+		return
 	}
 	peakGroupShards := planDistributedGroupShardsForCandidates(reservationGroups, loadByTarget, defaultLoadByTarget, allTargets, allowedTargets, assignment, targetSpecs)
 	// Validate the complete discovered placement before staging any group. A
@@ -1310,6 +1311,16 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			return
 		}
 		shardNamespaceBase += uint64(len(peakShards))
+		_, _, resourceInitStrategy := distributedGroupRuntimeConfig(test, group)
+		for i := range shards {
+			peak := shardVUsersForTarget(peakShards, shards[i].Target)
+			claim, claimErr := generatorrpc.NewRuntimeResourceClaim(group.script, resourceInitStrategy, peak)
+			if claimErr != nil {
+				failStartup("invalid Event Hubs processor resource plan")
+				return
+			}
+			shards[i].RuntimeResourceClaim = claim
+		}
 		activeGroupShards[group.Name] = cloneGeneratorShardSummaries(shards)
 
 		secretProjectID := group.script.ProjectID
@@ -1450,6 +1461,13 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			}
 			snapshot := loadByTarget[plan.target]
 			for shardIndex, shard := range plan.shards {
+				if admission := outcomes[index].results[shardIndex].RuntimeResourceAdmission; admission != nil {
+					for i := range activeGroupShards[group.Name] {
+						if activeGroupShards[group.Name][i].ShardOrdinal == shard.ShardOrdinal {
+							activeGroupShards[group.Name][i].RuntimeResourceAdmission = generatorrpc.CloneRuntimeResourceAdmission(admission)
+						}
+					}
+				}
 				if placement := outcomes[index].results[shardIndex].JavaHost; placement != nil {
 					for i := range activeGroupShards[group.Name] {
 						if activeGroupShards[group.Name][i].ShardOrdinal == shard.ShardOrdinal && activeGroupShards[group.Name][i].JavaHost != nil {
@@ -1691,6 +1709,7 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 			assignment := template
 			assignment.ArchiveSourceTarget = plan.archiveSourceTarget
 			assignment.JavaHost = shard.JavaHost.selection()
+			assignment.RuntimeResourceClaim = shardRuntimeResourceClaim(shard)
 			assignment.Region = b.regionForTarget(plan.target)
 			assignment.VUserCount = int32(shard.VUsers)
 			assignment.ShardOrdinal = shard.ShardOrdinal
@@ -1728,6 +1747,10 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 			}
 			if shard.JavaHost != nil && !javaHostPlacementAcknowledged(shard.JavaHost, result.JavaHost) {
 				outcome.err = fmt.Errorf("java_host_reservation_acknowledgement_invalid on %q", plan.target)
+				return
+			}
+			if assignment.RuntimeResourceClaim != nil && !generatorrpc.ValidRuntimeResourceAdmission(assignment.RuntimeResourceClaim, result.RuntimeResourceAdmission) {
+				outcome.err = fmt.Errorf("eventhubs resource admission acknowledgement invalid on %q", plan.target)
 				return
 			}
 			outcome.results[shardIndex] = result
@@ -2292,6 +2315,14 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 			currentShardVUsers := shardVUsersForTarget(shards, target)
 			snapshot.AvailableCapacity += int32(currentShardVUsers)
 			restoreGroupRuntimeCapacity(&snapshot, scaleGroup, currentShardVUsers)
+			for _, shard := range shards {
+				if shard.Target == target {
+					if err := boundRuntimeResourceScaleLoad(&snapshot, shard, scaleGroup); err != nil {
+						loadCh <- loadProbeResult{target: target, err: err}
+						return
+					}
+				}
+			}
 			loadCh <- loadProbeResult{target: target, snapshot: snapshot}
 		}()
 	}
@@ -2426,6 +2457,8 @@ func preserveShardCoordinatesByTarget(next []GeneratorShardSummary, previous []G
 		out[index].ShardOrdinal = prior.ShardOrdinal
 		out[index].ShardCount = prior.ShardCount
 		out[index].VUserIDOffset = prior.VUserIDOffset
+		out[index].RuntimeResourceClaim = shardRuntimeResourceClaim(prior)
+		out[index].RuntimeResourceAdmission = generatorrpc.CloneRuntimeResourceAdmission(prior.RuntimeResourceAdmission)
 	}
 	return out, nil
 }

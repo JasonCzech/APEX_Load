@@ -2287,6 +2287,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -12432,6 +12435,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -14445,6 +14451,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -16264,6 +16273,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -39846,6 +39858,9 @@ paths:
                             type: string
                           partition_key:
                             type: string
+                          processor_max_partitions:
+                            type: integer
+                            format: int64
                           start_position:
                             type: string
                           timeout_ms:
@@ -43156,6 +43171,16 @@ paths:
                                 type: string
                               java_host:
                                 type: object
+                                additionalProperties: true
+                                nullable: true
+                              runtime_resource_admission:
+                                type: object
+                                description: 'Go type: pb.RuntimeResourceAdmission'
+                                additionalProperties: true
+                                nullable: true
+                              runtime_resource_claim:
+                                type: object
+                                description: 'Go type: pb.RuntimeResourceClaim'
                                 additionalProperties: true
                                 nullable: true
                               shard_count:
@@ -62166,6 +62191,16 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            runtime_resource_admission:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceAdmission'
+                              additionalProperties: true
+                              nullable: true
+                            runtime_resource_claim:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceClaim'
+                              additionalProperties: true
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -66609,6 +66644,16 @@ paths:
                                 - preparation_ms
                                 - profile
                                 - run_lifetime_ms
+                              nullable: true
+                            runtime_resource_admission:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceAdmission'
+                              additionalProperties: true
+                              nullable: true
+                            runtime_resource_claim:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceClaim'
+                              additionalProperties: true
                               nullable: true
                             shard_count:
                               type: integer
@@ -71054,6 +71099,16 @@ paths:
                                 - preparation_ms
                                 - profile
                                 - run_lifetime_ms
+                              nullable: true
+                            runtime_resource_admission:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceAdmission'
+                              additionalProperties: true
+                              nullable: true
+                            runtime_resource_claim:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceClaim'
+                              additionalProperties: true
                               nullable: true
                             shard_count:
                               type: integer
@@ -75512,6 +75567,16 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            runtime_resource_admission:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceAdmission'
+                              additionalProperties: true
+                              nullable: true
+                            runtime_resource_claim:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceClaim'
+                              additionalProperties: true
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -79968,6 +80033,16 @@ paths:
                                 - preparation_ms
                                 - profile
                                 - run_lifetime_ms
+                              nullable: true
+                            runtime_resource_admission:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceAdmission'
+                              additionalProperties: true
+                              nullable: true
+                            runtime_resource_claim:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceClaim'
+                              additionalProperties: true
                               nullable: true
                             shard_count:
                               type: integer
@@ -84426,6 +84501,16 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            runtime_resource_admission:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceAdmission'
+                              additionalProperties: true
+                              nullable: true
+                            runtime_resource_claim:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceClaim'
+                              additionalProperties: true
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -88882,6 +88967,16 @@ paths:
                                 - preparation_ms
                                 - profile
                                 - run_lifetime_ms
+                              nullable: true
+                            runtime_resource_admission:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceAdmission'
+                              additionalProperties: true
+                              nullable: true
+                            runtime_resource_claim:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceClaim'
+                              additionalProperties: true
                               nullable: true
                             shard_count:
                               type: integer
@@ -139826,6 +139921,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -141936,6 +142034,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -143990,6 +144091,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -145931,6 +146035,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -148039,6 +148146,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -150059,6 +150169,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -153742,6 +153855,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -157921,6 +158037,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -159939,6 +160058,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -164875,6 +164997,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -166715,6 +166840,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -168646,6 +168774,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -170498,6 +170629,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -172276,6 +172410,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -175792,6 +175929,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -177955,6 +178095,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -181123,6 +181266,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -182913,6 +183059,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -184951,6 +185100,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -187015,6 +187167,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -190257,6 +190412,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -192958,6 +193116,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -194659,6 +194820,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -196812,6 +196976,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -198495,6 +198662,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -200568,6 +200738,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -203460,6 +203633,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -205753,6 +205929,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -209106,6 +209285,9 @@ paths:
                                     type: string
                                   partition_key:
                                     type: string
+                                  processor_max_partitions:
+                                    type: integer
+                                    format: int64
                                   start_position:
                                     type: string
                                   timeout_ms:
@@ -210917,6 +211099,9 @@ paths:
                                     type: string
                                   partition_key:
                                     type: string
+                                  processor_max_partitions:
+                                    type: integer
+                                    format: int64
                                   start_position:
                                     type: string
                                   timeout_ms:
@@ -212667,6 +212852,9 @@ paths:
                                       type: string
                                     partition_key:
                                       type: string
+                                    processor_max_partitions:
+                                      type: integer
+                                      format: int64
                                     start_position:
                                       type: string
                                     timeout_ms:
@@ -214172,6 +214360,9 @@ paths:
                                       type: string
                                     partition_key:
                                       type: string
+                                    processor_max_partitions:
+                                      type: integer
+                                      format: int64
                                     start_position:
                                       type: string
                                     timeout_ms:
@@ -216092,6 +216283,9 @@ paths:
                                     type: string
                                   partition_key:
                                     type: string
+                                  processor_max_partitions:
+                                    type: integer
+                                    format: int64
                                   start_position:
                                     type: string
                                   timeout_ms:
@@ -217903,6 +218097,9 @@ paths:
                                     type: string
                                   partition_key:
                                     type: string
+                                  processor_max_partitions:
+                                    type: integer
+                                    format: int64
                                   start_position:
                                     type: string
                                   timeout_ms:
@@ -219653,6 +219850,9 @@ paths:
                                       type: string
                                     partition_key:
                                       type: string
+                                    processor_max_partitions:
+                                      type: integer
+                                      format: int64
                                     start_position:
                                       type: string
                                     timeout_ms:
@@ -221158,6 +221358,9 @@ paths:
                                       type: string
                                     partition_key:
                                       type: string
+                                    processor_max_partitions:
+                                      type: integer
+                                      format: int64
                                     start_position:
                                       type: string
                                     timeout_ms:
@@ -223105,6 +223308,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -224870,6 +225076,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -226771,6 +226980,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -228394,6 +228606,9 @@ paths:
                                 type: string
                               partition_key:
                                 type: string
+                              processor_max_partitions:
+                                type: integer
+                                format: int64
                               start_position:
                                 type: string
                               timeout_ms:
@@ -230029,6 +230244,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -232035,6 +232253,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -235281,6 +235502,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -237081,6 +237305,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -238989,6 +239216,9 @@ paths:
                               type: string
                             partition_key:
                               type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
                             start_position:
                               type: string
                             timeout_ms:
@@ -253016,6 +253246,16 @@ paths:
                             - profile
                             - run_lifetime_ms
                           nullable: true
+                        runtime_resource_admission:
+                          type: object
+                          description: 'Go type: pb.RuntimeResourceAdmission'
+                          additionalProperties: true
+                          nullable: true
+                        runtime_resource_claim:
+                          type: object
+                          description: 'Go type: pb.RuntimeResourceClaim'
+                          additionalProperties: true
+                          nullable: true
                         shard_count:
                           type: integer
                           format: int64
@@ -264215,6 +264455,16 @@ paths:
                             - profile
                             - run_lifetime_ms
                           nullable: true
+                        runtime_resource_admission:
+                          type: object
+                          description: 'Go type: pb.RuntimeResourceAdmission'
+                          additionalProperties: true
+                          nullable: true
+                        runtime_resource_claim:
+                          type: object
+                          description: 'Go type: pb.RuntimeResourceClaim'
+                          additionalProperties: true
+                          nullable: true
                         shard_count:
                           type: integer
                           format: int64
@@ -275205,6 +275455,16 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            runtime_resource_admission:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceAdmission'
+                              additionalProperties: true
+                              nullable: true
+                            runtime_resource_claim:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceClaim'
+                              additionalProperties: true
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -277205,6 +277465,16 @@ paths:
                                 - preparation_ms
                                 - profile
                                 - run_lifetime_ms
+                              nullable: true
+                            runtime_resource_admission:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceAdmission'
+                              additionalProperties: true
+                              nullable: true
+                            runtime_resource_claim:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceClaim'
+                              additionalProperties: true
                               nullable: true
                             shard_count:
                               type: integer
@@ -286584,6 +286854,16 @@ paths:
                                   description: 'Go type: JavaHostPlacementSummary'
                                   additionalProperties: true
                                   nullable: true
+                                runtime_resource_admission:
+                                  type: object
+                                  description: 'Go type: pb.RuntimeResourceAdmission'
+                                  additionalProperties: true
+                                  nullable: true
+                                runtime_resource_claim:
+                                  type: object
+                                  description: 'Go type: pb.RuntimeResourceClaim'
+                                  additionalProperties: true
+                                  nullable: true
                                 shard_count:
                                   type: integer
                                   format: int64
@@ -287444,6 +287724,16 @@ paths:
                                 java_host:
                                   type: object
                                   description: 'Go type: JavaHostPlacementSummary'
+                                  additionalProperties: true
+                                  nullable: true
+                                runtime_resource_admission:
+                                  type: object
+                                  description: 'Go type: pb.RuntimeResourceAdmission'
+                                  additionalProperties: true
+                                  nullable: true
+                                runtime_resource_claim:
+                                  type: object
+                                  description: 'Go type: pb.RuntimeResourceClaim'
                                   additionalProperties: true
                                   nullable: true
                                 shard_count:
@@ -296203,6 +296493,16 @@ paths:
                             - preparation_ms
                             - profile
                             - run_lifetime_ms
+                          nullable: true
+                        runtime_resource_admission:
+                          type: object
+                          description: 'Go type: pb.RuntimeResourceAdmission'
+                          additionalProperties: true
+                          nullable: true
+                        runtime_resource_claim:
+                          type: object
+                          description: 'Go type: pb.RuntimeResourceClaim'
+                          additionalProperties: true
                           nullable: true
                         shard_count:
                           type: integer
@@ -307346,6 +307646,16 @@ paths:
                             - preparation_ms
                             - profile
                             - run_lifetime_ms
+                          nullable: true
+                        runtime_resource_admission:
+                          type: object
+                          description: 'Go type: pb.RuntimeResourceAdmission'
+                          additionalProperties: true
+                          nullable: true
+                        runtime_resource_claim:
+                          type: object
+                          description: 'Go type: pb.RuntimeResourceClaim'
+                          additionalProperties: true
                           nullable: true
                         shard_count:
                           type: integer
@@ -322172,6 +322482,16 @@ paths:
                                 - profile
                                 - run_lifetime_ms
                               nullable: true
+                            runtime_resource_admission:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceAdmission'
+                              additionalProperties: true
+                              nullable: true
+                            runtime_resource_claim:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceClaim'
+                              additionalProperties: true
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -323567,6 +323887,16 @@ paths:
                                 - preparation_ms
                                 - profile
                                 - run_lifetime_ms
+                              nullable: true
+                            runtime_resource_admission:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceAdmission'
+                              additionalProperties: true
+                              nullable: true
+                            runtime_resource_claim:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceClaim'
+                              additionalProperties: true
                               nullable: true
                             shard_count:
                               type: integer
@@ -325346,6 +325676,16 @@ paths:
                                 - preparation_ms
                                 - profile
                                 - run_lifetime_ms
+                              nullable: true
+                            runtime_resource_admission:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceAdmission'
+                              additionalProperties: true
+                              nullable: true
+                            runtime_resource_claim:
+                              type: object
+                              description: 'Go type: pb.RuntimeResourceClaim'
+                              additionalProperties: true
                               nullable: true
                             shard_count:
                               type: integer

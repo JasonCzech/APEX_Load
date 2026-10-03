@@ -14,6 +14,9 @@ func (*EventHubs) RuntimeCapabilities() protocol.RuntimeCapabilities {
 	out := protocol.RuntimeCapabilities{Available: true}
 	if realEventHubsAvailable {
 		out.Features = []string{FeatureProcessorCheckpointsV1, FeatureExclusiveConsumerV1}
+		if capacity := (&EventHubs{}).RuntimeResourceCapacity(); capacity.Available {
+			out.Features = append(out.Features, FeatureProcessorReservationsV1)
+		}
 	}
 	return out
 }

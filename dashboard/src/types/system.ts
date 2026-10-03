@@ -50,6 +50,8 @@ export interface SystemInventoryController {
 }
 
 export interface SystemInventoryRuntimeCapacity {
+  resource_contract?: string
+  resources?: import('./runtimeResources').RuntimeResourceCapacity
   protocol: string
   available: boolean
   max_vusers: number

@@ -31,8 +31,9 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
-	PrepareOnly bool
-	JavaHost    *pb.JavaHostSelection
+	RuntimeResourceClaim *pb.RuntimeResourceClaim
+	PrepareOnly          bool
+	JavaHost             *pb.JavaHostSelection
 	// AdoptionGrace > 0 opts the run into HA continuity (WorkAssignment.adoption_grace).
 	AdoptionGrace                time.Duration
 	ArchiveSourceTarget          string
@@ -77,10 +78,11 @@ type Assignment struct {
 }
 
 type AssignmentResult struct {
-	JavaHost          *pb.JavaHostPlacement
-	Accepted          bool
-	ErrorMessage      string
-	AvailableCapacity int32
+	RuntimeResourceAdmission *pb.RuntimeResourceAdmission
+	JavaHost                 *pb.JavaHostPlacement
+	Accepted                 bool
+	ErrorMessage             string
+	AvailableCapacity        int32
 }
 
 type WorkCommitResult struct {
@@ -415,12 +417,14 @@ const (
 // external runtime. It is independent from the generator's general MaxVUsers:
 // a JVM sidecar may have substantially fewer process slots than the Go engine.
 type ProtocolRuntimeCapacity struct {
-	Protocol        string   `json:"protocol"`
-	Available       bool     `json:"available"`
-	MaxVUsers       int64    `json:"max_vusers"`
-	AvailableVUsers int64    `json:"available_vusers"`
-	Features        []string `json:"features,omitempty"`
-	OccupancyMode   string   `json:"occupancy_mode,omitempty"`
+	ResourceContract string                            `json:"resource_contract,omitempty"`
+	Resources        *protocol.RuntimeResourceCapacity `json:"resources,omitempty"`
+	Protocol         string                            `json:"protocol"`
+	Available        bool                              `json:"available"`
+	MaxVUsers        int64                             `json:"max_vusers"`
+	AvailableVUsers  int64                             `json:"available_vusers"`
+	Features         []string                          `json:"features,omitempty"`
+	OccupancyMode    string                            `json:"occupancy_mode,omitempty"`
 }
 
 type HeartbeatResponse struct {
@@ -544,11 +548,13 @@ type Client struct {
 }
 
 type sharedClientConnection struct {
-	javaHostCaps     *pb.JavaHostCapabilities
-	javaHostObserved time.Time
-	javaHostPrepared bool
-	mu               sync.Mutex
-	refs             int
+	runtimeResources         bool
+	runtimeResourcesObserved time.Time
+	javaHostCaps             *pb.JavaHostCapabilities
+	javaHostObserved         time.Time
+	javaHostPrepared         bool
+	mu                       sync.Mutex
+	refs                     int
 }
 
 type HeartbeatStream struct {
@@ -792,7 +798,16 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 	if request.GetJavaHost() != nil && !c.javaHostSelectionNegotiated(request) {
 		return AssignmentResult{}, fmt.Errorf("java_host_capability_not_negotiated")
 	}
+	if err := validateRuntimeResourceClaim(request.RuntimeResourceClaim, request.VuserCount); err != nil {
+		return AssignmentResult{}, err
+	}
+	if request.RuntimeResourceClaim != nil && !c.runtimeResourcesNegotiated() {
+		return AssignmentResult{}, fmt.Errorf("runtime_resource_capability_not_negotiated")
+	}
 	ack, err := c.rpc.AssignWork(ctx, request)
+	if err == nil && ack.GetAccepted() && request.RuntimeResourceClaim != nil && !ValidRuntimeResourceAdmission(request.RuntimeResourceClaim, ack.GetRuntimeResourceAdmission()) {
+		return AssignmentResult{}, fmt.Errorf("runtime_resource_negotiation_failed")
+	}
 	if err == nil && ack.GetAccepted() && request.GetJavaHost() != nil {
 		placement := ack.GetJavaHost()
 		if placement == nil || !proto.Equal(placement.GetSelection(), request.GetJavaHost()) || placement.ReservationId == "" || len(placement.ReservationId) > 128 || placement.Mode != "dedicated" || placement.Containment != "execution_pod" || placement.MaxHosts < javaHostPreparedVUsers(request) || placement.MaxVusers < javaHostPreparedVUsers(request) {
@@ -807,10 +822,11 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 	}
 
 	return AssignmentResult{
-		JavaHost:          cloneJavaHostPlacement(ack.GetJavaHost()),
-		Accepted:          ack.GetAccepted(),
-		ErrorMessage:      ack.GetErrorMessage(),
-		AvailableCapacity: ack.GetAvailableCapacity(),
+		RuntimeResourceAdmission: CloneRuntimeResourceAdmission(ack.GetRuntimeResourceAdmission()),
+		JavaHost:                 cloneJavaHostPlacement(ack.GetJavaHost()),
+		Accepted:                 ack.GetAccepted(),
+		ErrorMessage:             ack.GetErrorMessage(),
+		AvailableCapacity:        ack.GetAvailableCapacity(),
 	}, nil
 }
 
@@ -1251,11 +1267,13 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 	if err != nil {
 		if s.owner != nil {
 			s.owner.observeJavaHosts(nil)
+			s.owner.observeRuntimeResources(nil)
 		}
 		return HeartbeatResponse{}, err
 	}
 	if s.owner != nil {
 		s.owner.observeJavaHosts(pong)
+		s.owner.observeRuntimeResources(pong)
 	}
 	s.clockMu.Lock()
 	sentAt := s.clockSentAt
@@ -1359,7 +1377,8 @@ func protocolRuntimeCapacitiesFromProto(values []*pb.ProtocolRuntimeCapacity) []
 			continue
 		}
 		out = append(out, ProtocolRuntimeCapacity{
-			Protocol:        value.GetProtocol(),
+			ResourceContract: value.GetResourceContract(),
+			Resources:        RuntimeResourceCapacityFromProto(value.GetResources()), Protocol: value.GetProtocol(),
 			Available:       value.GetAvailable(),
 			MaxVUsers:       value.GetMaxVusers(),
 			AvailableVUsers: value.GetAvailableVusers(),
@@ -1571,6 +1590,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	targetDuration := resolvedPreciseDuration(assignment.TargetDuration, assignment.TargetDurationSeconds)
 	rampUp := resolvedPreciseDuration(assignment.RampUp, int64(assignment.RampUpSeconds))
 	return &pb.WorkAssignment{PrepareOnly: assignment.PrepareOnly,
+		RuntimeResourceClaim:      CloneRuntimeResourceClaim(assignment.RuntimeResourceClaim),
 		SourcePlan:                assignment.SourcePlan,
 		JavaHost:                  cloneJavaHostSelection(assignment.JavaHost),
 		TestId:                    assignment.TestID,

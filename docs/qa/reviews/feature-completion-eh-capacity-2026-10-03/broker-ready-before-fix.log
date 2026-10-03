@@ -1,0 +1,5 @@
+--- FAIL: TestBrokerClientReadyBeforeAsyncPreparationStarts (0.01s)
+    client_test.go:409: unstarted preparation must remain usable and not ready false java_broker_transport_uncertain
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/javarunner/broker	0.285s
+FAIL

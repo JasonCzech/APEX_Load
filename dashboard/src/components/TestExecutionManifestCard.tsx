@@ -1,3 +1,4 @@
+import RuntimeResourceReservations from './RuntimeResourceReservations'
 import { useMemo, useState } from 'react'
 
 import {
@@ -237,6 +238,7 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
       </div>
 
       {compact ? <>
+        <RuntimeResourceReservations shards={manifest.load_generators.generator_shards} />
         {(manifest.load_generators.generator_shards || []).some(shard => shard.java_host) && <section className="manifest-section" aria-label="Java host reservations">
           <h4>Java host reservations</h4>
           {(manifest.load_generators.generator_shards || []).filter(shard => shard.java_host).map(shard => <div key={`${shard.group}-${shard.target}`}>
@@ -362,7 +364,7 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
               {(manifest.load_generators.generator_shards || []).map((shard, index) => (
                 <tr key={`${shard.group}-${shard.target}-${index}`}>
                   <td>{shard.group}</td>
-                  <td>{shard.target}{renderJavaHostPlacement(shard)}</td>
+                  <td>{shard.target}{renderJavaHostPlacement(shard)}<RuntimeResourceReservations shards={[shard]} /></td>
                   <td>{shard.vusers}</td>
                   <td>{shard.shard_strategy || 'Not set'}</td>
                 </tr>

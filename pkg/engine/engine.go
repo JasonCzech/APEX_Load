@@ -59,6 +59,7 @@ const (
 // contention. Call MetricsSnapshot() periodically (e.g., every second) to
 // extract aggregated metrics during or after a run.
 type Engine struct {
+	runtimeResources   *engineRuntimeResources
 	pooledPilot        *javaPooledPilot
 	brokerExecution    *javaBrokerExecution
 	evidenceSchedule   []VUserLifetime
@@ -89,6 +90,8 @@ type Engine struct {
 
 // Config contains configuration for Engine creation.
 type Config struct {
+	RuntimeResourcePeakVUsers  int
+	RuntimeResourceReservation protocol.RuntimeResourceReservation
 	// EvidenceSchedule is trusted benchmark wiring, never DSL/API configuration.
 	EvidenceSchedule []VUserLifetime
 	// EvidenceStarted receives the schedule's clock origin; callbacks must return promptly.
@@ -193,10 +196,15 @@ func New(cfg Config) (*Engine, error) {
 	if scriptSourcedDropped {
 		warnScriptSourcedRedactionDropped("script", cfg.Script.Name)
 	}
+	runtimeResources, resourceErr := newEngineRuntimeResources([]GroupConfig{{Name: "", Script: cfg.Script, VUsers: cfg.VUsers, RuntimeResourcePeakVUsers: cfg.RuntimeResourcePeakVUsers, RuntimeResourceReservation: cfg.RuntimeResourceReservation}})
+	if resourceErr != nil {
+		return nil, resourceErr
+	}
 	metrics := NewMetricsCollector(10000)
 	metrics.timingObserver = cfg.TimingObserver
 	metrics.initializationObserver = cfg.InitializationObserver
 	return &Engine{
+		runtimeResources: runtimeResources,
 		evidenceSchedule: append([]VUserLifetime(nil), cfg.EvidenceSchedule...),
 		evidenceStarted:  cfg.EvidenceStarted, completionObserver: cfg.CompletionObserver,
 		script:              cfg.Script,
@@ -221,6 +229,10 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 	if e.brokerExecution != nil && !e.brokerExecution.used.CompareAndSwap(false, true) {
 		return nil, errors.New("java_broker_already_used")
 	}
+	if err := e.runtimeResources.beginRun(); err != nil {
+		return nil, err
+	}
+	defer e.runtimeResources.release()
 	// Re-check durable import gates at the actual execution boundary. Engine
 	// construction and execution are intentionally separate, and callers retain
 	// the Script pointer, so a draft can acquire a blocker after New returns.
@@ -231,6 +243,13 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 	if err := validateMessageDetailRuntimeSupport(e.script); err != nil {
 		return nil, err
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := e.runtimeResources.adopt(ctx); err != nil {
+		return nil, err
+	}
+	ctx = e.runtimeResources.bind(ctx, "")
 
 	var sourceErr error
 	e.sourceParameters, sourceErr = newSourceParameterState([]*dsl.Script{e.script})

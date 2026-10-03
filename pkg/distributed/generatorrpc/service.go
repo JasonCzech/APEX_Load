@@ -70,6 +70,9 @@ type assignedTest struct {
 	groupScripts                    map[string]string
 	groupJavaHosts                  map[string]string
 	groupJavaHostPrepared           map[string]int32
+	groupRuntimeResources           map[string]protocol.RuntimeResourceReservation
+	groupRuntimeResourceClaims      map[string]*pb.RuntimeResourceClaim
+	groupRuntimeResourcePeaks       map[string]int32
 	terminalError                   string
 }
 
@@ -1096,6 +1099,12 @@ func stopGroupExecution(execution *groupExecution) {
 			}()
 			return
 		}
+		// Non-broker runtime reservations release bounded process-local state.
+		// Close it before signalling staged completion so graceful detach remains
+		// synchronous and no unused Event Hubs budget outlives the stopped stage.
+		if execution.engine != nil {
+			_ = execution.engine.ClosePreparedRuntime()
+		}
 		execution.stagedDoneOnce.Do(func() {
 			if execution.done != nil {
 				close(execution.done)
@@ -1503,7 +1512,11 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 				runtimeAvailable = false
 			}
 		}
-		if capabilitySupported {
+		resourceCapacity, resourceSupported, resourceErr := protocol.ReadRuntimeResourceCapacity(instance)
+		if resourceErr != nil {
+			resourceCapacity = protocol.RuntimeResourceCapacity{}
+		}
+		if capabilitySupported || resourceSupported {
 			used := inUse[normalized]
 			if used < 0 {
 				used = 0
@@ -1513,14 +1526,22 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 			if runtimeAvailable && used < maxVUsers {
 				remaining = maxVUsers - used
 			}
-			runtimeCapacities = append(runtimeCapacities, &pb.ProtocolRuntimeCapacity{
+			runtimeEntry := &pb.ProtocolRuntimeCapacity{
 				Protocol:        normalized,
 				Available:       runtimeAvailable,
 				MaxVusers:       maxVUsers,
 				AvailableVusers: remaining,
 				Features:        sortedUniqueRuntimeNames(capabilities.Features),
 				OccupancyMode:   occupancyModes[normalized],
-			})
+			}
+			if resourceSupported && normalized == "eventhubs" {
+				runtimeEntry.ResourceContract = FeatureRuntimeResourceReservationsV1
+				runtimeEntry.Resources = RuntimeResourceCapacityToProto(resourceCapacity)
+				if runtimeAvailable && normalized == "eventhubs" && resourceErr == nil && resourceCapacity.Available {
+					features = append(features, FeatureRuntimeResourceReservationsV1)
+				}
+			}
+			runtimeCapacities = append(runtimeCapacities, runtimeEntry)
 		}
 		if !runtimeAvailable {
 			continue
@@ -2413,6 +2434,7 @@ func (s *Service) completeAssignmentMatchingTimer(testID string, token uint64, r
 		s.markStoppingLocked(testID, assignment.executionGeneration)
 		s.clearTestExecutionLeaseLocked(testID)
 		s.clearRunSupervisionLocked(testID)
+		releaseAssignmentRuntimeResources(assignment)
 		delete(s.assignments, testID)
 	}
 	delete(s.executions, testID)
@@ -2867,6 +2889,7 @@ func (s *Service) finishExecutionMatching(testID string, groupName string, expec
 	s.markStoppingLocked(testID, assignment.executionGeneration)
 	s.clearTestExecutionLeaseLocked(testID)
 	s.clearRunSupervisionLocked(testID)
+	releaseAssignmentRuntimeResources(assignment)
 	delete(s.assignments, testID)
 	s.stopCompletionTimerLocked(testID)
 	s.stopStageTimerLocked(testID)

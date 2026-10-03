@@ -50,23 +50,26 @@ func init() {
 }
 
 type config struct {
-	OwnerLevel             *int64
-	ConsumerMode           string
-	CheckpointContainerURL string
-	Lifetime               context.Context
-	ProducerLifecycle      string
-	SampleTiming           string
-	Namespace              string
-	EventHub               string
-	ConnectionString       string
-	ConsumerGroup          string
-	PartitionKey           string
-	PartitionID            string
-	StartPosition          string // observer-probe start: "latest" (default) | "earliest"
-	AuthType               string // connection_string | aad
-	Timeout                time.Duration
-	Mock                   bool
-	AllowedTargetHosts     []string
+	OwnerLevel                *int64
+	ConsumerMode              string
+	ProcessorMaxPartitions    int64
+	processorReservation      *ProcessorReservation
+	processorReservationBound bool
+	CheckpointContainerURL    string
+	Lifetime                  context.Context
+	ProducerLifecycle         string
+	SampleTiming              string
+	Namespace                 string
+	EventHub                  string
+	ConnectionString          string
+	ConsumerGroup             string
+	PartitionKey              string
+	PartitionID               string
+	StartPosition             string // observer-probe start: "latest" (default) | "earliest"
+	AuthType                  string // connection_string | aad
+	Timeout                   time.Duration
+	Mock                      bool
+	AllowedTargetHosts        []string
 }
 
 // EventHubs is a per-VUser Azure Event Hubs client.
@@ -89,13 +92,35 @@ func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 	if err != nil {
 		return fmt.Errorf("eventhubs timeout_ms: %w", err)
 	}
+	if value, present := cfg["eventhubs_consumer_mode"]; present && value != nil {
+		if _, ok := value.(string); !ok {
+			return fmt.Errorf("eventhubs consumer_mode must be a string")
+		}
+	}
+	partitionCeiling := MaxProcessorPartitions
+	if value, present := cfg["eventhubs_processor_max_partitions"]; present {
+		if value == nil {
+			return fmt.Errorf("eventhubs processor_max_partitions must be an integer")
+		}
+		partitionCeiling, err = boundedInteger(value, MaxProcessorPartitions, 0, MaxProcessorPartitions)
+		if err != nil {
+			return fmt.Errorf("eventhubs processor_max_partitions: %w", err)
+		}
+		if partitionCeiling != 0 && stringValue(cfg, "eventhubs_consumer_mode") != "processor" {
+			return fmt.Errorf("processor_max_partitions requires processor mode")
+		}
+		if partitionCeiling == 0 {
+			partitionCeiling = MaxProcessorPartitions
+		}
+	}
 	ownerLevel, err := parseOwnerLevel(cfg["eventhubs_owner_level"])
 	if err != nil {
 		return err
 	}
 	e.cfg = config{
-		OwnerLevel: ownerLevel,
-		Lifetime:   ctx, ConsumerMode: stringValue(cfg, "eventhubs_consumer_mode"), CheckpointContainerURL: stringValue(cfg, "eventhubs_checkpoint_container_url"),
+		OwnerLevel:             ownerLevel,
+		ProcessorMaxPartitions: int64(partitionCeiling),
+		Lifetime:               ctx, ConsumerMode: stringValue(cfg, "eventhubs_consumer_mode"), CheckpointContainerURL: stringValue(cfg, "eventhubs_checkpoint_container_url"),
 		ProducerLifecycle:  stringValue(cfg, "eventhubs_producer_lifecycle"),
 		SampleTiming:       stringValue(cfg, "eventhubs_sample_timing"),
 		Namespace:          stringValue(cfg, "eventhubs_namespace"),
@@ -127,6 +152,24 @@ func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 	}
 	if (e.cfg.ConsumerMode == "processor" || e.cfg.ConsumerMode == "exclusive") && !realEventHubsAvailable {
 		return fmt.Errorf("Event Hubs %s consumer requires an eventhubs_real build", e.cfg.ConsumerMode)
+	}
+	if e.cfg.ConsumerMode == "processor" {
+		pool, err := defaultProcessorPool()
+		if err != nil {
+			return err
+		}
+		if e.cfg.ProcessorMaxPartitions > pool.limits.partitions {
+			return fmt.Errorf("processor_max_partitions exceeds the configured process limit")
+		}
+		reservation, bound := protocol.RuntimeResourceReservationFromContext(ctx, eventHubsProtocolName)
+		e.cfg.processorReservationBound = bound
+		if bound {
+			parent, ok := reservation.(*ProcessorReservation)
+			if !ok || parent == nil || parent.pool != pool || !parent.Current() || parent.Demand().MaxPartitionsPerProcessor != e.cfg.ProcessorMaxPartitions {
+				return fmt.Errorf("bound Event Hubs processor reservation is unavailable or mismatched")
+			}
+			e.cfg.processorReservation = parent
+		}
 	}
 	if e.cfg.ConsumerMode == "processor" {
 		if _, err := identitypolicy.ValidateEventHubsCheckpointContainer(e.cfg.CheckpointContainerURL); err != nil {

@@ -783,6 +783,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -4471,6 +4472,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -5271,6 +5273,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -5973,6 +5976,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -9631,6 +9635,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -10485,6 +10490,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -11164,6 +11170,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -11812,6 +11819,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -12350,6 +12358,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -12961,6 +12970,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -13584,6 +13594,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -14809,6 +14820,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -16199,6 +16211,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -17851,6 +17864,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -18515,6 +18529,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -19426,6 +19441,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -20324,6 +20340,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -21015,6 +21032,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -25564,6 +25582,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -29108,6 +29128,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -29946,6 +29967,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -31879,6 +31901,8 @@ export interface operations {
                 "reservation_id"?: string;
                 "run_lifetime_ms": number;
               }) | null;
+              "runtime_resource_admission"?: (Record<string, unknown>) | null;
+              "runtime_resource_claim"?: (Record<string, unknown>) | null;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
@@ -41457,6 +41481,8 @@ export interface operations {
               "to_shards"?: Array<{
                 "group": string;
                 "java_host"?: (Record<string, unknown>) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -41947,6 +41973,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -43682,6 +43709,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -48249,6 +48277,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -49993,6 +50023,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -50662,6 +50694,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -53349,6 +53383,8 @@ export interface operations {
                 "generator_shards"?: Array<{
                   "group": string;
                   "java_host"?: (Record<string, unknown>) | null;
+                  "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                  "runtime_resource_claim"?: (Record<string, unknown>) | null;
                   "shard_count"?: number;
                   "shard_ordinal"?: number;
                   "shard_strategy"?: string;
@@ -53616,6 +53652,8 @@ export interface operations {
                 "generator_shards"?: Array<{
                   "group": string;
                   "java_host"?: (Record<string, unknown>) | null;
+                  "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                  "runtime_resource_claim"?: (Record<string, unknown>) | null;
                   "shard_count"?: number;
                   "shard_ordinal"?: number;
                   "shard_strategy"?: string;
@@ -55813,6 +55851,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -58451,6 +58490,8 @@ export interface operations {
                 "reservation_id"?: string;
                 "run_lifetime_ms": number;
               }) | null;
+              "runtime_resource_admission"?: (Record<string, unknown>) | null;
+              "runtime_resource_claim"?: (Record<string, unknown>) | null;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
@@ -62689,6 +62730,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -63169,6 +63212,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -63758,6 +63803,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -66210,6 +66257,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -66893,6 +66941,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -75635,6 +75684,8 @@ export interface operations {
                 "reservation_id"?: string;
                 "run_lifetime_ms": number;
               }) | null;
+              "runtime_resource_admission"?: (Record<string, unknown>) | null;
+              "runtime_resource_claim"?: (Record<string, unknown>) | null;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
@@ -79679,6 +79730,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -80528,6 +80580,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -81220,6 +81273,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -81981,6 +82035,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -82951,6 +83006,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -83630,6 +83686,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -84278,6 +84335,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -84816,6 +84874,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -86343,6 +86402,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -87508,6 +87568,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -88963,6 +89025,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -90418,6 +90482,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -91873,6 +91939,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -93328,6 +93396,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -94738,6 +94808,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -95515,6 +95586,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -97994,6 +98066,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -99612,6 +99685,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -100227,6 +100301,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -102644,6 +102719,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -103880,6 +103956,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -105193,6 +105270,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -106505,6 +106583,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -107818,6 +107897,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -109130,6 +109210,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -114045,6 +114126,8 @@ export interface operations {
                 "reservation_id"?: string;
                 "run_lifetime_ms": number;
               }) | null;
+              "runtime_resource_admission"?: (Record<string, unknown>) | null;
+              "runtime_resource_claim"?: (Record<string, unknown>) | null;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
@@ -117194,6 +117277,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -117884,6 +117968,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -122902,6 +122987,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };
@@ -123739,6 +123825,7 @@ export interface operations {
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
                   "timeout_ms"?: number;
                 };
@@ -128086,6 +128173,7 @@ export interface operations {
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
                 "timeout_ms"?: number;
               };

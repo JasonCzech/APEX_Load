@@ -297,3 +297,34 @@ test('Live configuration reports prepared Java reservations without opening raw 
   await expect(reservations).toBeVisible()
   await page.screenshot({ path: test.info().outputPath('java-reservations.png'), fullPage: true })
 })
+
+
+test('prepared Event Hubs run displays processor admission and starts with the pinned revision', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const id = 'prepared-eventhubs-resources'
+  const claim = { contract: 'eventhubs_processor_reservations_v1', protocol: 'eventhubs', peak_vusers: 2, requested: { processors: 2, workers: 8, max_partitions_per_processor: 4 } }
+  const admission = { claim, admitted: claim.requested, current: true }
+  const allocation = [{ group: 'processor', target: 'generator-a', vusers: 1, runtime_resource_claim: claim, runtime_resource_admission: admission }]
+  await page.route(`**/api/v1/analysis/capabilities?project_id=${workspace.projectId}`, route => route.fulfill({ json: { preparation_enabled: true, monitoring_enabled: false, imports_enabled: false } }))
+  await page.route(`**/api/v1/tests/${id}`, route => route.fulfill({ json: { id, name: 'Prepared Event Hubs', status: 'INITIALIZING', project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, duration: '10m', total_vusers: 1, created_at: '2026-10-03T10:00:00Z', groups: [], generator_shards: allocation } }))
+  await page.route(`**/api/v1/tests/${id}/manifest`, route => route.fulfill({ json: { schema_version: 'v1', test_id: id, test_name: 'Prepared Event Hubs', status: 'INITIALIZING', source: 'live', identity: {}, initial_configuration: {}, current_configuration: {}, load_generators: { execution_settings: {}, generator_shards: allocation }, runtime_changes: [] } }))
+  await page.route(`**/api/v1/tests/${id}/preparation`, route => route.fulfill({ json: { id: 'prep-eventhubs', state: 'ready', revision: 2, execution_revision: 'immutable-execution', expires_at: '2099-10-03T10:30:00Z', allocation } }))
+  let started: unknown
+  await page.route(`**/api/v1/tests/${id}/start`, route => { started = route.request().postDataJSON(); return route.fulfill({ json: { status: 'starting' } }) })
+  await page.goto(`/#/test/${id}?tab=configuration&${scopeQuery(workspace)}`)
+  await page.reload()
+  const preparation = page.getByRole('region', { name: 'Run preparation' })
+  await expect(preparation.getByRole('region', { name: 'Event Hubs processor reservations' })).toBeVisible()
+  await expect(preparation).toContainText('Requested processors / workers')
+  await expect(preparation).toContainText('Admitted processors / workers')
+  await expect(preparation.getByText('2 / 8', { exact: true })).toHaveCount(2)
+  await expect(preparation).toContainText('Partition ceiling per processor')
+  await expect(preparation.getByText('4', { exact: true })).toBeVisible()
+  await page.setViewportSize({ width: 850, height: 1000 })
+  await page.screenshot({ path: test.info().outputPath('eventhubs-preparation-resources.png'), fullPage: true })
+  await preparation.getByRole('button', { name: 'Start prepared run', exact: true }).click()
+  await expect.poll(() => started).toEqual({ preparation_id: 'prep-eventhubs', expected_preparation_revision: 'immutable-execution' })
+  await expect(preparation).toContainText('consumed')
+})
