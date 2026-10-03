@@ -193,6 +193,19 @@ cd dashboard && npm run build   # outputs to pkg/api/static/
 go test ./...
 ```
 
+## Build Cache Cleanup
+Agents **must** clean up local and Docker build caches once all tasks in their session
+that need those caches are complete, including builds, tests, browser verification,
+and any follow-up fixes. Perform cleanup before reporting the session work complete;
+retain caches while any dependent work remains.
+
+- Clear Go build and test caches with `go clean -cache -testcache`, using the same cache configuration as the session's builds and tests.
+- Remove disposable frontend build caches used during the session, such as `dashboard/node_modules/.vite` and `dashboard/node_modules/.vite-temp`, plus any session-created build-cache directories.
+- Prune unused Docker build cache with `docker builder prune --all --force`; for separate Buildx builders used during the session, use `docker buildx prune --builder <name> --all --force`.
+- Preserve source changes, dependencies (`node_modules`, Go module downloads), deliverable build outputs, images, containers, volumes, and application data. Do not use `docker system prune` for this cleanup.
+- Do not clear shared local caches while another active build or agent still needs them. Defer that cleanup until the shared work is complete, and report any deferred or permission-blocked cleanup in the final response.
+- Verify cleanup completed and briefly report the result, including reclaimed space when available.
+
 ## Performance Targets
 These are design targets, not yet backed by published benchmark artifacts. Do not cite as achieved.
 - Harness overhead per transaction: < 50 μs
