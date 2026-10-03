@@ -35,6 +35,7 @@ func TestWorkflowPreparationAndSources(t *testing.T) {
 		{"analysis", []string{"comparisons", "--project", "p"}, "GET", "/api/v1/analysis/comparisons"},
 		{"monitor", []string{"dependencies", "--id", "run", "--at", "2026-01-01T00:00:00Z"}, "GET", "/api/v1/tests/run/dependency-evidence"},
 		{"monitor", []string{"sources", "--project", "p"}, "GET", "/api/v1/projects/p/monitor-sources"},
+		{"analysis", []string{"progress", "--id", "run", "--mode", "archive", "--group", "workers", "--source-id", "source"}, "GET", "/api/v1/tests/run/messaging-progress"},
 		{"analysis", []string{"capabilities", "--project", "p"}, "GET", "/api/v1/analysis/capabilities"},
 	} {
 		var output bytes.Buffer
@@ -55,7 +56,7 @@ func TestWorkflowRejectsIncompleteCommandsWithoutNetwork(t *testing.T) {
 	for _, tc := range []struct {
 		kind string
 		args []string
-	}{{"prepare", nil}, {"prepare", []string{"start", "--id", "run"}}, {"analysis", []string{"create", "--project", "p"}}, {"monitor", []string{"sources"}}, {"monitor", []string{"dependencies", "--id", "run", "--at", "invalid"}}} {
+	}{{"analysis", []string{"progress", "--id", "run", "--mode", "invalid"}}, {"analysis", []string{"progress"}}, {"prepare", nil}, {"prepare", []string{"start", "--id", "run"}}, {"analysis", []string{"create", "--project", "p"}}, {"monitor", []string{"sources"}}, {"monitor", []string{"dependencies", "--id", "run", "--at", "invalid"}}} {
 		if err := executeWorkflowCommand(context.Background(), tc.kind, tc.args, &bytes.Buffer{}); err == nil {
 			t.Fatalf("accepted %+v", tc)
 		}

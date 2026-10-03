@@ -62,7 +62,7 @@ type optionalSchemaMigration struct {
 
 const (
 	intervalSummarySchemaVersionV1 = "apexload.interval-summary.v1"
-	intervalSummarySchemaVersion   = "apexload.interval-summary.v7"
+	intervalSummarySchemaVersion   = "apexload.interval-summary.v8"
 	archiveRecordSchemaVersion     = "apexload.archive.v1"
 	scriptRecordingSchemaVersion   = "apexload.recording.v2"
 )
@@ -126,6 +126,7 @@ type NetworkLatencyTargetRecord struct {
 }
 
 type IntervalSummaryRecord struct {
+	MessagingProgress        *protocol.MessagingProgressSnapshot    `json:"messaging_progress,omitempty"`
 	Messaging                map[string]*protocol.MessagingSummary  `json:"messaging,omitempty"`
 	NativeEvidence           *NativeIntervalEvidence                `json:"native_evidence,omitempty"`
 	CompletedIterations      int64                                  `json:"completed_iterations,omitempty"`

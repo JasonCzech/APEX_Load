@@ -1407,3 +1407,16 @@ func TestEventHubsExclusiveOwnerLevelSurvivesRuntimeMapping(t *testing.T) {
 		t.Fatal("runtime map retained mutable epoch pointer")
 	}
 }
+
+func TestEventHubsPartitionTailRuntimeConfig(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		cfg := map[string]any{}
+		appendEventHubsConfig(cfg, &dsl.Script{Config: dsl.ScriptConfig{EventHubs: dsl.EventHubsConfig{ConsumerMode: "processor", ObservePartitionTail: enabled, TailPollIntervalMs: 10000}}})
+		if value, _ := cfg["eventhubs_observe_partition_tail"].(bool); value != enabled {
+			t.Fatalf("tail opt-in=%v: %v", enabled, cfg)
+		}
+		if cfg["eventhubs_tail_poll_interval_ms"] != 10000 {
+			t.Fatal("tail interval lost")
+		}
+	}
+}

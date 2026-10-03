@@ -825,6 +825,7 @@ type RunLogicGoalSnapshot struct {
 }
 
 type LiveMetrics struct {
+	MessagingProgress   *protocol.MessagingProgressSnapshot   `json:"messaging_progress,omitempty"`
 	Messaging           map[string]*protocol.MessagingSummary `json:"messaging,omitempty"`
 	NativeEvidence      *storage.NativeIntervalEvidence       `json:"native_evidence,omitempty"`
 	StatisticalFindings []StatisticalFinding                  `json:"statistical_findings,omitempty"`

@@ -537,6 +537,14 @@ func loadArchiveIntervalSummariesForFiltersContext(ctx context.Context, record *
 			TotalErrors:  cumulativeErrors,
 			Groups:       archiveSelectedSummaryGroups(summary.Groups, groupSet, groupFilter.Explicit),
 		}
+		// Progress is scoped to a processor group, never to a transaction action.
+		if action == "" {
+			if groupFilter.Explicit {
+				record.MessagingProgress = messagingProgressForGroups(summary.MessagingProgress, groupFilter.Names)
+			} else {
+				record.MessagingProgress = summary.MessagingProgress.Clone()
+			}
+		}
 		windowSeconds := archiveSummaryBucketSeconds(summaries, index)
 		record.Transactions = intervalTransactionsFromAccumulators(transactionSeriesBuckets[index], windowSeconds)
 		if bucket.transactions > 0 {

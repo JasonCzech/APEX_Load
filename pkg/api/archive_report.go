@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -516,6 +517,9 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		}
 		if summary.ActiveVUsers > report.Overview.PeakActiveVUsers {
 			report.Overview.PeakActiveVUsers = summary.ActiveVUsers
+		}
+		if summary.MessagingProgress != nil {
+			protocol.MergeMessagingProgress(&report.MessagingProgress, summary.MessagingProgress)
 		}
 		mergeRunArchiveTelemetrySummary(&telemetrySummary, summary)
 		report.SummaryTimeline = append(report.SummaryTimeline, RunArchiveSummaryPoint{

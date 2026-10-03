@@ -32,6 +32,8 @@ type eventHubsProcessor struct {
 	closeTimeout   time.Duration
 	closeTransport func(context.Context) error
 	consumer       *eh.ConsumerClient
+	progress       *processorProgress
+	tailDone       chan struct{}
 }
 
 // Admission waiting is bounded by the caller, without spawning waiter goroutines.
@@ -174,7 +176,7 @@ func (c *realClient) startProcessor(ctx context.Context) (*eventHubsProcessor, e
 	if err != nil {
 		return nil, err
 	}
-	store := &fencedCheckpointStore{records: blobCheckpointRecords{client: blobs}, namespace: namespace, hub: c.cfg.EventHub, group: c.cfg.ConsumerGroup, owner: cc.InstanceID(), partitions: partitions}
+	store := &fencedCheckpointStore{records: blobCheckpointRecords{client: blobs}, namespace: namespace, hub: c.cfg.EventHub, group: c.cfg.ConsumerGroup, owner: cc.InstanceID(), partitions: partitions, progress: c.cfg.progress}
 	start := eh.StartPosition{}
 	yes := true
 	if c.cfg.StartPosition == "earliest" {
@@ -187,6 +189,8 @@ func (c *realClient) startProcessor(ctx context.Context) (*eventHubsProcessor, e
 		return nil, err
 	}
 	session.store = store
+	session.progress = c.cfg.progress
+	session.progress.setInventory(partitions)
 	lifetime, cancel := session.ctx, session.cancel
 	c.mu.Lock()
 	if c.closed || lifetime.Err() != nil || startupCtx.Err() != nil {
@@ -194,6 +198,9 @@ func (c *realClient) startProcessor(ctx context.Context) (*eventHubsProcessor, e
 		return nil, errors.New("Event Hubs processor startup cancelled before execution")
 	}
 	admitted = true
+	if c.cfg.ObservePartitionTail {
+		session.tailDone = startProcessorTail(session.ctx, c.cfg, partitions, session.progress, cc.GetPartitionProperties)
+	}
 	go func() {
 		defer session.finishProcessor(child, ownedParent)
 		defer cancel()
@@ -224,7 +231,7 @@ func (c *realClient) startProcessor(ctx context.Context) (*eventHubsProcessor, e
 // inventory request, so even failed startup closes through the same proof path.
 func (c *realClient) ownProcessorConsumer(consumer *eh.ConsumerClient) *eventHubsProcessor {
 	lifetime, cancel := context.WithCancel(c.cfg.Lifetime)
-	session := &eventHubsProcessor{ctx: lifetime, cancel: cancel, done: make(chan struct{}), deliveries: make(chan event), failure: make(chan error, 1), consumer: consumer, closeTransport: consumer.Close}
+	session := &eventHubsProcessor{ctx: lifetime, cancel: cancel, done: make(chan struct{}), deliveries: make(chan event), failure: make(chan error, 1), consumer: consumer, closeTransport: consumer.Close, progress: c.cfg.progress}
 	c.mu.Lock()
 	c.processorCancel = cancel
 	c.processorOwnedConsumer = consumer
@@ -302,6 +309,10 @@ func (l *processorLease) beginDrain() {
 
 func (s *eventHubsProcessor) finishProcessor(child *processorLease, ownedParent bool) {
 	child.beginDrain()
+	s.progress.state("draining")
+	if s.tailDone != nil {
+		<-s.tailDone
+	}
 	// The SDK closes partition handles internally and may discard their errors.
 	// Closing this exclusively owned consumer also closes its AMQP connection;
 	// pinned go-amqp Conn.Close waits for both reader/writer goroutines. A blocked
@@ -318,6 +329,11 @@ func (s *eventHubsProcessor) finishProcessor(child *processorLease, ownedParent 
 	child.release()
 	if ownedParent {
 		child.parent.Release()
+	}
+	if s.cleanupError() != nil {
+		s.progress.state("quarantined")
+	} else {
+		s.progress.state("released")
 	}
 	// Teardown readers observe final pool accounting and cleanup error once done.
 	close(s.done)
@@ -380,7 +396,11 @@ func (s *eventHubsProcessor) partitionWorkerWithLease(partition processorPartiti
 		events, err := partition.ReceiveEvents(s.ctx, 1, nil)
 		if err != nil {
 			var providerErr *eh.Error
-			if errors.As(err, &providerErr) && providerErr.Code == eh.ErrorCodeOwnershipLost || s.ctx.Err() != nil {
+			if errors.As(err, &providerErr) && providerErr.Code == eh.ErrorCodeOwnershipLost {
+				s.progress.ownership(partition.PartitionID(), fence, "lost", nil, "")
+				return
+			}
+			if s.ctx.Err() != nil {
 				return
 			}
 			s.fail(err)
@@ -407,11 +427,14 @@ func (s *eventHubsProcessor) partitionWorkerWithLease(partition processorPartiti
 		if rd.EnqueuedTime != nil {
 			ev.EnqueuedAt = *rd.EnqueuedTime
 		}
+		deliveredBefore := false
 		for {
 			receipt := &processorReceipt{acks: make(chan processorAck, 1), result: make(chan error, 1), lifetime: s.ctx}
 			ev.receipt = receipt
 			select {
 			case s.deliveries <- ev:
+				s.progress.deliveredEvent(partition.PartitionID(), fence, rd.SequenceNumber, rd.Offset, deliveredBefore)
+				deliveredBefore = true
 			case <-s.ctx.Done():
 				return
 			}
@@ -422,9 +445,11 @@ func (s *eventHubsProcessor) partitionWorkerWithLease(partition processorPartiti
 				return
 			}
 			if !ack.accept {
+				s.progress.rejectedEvent(partition.PartitionID(), fence)
 				continue
 			}
 			checkpointCtx := context.WithValue(ack.ctx, checkpointFenceContextKey{}, fence)
+			checkpointCtx = context.WithValue(checkpointCtx, checkpointRetryContextKey{}, failures > 0)
 			err := partition.UpdateCheckpoint(checkpointCtx, rd, nil)
 			receipt.result <- err
 			if errors.Is(err, errCheckpointFence) {

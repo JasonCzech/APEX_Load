@@ -7455,6 +7455,9 @@
         "namespace": {
           "type": "string"
         },
+        "observe_partition_tail": {
+          "type": "boolean"
+        },
         "owner_level": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -7473,6 +7476,11 @@
         },
         "start_position": {
           "type": "string"
+        },
+        "tail_poll_interval_ms": {
+          "maximum": 300000,
+          "minimum": 0,
+          "type": "integer"
         },
         "timeout_ms": {
           "maximum": 3600000,

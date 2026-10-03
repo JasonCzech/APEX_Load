@@ -2279,6 +2279,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -2292,6 +2294,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -8987,6 +8992,107 @@ paths:
                         transactions_parquet_file:
                           type: string
                       nullable: true
+                    messaging_progress:
+                      type: object
+                      properties:
+                        captured_at:
+                          type: string
+                          format: date-time
+                        dropped_rows:
+                          type: integer
+                          format: int64
+                        incomplete:
+                          type: boolean
+                        lifecycle:
+                          type: string
+                        rows:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              acquired:
+                                type: integer
+                                format: int64
+                              capture_revision:
+                                type: string
+                              captured_at:
+                                type: string
+                                format: date-time
+                              checkpoint:
+                                type: object
+                                description: 'Go type: MessagingCheckpointProgress'
+                                additionalProperties: true
+                              checkpoint_position:
+                                type: object
+                                description: 'Go type: MessagingProgressPosition'
+                                additionalProperties: true
+                              delivered:
+                                type: integer
+                                format: int64
+                              delivered_position:
+                                type: object
+                                description: 'Go type: MessagingProgressPosition'
+                                additionalProperties: true
+                              expected_partitions:
+                                type: integer
+                                format: int64
+                              generation:
+                                type: string
+                              group:
+                                type: string
+                              incomplete:
+                                type: boolean
+                              inventory_complete:
+                                type: boolean
+                              lost:
+                                type: integer
+                                format: int64
+                              mode:
+                                type: string
+                              origin:
+                                type: string
+                              ownership:
+                                type: string
+                              ownership_verified_age_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              ownership_verified_at:
+                                type: string
+                                format: date-time
+                              partition:
+                                type: string
+                              protocol:
+                                type: string
+                              redelivered:
+                                type: integer
+                                format: int64
+                              rejected:
+                                type: integer
+                                format: int64
+                              revision:
+                                type: string
+                              session_id:
+                                type: string
+                              source:
+                                type: string
+                              source_id:
+                                type: string
+                              subscription:
+                                type: string
+                              tail_position:
+                                type: object
+                                description: 'Go type: MessagingProgressPosition'
+                                additionalProperties: true
+                              updated_at:
+                                type: string
+                                format: date-time
+                        unavailable_reason:
+                          type: string
+                        version:
+                          type: integer
+                          format: int64
+                      nullable: true
                     metric_populations:
                       type: object
                       additionalProperties:
@@ -12427,6 +12533,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -12440,6 +12548,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -14443,6 +14554,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -14456,6 +14569,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -16265,6 +16381,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -16278,6 +16396,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -39850,6 +39971,8 @@ paths:
                             type: boolean
                           namespace:
                             type: string
+                          observe_partition_tail:
+                            type: boolean
                           owner_level:
                             type: integer
                             format: int64
@@ -39863,6 +39986,9 @@ paths:
                             format: int64
                           start_position:
                             type: string
+                          tail_poll_interval_ms:
+                            type: integer
+                            format: int64
                           timeout_ms:
                             type: integer
                             format: int64
@@ -62964,6 +63090,35 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            messaging_progress:
+                              type: object
+                              properties:
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                dropped_rows:
+                                  type: integer
+                                  format: int64
+                                incomplete:
+                                  type: boolean
+                                lifecycle:
+                                  type: string
+                                rows:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingProgressRow'
+                                    additionalProperties: true
+                                unavailable_reason:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - captured_at
+                                - rows
+                                - version
+                              nullable: true
                             native_evidence:
                               type: object
                               properties:
@@ -64023,6 +64178,35 @@ paths:
                               required:
                                 - dimensions
                               nullable: true
+                          messaging_progress:
+                            type: object
+                            properties:
+                              captured_at:
+                                type: string
+                                format: date-time
+                              dropped_rows:
+                                type: integer
+                                format: int64
+                              incomplete:
+                                type: boolean
+                              lifecycle:
+                                type: string
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingProgressRow'
+                                  additionalProperties: true
+                              unavailable_reason:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - captured_at
+                              - rows
+                              - version
+                            nullable: true
                           native_evidence:
                             type: object
                             properties:
@@ -67418,6 +67602,35 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            messaging_progress:
+                              type: object
+                              properties:
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                dropped_rows:
+                                  type: integer
+                                  format: int64
+                                incomplete:
+                                  type: boolean
+                                lifecycle:
+                                  type: string
+                                rows:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingProgressRow'
+                                    additionalProperties: true
+                                unavailable_reason:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - captured_at
+                                - rows
+                                - version
+                              nullable: true
                             native_evidence:
                               type: object
                               properties:
@@ -68477,6 +68690,35 @@ paths:
                               required:
                                 - dimensions
                               nullable: true
+                          messaging_progress:
+                            type: object
+                            properties:
+                              captured_at:
+                                type: string
+                                format: date-time
+                              dropped_rows:
+                                type: integer
+                                format: int64
+                              incomplete:
+                                type: boolean
+                              lifecycle:
+                                type: string
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingProgressRow'
+                                  additionalProperties: true
+                              unavailable_reason:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - captured_at
+                              - rows
+                              - version
+                            nullable: true
                           native_evidence:
                             type: object
                             properties:
@@ -71873,6 +72115,35 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            messaging_progress:
+                              type: object
+                              properties:
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                dropped_rows:
+                                  type: integer
+                                  format: int64
+                                incomplete:
+                                  type: boolean
+                                lifecycle:
+                                  type: string
+                                rows:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingProgressRow'
+                                    additionalProperties: true
+                                unavailable_reason:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - captured_at
+                                - rows
+                                - version
+                              nullable: true
                             native_evidence:
                               type: object
                               properties:
@@ -72932,6 +73203,35 @@ paths:
                               required:
                                 - dimensions
                               nullable: true
+                          messaging_progress:
+                            type: object
+                            properties:
+                              captured_at:
+                                type: string
+                                format: date-time
+                              dropped_rows:
+                                type: integer
+                                format: int64
+                              incomplete:
+                                type: boolean
+                              lifecycle:
+                                type: string
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingProgressRow'
+                                  additionalProperties: true
+                              unavailable_reason:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - captured_at
+                              - rows
+                              - version
+                            nullable: true
                           native_evidence:
                             type: object
                             properties:
@@ -76340,6 +76640,35 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            messaging_progress:
+                              type: object
+                              properties:
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                dropped_rows:
+                                  type: integer
+                                  format: int64
+                                incomplete:
+                                  type: boolean
+                                lifecycle:
+                                  type: string
+                                rows:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingProgressRow'
+                                    additionalProperties: true
+                                unavailable_reason:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - captured_at
+                                - rows
+                                - version
+                              nullable: true
                             native_evidence:
                               type: object
                               properties:
@@ -77399,6 +77728,35 @@ paths:
                               required:
                                 - dimensions
                               nullable: true
+                          messaging_progress:
+                            type: object
+                            properties:
+                              captured_at:
+                                type: string
+                                format: date-time
+                              dropped_rows:
+                                type: integer
+                                format: int64
+                              incomplete:
+                                type: boolean
+                              lifecycle:
+                                type: string
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingProgressRow'
+                                  additionalProperties: true
+                              unavailable_reason:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - captured_at
+                              - rows
+                              - version
+                            nullable: true
                           native_evidence:
                             type: object
                             properties:
@@ -80807,6 +81165,35 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            messaging_progress:
+                              type: object
+                              properties:
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                dropped_rows:
+                                  type: integer
+                                  format: int64
+                                incomplete:
+                                  type: boolean
+                                lifecycle:
+                                  type: string
+                                rows:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingProgressRow'
+                                    additionalProperties: true
+                                unavailable_reason:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - captured_at
+                                - rows
+                                - version
+                              nullable: true
                             native_evidence:
                               type: object
                               properties:
@@ -81866,6 +82253,35 @@ paths:
                               required:
                                 - dimensions
                               nullable: true
+                          messaging_progress:
+                            type: object
+                            properties:
+                              captured_at:
+                                type: string
+                                format: date-time
+                              dropped_rows:
+                                type: integer
+                                format: int64
+                              incomplete:
+                                type: boolean
+                              lifecycle:
+                                type: string
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingProgressRow'
+                                  additionalProperties: true
+                              unavailable_reason:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - captured_at
+                              - rows
+                              - version
+                            nullable: true
                           native_evidence:
                             type: object
                             properties:
@@ -85274,6 +85690,35 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            messaging_progress:
+                              type: object
+                              properties:
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                dropped_rows:
+                                  type: integer
+                                  format: int64
+                                incomplete:
+                                  type: boolean
+                                lifecycle:
+                                  type: string
+                                rows:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingProgressRow'
+                                    additionalProperties: true
+                                unavailable_reason:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - captured_at
+                                - rows
+                                - version
+                              nullable: true
                             native_evidence:
                               type: object
                               properties:
@@ -86333,6 +86778,35 @@ paths:
                               required:
                                 - dimensions
                               nullable: true
+                          messaging_progress:
+                            type: object
+                            properties:
+                              captured_at:
+                                type: string
+                                format: date-time
+                              dropped_rows:
+                                type: integer
+                                format: int64
+                              incomplete:
+                                type: boolean
+                              lifecycle:
+                                type: string
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingProgressRow'
+                                  additionalProperties: true
+                              unavailable_reason:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - captured_at
+                              - rows
+                              - version
+                            nullable: true
                           native_evidence:
                             type: object
                             properties:
@@ -89741,6 +90215,35 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            messaging_progress:
+                              type: object
+                              properties:
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                dropped_rows:
+                                  type: integer
+                                  format: int64
+                                incomplete:
+                                  type: boolean
+                                lifecycle:
+                                  type: string
+                                rows:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MessagingProgressRow'
+                                    additionalProperties: true
+                                unavailable_reason:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - captured_at
+                                - rows
+                                - version
+                              nullable: true
                             native_evidence:
                               type: object
                               properties:
@@ -90800,6 +91303,35 @@ paths:
                               required:
                                 - dimensions
                               nullable: true
+                          messaging_progress:
+                            type: object
+                            properties:
+                              captured_at:
+                                type: string
+                                format: date-time
+                              dropped_rows:
+                                type: integer
+                                format: int64
+                              incomplete:
+                                type: boolean
+                              lifecycle:
+                                type: string
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MessagingProgressRow'
+                                  additionalProperties: true
+                              unavailable_reason:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - captured_at
+                              - rows
+                              - version
+                            nullable: true
                           native_evidence:
                             type: object
                             properties:
@@ -139913,6 +140445,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -139926,6 +140460,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -142026,6 +142563,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -142039,6 +142578,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -144083,6 +144625,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -144096,6 +144640,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -146027,6 +146574,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -146040,6 +146589,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -148138,6 +148690,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -148151,6 +148705,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -150161,6 +150718,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -150174,6 +150733,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -153847,6 +154409,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -153860,6 +154424,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -158029,6 +158596,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -158042,6 +158611,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -160050,6 +160622,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -160063,6 +160637,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -164989,6 +165566,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -165002,6 +165581,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -166832,6 +167414,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -166845,6 +167429,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -168766,6 +169353,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -168779,6 +169368,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -170621,6 +171213,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -170634,6 +171228,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -172402,6 +172999,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -172415,6 +173014,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -175921,6 +176523,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -175934,6 +176538,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -178087,6 +178694,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -178100,6 +178709,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -181258,6 +181870,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -181271,6 +181885,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -183051,6 +183668,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -183064,6 +183683,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -185092,6 +185714,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -185105,6 +185729,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -187159,6 +187786,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -187172,6 +187801,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -190404,6 +191036,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -190417,6 +191051,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -193108,6 +193745,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -193121,6 +193760,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -194812,6 +195454,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -194825,6 +195469,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -196968,6 +197615,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -196981,6 +197630,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -198654,6 +199306,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -198667,6 +199321,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -200730,6 +201387,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -200743,6 +201402,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -203625,6 +204287,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -203638,6 +204302,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -205921,6 +206588,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -205934,6 +206603,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -209277,6 +209949,8 @@ paths:
                                     type: boolean
                                   namespace:
                                     type: string
+                                  observe_partition_tail:
+                                    type: boolean
                                   owner_level:
                                     type: integer
                                     format: int64
@@ -209290,6 +209964,9 @@ paths:
                                     format: int64
                                   start_position:
                                     type: string
+                                  tail_poll_interval_ms:
+                                    type: integer
+                                    format: int64
                                   timeout_ms:
                                     type: integer
                                     format: int64
@@ -211091,6 +211768,8 @@ paths:
                                     type: boolean
                                   namespace:
                                     type: string
+                                  observe_partition_tail:
+                                    type: boolean
                                   owner_level:
                                     type: integer
                                     format: int64
@@ -211104,6 +211783,9 @@ paths:
                                     format: int64
                                   start_position:
                                     type: string
+                                  tail_poll_interval_ms:
+                                    type: integer
+                                    format: int64
                                   timeout_ms:
                                     type: integer
                                     format: int64
@@ -212844,6 +213526,8 @@ paths:
                                       type: boolean
                                     namespace:
                                       type: string
+                                    observe_partition_tail:
+                                      type: boolean
                                     owner_level:
                                       type: integer
                                       format: int64
@@ -212857,6 +213541,9 @@ paths:
                                       format: int64
                                     start_position:
                                       type: string
+                                    tail_poll_interval_ms:
+                                      type: integer
+                                      format: int64
                                     timeout_ms:
                                       type: integer
                                       format: int64
@@ -214352,6 +215039,8 @@ paths:
                                       type: boolean
                                     namespace:
                                       type: string
+                                    observe_partition_tail:
+                                      type: boolean
                                     owner_level:
                                       type: integer
                                       format: int64
@@ -214365,6 +215054,9 @@ paths:
                                       format: int64
                                     start_position:
                                       type: string
+                                    tail_poll_interval_ms:
+                                      type: integer
+                                      format: int64
                                     timeout_ms:
                                       type: integer
                                       format: int64
@@ -216275,6 +216967,8 @@ paths:
                                     type: boolean
                                   namespace:
                                     type: string
+                                  observe_partition_tail:
+                                    type: boolean
                                   owner_level:
                                     type: integer
                                     format: int64
@@ -216288,6 +216982,9 @@ paths:
                                     format: int64
                                   start_position:
                                     type: string
+                                  tail_poll_interval_ms:
+                                    type: integer
+                                    format: int64
                                   timeout_ms:
                                     type: integer
                                     format: int64
@@ -218089,6 +218786,8 @@ paths:
                                     type: boolean
                                   namespace:
                                     type: string
+                                  observe_partition_tail:
+                                    type: boolean
                                   owner_level:
                                     type: integer
                                     format: int64
@@ -218102,6 +218801,9 @@ paths:
                                     format: int64
                                   start_position:
                                     type: string
+                                  tail_poll_interval_ms:
+                                    type: integer
+                                    format: int64
                                   timeout_ms:
                                     type: integer
                                     format: int64
@@ -219842,6 +220544,8 @@ paths:
                                       type: boolean
                                     namespace:
                                       type: string
+                                    observe_partition_tail:
+                                      type: boolean
                                     owner_level:
                                       type: integer
                                       format: int64
@@ -219855,6 +220559,9 @@ paths:
                                       format: int64
                                     start_position:
                                       type: string
+                                    tail_poll_interval_ms:
+                                      type: integer
+                                      format: int64
                                     timeout_ms:
                                       type: integer
                                       format: int64
@@ -221350,6 +222057,8 @@ paths:
                                       type: boolean
                                     namespace:
                                       type: string
+                                    observe_partition_tail:
+                                      type: boolean
                                     owner_level:
                                       type: integer
                                       format: int64
@@ -221363,6 +222072,9 @@ paths:
                                       format: int64
                                     start_position:
                                       type: string
+                                    tail_poll_interval_ms:
+                                      type: integer
+                                      format: int64
                                     timeout_ms:
                                       type: integer
                                       format: int64
@@ -223300,6 +224012,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -223313,6 +224027,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -225068,6 +225785,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -225081,6 +225800,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -226972,6 +227694,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -226985,6 +227709,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -228598,6 +229325,8 @@ paths:
                                 type: boolean
                               namespace:
                                 type: string
+                              observe_partition_tail:
+                                type: boolean
                               owner_level:
                                 type: integer
                                 format: int64
@@ -228611,6 +229340,9 @@ paths:
                                 format: int64
                               start_position:
                                 type: string
+                              tail_poll_interval_ms:
+                                type: integer
+                                format: int64
                               timeout_ms:
                                 type: integer
                                 format: int64
@@ -230236,6 +230968,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -230249,6 +230983,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -232245,6 +232982,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -232258,6 +232997,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -235494,6 +236236,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -235507,6 +236251,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -237297,6 +238044,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -237310,6 +238059,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -239208,6 +239960,8 @@ paths:
                               type: boolean
                             namespace:
                               type: string
+                            observe_partition_tail:
+                              type: boolean
                             owner_level:
                               type: integer
                               format: int64
@@ -239221,6 +239975,9 @@ paths:
                               format: int64
                             start_position:
                               type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
                             timeout_ms:
                               type: integer
                               format: int64
@@ -254858,6 +255615,34 @@ paths:
                             required:
                               - dimensions
                             nullable: true
+                        messaging_progress:
+                          type: object
+                          properties:
+                            captured_at:
+                              type: string
+                              format: date-time
+                            dropped_rows:
+                              type: integer
+                              format: int64
+                            incomplete:
+                              type: boolean
+                            lifecycle:
+                              type: string
+                            rows:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            unavailable_reason:
+                              type: string
+                            version:
+                              type: integer
+                              format: int64
+                          required:
+                            - captured_at
+                            - rows
+                            - version
+                          nullable: true
                         native_evidence:
                           type: object
                           properties:
@@ -257857,6 +258642,137 @@ paths:
                           required:
                             - dimensions
                           nullable: true
+                      messaging_progress:
+                        type: object
+                        properties:
+                          captured_at:
+                            type: string
+                            format: date-time
+                          dropped_rows:
+                            type: integer
+                            format: int64
+                          incomplete:
+                            type: boolean
+                          lifecycle:
+                            type: string
+                          rows:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                acquired:
+                                  type: integer
+                                  format: int64
+                                capture_revision:
+                                  type: string
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                checkpoint:
+                                  type: object
+                                  description: 'Go type: MessagingCheckpointProgress'
+                                  additionalProperties: true
+                                checkpoint_position:
+                                  type: object
+                                  description: 'Go type: MessagingProgressPosition'
+                                  additionalProperties: true
+                                delivered:
+                                  type: integer
+                                  format: int64
+                                delivered_position:
+                                  type: object
+                                  description: 'Go type: MessagingProgressPosition'
+                                  additionalProperties: true
+                                expected_partitions:
+                                  type: integer
+                                  format: int64
+                                generation:
+                                  type: string
+                                group:
+                                  type: string
+                                incomplete:
+                                  type: boolean
+                                inventory_complete:
+                                  type: boolean
+                                lost:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                origin:
+                                  type: string
+                                ownership:
+                                  type: string
+                                ownership_verified_age_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                ownership_verified_at:
+                                  type: string
+                                  format: date-time
+                                partition:
+                                  type: string
+                                protocol:
+                                  type: string
+                                redelivered:
+                                  type: integer
+                                  format: int64
+                                rejected:
+                                  type: integer
+                                  format: int64
+                                revision:
+                                  type: string
+                                session_id:
+                                  type: string
+                                source:
+                                  type: string
+                                source_id:
+                                  type: string
+                                subscription:
+                                  type: string
+                                tail_position:
+                                  type: object
+                                  description: 'Go type: MessagingProgressPosition'
+                                  additionalProperties: true
+                                updated_at:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - acquired
+                                - capture_revision
+                                - captured_at
+                                - checkpoint
+                                - checkpoint_position
+                                - delivered
+                                - delivered_position
+                                - expected_partitions
+                                - generation
+                                - inventory_complete
+                                - lost
+                                - mode
+                                - ownership
+                                - ownership_verified_at
+                                - partition
+                                - protocol
+                                - redelivered
+                                - rejected
+                                - revision
+                                - session_id
+                                - source
+                                - source_id
+                                - subscription
+                                - tail_position
+                                - updated_at
+                          unavailable_reason:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - captured_at
+                          - rows
+                          - version
+                        nullable: true
                       native_evidence:
                         type: object
                         properties:
@@ -266067,6 +266983,34 @@ paths:
                             required:
                               - dimensions
                             nullable: true
+                        messaging_progress:
+                          type: object
+                          properties:
+                            captured_at:
+                              type: string
+                              format: date-time
+                            dropped_rows:
+                              type: integer
+                              format: int64
+                            incomplete:
+                              type: boolean
+                            lifecycle:
+                              type: string
+                            rows:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            unavailable_reason:
+                              type: string
+                            version:
+                              type: integer
+                              format: int64
+                          required:
+                            - captured_at
+                            - rows
+                            - version
+                          nullable: true
                         native_evidence:
                           type: object
                           properties:
@@ -269066,6 +270010,137 @@ paths:
                           required:
                             - dimensions
                           nullable: true
+                      messaging_progress:
+                        type: object
+                        properties:
+                          captured_at:
+                            type: string
+                            format: date-time
+                          dropped_rows:
+                            type: integer
+                            format: int64
+                          incomplete:
+                            type: boolean
+                          lifecycle:
+                            type: string
+                          rows:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                acquired:
+                                  type: integer
+                                  format: int64
+                                capture_revision:
+                                  type: string
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                checkpoint:
+                                  type: object
+                                  description: 'Go type: MessagingCheckpointProgress'
+                                  additionalProperties: true
+                                checkpoint_position:
+                                  type: object
+                                  description: 'Go type: MessagingProgressPosition'
+                                  additionalProperties: true
+                                delivered:
+                                  type: integer
+                                  format: int64
+                                delivered_position:
+                                  type: object
+                                  description: 'Go type: MessagingProgressPosition'
+                                  additionalProperties: true
+                                expected_partitions:
+                                  type: integer
+                                  format: int64
+                                generation:
+                                  type: string
+                                group:
+                                  type: string
+                                incomplete:
+                                  type: boolean
+                                inventory_complete:
+                                  type: boolean
+                                lost:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                origin:
+                                  type: string
+                                ownership:
+                                  type: string
+                                ownership_verified_age_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                ownership_verified_at:
+                                  type: string
+                                  format: date-time
+                                partition:
+                                  type: string
+                                protocol:
+                                  type: string
+                                redelivered:
+                                  type: integer
+                                  format: int64
+                                rejected:
+                                  type: integer
+                                  format: int64
+                                revision:
+                                  type: string
+                                session_id:
+                                  type: string
+                                source:
+                                  type: string
+                                source_id:
+                                  type: string
+                                subscription:
+                                  type: string
+                                tail_position:
+                                  type: object
+                                  description: 'Go type: MessagingProgressPosition'
+                                  additionalProperties: true
+                                updated_at:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - acquired
+                                - capture_revision
+                                - captured_at
+                                - checkpoint
+                                - checkpoint_position
+                                - delivered
+                                - delivered_position
+                                - expected_partitions
+                                - generation
+                                - inventory_complete
+                                - lost
+                                - mode
+                                - ownership
+                                - ownership_verified_at
+                                - partition
+                                - protocol
+                                - redelivered
+                                - rejected
+                                - revision
+                                - session_id
+                                - source
+                                - source_id
+                                - subscription
+                                - tail_position
+                                - updated_at
+                          unavailable_reason:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - captured_at
+                          - rows
+                          - version
+                        nullable: true
                       native_evidence:
                         type: object
                         properties:
@@ -288320,6 +289395,237 @@ paths:
                       - transaction_count
                       - transactions_file
                     nullable: true
+                  messaging_progress:
+                    type: object
+                    properties:
+                      captured_at:
+                        type: string
+                        format: date-time
+                      dropped_rows:
+                        type: integer
+                        format: int64
+                      incomplete:
+                        type: boolean
+                      lifecycle:
+                        type: string
+                      rows:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            acquired:
+                              type: integer
+                              format: int64
+                            capture_revision:
+                              type: string
+                            captured_at:
+                              type: string
+                              format: date-time
+                            checkpoint:
+                              type: object
+                              properties:
+                                attempts:
+                                  type: integer
+                                  format: int64
+                                cancelled_before_write:
+                                  type: integer
+                                  format: int64
+                                committed:
+                                  type: integer
+                                  format: int64
+                                duration:
+                                  type: object
+                                  description: 'Go type: MessagingDurationSummary'
+                                  additionalProperties: true
+                                failed:
+                                  type: integer
+                                  format: int64
+                                fenced:
+                                  type: integer
+                                  format: int64
+                                in_flight:
+                                  type: integer
+                                  format: int64
+                                last_completed_at:
+                                  type: string
+                                  format: date-time
+                                last_outcome:
+                                  type: string
+                                retry_attempts:
+                                  type: integer
+                                  format: int64
+                                unconfirmed:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - attempts
+                                - cancelled_before_write
+                                - committed
+                                - duration
+                                - failed
+                                - fenced
+                                - in_flight
+                                - last_completed_at
+                                - retry_attempts
+                                - unconfirmed
+                            checkpoint_position:
+                              type: object
+                              properties:
+                                observation_age_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                observed_at:
+                                  type: string
+                                  format: date-time
+                                provider_offset:
+                                  type: string
+                                received_at:
+                                  type: string
+                                  format: date-time
+                                sequence:
+                                  type: string
+                                state:
+                                  type: string
+                              required:
+                                - observed_at
+                                - received_at
+                                - state
+                            delivered:
+                              type: integer
+                              format: int64
+                            delivered_position:
+                              type: object
+                              properties:
+                                observation_age_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                observed_at:
+                                  type: string
+                                  format: date-time
+                                provider_offset:
+                                  type: string
+                                received_at:
+                                  type: string
+                                  format: date-time
+                                sequence:
+                                  type: string
+                                state:
+                                  type: string
+                              required:
+                                - observed_at
+                                - received_at
+                                - state
+                            expected_partitions:
+                              type: integer
+                              format: int64
+                            generation:
+                              type: string
+                            group:
+                              type: string
+                            incomplete:
+                              type: boolean
+                            inventory_complete:
+                              type: boolean
+                            lost:
+                              type: integer
+                              format: int64
+                            mode:
+                              type: string
+                            origin:
+                              type: string
+                            ownership:
+                              type: string
+                            ownership_verified_age_ms:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            ownership_verified_at:
+                              type: string
+                              format: date-time
+                            partition:
+                              type: string
+                            protocol:
+                              type: string
+                            redelivered:
+                              type: integer
+                              format: int64
+                            rejected:
+                              type: integer
+                              format: int64
+                            revision:
+                              type: string
+                            session_id:
+                              type: string
+                            source:
+                              type: string
+                            source_id:
+                              type: string
+                            subscription:
+                              type: string
+                            tail_position:
+                              type: object
+                              properties:
+                                observation_age_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                observed_at:
+                                  type: string
+                                  format: date-time
+                                provider_offset:
+                                  type: string
+                                received_at:
+                                  type: string
+                                  format: date-time
+                                sequence:
+                                  type: string
+                                state:
+                                  type: string
+                              required:
+                                - observed_at
+                                - received_at
+                                - state
+                            updated_at:
+                              type: string
+                              format: date-time
+                          required:
+                            - acquired
+                            - capture_revision
+                            - captured_at
+                            - checkpoint
+                            - checkpoint_position
+                            - delivered
+                            - delivered_position
+                            - expected_partitions
+                            - generation
+                            - inventory_complete
+                            - lost
+                            - mode
+                            - ownership
+                            - ownership_verified_at
+                            - partition
+                            - protocol
+                            - redelivered
+                            - rejected
+                            - revision
+                            - session_id
+                            - source
+                            - source_id
+                            - subscription
+                            - tail_position
+                            - updated_at
+                      unavailable_reason:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - captured_at
+                      - rows
+                      - version
+                    nullable: true
                   metric_populations:
                     type: object
                     additionalProperties:
@@ -298106,6 +299412,34 @@ paths:
                             required:
                               - dimensions
                             nullable: true
+                        messaging_progress:
+                          type: object
+                          properties:
+                            captured_at:
+                              type: string
+                              format: date-time
+                            dropped_rows:
+                              type: integer
+                              format: int64
+                            incomplete:
+                              type: boolean
+                            lifecycle:
+                              type: string
+                            rows:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            unavailable_reason:
+                              type: string
+                            version:
+                              type: integer
+                              format: int64
+                          required:
+                            - captured_at
+                            - rows
+                            - version
+                          nullable: true
                         native_evidence:
                           type: object
                           properties:
@@ -301105,6 +302439,137 @@ paths:
                           required:
                             - dimensions
                           nullable: true
+                      messaging_progress:
+                        type: object
+                        properties:
+                          captured_at:
+                            type: string
+                            format: date-time
+                          dropped_rows:
+                            type: integer
+                            format: int64
+                          incomplete:
+                            type: boolean
+                          lifecycle:
+                            type: string
+                          rows:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                acquired:
+                                  type: integer
+                                  format: int64
+                                capture_revision:
+                                  type: string
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                checkpoint:
+                                  type: object
+                                  description: 'Go type: MessagingCheckpointProgress'
+                                  additionalProperties: true
+                                checkpoint_position:
+                                  type: object
+                                  description: 'Go type: MessagingProgressPosition'
+                                  additionalProperties: true
+                                delivered:
+                                  type: integer
+                                  format: int64
+                                delivered_position:
+                                  type: object
+                                  description: 'Go type: MessagingProgressPosition'
+                                  additionalProperties: true
+                                expected_partitions:
+                                  type: integer
+                                  format: int64
+                                generation:
+                                  type: string
+                                group:
+                                  type: string
+                                incomplete:
+                                  type: boolean
+                                inventory_complete:
+                                  type: boolean
+                                lost:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                origin:
+                                  type: string
+                                ownership:
+                                  type: string
+                                ownership_verified_age_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                ownership_verified_at:
+                                  type: string
+                                  format: date-time
+                                partition:
+                                  type: string
+                                protocol:
+                                  type: string
+                                redelivered:
+                                  type: integer
+                                  format: int64
+                                rejected:
+                                  type: integer
+                                  format: int64
+                                revision:
+                                  type: string
+                                session_id:
+                                  type: string
+                                source:
+                                  type: string
+                                source_id:
+                                  type: string
+                                subscription:
+                                  type: string
+                                tail_position:
+                                  type: object
+                                  description: 'Go type: MessagingProgressPosition'
+                                  additionalProperties: true
+                                updated_at:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - acquired
+                                - capture_revision
+                                - captured_at
+                                - checkpoint
+                                - checkpoint_position
+                                - delivered
+                                - delivered_position
+                                - expected_partitions
+                                - generation
+                                - inventory_complete
+                                - lost
+                                - mode
+                                - ownership
+                                - ownership_verified_at
+                                - partition
+                                - protocol
+                                - redelivered
+                                - rejected
+                                - revision
+                                - session_id
+                                - source
+                                - source_id
+                                - subscription
+                                - tail_position
+                                - updated_at
+                          unavailable_reason:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - captured_at
+                          - rows
+                          - version
+                        nullable: true
                       native_evidence:
                         type: object
                         properties:
@@ -309259,6 +310724,34 @@ paths:
                             required:
                               - dimensions
                             nullable: true
+                        messaging_progress:
+                          type: object
+                          properties:
+                            captured_at:
+                              type: string
+                              format: date-time
+                            dropped_rows:
+                              type: integer
+                              format: int64
+                            incomplete:
+                              type: boolean
+                            lifecycle:
+                              type: string
+                            rows:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            unavailable_reason:
+                              type: string
+                            version:
+                              type: integer
+                              format: int64
+                          required:
+                            - captured_at
+                            - rows
+                            - version
+                          nullable: true
                         native_evidence:
                           type: object
                           properties:
@@ -312258,6 +313751,137 @@ paths:
                           required:
                             - dimensions
                           nullable: true
+                      messaging_progress:
+                        type: object
+                        properties:
+                          captured_at:
+                            type: string
+                            format: date-time
+                          dropped_rows:
+                            type: integer
+                            format: int64
+                          incomplete:
+                            type: boolean
+                          lifecycle:
+                            type: string
+                          rows:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                acquired:
+                                  type: integer
+                                  format: int64
+                                capture_revision:
+                                  type: string
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                checkpoint:
+                                  type: object
+                                  description: 'Go type: MessagingCheckpointProgress'
+                                  additionalProperties: true
+                                checkpoint_position:
+                                  type: object
+                                  description: 'Go type: MessagingProgressPosition'
+                                  additionalProperties: true
+                                delivered:
+                                  type: integer
+                                  format: int64
+                                delivered_position:
+                                  type: object
+                                  description: 'Go type: MessagingProgressPosition'
+                                  additionalProperties: true
+                                expected_partitions:
+                                  type: integer
+                                  format: int64
+                                generation:
+                                  type: string
+                                group:
+                                  type: string
+                                incomplete:
+                                  type: boolean
+                                inventory_complete:
+                                  type: boolean
+                                lost:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                origin:
+                                  type: string
+                                ownership:
+                                  type: string
+                                ownership_verified_age_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                ownership_verified_at:
+                                  type: string
+                                  format: date-time
+                                partition:
+                                  type: string
+                                protocol:
+                                  type: string
+                                redelivered:
+                                  type: integer
+                                  format: int64
+                                rejected:
+                                  type: integer
+                                  format: int64
+                                revision:
+                                  type: string
+                                session_id:
+                                  type: string
+                                source:
+                                  type: string
+                                source_id:
+                                  type: string
+                                subscription:
+                                  type: string
+                                tail_position:
+                                  type: object
+                                  description: 'Go type: MessagingProgressPosition'
+                                  additionalProperties: true
+                                updated_at:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - acquired
+                                - capture_revision
+                                - captured_at
+                                - checkpoint
+                                - checkpoint_position
+                                - delivered
+                                - delivered_position
+                                - expected_partitions
+                                - generation
+                                - inventory_complete
+                                - lost
+                                - mode
+                                - ownership
+                                - ownership_verified_at
+                                - partition
+                                - protocol
+                                - redelivered
+                                - rejected
+                                - revision
+                                - session_id
+                                - source
+                                - source_id
+                                - subscription
+                                - tail_position
+                                - updated_at
+                          unavailable_reason:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - captured_at
+                          - rows
+                          - version
+                        nullable: true
                       native_evidence:
                         type: object
                         properties:
@@ -326453,6 +328077,363 @@ paths:
       tags:
         - Tests
       x-handler: handleGetTestManifest
+  /api/v1/tests/{id}/messaging-progress:
+    get:
+      summary: Messaging Progress
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleMessagingProgress
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  catalog_version:
+                    type: string
+                  interpretation:
+                    type: string
+                  lag:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        captured_at:
+                          type: string
+                          format: date-time
+                        checkpoint:
+                          type: string
+                          nullable: true
+                        delivered:
+                          type: string
+                          nullable: true
+                        generation:
+                          type: string
+                        group:
+                          type: string
+                        origin:
+                          type: string
+                        partition:
+                          type: string
+                        session_id:
+                          type: string
+                        source_id:
+                          type: string
+                      required:
+                        - captured_at
+                        - checkpoint
+                        - delivered
+                        - generation
+                        - partition
+                        - session_id
+                        - source_id
+                  mode:
+                    type: string
+                  snapshot:
+                    type: object
+                    properties:
+                      captured_at:
+                        type: string
+                        format: date-time
+                      dropped_rows:
+                        type: integer
+                        format: int64
+                      incomplete:
+                        type: boolean
+                      lifecycle:
+                        type: string
+                      rows:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            acquired:
+                              type: integer
+                              format: int64
+                            capture_revision:
+                              type: string
+                            captured_at:
+                              type: string
+                              format: date-time
+                            checkpoint:
+                              type: object
+                              properties:
+                                attempts:
+                                  type: integer
+                                  format: int64
+                                cancelled_before_write:
+                                  type: integer
+                                  format: int64
+                                committed:
+                                  type: integer
+                                  format: int64
+                                duration:
+                                  type: object
+                                  description: 'Go type: MessagingDurationSummary'
+                                  additionalProperties: true
+                                failed:
+                                  type: integer
+                                  format: int64
+                                fenced:
+                                  type: integer
+                                  format: int64
+                                in_flight:
+                                  type: integer
+                                  format: int64
+                                last_completed_at:
+                                  type: string
+                                  format: date-time
+                                last_outcome:
+                                  type: string
+                                retry_attempts:
+                                  type: integer
+                                  format: int64
+                                unconfirmed:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - attempts
+                                - cancelled_before_write
+                                - committed
+                                - duration
+                                - failed
+                                - fenced
+                                - in_flight
+                                - last_completed_at
+                                - retry_attempts
+                                - unconfirmed
+                            checkpoint_position:
+                              type: object
+                              properties:
+                                observation_age_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                observed_at:
+                                  type: string
+                                  format: date-time
+                                provider_offset:
+                                  type: string
+                                received_at:
+                                  type: string
+                                  format: date-time
+                                sequence:
+                                  type: string
+                                state:
+                                  type: string
+                              required:
+                                - observed_at
+                                - received_at
+                                - state
+                            delivered:
+                              type: integer
+                              format: int64
+                            delivered_position:
+                              type: object
+                              properties:
+                                observation_age_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                observed_at:
+                                  type: string
+                                  format: date-time
+                                provider_offset:
+                                  type: string
+                                received_at:
+                                  type: string
+                                  format: date-time
+                                sequence:
+                                  type: string
+                                state:
+                                  type: string
+                              required:
+                                - observed_at
+                                - received_at
+                                - state
+                            expected_partitions:
+                              type: integer
+                              format: int64
+                            generation:
+                              type: string
+                            group:
+                              type: string
+                            incomplete:
+                              type: boolean
+                            inventory_complete:
+                              type: boolean
+                            lost:
+                              type: integer
+                              format: int64
+                            mode:
+                              type: string
+                            origin:
+                              type: string
+                            ownership:
+                              type: string
+                            ownership_verified_age_ms:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            ownership_verified_at:
+                              type: string
+                              format: date-time
+                            partition:
+                              type: string
+                            protocol:
+                              type: string
+                            redelivered:
+                              type: integer
+                              format: int64
+                            rejected:
+                              type: integer
+                              format: int64
+                            revision:
+                              type: string
+                            session_id:
+                              type: string
+                            source:
+                              type: string
+                            source_id:
+                              type: string
+                            subscription:
+                              type: string
+                            tail_position:
+                              type: object
+                              properties:
+                                observation_age_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                observed_at:
+                                  type: string
+                                  format: date-time
+                                provider_offset:
+                                  type: string
+                                received_at:
+                                  type: string
+                                  format: date-time
+                                sequence:
+                                  type: string
+                                state:
+                                  type: string
+                              required:
+                                - observed_at
+                                - received_at
+                                - state
+                            updated_at:
+                              type: string
+                              format: date-time
+                          required:
+                            - acquired
+                            - capture_revision
+                            - captured_at
+                            - checkpoint
+                            - checkpoint_position
+                            - delivered
+                            - delivered_position
+                            - expected_partitions
+                            - generation
+                            - inventory_complete
+                            - lost
+                            - mode
+                            - ownership
+                            - ownership_verified_at
+                            - partition
+                            - protocol
+                            - redelivered
+                            - rejected
+                            - revision
+                            - session_id
+                            - source
+                            - source_id
+                            - subscription
+                            - tail_position
+                            - updated_at
+                      unavailable_reason:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - captured_at
+                      - rows
+                      - version
+                    nullable: true
+                  unavailable_reason:
+                    type: string
+                required:
+                  - catalog_version
+                  - interpretation
+                  - lag
+                  - mode
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: group
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: mode
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: source_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleMessagingProgress
   /api/v1/tests/{id}/metrics:
     get:
       summary: Get Metrics

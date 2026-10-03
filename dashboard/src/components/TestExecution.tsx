@@ -1,3 +1,4 @@
+import MessagingProgressDiagnostics from './MessagingProgressDiagnostics'
 import MessagingDiagnostics from './MessagingDiagnostics'
 import RunAnnotations from './RunAnnotations'
 import NativeAnalyticsPanel, { NativePanelAuthoring, NativeProjectPanels } from './NativeAnalyticsPanel'
@@ -1117,6 +1118,7 @@ export default function TestExecution({
         const created = await api.createDashboardDefinition({ ...definition, project_id: test.project_id!, visibility: 'project' })
         setProjectDashboardDefinitions(current => [...current, created])
       }} />}
+      <MessagingProgressDiagnostics snapshot={test.live_metrics?.messaging_progress} />
       <MessagingDiagnostics series={Object.entries(test.live_metrics?.messaging || {}).map(([name, messaging]) => ({ name, messaging }))} />
       <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canManageTests} />
       <NativeProjectPanels testId={testId} key={`project-panels-${testId}`} definitions={projectDashboardDefinitions} history={filteredData} />

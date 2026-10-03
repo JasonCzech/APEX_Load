@@ -213,6 +213,7 @@ type preparedVUser struct {
 	group          GroupConfig
 	runtimeID      int
 	proto          protocol.Protocol
+	progress       *messagingProgressRegistration
 	vuCtx          context.Context
 	cancelVUser    context.CancelFunc
 	cancelProtocol context.CancelFunc
@@ -1811,9 +1812,11 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 		actionCtx,
 		boundaryCtx,
 	)
-	if err := callProtocolInit(initCtx, vuProto, protoConfig, group.RedactionConfig); err != nil {
+	initErr := callProtocolInit(initCtx, vuProto, protoConfig, group.RedactionConfig)
+	progress := mge.metrics.registerMessagingProgress(vuProto, group.Name, mge.runtimeResources, phase)
+	if err := initErr; err != nil {
 		detachInitAdmission()
-		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
+		runProtocolTeardownWithMessagingProgress(vuProto, progress, func() *RedactionConfig { return group.RedactionConfig })
 		cancelInit()
 		if boundaryCtx.Err() != nil &&
 			(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
@@ -1824,7 +1827,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 	}
 	detachInitAdmission()
 	defer cancelInit()
-	defer runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
+	defer runProtocolTeardownWithMessagingProgress(vuProto, progress, func() *RedactionConfig { return group.RedactionConfig })
 	// Protocol adapters are allowed to ignore their Init context. Recheck the
 	// lifecycle boundary before creating any user-phase cleanup obligation.
 	if boundaryCtx.Err() != nil || actionCtx.Err() != nil {
@@ -2037,6 +2040,7 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 	)
 	prepared.cancelProtocol = cancelProtocol
 	err = callProtocolInit(initCtx, vuProto, vuserProtoConfig(protoConfig, prepared.runtimeID), group.RedactionConfig)
+	prepared.progress = mge.metrics.registerMessagingProgress(vuProto, group.Name, mge.runtimeResources)
 	detachInitAdmission()
 	if err != nil {
 		safeErr := err
@@ -2130,7 +2134,7 @@ func (mge *MultiGroupEngine) finishPreparedVUser(prepared *preparedVUser, redact
 	}
 	prepared.cleanupOnce.Do(func() {
 		if prepared.proto != nil {
-			runProtocolTeardown(prepared.proto, redaction)
+			runProtocolTeardownWithMessagingProgress(prepared.proto, prepared.progress, redaction)
 		}
 		if prepared.cancelProtocol != nil {
 			prepared.cancelProtocol()
@@ -2523,11 +2527,13 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		shedCtx,
 		mge.launchCtx,
 	)
+	var progress *messagingProgressRegistration
 	cleanupProtocol := func() {
-		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
+		runProtocolTeardownWithMessagingProgress(vuProto, progress, func() *RedactionConfig { return group.RedactionConfig })
 		cancelProtocol()
 	}
 	err = callProtocolInit(initCtx, vuProto, vuserProtoConfig(protoConfig, runtimeVUserID), group.RedactionConfig)
+	progress = mge.metrics.registerMessagingProgress(vuProto, group.Name, mge.runtimeResources)
 	detachInitAdmission()
 	if err != nil {
 		safeErr := err
@@ -2601,7 +2607,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		defer release()
 		defer cancelVUser()
 		defer func() {
-			runProtocolTeardown(vuProto, redaction)
+			runProtocolTeardownWithMessagingProgress(vuProto, progress, redaction)
 			cancelProtocol()
 			mge.mu.Lock()
 			mge.unregisterVUserLocked(identity.handle)

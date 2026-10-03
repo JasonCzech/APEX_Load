@@ -509,6 +509,9 @@ message MetricsBatch {
   // Version 3 measured action/network/hierarchy/lifecycle intersections.
   repeated MetricAggregate action_dimension_metrics = 26;
   repeated TransactionResponseTimeSLACompliance transaction_response_time_sla = 21;
+  // Standalone cumulative processor evidence: present even without actions.
+  string messaging_progress_json = 27;
+  uint32 messaging_progress_version = 28;
 }
 
 message MetricsBatchTelemetry {

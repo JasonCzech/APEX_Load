@@ -126,3 +126,15 @@ func TestNativeProtocolAuthoringCatalogParity(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeEventHubsProgressSupportScope(t *testing.T) {
+	entry := nativeProtocolMatrixEntry(nativeProtocolSupportMatrix(), "eventhubs")
+	if entry == nil {
+		t.Fatal("missing Event Hubs")
+	}
+	if !strings.Contains(strings.Join(entry.RuntimeConfig, " "), "opt-in partition tail") ||
+		!strings.Contains(strings.Join(entry.ReplayEvidence, " "), "standalone cumulative processor progress") ||
+		!strings.Contains(strings.Join(entry.RemainingGaps, " "), "strict processor pause") {
+		t.Fatalf("progress support must preserve outstanding qualification: %+v", entry)
+	}
+}

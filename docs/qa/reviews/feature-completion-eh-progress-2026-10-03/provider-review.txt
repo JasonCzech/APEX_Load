@@ -1,0 +1,93 @@
+EH-2 provider/shared progress review and local acceptance (2026-10-03)
+
+Frozen source-set SHA256: 90463b9e2a225ada8280a36e0b2d6b4283dc98cd203ce2b497a2e8e71f58a4d4
+
+Source hash definition: sorted listed relative paths and file contents, each followed by NUL.
+
+Final commands (GOCACHE=/private/tmp/apexload-feature-completion-go-cache,
+GOMAXPROCS=2, GOMEMLIMIT=2GiB, private GOTMPDIR, -p 1):
+
+1. go test -p 1 ./pkg/protocol ./pkg/protocol/eventhubs
+   Exit0: protocol(cached), EventHubs0.406s.
+   Exact output: provider-progress-default.txt
+
+2. go test -p 1 -tags eventhubs_real ./pkg/protocol ./pkg/protocol/eventhubs
+   Exit0: protocol(cached), EventHubs0.682s.
+   Exact output: provider-progress-real.txt
+
+3. go test -race -p 1 -tags eventhubs_real -run
+   'TestMessagingProgress|TestProcessor' ./pkg/protocol ./pkg/protocol/eventhubs
+   Exit0: protocol(cached), EventHubs1.551s.
+   Exact output: provider-progress-race.txt
+
+Review/fix/review findings resolved:
+- Final independent runtime review found local row eviction/byte clipping
+  favored only owned rows. Both now preserve acquired/unverified current
+  generations before terminal history; regressions cover row churn and genuine
+  byte clipping without resetting retained acquisition/delivery counters.
+- Fenced checkpoint completion after rebalance no longer counts ownership loss
+  twice. Lifecycle transitions are idempotent and separate from checkpoint
+  attempts; unknown generations remain zero-acquired/zero-lost, and late
+  callbacks preserve voluntary released state. Default table coverage plus the
+  tagged ListOwnership-before-fenced-checkpoint regression passed.
+- Shared cumulative merge now rejects regressing histogram count/sum/extrema and
+  per-reason unavailable counts; capture replay never adds cumulative statistics.
+- Dropped-row accounting is idempotent, explicit incomplete and a lower bound
+  across merged sources. Current owned and unverified evidence precedes bounded
+  historical generations under both row and byte clipping.
+- Lifecycle merging preserves mixed empty inventories rather than arbitrarily
+  claiming released. Per-row source capture UTC and exact CaptureRevision are
+  separate from evidence mutation revision; lower captures cannot freshen data.
+- Required numeric fields reject absent/null and noncanonical case aliases that
+  encoding/json could otherwise use to overwrite measured values with zero.
+- Labels and opaque offsets reject Unicode control characters; offsets retain
+  their SDK spelling, including geo-DR tokens, independently of exact sequences.
+- Lag requires complete inventory, current verified generation and source ages
+  for ownership, tail and respective cursor. No remote UTC clock qualifies live
+  freshness; values remain explicitly as of source capture.
+- Successful durable CAS finishing after caller cancellation updates cumulative
+  checkpoint evidence without synthesizing a completed action. Pending CAS and
+  ambiguous outcomes retain prior durable cursor provenance; ambiguity remains
+  unqualified until actual current-generation verification.
+- Temporary storage read failure is unverified, not lost. New acquisition after
+  unverified prior ownership retires the old generation; renewals do not create
+  acquisitions, and stale same-generation reads cannot resurrect a lost owner.
+- Optional tail is off by default and remains traffic-free at Init. Admission
+  shares one active poll per canonical source, while each participant uses its
+  own consumer identity/cadence and publishes only to its own frozen generation.
+  Queries are bounded, never use ReceiveEvents to estimate backlog, reject late
+  cancelled responses and join before owned consumer transport cleanup.
+- Pure provider snapshots read an independent atomic tracker, not mutable config.
+  Concurrent successful re-Init retains old evidence until the replacement is
+  fully ready, avoiding transient sticky missing-source coverage.
+
+Independent reviews:
+- Fresh runtime/shared/wire review and repeat after final provider fixes: clean.
+- R0 provider/pool/tracker/tail and final atomic publication repeat: clean.
+- Metric shared contract/decoder/merge and final numeric-case guard repeats: clean.
+- This owner independently reviewed engine sampling/retention/final fence and
+  wire/history propagation: clean after fixes. Final at-once phase eligibility
+  refinement is also clean: nonconsuming main VUsers do not register trackers
+  solely because a shared init/teardown phase consumes.
+- Root API/UI/report/CLI review found an actual-project authorization mismatch.
+  Root fixed live actual-project checks and archive manifest-project checks
+  under a bounded materialization lease; regression rejects mismatch before
+  interval reads. Final UI/report opaque-offset and checkpoint-population parity
+  repeat is clean.
+
+Tests use real local state machines and pinned SDK-shaped boundaries with
+controlled storage/network callbacks. Live Azure rebalance/accepted-ID
+reconciliation and protected provider qualification were not performed or claimed.
+
+Files in frozen source hash:
+pkg/protocol/eventhubs/eventhubs.go
+pkg/protocol/eventhubs/processor_blob_real.go
+pkg/protocol/eventhubs/processor_progress.go
+pkg/protocol/eventhubs/processor_progress_real_test.go
+pkg/protocol/eventhubs/processor_progress_test.go
+pkg/protocol/eventhubs/processor_real.go
+pkg/protocol/eventhubs/processor_settings.go
+pkg/protocol/eventhubs/processor_tail_real.go
+pkg/protocol/eventhubs/realclient_eventhubs.go
+pkg/protocol/messaging_progress.go
+pkg/protocol/messaging_progress_test.go

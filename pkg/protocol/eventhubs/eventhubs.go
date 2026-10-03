@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/identitypolicy"
@@ -50,6 +51,9 @@ func init() {
 }
 
 type config struct {
+	ObservePartitionTail      bool
+	TailPollInterval          time.Duration
+	progress                  *processorProgress
 	OwnerLevel                *int64
 	ConsumerMode              string
 	ProcessorMaxPartitions    int64
@@ -74,11 +78,12 @@ type config struct {
 
 // EventHubs is a per-VUser Azure Event Hubs client.
 type EventHubs struct {
-	name          string
-	cfg           config
-	client        eventHubsClient
-	initialized   bool
-	clientFactory func() eventHubsClient
+	name             string
+	progressSnapshot atomic.Pointer[processorProgress]
+	cfg              config
+	client           eventHubsClient
+	initialized      bool
+	clientFactory    func() eventHubsClient
 	// observer detects duplicate / out-of-order events by sequence number on the
 	// consume probe. Event Hubs has no ack/rollback model, so the session is used
 	// only for its bounded sequence observer (lazily created on first consume).
@@ -87,7 +92,21 @@ type EventHubs struct {
 
 func (e *EventHubs) Name() string { return e.name }
 
+func (e *EventHubs) MessagingProgressSnapshot() *protocol.MessagingProgressSnapshot {
+	return e.progressSnapshot.Load().snapshot()
+}
+
 func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
+	ready := false
+	// Iteration reset first releases the old client. Keep its immutable local
+	// evidence visible while constructing a replacement, so an ordinary tick
+	// cannot turn an intermediate nil into sticky missing-source coverage.
+	defer func() {
+		if !ready {
+			e.progressSnapshot.Store(nil)
+		}
+	}()
+
 	timeoutMS, err := boundedInteger(cfg["eventhubs_timeout_ms"], int(defaultTimeout/time.Millisecond), 0, int(MaxConfiguredTimeout/time.Millisecond))
 	if err != nil {
 		return fmt.Errorf("eventhubs timeout_ms: %w", err)
@@ -113,11 +132,39 @@ func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 			partitionCeiling = MaxProcessorPartitions
 		}
 	}
+	tailEnabled := false
+	if value, present := cfg["eventhubs_observe_partition_tail"]; present {
+		var ok bool
+		tailEnabled, ok = value.(bool)
+		if !ok {
+			return fmt.Errorf("eventhubs observe_partition_tail must be a boolean")
+		}
+		if stringValue(cfg, "eventhubs_consumer_mode") != "processor" {
+			return fmt.Errorf("observe_partition_tail requires processor mode")
+		}
+	}
+	tailInterval := 10000
+	if value, present := cfg["eventhubs_tail_poll_interval_ms"]; present {
+		if value == nil {
+			return fmt.Errorf("eventhubs tail_poll_interval_ms must be an integer")
+		}
+		if stringValue(cfg, "eventhubs_consumer_mode") != "processor" {
+			return fmt.Errorf("tail_poll_interval_ms requires processor mode")
+		}
+		tailInterval, err = boundedInteger(value, 10000, 0, 300000)
+		if err != nil || tailInterval > 0 && tailInterval < 10000 {
+			return fmt.Errorf("eventhubs tail_poll_interval_ms must be zero or between 10000 and 300000")
+		}
+		if tailInterval == 0 {
+			tailInterval = 10000
+		}
+	}
 	ownerLevel, err := parseOwnerLevel(cfg["eventhubs_owner_level"])
 	if err != nil {
 		return err
 	}
 	e.cfg = config{
+		ObservePartitionTail: tailEnabled, TailPollInterval: time.Duration(tailInterval) * time.Millisecond,
 		OwnerLevel:             ownerLevel,
 		ProcessorMaxPartitions: int64(partitionCeiling),
 		Lifetime:               ctx, ConsumerMode: stringValue(cfg, "eventhubs_consumer_mode"), CheckpointContainerURL: stringValue(cfg, "eventhubs_checkpoint_container_url"),
@@ -195,6 +242,9 @@ func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 			}
 		}
 	}
+	if e.cfg.ConsumerMode == "processor" {
+		e.cfg.progress = newProcessorProgress(e.cfg)
+	}
 	if e.cfg.Mock {
 		namespace := stringValue(cfg, "runtime_mock_namespace")
 		sharedBroker.acquire(namespace)
@@ -212,6 +262,8 @@ func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 		return newRealClient(e.cfg)
 	}
 	e.initialized = true
+	e.progressSnapshot.Store(e.cfg.progress)
+	ready = true
 	return nil
 }
 

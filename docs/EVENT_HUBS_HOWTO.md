@@ -40,9 +40,41 @@ Scheduled/adaptive peaks are reserved even when optional CPU/memory pod reservat
 
 Startup settings `APEXLOAD_EVENTHUBS_MAX_PROCESSORS`, `APEXLOAD_EVENTHUBS_MAX_WORKERS`, and `APEXLOAD_EVENTHUBS_MAX_PARTITIONS_PER_PROCESSOR` may lower the 4/32/32 limits; invalid or higher settings disable processor admission. A lower process partition limit requires an explicit matching script ceiling. Raising these limits remains dependent on resource evidence.
 
-Staging, cancellation, expiry, fencing and failed starts release unused reservations. Execution adopts a staged reservation exactly once. A consumer or partition client still closing retains its charged entitlement, including when the close deadline expires. SDK/worker shutdown can remain counted as active until the final transport-close proof begins; draining and quarantined capacity is still charged. An unproven partition or transport close remains quarantined until the generator process is replaced. Processor consumers are not eligible for live generator-loss evacuation: ownership/checkpoint recovery needs its own qualified contract. No automatic source reset or replay is enabled. Each worker holds one event; retained body/properties are bounded to 1 MiB, scalar property values to 64 KiB, and Blob responses to 2 MiB. Limit failures are explicit. Teardown cancels workers and closes clients with bounded cleanup. Processor enqueue age remains a legacy display when available; v2 evidence marks unqualified broker/client clocks explicitly; processor offset backlog is unavailable rather than fabricated as zero. The default observer probe behavior remains available.
+Staging, cancellation, expiry, fencing and failed starts release unused reservations. Execution adopts a staged reservation exactly once. A consumer or partition client still closing retains its charged entitlement, including when the close deadline expires. SDK/worker shutdown can remain counted as active until the final transport-close proof begins; draining and quarantined capacity is still charged. An unproven partition or transport close remains quarantined until the generator process is replaced. Processor consumers are not eligible for live generator-loss evacuation: ownership/checkpoint recovery needs its own qualified contract. No automatic source reset or replay is enabled. Each worker holds one event; retained body/properties are bounded to 1 MiB, scalar property values to 64 KiB, and Blob responses to 2 MiB. Limit failures are explicit. Teardown cancels workers and closes clients with bounded cleanup. Processor enqueue age remains a legacy display when available; v2 evidence marks unqualified broker/client clocks explicitly; the legacy action-level processor offset-backlog field remains unavailable rather than fabricated as zero. The standalone progress view below qualifies delivered/checkpoint sequence backlog separately. The default observer probe behavior remains available.
 
 Local tests exercise ownership takeover, ABA fencing, restart checkpoint recovery, rejected/failed delivery, cancellation, storage failure, destination limits and the actual Blob SDK's conditional HTTP writes. An approved disposable Azure namespace/container is still required for live rebalance and crash/restart acceptance before production readiness is advertised.
+
+## Processor progress and checkpoint evidence
+
+Processor progress is a standalone snapshot, independent of action or business-transaction counts. Live execution, completed-run views, JSONL/Parquet archives, reports, SQLite/PostgreSQL history reload and the bounded analysis API retain it through idle periods and final cleanup. The dashboard shows partition ownership/generation, inventory coverage, delivered/rejected/redelivered counts, positions and checkpoint outcomes. The live read can recover the last processor snapshot while it remains in bounded resident history, even after unrelated intervals; archives retain final evidence.
+
+Delivered position, durable checkpoint position and observed tail position are separate. Sequence numbers and derived sequence backlog use exact nonnegative decimal strings, preserving int64 precision through the API and dashboard. Provider offsets remain bounded opaque strings; they are never parsed as sequence numbers. Backlog is tail minus the selected delivered/checkpoint cursor, never enqueue age or elapsed processing time.
+
+Tail observation requires explicit processor configuration:
+
+```json
+{
+  "observe_partition_tail": true,
+  "tail_poll_interval_ms": 10000
+}
+```
+
+Place these fields inside `config.eventhubs`, alongside the processor settings above. Poll intervals are 10 seconds to 5 minutes; omission or zero uses 10 seconds. Opting in adds bounded Event Hubs management queries after Start using the approved consumer identity. Queries do not consume events to estimate backlog. Tail observation is disabled by default and does not change observer probes or traffic-free preparation. An explicit request requires `eventhubs_processor_progress_v1`, `eventhubs_partition_tail_v1` and generator wire capability `messaging_progress_v1`; unsupported peers fail admission.
+
+Lag is nullable. It is scored only for complete inventory and the same owned generation, with observed ownership and both relevant cursors no older than 30 seconds at that row's source capture. Ages use the source process's monotonic clock. The per-row UTC capture timestamp records provenance; transit time and cross-host clock alignment remain unqualified, so this is an as-of-capture association rather than a claim about current live backlog. A missing, disabled, stale, fenced or unconfirmed cursor stays unavailable. Checkpoint lag is also unscored while a write is in flight. Poll intervals longer than 30 seconds can produce unavailable lag between fresh polls; missing evidence never becomes zero.
+
+Counters and checkpoint duration distributions are cumulative within a source/execution-group/session/partition/ownership generation. Latest evidence/capture revisions replace earlier snapshots; repeated publications do not add those counters or histograms again. Checkpoint outcomes distinguish committed, failed, fenced, cancelled-before-write and unconfirmed completion, with in-flight attempts and explicit retry provenance retained. Temporary storage-read failure makes ownership unverified; it does not assert ownership loss. Row or byte limits mark coverage incomplete; aggregate omitted-row counts are lower bounds. Current owned/unverified rows take precedence over retained history.
+
+View the same bounded evidence through the CLI:
+
+```bash
+apexctl analysis progress --id RUN_ID --mode live
+apexctl analysis progress --id RUN_ID --mode archive --group workers --source-id SOURCE_ID
+```
+
+The authorized read workflow uses `GET /api/v1/tests/{id}/messaging-progress` with `mode=live|archive` and optional exact `group`/`source_id` filters. See the generated [API contract](swagger.yaml). Responses retain at most 64 rows and 128 KiB per snapshot, use shared analysis admission and a 30-second request deadline, and return explicit unavailable/limit errors. Viewers and service accounts with `results:read` can read authorized runs. HTTP, producer-only and observer groups do not imply missing processor evidence; expected legacy processor peers remain unavailable.
+
+These findings are advisory. They do not populate the legacy transaction `max_consumer_offset_lag` gate or introduce automatic stop policies. Strict processor soft-pause/recovery and live Azure rebalance, crash/restart and epoch-takeover qualification remain open. Local/default/tagged and controlled SDK tests establish implementation behavior, not live-provider acceptance.
 
 ## Fixed-partition exclusive consumption
 

@@ -10,6 +10,7 @@ Each report merges what used to be separate audit, implementation, code review, 
 
 | File | Date | Status | Purpose |
 | --- | --- | --- | --- |
+| [feature-completion-eh-progress-2026-10-03/README.md](feature-completion-eh-progress-2026-10-03/README.md) | 2026-10-03 | Progress evidence reviewed; strict pause and provider qualification open | Bounded standalone processor generations, exact positions, checkpoint/tail qualification, durable history and authorized API/CLI/dashboard/report parity. |
 | [java-dependency-import-2026-10-01/import-review.md](java-dependency-import-2026-10-01/import-review.md) | 2026-10-01 to 2026-10-02 | Import/save/reopen complete; replay gated | Java VuGen settings, supplemental dependency provenance, stored JAR binding fidelity, independent code review and durable review navigation. |
 | [clm-import-2026-10-01/import-review.md](clm-import-2026-10-01/import-review.md) | 2026-10-01 | Import/save/reopen complete; original replay prerequisites remain | ZIP/USZ collection fidelity, governed Java/Kafka settings, independent code review, and durable native-script navigation. |
 | [truclient-import-2026-10-01/import-review.md](truclient-import-2026-10-01/import-review.md) | 2026-10-01 | Import/save/reopen complete; replay gated | Source settings, browser-profile policy, parameter/data and transaction accounting, with saved authoring-review evidence. |

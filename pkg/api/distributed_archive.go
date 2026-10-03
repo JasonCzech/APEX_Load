@@ -395,15 +395,17 @@ func writeDistributedDynatraceEvidence(root string, manifest *RunArchiveManifest
 }
 
 type remoteArchiveBundle struct {
-	target            string
-	region            string
-	manifestData      []byte
-	manifest          RunArchiveManifest
-	transactionsPath  string
-	resourcesPath     string
-	summariesPath     string
-	transferStageRoot string
-	transferLease     *archiveTransferLease
+	// Set only from controller-owned admission provenance, never the remote manifest.
+	processorProgressExpected bool
+	target                    string
+	region                    string
+	manifestData              []byte
+	manifest                  RunArchiveManifest
+	transactionsPath          string
+	resourcesPath             string
+	summariesPath             string
+	transferStageRoot         string
+	transferLease             *archiveTransferLease
 }
 
 func cleanupRemoteArchiveBundles(bundles []remoteArchiveBundle) {
@@ -890,6 +892,7 @@ func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []rem
 		Error:                        finalError,
 		Provenance:                   buildRunArchiveProvenance(tr, test),
 		InitialProvenance:            initialProvenance,
+		controllerInitialProvenance:  initialProvenance,
 		TransactionsFile:             "transactions.jsonl",
 		TransactionsParquetFile:      "transactions.parquet",
 		ResourceSamplesFile:          "resources.jsonl",
@@ -1076,7 +1079,35 @@ func writeMergedRemoteArchiveFiles(rootDir string, manifest *RunArchiveManifest,
 	return writeMergedRemoteArchiveFilesWithBudget(rootDir, manifest, bundles, targetHistory, budget, tests...)
 }
 
+// Bind expectations from immutable controller admission claims. A peer that has
+// never published progress (including a legacy peer) is still an expected
+// processor source; unrelated producer/HTTP peers are not. Copy the bundle view
+// so this qualification cannot mutate a caller's transfer bookkeeping.
+func remoteArchiveBundlesWithProgressExpectations(manifest *RunArchiveManifest, bundles []remoteArchiveBundle) []remoteArchiveBundle {
+	expected := make(map[string]bool)
+	add := func(provenance RunArchiveProvenance) {
+		for _, shard := range provenance.GeneratorShards {
+			claim := shard.RuntimeResourceClaim
+			if claim != nil && claim.Requested != nil && claim.Requested.Processors > 0 {
+				expected[shard.Target] = true
+			}
+		}
+	}
+	if manifest != nil {
+		add(manifest.Provenance)
+		if manifest.controllerInitialProvenance != nil {
+			add(*manifest.controllerInitialProvenance)
+		}
+	}
+	out := append([]remoteArchiveBundle(nil), bundles...)
+	for index := range out {
+		out[index].processorProgressExpected = expected[out[index].target]
+	}
+	return out
+}
+
 func writeMergedRemoteArchiveFilesWithBudget(rootDir string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, targetHistory []remoteArchiveTargetSnapshot, budget *archiveOutputBudget, tests ...*ManagedTest) error {
+	bundles = remoteArchiveBundlesWithProgressExpectations(manifest, bundles)
 	transactionsPath, err := archiveArtifactPath(rootDir, manifest.TransactionsFile)
 	if err != nil {
 		return err
@@ -1467,6 +1498,11 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 	sourceWindowCount := 0
 	windowGeneratorMarks := make([]int64, len(bundles))
 	windowRecords := make([]IntervalSummaryRecord, 0, windowCapacity)
+	windowOrigins := make([]string, 0, windowCapacity)
+	progressExpected := make([]bool, len(bundles))
+	for index, bundle := range bundles {
+		progressExpected[index] = bundle.processorProgressExpected
+	}
 	sourceCumulativeTx := make([]int64, len(bundles))
 	sourceIterations := make([]int64, len(bundles))
 	previousSourceTimestamps := make([]time.Time, len(bundles))
@@ -1506,7 +1542,12 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 		anchor := heap.Pop(&cursors).(*remoteArchiveSummaryCursor)
 		windowEnd := anchor.timestamp.Add(remoteArchiveSummaryMaxClockSkew)
 		windowRecords = windowRecords[:0]
+		windowOrigins = windowOrigins[:0]
 		windowRecords = append(windowRecords, anchor.record)
+		windowOrigins = append(windowOrigins, bundles[anchor.index].target)
+		if progress := anchor.record.MessagingProgress; progress != nil {
+			progressExpected[anchor.index] = progress.Lifecycle != "released"
+		}
 		windowGeneratorMarks[anchor.index] = windowMark
 		recordSourceWindow(anchor, int(count))
 		advanced, advanceErr := advanceRemoteArchiveSummaryCursor(anchor, bundles)
@@ -1528,6 +1569,10 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 				continue
 			}
 			windowRecords = append(windowRecords, cursor.record)
+			windowOrigins = append(windowOrigins, bundles[cursor.index].target)
+			if progress := cursor.record.MessagingProgress; progress != nil {
+				progressExpected[cursor.index] = progress.Lifecycle != "released"
+			}
 			windowGeneratorMarks[cursor.index] = windowMark
 			recordSourceWindow(cursor, int(count))
 			advanced, advanceErr := advanceRemoteArchiveSummaryCursor(cursor, bundles)
@@ -1552,7 +1597,10 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 		// Retain observed volumes and moments without qualifying fleet skew.
 		messagingIncomplete := missingSourceCoverage || len(windowRecords) < len(bundles)
 		dropCounterAvailable := !messagingIncomplete
-		for _, record := range windowRecords {
+		for recordIndex, record := range windowRecords {
+			if record.MessagingProgress != nil {
+				protocol.MergeMessagingProgress(&aggregate.MessagingProgress, record.MessagingProgress, windowOrigins[recordIndex])
+			}
 			if record.Telemetry == nil || !record.Telemetry.DroppedResultsAvailable || record.Telemetry.DroppedResults < 0 {
 				dropCounterAvailable = false
 			}
@@ -1621,6 +1669,27 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 				aggregate.P50Ms, aggregate.P90Ms, aggregate.P95Ms, aggregate.P99Ms = 0, 0, 0, 0
 				aggregate.PercentileQuality = archivePercentileQualityUnavailable
 			}
+		}
+		progressMissing := false
+		for index, expected := range progressExpected {
+			if !expected {
+				continue
+			}
+			found := false
+			for recordIndex, record := range windowRecords {
+				if windowOrigins[recordIndex] == bundles[index].target && record.MessagingProgress != nil {
+					found = true
+					break
+				}
+			}
+			progressMissing = progressMissing || !found
+		}
+		if progressMissing && aggregate.MessagingProgress == nil {
+			aggregate.MessagingProgress = protocol.NewUnavailableMessagingProgress("source_missing")
+		}
+		if aggregate.MessagingProgress != nil && (progressMissing || missingSourceCoverage) {
+			aggregate.MessagingProgress.Incomplete = true
+			aggregate.MessagingProgress.UnavailableReason = "source_missing"
 		}
 		if messagingIncomplete {
 			for _, s := range aggregate.Messaging {

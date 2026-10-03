@@ -46,6 +46,7 @@ type fencedCheckpointStore struct {
 	records                      checkpointRecordIO
 	namespace, hub, group, owner string
 	partitions                   map[string]bool
+	progress                     *processorProgress
 }
 
 func (s *fencedCheckpointStore) prefix() string {
@@ -63,16 +64,29 @@ func (s *fencedCheckpointStore) ListOwnership(ctx context.Context, namespace, hu
 	}
 	values, err := s.records.List(ctx, s.prefix())
 	if err != nil {
+		s.progress.unverified("")
 		return nil, err
 	}
 	out := make([]eh.Ownership, 0, len(values))
+	seen := map[string]bool{}
 	for _, r := range values {
 		partition, err := s.partition(r.Name)
 		if err != nil {
 			return nil, err
 		}
+		seen[partition] = true
+		if r.Owner == s.owner {
+			s.progress.ownership(partition, r.Generation, "owned", r.Sequence, r.Offset)
+		} else {
+			s.progress.observeForeignOwner(partition, r.Generation)
+		}
 		etag := azcore.ETag(r.ETag)
 		out = append(out, eh.Ownership{FullyQualifiedNamespace: namespace, EventHubName: hub, ConsumerGroup: group, PartitionID: partition, OwnerID: r.Owner, LastModifiedTime: r.Modified, ETag: &etag})
+	}
+	for id := range s.partitions {
+		if !seen[id] {
+			s.progress.observeForeignOwner(id, "")
+		}
 	}
 	return out, nil
 }
@@ -106,7 +120,11 @@ func (s *fencedCheckpointStore) ClaimOwnership(ctx context.Context, claims []eh.
 		name := s.prefix() + url.PathEscape(claim.PartitionID)
 		current, err := s.records.Read(ctx, name)
 		if err != nil {
+			s.progress.unverified(claim.PartitionID)
 			return nil, err
+		}
+		if current.Owner != s.owner {
+			s.progress.observeForeignOwner(claim.PartitionID, current.Generation)
 		}
 		expected := ""
 		if claim.ETag != nil {
@@ -127,10 +145,17 @@ func (s *fencedCheckpointStore) ClaimOwnership(ctx context.Context, claims []eh.
 		current.Owner = claim.OwnerID
 		updated, err := s.records.Write(ctx, current, current.ETag)
 		if errors.Is(err, errCheckpointFence) {
+			s.progress.unverified(claim.PartitionID)
 			continue
 		}
 		if err != nil {
+			s.progress.unverified(claim.PartitionID)
 			return nil, err
+		}
+		if updated.Owner == "" {
+			s.progress.releasePartition(claim.PartitionID)
+		} else {
+			s.progress.ownership(claim.PartitionID, updated.Generation, "owned", updated.Sequence, updated.Offset)
 		}
 		etag := azcore.ETag(updated.ETag)
 		claim.ETag = &etag
@@ -161,7 +186,33 @@ func (s *fencedCheckpointStore) ListCheckpoints(ctx context.Context, namespace, 
 	}
 	return out, nil
 }
-func (s *fencedCheckpointStore) SetCheckpoint(ctx context.Context, cp eh.Checkpoint, _ *eh.SetCheckpointOptions) error {
+func (s *fencedCheckpointStore) SetCheckpoint(ctx context.Context, cp eh.Checkpoint, _ *eh.SetCheckpointOptions) (result error) {
+	started := time.Now()
+	fence, _ := ctx.Value(checkpointFenceContextKey{}).(string)
+	wrote := false
+	if s.progress != nil && s.partitions[cp.PartitionID] && fence != "" {
+		retry, _ := ctx.Value(checkpointRetryContextKey{}).(bool)
+		s.progress.checkpointBegin(cp.PartitionID, fence, retry)
+		defer func() {
+			outcome := "failed"
+			switch {
+			case result == nil:
+				outcome = "committed"
+			case errors.Is(result, errCheckpointFence):
+				outcome = "fenced"
+			case ctx.Err() != nil && !wrote:
+				outcome = "cancelled_before_write"
+			case wrote:
+				outcome = "unconfirmed"
+			}
+			offset := ""
+			if cp.Offset != nil {
+				offset = *cp.Offset
+			}
+			s.progress.checkpointEnd(cp.PartitionID, fence, outcome, cp.SequenceNumber, offset, time.Since(started))
+		}()
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.scope(cp.FullyQualifiedNamespace, cp.EventHubName, cp.ConsumerGroup, cp.PartitionID); err != nil {
@@ -170,18 +221,14 @@ func (s *fencedCheckpointStore) SetCheckpoint(ctx context.Context, cp eh.Checkpo
 	if !s.partitions[cp.PartitionID] {
 		return fmt.Errorf("checkpoint requires a known partition")
 	}
-	if cp.SequenceNumber == nil || *cp.SequenceNumber < 0 || cp.Offset == nil || len(*cp.Offset) > 64 {
+	if cp.SequenceNumber == nil || *cp.SequenceNumber < 0 || cp.Offset == nil || !validProviderOffset(*cp.Offset) {
 		return fmt.Errorf("checkpoint observation is unavailable or exceeds limits")
-	}
-	offset, err := strconv.ParseInt(*cp.Offset, 10, 64)
-	if err != nil || offset < 0 {
-		return fmt.Errorf("checkpoint offset must be a nonnegative integer")
 	}
 	current, err := s.records.Read(ctx, s.prefix()+url.PathEscape(cp.PartitionID))
 	if err != nil {
+		s.progress.unverified(cp.PartitionID)
 		return err
 	}
-	fence, _ := ctx.Value(checkpointFenceContextKey{}).(string)
 	if current.Owner != s.owner || current.ETag == "" || fence == "" || fence != current.Generation {
 		return errCheckpointFence
 	}
@@ -194,6 +241,10 @@ func (s *fencedCheckpointStore) SetCheckpoint(ctx context.Context, cp eh.Checkpo
 	seq := *cp.SequenceNumber
 	current.Sequence = &seq
 	current.Offset = *cp.Offset
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	wrote = true
 	_, err = s.records.Write(ctx, current, current.ETag)
 	return err
 }
@@ -313,12 +364,8 @@ func decodeCheckpointMetadata(name string, m map[string]*string, etag string, mo
 	}
 	if seq := m["apex_sequence"]; seq != nil {
 		value, err := strconv.ParseInt(*seq, 10, 64)
-		if err != nil || value < 0 || m["apex_offset"] == nil || len(*m["apex_offset"]) > 64 {
+		if err != nil || value < 0 || strconv.FormatInt(value, 10) != *seq || m["apex_offset"] == nil || !validProviderOffset(*m["apex_offset"]) {
 			return r, fmt.Errorf("invalid checkpoint sequence")
-		}
-		offset, err := strconv.ParseInt(*m["apex_offset"], 10, 64)
-		if err != nil || offset < 0 {
-			return r, fmt.Errorf("invalid checkpoint offset")
 		}
 		r.Sequence = &value
 		r.Offset = *m["apex_offset"]
@@ -372,6 +419,7 @@ func newCheckpointBlobClient(containerURL string, cred azcore.TokenCredential) (
 }
 
 type checkpointFenceContextKey struct{}
+type checkpointRetryContextKey struct{}
 
 func (s *fencedCheckpointStore) ownershipFence(ctx context.Context, partition string) (string, error) {
 	if !s.partitions[partition] {
@@ -379,10 +427,13 @@ func (s *fencedCheckpointStore) ownershipFence(ctx context.Context, partition st
 	}
 	current, err := s.records.Read(ctx, s.prefix()+url.PathEscape(partition))
 	if err != nil {
+		s.progress.unverified(partition)
 		return "", err
 	}
 	if current.Owner != s.owner || current.Generation == "" {
+		s.progress.observeForeignOwner(partition, current.Generation)
 		return "", errCheckpointFence
 	}
+	s.progress.ownership(partition, current.Generation, "owned", current.Sequence, current.Offset)
 	return current.Generation, nil
 }

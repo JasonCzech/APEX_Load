@@ -75,11 +75,12 @@ func validateSourcePlanAssignment(a *pb.WorkAssignment) error {
 // A sourcePlanExecution owns one engine. Group records retain their own sinks
 // and lifecycle reporting, but cannot independently restart shared state.
 type sourcePlanExecution struct {
-	engine         *engine.MultiGroupEngine
-	telemetryGroup string
-	once           sync.Once
-	done           chan struct{}
-	err            error
+	engine          *engine.MultiGroupEngine
+	telemetryGroup  string
+	processorGroups map[string]bool
+	once            sync.Once
+	done            chan struct{}
+	err             error
 }
 
 func (o *sourcePlanExecution) run(ctx context.Context, e *groupExecution) error {
@@ -105,6 +106,7 @@ func assembleSourcePlan(executions map[string]*groupExecution) (*sourcePlanExecu
 		names = append(names, n)
 	}
 	sort.Strings(names)
+	processorGroups := make(map[string]bool)
 	var cfg engine.MultiGroupConfig
 	for i, n := range names {
 		e := executions[n]
@@ -118,13 +120,20 @@ func assembleSourcePlan(executions map[string]*groupExecution) (*sourcePlanExecu
 		} else if c.Duration != cfg.Duration || c.PreBaseline != cfg.PreBaseline || c.PostBaseline != cfg.PostBaseline || c.StartPaused != cfg.StartPaused || c.TerminationMode != cfg.TerminationMode {
 			return nil, fmt.Errorf("source-plan groups have inconsistent lifecycle settings")
 		}
+		for _, group := range c.Groups {
+			plan, err := engine.NewRuntimeResourcePlan(group.Script, group.InitStrategy)
+			if err != nil {
+				return nil, err
+			}
+			processorGroups[group.Name] = plan.RequiresReservation()
+		}
 		cfg.Groups = append(cfg.Groups, c.Groups...)
 	}
 	m, err := engine.NewMultiGroup(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &sourcePlanExecution{engine: m, telemetryGroup: names[0], done: make(chan struct{})}, nil
+	return &sourcePlanExecution{engine: m, telemetryGroup: names[0], processorGroups: processorGroups, done: make(chan struct{})}, nil
 }
 
 func sourcePlanUsers(m *pb.SourcePlanManifest) int64 {
@@ -164,6 +173,9 @@ func cloneSourcePlan(m *pb.SourcePlanManifest) *pb.SourcePlanManifest {
 // retain the group identity. Transactions come from each group's own buffer.
 func (o *sourcePlanExecution) groupSnapshot(full engine.MetricsSnapshot, group string) engine.MetricsSnapshot {
 	snapshot := engine.MetricsSnapshot{Timestamp: full.Timestamp, Window: full.Window, Resources: full.Resources}
+	if o.processorGroups[group] {
+		snapshot.MessagingProgress = messagingProgressForGroup(full.MessagingProgress, group)
+	}
 	if g := full.ByGroup[group]; g != nil {
 		snapshot.ActiveVUsers = g.ActiveVUsers
 	}

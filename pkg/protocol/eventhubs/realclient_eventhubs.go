@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	azeventhubs "github.com/Azure/azure-sdk-for-go/sdk/messaging/azeventhubs/v2"
 	"github.com/jasonczech/apexload/pkg/identitypolicy"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 // newRealClient returns the azeventhubs-backed adapter. It is the non-mock path
@@ -21,6 +22,9 @@ import (
 // connection string surfaces as an actionable error at send/receive time rather
 // than at Init.
 func newRealClient(cfg config) eventHubsClient {
+	if cfg.ConsumerMode == "processor" && cfg.progress == nil {
+		cfg.progress = newProcessorProgress(cfg)
+	}
 	return &realClient{
 		cfg:        cfg,
 		producers:  make(map[string]*azeventhubs.ProducerClient),
@@ -59,6 +63,10 @@ const (
 	maxEventHubsResourceKeyBytes = 128 << 10
 	eventHubsCloseTimeout        = 5 * time.Second
 )
+
+func (c *realClient) MessagingProgressSnapshot() *protocol.MessagingProgressSnapshot {
+	return c.cfg.progress.snapshot()
+}
 
 func (c *realClient) Send(ctx context.Context, hub string, ev event) (eventMeta, error) {
 	return c.SendBatch(ctx, hub, []event{ev})
@@ -254,6 +262,9 @@ func (c *realClient) Teardown(ctx context.Context) error {
 		if processor != nil {
 			processor.cancel()
 		}
+	}
+	if processor == nil && c.cfg.progress != nil && firstErr == nil {
+		c.cfg.progress.state("released")
 	}
 	if processor != nil {
 		select {

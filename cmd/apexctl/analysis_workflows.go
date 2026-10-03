@@ -52,6 +52,9 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	spot := flags.String("spot", "off", "off, preferred, or required")
 	floor := flags.Int("on-demand-floor", 0, "minimum on-demand ephemeral generators")
 	ceiling := flags.Int("spot-ceiling", 0, "maximum spot percentage")
+	mode := flags.String("mode", "live", "live or archive processor evidence")
+	group := flags.String("group", "", "processor execution group")
+	sourceID := flags.String("source-id", "", "immutable processor source identity")
 	at := flags.String("at", "", "dependency observation timestamp (RFC3339)")
 	failOnRegression := flags.Bool("fail-on-regression", false, "fail CI for regression or unavailable baseline evidence")
 	ttl := flags.Duration("ttl", 30*time.Minute, "readiness lifetime")
@@ -168,6 +171,24 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 		}
 	case "analysis":
 		switch action {
+		case "progress":
+			if err := requireID(); err != nil {
+				return err
+			}
+			if *mode != "live" && *mode != "archive" {
+				return errors.New("--mode must be live or archive")
+			}
+			if len(*group) > 256 || len(*sourceID) > 256 {
+				return errors.New("processor group or source identity exceeds limit")
+			}
+			values := url.Values{"mode": {*mode}}
+			if *group != "" {
+				values.Set("group", *group)
+			}
+			if *sourceID != "" {
+				values.Set("source_id", *sourceID)
+			}
+			path = "/api/v1/tests/" + url.PathEscape(*id) + "/messaging-progress?" + values.Encode()
 		case "baseline":
 			if err := requireID(); err != nil {
 				return err
@@ -237,7 +258,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 					return errors.New("--file JSON query is required")
 				}
 			default:
-				return errors.New("analysis actions: baseline, capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison")
+				return errors.New("analysis actions: progress, baseline, capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison")
 			}
 		}
 	default:

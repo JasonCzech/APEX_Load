@@ -212,6 +212,29 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 	for key := range snapshot.ErrorsByClass {
 		bytes += len(key) + 24
 	}
+	if progress := snapshot.MessagingProgress; progress != nil {
+		bytes += int(unsafe.Sizeof(*progress)) + cap(progress.Rows)*int(unsafe.Sizeof(protocol.MessagingProgressRow{}))
+		bytes += len(progress.Lifecycle) + len(progress.UnavailableReason)
+		for _, row := range progress.Rows {
+			bytes += len(row.Origin) + len(row.Group) + len(row.Protocol) + len(row.Mode) + len(row.SourceID) + len(row.Source) + len(row.Subscription) + len(row.SessionID) + len(row.Partition) + len(row.Generation) + len(row.Revision) + len(row.CaptureRevision) + len(row.Ownership)
+			if row.OwnershipVerifiedAgeMs != nil {
+				bytes += 8
+			}
+			for _, position := range []protocol.MessagingProgressPosition{row.DeliveredPosition, row.CheckpointPosition, row.TailPosition} {
+				bytes += len(position.Sequence) + len(position.ProviderOffset) + len(position.State)
+				if position.ObservationAgeMs != nil {
+					bytes += 8
+				}
+			}
+			bytes += len(row.Checkpoint.LastOutcome) + len(row.Checkpoint.Duration.Metric) + len(row.Checkpoint.Duration.Population)
+			if row.Checkpoint.Duration.Unavailable != nil {
+				bytes += 128
+			}
+			for reason := range row.Checkpoint.Duration.Unavailable {
+				bytes += len(reason) + 80
+			}
+		}
+	}
 	if snapshot.Resources != nil {
 		bytes += 1024
 		for key := range snapshot.Resources.External {

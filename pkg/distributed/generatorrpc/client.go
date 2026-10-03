@@ -157,6 +157,8 @@ type PauseResult struct {
 }
 
 type MetricsBatch struct {
+	MessagingProgress          *protocol.MessagingProgressSnapshot
+	MessagingProgressVersion   uint32
 	TestID                     string
 	ExecutionGeneration        uint64
 	BatchSequence              uint64
@@ -1536,6 +1538,8 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 	}
 
 	return MetricsBatch{
+		MessagingProgress:          messagingProgressFromJSON(batch.GetMessagingProgressJson(), batch.GetMessagingProgressVersion()),
+		MessagingProgressVersion:   batch.GetMessagingProgressVersion(),
 		TestID:                     batch.GetTestId(),
 		ExecutionGeneration:        batch.GetExecutionGeneration(),
 		BatchSequence:              batch.GetBatchSequence(),

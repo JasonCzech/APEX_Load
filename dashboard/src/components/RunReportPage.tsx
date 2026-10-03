@@ -1,3 +1,4 @@
+import MessagingProgressDiagnostics from './MessagingProgressDiagnostics'
 import MessagingDiagnostics from './MessagingDiagnostics'
 import RunAnnotations from './RunAnnotations'
 import BaselineComparisonWorkspace from './baselineComparison/BaselineComparisonWorkspace'
@@ -499,6 +500,7 @@ export default function RunReportPage({
         {(comparison.limitedSamples || comparison.differentObservedLoad || comparison.observedLoadUnknown) && <strong>Limited comparability: {[comparison.limitedSamples && 'insufficient sample evidence', comparison.differentObservedLoad && 'different observed load', comparison.observedLoadUnknown && 'observed load unavailable'].filter(Boolean).join('; ')}. Do not use the deltas alone as acceptance evidence.</strong>}
       </section>}
       <OrchestrationReturn testId={testId} />
+      <MessagingProgressDiagnostics snapshot={report?.messaging_progress} />
       <MessagingDiagnostics series={Object.entries(report?.by_action || {}).map(([name, stats]) => ({ name, messaging: stats.messaging }))} />
       <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canPublishConfluence} />
       <TabList className="run-report-areas" role="tablist" aria-label="Result sections">{areas.map((name,index) => <button key={name} type="button" role="tab" id={`result-tab-${name}`} aria-controls={`result-panel-${name}`} aria-selected={area === name} tabIndex={area === name ? 0 : -1}

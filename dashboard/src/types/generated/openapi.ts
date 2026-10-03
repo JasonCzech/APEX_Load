@@ -780,11 +780,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -3182,6 +3184,45 @@ export interface operations {
               "transactions_file"?: string;
               "transactions_parquet_file"?: string;
             }) | null;
+            "messaging_progress"?: ({
+              "captured_at"?: string;
+              "dropped_rows"?: number;
+              "incomplete"?: boolean;
+              "lifecycle"?: string;
+              "rows"?: Array<{
+                "acquired"?: number;
+                "capture_revision"?: string;
+                "captured_at"?: string;
+                "checkpoint"?: Record<string, unknown>;
+                "checkpoint_position"?: Record<string, unknown>;
+                "delivered"?: number;
+                "delivered_position"?: Record<string, unknown>;
+                "expected_partitions"?: number;
+                "generation"?: string;
+                "group"?: string;
+                "incomplete"?: boolean;
+                "inventory_complete"?: boolean;
+                "lost"?: number;
+                "mode"?: string;
+                "origin"?: string;
+                "ownership"?: string;
+                "ownership_verified_age_ms"?: (number) | null;
+                "ownership_verified_at"?: string;
+                "partition"?: string;
+                "protocol"?: string;
+                "redelivered"?: number;
+                "rejected"?: number;
+                "revision"?: string;
+                "session_id"?: string;
+                "source"?: string;
+                "source_id"?: string;
+                "subscription"?: string;
+                "tail_position"?: Record<string, unknown>;
+                "updated_at"?: string;
+              }>;
+              "unavailable_reason"?: string;
+              "version"?: number;
+            }) | null;
             "metric_populations"?: Record<string, {
               "average_rate_per_second"?: (number) | null;
               "avg_response_ms"?: number;
@@ -4469,11 +4510,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -5270,11 +5313,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -5973,11 +6018,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -9632,11 +9679,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -10487,11 +10536,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -11167,11 +11218,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -11816,11 +11869,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -12355,11 +12410,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -12967,11 +13024,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -13591,11 +13650,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -14817,11 +14878,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -16208,11 +16271,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -17861,11 +17926,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -18526,11 +18593,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -19438,11 +19507,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -20337,11 +20408,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -21029,11 +21102,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -25815,6 +25890,15 @@ export interface operations {
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -26136,6 +26220,15 @@ export interface operations {
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
                 }) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -29125,11 +29218,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -29964,11 +30059,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -32426,6 +32523,15 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<Record<string, unknown>>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -33326,6 +33432,45 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<{
+                  "acquired": number;
+                  "capture_revision": string;
+                  "captured_at": string;
+                  "checkpoint": Record<string, unknown>;
+                  "checkpoint_position": Record<string, unknown>;
+                  "delivered": number;
+                  "delivered_position": Record<string, unknown>;
+                  "expected_partitions": number;
+                  "generation": string;
+                  "group"?: string;
+                  "incomplete"?: boolean;
+                  "inventory_complete": boolean;
+                  "lost": number;
+                  "mode": string;
+                  "origin"?: string;
+                  "ownership": string;
+                  "ownership_verified_age_ms"?: (number) | null;
+                  "ownership_verified_at": string;
+                  "partition": string;
+                  "protocol": string;
+                  "redelivered": number;
+                  "rejected": number;
+                  "revision": string;
+                  "session_id": string;
+                  "source": string;
+                  "source_id": string;
+                  "subscription": string;
+                  "tail_position": Record<string, unknown>;
+                  "updated_at": string;
+                }>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -41970,11 +42115,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -43706,11 +43853,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -48510,6 +48659,15 @@ export interface operations {
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -48831,6 +48989,15 @@ export interface operations {
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
                 }) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -53834,6 +54001,78 @@ export interface operations {
               "transactions_file": string;
               "transactions_parquet_file"?: string;
             }) | null;
+            "messaging_progress"?: ({
+              "captured_at": string;
+              "dropped_rows"?: number;
+              "incomplete"?: boolean;
+              "lifecycle"?: string;
+              "rows": Array<{
+                "acquired": number;
+                "capture_revision": string;
+                "captured_at": string;
+                "checkpoint": {
+                  "attempts": number;
+                  "cancelled_before_write": number;
+                  "committed": number;
+                  "duration": Record<string, unknown>;
+                  "failed": number;
+                  "fenced": number;
+                  "in_flight": number;
+                  "last_completed_at": string;
+                  "last_outcome"?: string;
+                  "retry_attempts": number;
+                  "unconfirmed": number;
+                };
+                "checkpoint_position": {
+                  "observation_age_ms"?: (number) | null;
+                  "observed_at": string;
+                  "provider_offset"?: string;
+                  "received_at": string;
+                  "sequence"?: string;
+                  "state": string;
+                };
+                "delivered": number;
+                "delivered_position": {
+                  "observation_age_ms"?: (number) | null;
+                  "observed_at": string;
+                  "provider_offset"?: string;
+                  "received_at": string;
+                  "sequence"?: string;
+                  "state": string;
+                };
+                "expected_partitions": number;
+                "generation": string;
+                "group"?: string;
+                "incomplete"?: boolean;
+                "inventory_complete": boolean;
+                "lost": number;
+                "mode": string;
+                "origin"?: string;
+                "ownership": string;
+                "ownership_verified_age_ms"?: (number) | null;
+                "ownership_verified_at": string;
+                "partition": string;
+                "protocol": string;
+                "redelivered": number;
+                "rejected": number;
+                "revision": string;
+                "session_id": string;
+                "source": string;
+                "source_id": string;
+                "subscription": string;
+                "tail_position": {
+                  "observation_age_ms"?: (number) | null;
+                  "observed_at": string;
+                  "provider_offset"?: string;
+                  "received_at": string;
+                  "sequence"?: string;
+                  "state": string;
+                };
+                "updated_at": string;
+              }>;
+              "unavailable_reason"?: string;
+              "version": number;
+            }) | null;
             "metric_populations"?: Record<string, {
               "average_rate_per_second"?: (number) | null;
               "avg_response_ms": number;
@@ -55848,11 +56087,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -59015,6 +59256,15 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<Record<string, unknown>>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -59915,6 +60165,45 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<{
+                  "acquired": number;
+                  "capture_revision": string;
+                  "captured_at": string;
+                  "checkpoint": Record<string, unknown>;
+                  "checkpoint_position": Record<string, unknown>;
+                  "delivered": number;
+                  "delivered_position": Record<string, unknown>;
+                  "expected_partitions": number;
+                  "generation": string;
+                  "group"?: string;
+                  "incomplete"?: boolean;
+                  "inventory_complete": boolean;
+                  "lost": number;
+                  "mode": string;
+                  "origin"?: string;
+                  "ownership": string;
+                  "ownership_verified_age_ms"?: (number) | null;
+                  "ownership_verified_at": string;
+                  "partition": string;
+                  "protocol": string;
+                  "redelivered": number;
+                  "rejected": number;
+                  "revision": string;
+                  "session_id": string;
+                  "source": string;
+                  "source_id": string;
+                  "subscription": string;
+                  "tail_position": Record<string, unknown>;
+                  "updated_at": string;
+                }>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -66254,11 +66543,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -66938,11 +67229,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -71686,6 +71979,147 @@ export interface operations {
       };
     };
   };
+  "handleMessagingProgress": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "group"?: string;
+        "mode"?: string;
+        "source_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "catalog_version": string;
+            "interpretation": string;
+            "lag": Array<{
+              "captured_at": string;
+              "checkpoint": (string) | null;
+              "delivered": (string) | null;
+              "generation": string;
+              "group"?: string;
+              "origin"?: string;
+              "partition": string;
+              "session_id": string;
+              "source_id": string;
+            }>;
+            "mode": string;
+            "snapshot"?: ({
+              "captured_at": string;
+              "dropped_rows"?: number;
+              "incomplete"?: boolean;
+              "lifecycle"?: string;
+              "rows": Array<{
+                "acquired": number;
+                "capture_revision": string;
+                "captured_at": string;
+                "checkpoint": {
+                  "attempts": number;
+                  "cancelled_before_write": number;
+                  "committed": number;
+                  "duration": Record<string, unknown>;
+                  "failed": number;
+                  "fenced": number;
+                  "in_flight": number;
+                  "last_completed_at": string;
+                  "last_outcome"?: string;
+                  "retry_attempts": number;
+                  "unconfirmed": number;
+                };
+                "checkpoint_position": {
+                  "observation_age_ms"?: (number) | null;
+                  "observed_at": string;
+                  "provider_offset"?: string;
+                  "received_at": string;
+                  "sequence"?: string;
+                  "state": string;
+                };
+                "delivered": number;
+                "delivered_position": {
+                  "observation_age_ms"?: (number) | null;
+                  "observed_at": string;
+                  "provider_offset"?: string;
+                  "received_at": string;
+                  "sequence"?: string;
+                  "state": string;
+                };
+                "expected_partitions": number;
+                "generation": string;
+                "group"?: string;
+                "incomplete"?: boolean;
+                "inventory_complete": boolean;
+                "lost": number;
+                "mode": string;
+                "origin"?: string;
+                "ownership": string;
+                "ownership_verified_age_ms"?: (number) | null;
+                "ownership_verified_at": string;
+                "partition": string;
+                "protocol": string;
+                "redelivered": number;
+                "rejected": number;
+                "revision": string;
+                "session_id": string;
+                "source": string;
+                "source_id": string;
+                "subscription": string;
+                "tail_position": {
+                  "observation_age_ms"?: (number) | null;
+                  "observed_at": string;
+                  "provider_offset"?: string;
+                  "received_at": string;
+                  "sequence"?: string;
+                  "state": string;
+                };
+                "updated_at": string;
+              }>;
+              "unavailable_reason"?: string;
+              "version": number;
+            }) | null;
+            "unavailable_reason"?: string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleMigrateSourceSecrets": {
     parameters?: never;
     requestBody: {
@@ -76209,6 +76643,15 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<Record<string, unknown>>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -77109,6 +77552,45 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<{
+                  "acquired": number;
+                  "capture_revision": string;
+                  "captured_at": string;
+                  "checkpoint": Record<string, unknown>;
+                  "checkpoint_position": Record<string, unknown>;
+                  "delivered": number;
+                  "delivered_position": Record<string, unknown>;
+                  "expected_partitions": number;
+                  "generation": string;
+                  "group"?: string;
+                  "incomplete"?: boolean;
+                  "inventory_complete": boolean;
+                  "lost": number;
+                  "mode": string;
+                  "origin"?: string;
+                  "ownership": string;
+                  "ownership_verified_age_ms"?: (number) | null;
+                  "ownership_verified_at": string;
+                  "partition": string;
+                  "protocol": string;
+                  "redelivered": number;
+                  "rejected": number;
+                  "revision": string;
+                  "session_id": string;
+                  "source": string;
+                  "source_id": string;
+                  "subscription": string;
+                  "tail_position": Record<string, unknown>;
+                  "updated_at": string;
+                }>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -79727,11 +80209,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -80577,11 +81061,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -81270,11 +81756,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -82032,11 +82520,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -83003,11 +83493,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -83683,11 +84175,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -84332,11 +84826,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -84871,11 +85367,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -86399,11 +86897,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -87801,6 +88301,15 @@ export interface operations {
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -88122,6 +88631,15 @@ export interface operations {
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
                 }) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -89258,6 +89776,15 @@ export interface operations {
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -89579,6 +90106,15 @@ export interface operations {
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
                 }) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -90715,6 +91251,15 @@ export interface operations {
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -91036,6 +91581,15 @@ export interface operations {
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
                 }) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -92172,6 +92726,15 @@ export interface operations {
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -92493,6 +93056,15 @@ export interface operations {
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
                 }) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -93629,6 +94201,15 @@ export interface operations {
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -93950,6 +94531,15 @@ export interface operations {
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
                 }) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -94805,11 +95395,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -95583,11 +96175,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -98063,11 +98657,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -99682,11 +100278,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -100298,11 +100896,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -102716,11 +103316,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -103953,11 +104555,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -105267,11 +105871,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -106580,11 +107186,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -107894,11 +108502,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -109207,11 +109817,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -114651,6 +115263,15 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<Record<string, unknown>>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -115551,6 +116172,45 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<{
+                  "acquired": number;
+                  "capture_revision": string;
+                  "captured_at": string;
+                  "checkpoint": Record<string, unknown>;
+                  "checkpoint_position": Record<string, unknown>;
+                  "delivered": number;
+                  "delivered_position": Record<string, unknown>;
+                  "expected_partitions": number;
+                  "generation": string;
+                  "group"?: string;
+                  "incomplete"?: boolean;
+                  "inventory_complete": boolean;
+                  "lost": number;
+                  "mode": string;
+                  "origin"?: string;
+                  "ownership": string;
+                  "ownership_verified_age_ms"?: (number) | null;
+                  "ownership_verified_at": string;
+                  "partition": string;
+                  "protocol": string;
+                  "redelivered": number;
+                  "rejected": number;
+                  "revision": string;
+                  "session_id": string;
+                  "source": string;
+                  "source_id": string;
+                  "subscription": string;
+                  "tail_position": Record<string, unknown>;
+                  "updated_at": string;
+                }>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -117274,11 +117934,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -117965,11 +118627,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -122984,11 +123648,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -123822,11 +124488,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
                   "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -128170,11 +128838,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
                 "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -132266,6 +132936,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/manifest": {
     "get": operations["handleGetTestManifest"];
+  };
+  "/api/v1/tests/{id}/messaging-progress": {
+    "get": operations["handleMessagingProgress"];
   };
   "/api/v1/tests/{id}/metrics": {
     "get": operations["handleGetMetrics"];

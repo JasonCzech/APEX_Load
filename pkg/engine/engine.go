@@ -456,15 +456,17 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 			break
 		}
 		bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return e.redaction })
-		if err := callProtocolInit(loopCtx, vuProto, vuserProtoConfig(protoConfig, vuserID), e.redaction); err != nil {
+		initErr := callProtocolInit(loopCtx, vuProto, vuserProtoConfig(protoConfig, vuserID), e.redaction)
+		progress := e.metrics.registerMessagingProgress(vuProto, "", e.runtimeResources)
+		if err := initErr; err != nil {
 			if loopCtx.Err() != nil {
-				runProtocolTeardown(vuProto, func() *RedactionConfig { return e.redaction })
+				runProtocolTeardownWithMessagingProgress(vuProto, progress, func() *RedactionConfig { return e.redaction })
 				wg.Done()
 				break
 			}
 			safeErr := err
 			slog.Error("failed to init protocol for vuser", "vuser", vuserID, "err", safeErr)
-			runProtocolTeardown(vuProto, func() *RedactionConfig { return e.redaction })
+			runProtocolTeardownWithMessagingProgress(vuProto, progress, func() *RedactionConfig { return e.redaction })
 			wg.Done()
 			startupErr = safeErr
 			break
@@ -472,7 +474,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 		// A context-ignoring adapter may return success after a peer has already
 		// satisfied the exact goal. Do not launch this still-unentitled VUser.
 		if loopCtx.Err() != nil {
-			runProtocolTeardown(vuProto, func() *RedactionConfig { return e.redaction })
+			runProtocolTeardownWithMessagingProgress(vuProto, progress, func() *RedactionConfig { return e.redaction })
 			wg.Done()
 			break
 		}
@@ -490,7 +492,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 			defer recoverVUserGoroutine(vuserID, redaction)
 			defer wg.Done()
 			defer func() {
-				err := runProtocolTeardown(vuProto, redaction)
+				err := runProtocolTeardownWithMessagingProgress(vuProto, progress, redaction)
 				if err != nil {
 					teardownErrors.Add(1)
 				}
@@ -747,22 +749,24 @@ func (e *Engine) runOpenWorkload(
 				return
 			}
 			bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return e.redaction })
-			if err := callProtocolInit(loopCtx, vuProto, vuserProtoConfig(protoConfig, workerID), e.redaction); err != nil {
+			initErr := callProtocolInit(loopCtx, vuProto, vuserProtoConfig(protoConfig, workerID), e.redaction)
+			progress := e.metrics.registerMessagingProgress(vuProto, "", e.runtimeResources)
+			if err := initErr; err != nil {
 				if loopCtx.Err() != nil {
-					runProtocolTeardown(vuProto, redaction)
+					runProtocolTeardownWithMessagingProgress(vuProto, progress, redaction)
 					return
 				}
 				safeErr := err
 				slog.Error("failed to init protocol for arrival worker", "arrival", workerID, "err", safeErr)
 				recordInitError(safeErr)
-				runProtocolTeardown(vuProto, redaction)
+				runProtocolTeardownWithMessagingProgress(vuProto, progress, redaction)
 				return
 			}
 			if loopCtx.Err() != nil {
-				runProtocolTeardown(vuProto, redaction)
+				runProtocolTeardownWithMessagingProgress(vuProto, progress, redaction)
 				return
 			}
-			defer runProtocolTeardown(vuProto, redaction)
+			defer runProtocolTeardownWithMessagingProgress(vuProto, progress, redaction)
 			initializedWorkers.Add(1)
 
 			vu = &VUser{

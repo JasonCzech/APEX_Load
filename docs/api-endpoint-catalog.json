@@ -6177,6 +6177,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/tests/{id}/messaging-progress",
+      "operationId": "handleMessagingProgress",
+      "summary": "Messaging Progress",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/tests/{id}/metrics",
       "operationId": "handleGetMetrics",
       "summary": "Get Metrics",

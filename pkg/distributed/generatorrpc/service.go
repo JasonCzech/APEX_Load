@@ -259,20 +259,21 @@ type transactionBuffer struct {
 }
 
 type metricsAggregateSet struct {
-	NativeVersion    uint32
-	Fleet            *MetricAggregate
-	Transactions     []MetricAggregate
-	Dependencies     []MetricAggregate
-	SOAP             []MetricAggregate
-	NetworkProfiles  []MetricAggregate
-	Actions          []MetricAggregate
-	ActionDimensions []MetricAggregate
-	ActionProperties []MetricAggregate
-	Properties       []MetricAggregate
-	Regions          []MetricAggregate
-	Browser          *BrowserMetrics
-	BrowserByDevice  []BrowserDeviceMetrics
-	Groups           []GroupMetric
+	MessagingProgress *protocol.MessagingProgressSnapshot
+	NativeVersion     uint32
+	Fleet             *MetricAggregate
+	Transactions      []MetricAggregate
+	Dependencies      []MetricAggregate
+	SOAP              []MetricAggregate
+	NetworkProfiles   []MetricAggregate
+	Actions           []MetricAggregate
+	ActionDimensions  []MetricAggregate
+	ActionProperties  []MetricAggregate
+	Properties        []MetricAggregate
+	Regions           []MetricAggregate
+	Browser           *BrowserMetrics
+	BrowserByDevice   []BrowserDeviceMetrics
+	Groups            []GroupMetric
 }
 
 type transactionWindowAggregate struct {
@@ -1550,6 +1551,9 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 		features = append(features, normalized)
 		if strings.HasPrefix(normalized, "jms") || normalized == "kafka" || normalized == "eventhubs" {
 			features = append(features, FeatureMessagingRollupV1, FeatureMessagingScopeV1, FeatureMessagingEvidenceV2)
+			if _, ok := instance.(protocol.MessagingProgressProvider); ok {
+				features = append(features, FeatureMessagingProgressV1)
+			}
 		}
 		if normalized == "websocket" {
 			features = append(features, FeatureWebSocketDiagnosticsV1)
@@ -1901,6 +1905,7 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 	}
 	_ = writer.RecordIntervalSummary(archiveIntervalSummary{
 		Messaging:           archiveMessagingFromBatch(batch),
+		MessagingProgress:   messagingProgressFromJSON(batch.GetMessagingProgressJson(), batch.GetMessagingProgressVersion()),
 		CompletedIterations: batch.GetStats().GetCompletedIterations(),
 		Timestamp:           time.UnixMilli(batch.TimestampUnixMs),
 		ActiveVUsers:        int64(batch.GetStats().GetActiveVusers()),
@@ -2351,30 +2356,32 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		}
 	}
 	return &pb.MetricsBatch{
-		TestId:                 testID,
-		ExecutionGeneration:    executionGeneration,
-		GeneratorId:            s.generatorID,
-		TimestampUnixMs:        time.Now().UnixMilli(),
-		WindowMs:               windowMs,
-		Transactions:           protoTransactions,
-		Stats:                  toProtoStats(stats),
-		Groups:                 groups,
-		LifecycleState:         lifecycleState,
-		LifecycleError:         lifecycleError,
-		Telemetry:              protoTelemetry,
-		TransactionMetrics:     metricAggregatesToProto(aggregates.Transactions),
-		DependencyMetrics:      metricAggregatesToProto(aggregates.Dependencies),
-		SoapMetrics:            metricAggregatesToProto(aggregates.SOAP),
-		NetworkProfileMetrics:  metricAggregatesToProto(aggregates.NetworkProfiles),
-		ActionMetrics:          metricAggregatesToProto(aggregates.Actions),
-		ActionDimensionMetrics: metricAggregatesToProto(aggregates.ActionDimensions),
-		ActionPropertyMetrics:  metricAggregatesToProto(aggregates.ActionProperties),
-		ActionMetricsVersion:   aggregates.NativeVersion,
-		PropertyMetrics:        metricAggregatesToProto(aggregates.Properties),
-		RegionMetrics:          metricAggregatesToProto(aggregates.Regions),
-		FleetMetrics:           metricAggregateToProto(aggregates.Fleet),
-		BrowserMetrics:         browserMetricsToProto(aggregates.Browser),
-		BrowserDeviceMetrics:   browserDeviceMetricsToProto(aggregates.BrowserByDevice),
+		MessagingProgressJson:    messagingProgressJSON(aggregates.MessagingProgress),
+		MessagingProgressVersion: messagingProgressVersion(aggregates.MessagingProgress),
+		TestId:                   testID,
+		ExecutionGeneration:      executionGeneration,
+		GeneratorId:              s.generatorID,
+		TimestampUnixMs:          time.Now().UnixMilli(),
+		WindowMs:                 windowMs,
+		Transactions:             protoTransactions,
+		Stats:                    toProtoStats(stats),
+		Groups:                   groups,
+		LifecycleState:           lifecycleState,
+		LifecycleError:           lifecycleError,
+		Telemetry:                protoTelemetry,
+		TransactionMetrics:       metricAggregatesToProto(aggregates.Transactions),
+		DependencyMetrics:        metricAggregatesToProto(aggregates.Dependencies),
+		SoapMetrics:              metricAggregatesToProto(aggregates.SOAP),
+		NetworkProfileMetrics:    metricAggregatesToProto(aggregates.NetworkProfiles),
+		ActionMetrics:            metricAggregatesToProto(aggregates.Actions),
+		ActionDimensionMetrics:   metricAggregatesToProto(aggregates.ActionDimensions),
+		ActionPropertyMetrics:    metricAggregatesToProto(aggregates.ActionProperties),
+		ActionMetricsVersion:     aggregates.NativeVersion,
+		PropertyMetrics:          metricAggregatesToProto(aggregates.Properties),
+		RegionMetrics:            metricAggregatesToProto(aggregates.Regions),
+		FleetMetrics:             metricAggregateToProto(aggregates.Fleet),
+		BrowserMetrics:           browserMetricsToProto(aggregates.Browser),
+		BrowserDeviceMetrics:     browserDeviceMetricsToProto(aggregates.BrowserByDevice),
 	}
 }
 
@@ -2631,7 +2638,7 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 		idle := *previous
 		idle.stats = stats
 		idle.transactions = nil
-		idle.aggregates = metricsAggregateSet{}
+		idle.aggregates = metricsAggregateSet{MessagingProgress: previous.aggregates.MessagingProgress.Clone()}
 		idle.telemetry.WindowMs = s.publishInterval.Milliseconds()
 		now := time.Now()
 		idle.telemetry.PublishedAtUnixMs = now.UnixMilli()
@@ -2665,6 +2672,11 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 		telemetry.CollectedAtUnixMs = previous.telemetry.CollectedAtUnixMs
 	}
 	aggregates := aggregateWindow.finalize(windowMs)
+	if snapshotOK {
+		aggregates.MessagingProgress = snapshot.MessagingProgress.Clone()
+	} else if previous != nil {
+		aggregates.MessagingProgress = previous.aggregates.MessagingProgress.Clone()
+	}
 	if snapshotOK {
 		telemetry.CollectedAtUnixMs = snapshot.Timestamp.UnixMilli()
 		now := time.Now()
@@ -2750,6 +2762,7 @@ func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapsho
 	}
 	exec.metricsMu.Lock()
 	stored := metrics
+	stored.aggregates.MessagingProgress = metrics.aggregates.MessagingProgress.Clone()
 	stored.transactions = append([]TransactionMetric(nil), metrics.transactions...)
 	stored.transactionResponseTimeSLA = append([]engine.TransactionResponseTimeSLACompliance(nil), metrics.transactionResponseTimeSLA...)
 	exec.lastMetrics = &stored
@@ -2757,7 +2770,7 @@ func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapsho
 }
 
 func metricsAggregateSetHasEvidence(aggregates metricsAggregateSet) bool {
-	return aggregates.Fleet != nil || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Actions) > 0 || len(aggregates.ActionDimensions) > 0 || len(aggregates.ActionProperties) > 0 || len(aggregates.Properties) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
+	return aggregates.MessagingProgress != nil || aggregates.Fleet != nil || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Actions) > 0 || len(aggregates.ActionDimensions) > 0 || len(aggregates.ActionProperties) > 0 || len(aggregates.Properties) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
 }
 
 func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName string, metrics executionMetricsSnapshot) {
@@ -2987,6 +3000,7 @@ func mergeSnapshotSideChannelAggregates(out *metricsAggregateSet, snapshot engin
 	if out == nil {
 		return
 	}
+	out.MessagingProgress = snapshot.MessagingProgress.Clone()
 	out.NetworkProfiles = engineActionMetricsToAggregates(snapshot.ByNetworkProfile)
 	if snapshot.ByAction != nil {
 		out.NativeVersion = 1
@@ -3122,6 +3136,9 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 	browsers := make([]*BrowserMetrics, 0)
 	browserDevices := make([]BrowserDeviceMetrics, 0)
 	for _, value := range values {
+		if value.MessagingProgress != nil {
+			protocol.MergeMessagingProgress(&out.MessagingProgress, value.MessagingProgress)
+		}
 		if value.Fleet != nil {
 			fleet = append(fleet, *value.Fleet)
 		}

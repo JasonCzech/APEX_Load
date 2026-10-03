@@ -3199,8 +3199,11 @@ type MetricsBatch struct {
 	// Version 3 measured action/network/hierarchy/lifecycle intersections.
 	ActionDimensionMetrics     []*MetricAggregate                      `protobuf:"bytes,26,rep,name=action_dimension_metrics,json=actionDimensionMetrics,proto3" json:"action_dimension_metrics,omitempty"`
 	TransactionResponseTimeSla []*TransactionResponseTimeSLACompliance `protobuf:"bytes,21,rep,name=transaction_response_time_sla,json=transactionResponseTimeSla,proto3" json:"transaction_response_time_sla,omitempty"`
-	unknownFields              protoimpl.UnknownFields
-	sizeCache                  protoimpl.SizeCache
+	// Standalone cumulative processor evidence: present even without actions.
+	MessagingProgressJson    string `protobuf:"bytes,27,opt,name=messaging_progress_json,json=messagingProgressJson,proto3" json:"messaging_progress_json,omitempty"`
+	MessagingProgressVersion uint32 `protobuf:"varint,28,opt,name=messaging_progress_version,json=messagingProgressVersion,proto3" json:"messaging_progress_version,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *MetricsBatch) Reset() {
@@ -3413,6 +3416,20 @@ func (x *MetricsBatch) GetTransactionResponseTimeSla() []*TransactionResponseTim
 		return x.TransactionResponseTimeSla
 	}
 	return nil
+}
+
+func (x *MetricsBatch) GetMessagingProgressJson() string {
+	if x != nil {
+		return x.MessagingProgressJson
+	}
+	return ""
+}
+
+func (x *MetricsBatch) GetMessagingProgressVersion() uint32 {
+	if x != nil {
+		return x.MessagingProgressVersion
+	}
+	return 0
 }
 
 type MetricsBatchTelemetry struct {
@@ -6825,7 +6842,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x15run_supervision_token\x18\x04 \x01(\fR\x13runSupervisionToken\"T\n" +
 	"\aStopAck\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x12%\n" +
-	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xec\f\n" +
+	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xe2\r\n" +
 	"\fMetricsBatch\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12!\n" +
 	"\fgenerator_id\x18\x02 \x01(\tR\vgeneratorId\x12*\n" +
@@ -6853,7 +6870,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x16action_metrics_version\x18\x18 \x01(\rR\x14actionMetricsVersion\x12T\n" +
 	"\x17action_property_metrics\x18\x19 \x03(\v2\x1c.apexload.v1.MetricAggregateR\x15actionPropertyMetrics\x12V\n" +
 	"\x18action_dimension_metrics\x18\x1a \x03(\v2\x1c.apexload.v1.MetricAggregateR\x16actionDimensionMetrics\x12t\n" +
-	"\x1dtransaction_response_time_sla\x18\x15 \x03(\v21.apexload.v1.TransactionResponseTimeSLAComplianceR\x1atransactionResponseTimeSla\"\x98\x03\n" +
+	"\x1dtransaction_response_time_sla\x18\x15 \x03(\v21.apexload.v1.TransactionResponseTimeSLAComplianceR\x1atransactionResponseTimeSla\x126\n" +
+	"\x17messaging_progress_json\x18\x1b \x01(\tR\x15messagingProgressJson\x12<\n" +
+	"\x1amessaging_progress_version\x18\x1c \x01(\rR\x18messagingProgressVersion\"\x98\x03\n" +
 	"\x15MetricsBatchTelemetry\x12'\n" +
 	"\x0fdropped_results\x18\x01 \x01(\x03R\x0edroppedResults\x12/\n" +
 	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x12/\n" +

@@ -9,6 +9,7 @@ var runArchiveAPIRouteCatalog = preserveRawAccessRequirementsForMethod(apiRouteC
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/analysis/annotations", "handleCreateRunAnnotation", editorProjectAccessWithBodyLimit(resolveTestProjectID, 8<<10), func(s *Server) http.Handler { return http.HandlerFunc(s.handleCreateRunAnnotation) }),
 		newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/tests/{id}/analysis/annotations/{annotation_id}", "handleDeleteRunAnnotation", editorProjectAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleDeleteRunAnnotation) }),
 
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/messaging-progress", "handleMessagingProgress", analysisQueryAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleMessagingProgress) }),
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/native-series", "handleNativeEvidenceSeries", analysisQueryAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleNativeEvidenceSeries) }),
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/archive/native-series", "handleNativeArchiveSeries", analysisQueryAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleNativeArchiveSeries) }),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive", "handleDownloadRunArchive", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
