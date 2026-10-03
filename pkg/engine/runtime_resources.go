@@ -131,15 +131,25 @@ type runtimeResourceBinding struct {
 	cleanupOwned bool
 }
 
+// runtimeResourceProfile freezes admission even when the original workload
+// has no managed consumption and therefore owns no reservation. Recording the
+// protocol also rejects a later switch into a managed runtime before execution.
+type runtimeResourceProfile struct {
+	script       *dsl.Script
+	initStrategy string
+	plan         RuntimeResourcePlan
+}
+
 type engineRuntimeResources struct {
 	mu              sync.Mutex
 	bindings        map[string]*runtimeResourceBinding
+	profiles        map[string]runtimeResourceProfile
 	adopted, closed bool
 	started         bool
 }
 
 func newEngineRuntimeResources(groups []GroupConfig) (*engineRuntimeResources, error) {
-	resources := &engineRuntimeResources{bindings: map[string]*runtimeResourceBinding{}}
+	resources := &engineRuntimeResources{bindings: map[string]*runtimeResourceBinding{}, profiles: map[string]runtimeResourceProfile{}}
 	for _, group := range groups {
 		plan, err := NewRuntimeResourcePlan(group.Script, group.InitStrategy)
 		if err != nil {
@@ -154,6 +164,9 @@ func newEngineRuntimeResources(groups []GroupConfig) (*engineRuntimeResources, e
 		}
 		if _, err := plan.Demand(peak); err != nil {
 			return nil, err
+		}
+		if group.Script != nil {
+			resources.profiles[group.Name] = runtimeResourceProfile{script: group.Script, initStrategy: group.InitStrategy, plan: plan}
 		}
 		if plan.RequiresReservation() || group.RuntimeResourceReservation != nil {
 			resources.bindings[group.Name] = &runtimeResourceBinding{script: group.Script, initStrategy: group.InitStrategy, plan: plan, peak: peak, floor: peak, frozen: group.RuntimeResourcePeakFrozen, reservation: group.RuntimeResourceReservation}
@@ -179,6 +192,20 @@ func (resources *engineRuntimeResources) reserve(ctx context.Context) error {
 		return fmt.Errorf("runtime resource reservation is closed")
 	}
 	fail := func(err error) error { resources.releaseLocked(); return err }
+
+	profileNames := make([]string, 0, len(resources.profiles))
+	for name := range resources.profiles {
+		profileNames = append(profileNames, name)
+	}
+	sort.Strings(profileNames)
+	for _, name := range profileNames {
+		profile := resources.profiles[name]
+		currentPlan, err := NewRuntimeResourcePlan(profile.script, profile.initStrategy)
+		if err != nil || currentPlan != profile.plan {
+			return fail(fmt.Errorf("runtime resource plan changed before execution"))
+		}
+	}
+
 	names := make([]string, 0, len(resources.bindings))
 	for name := range resources.bindings {
 		names = append(names, name)

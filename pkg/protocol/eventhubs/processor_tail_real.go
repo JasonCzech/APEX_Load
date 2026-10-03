@@ -57,6 +57,14 @@ func startProcessorTail(ctx context.Context, cfg config, inventory map[string]bo
 			if ctx.Err() != nil {
 				return
 			}
+			var tailLease protocol.RuntimePauseLease
+			if cfg.pauseGate != nil && !time.Now().Before(next) {
+				var err error
+				tailLease, err = protocol.AdmitRuntimePause(ctx, cfg.pauseGate, protocol.RuntimePauseTail)
+				if err != nil {
+					return
+				}
+			}
 			processorTailSources.Lock()
 			wake := source.wake
 			admitted := !source.active && !time.Now().Before(next)
@@ -64,9 +72,17 @@ func startProcessorTail(ctx context.Context, cfg config, inventory map[string]bo
 				source.active = true
 			}
 			processorTailSources.Unlock()
+			if !admitted && tailLease != nil {
+				tailLease.Release()
+				tailLease = nil
+			}
 			if admitted {
 				generations := p.tailGenerations()
-				round, cancel := context.WithTimeout(ctx, 10*time.Second)
+				pollCtx := ctx
+				if tailLease != nil {
+					pollCtx = tailLease.Context()
+				}
+				round, cancel := context.WithTimeout(pollCtx, 10*time.Second)
 				var workers sync.WaitGroup
 				slots := make(chan struct{}, 2)
 				for partition := range inventory {
@@ -101,6 +117,9 @@ func startProcessorTail(ctx context.Context, cfg config, inventory map[string]bo
 				}
 				workers.Wait()
 				cancel()
+				if tailLease != nil {
+					tailLease.Release()
+				}
 				next = time.Now().Add(interval)
 				processorTailSources.Lock()
 				source.active = false

@@ -5550,8 +5550,11 @@ type PauseRequest struct {
 	OperationId         string                 `protobuf:"bytes,4,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
 	OperationSequence   uint64                 `protobuf:"varint,5,opt,name=operation_sequence,json=operationSequence,proto3" json:"operation_sequence,omitempty"`
 	RunSupervisionToken []byte                 `protobuf:"bytes,6,opt,name=run_supervision_token,json=runSupervisionToken,proto3" json:"run_supervision_token,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Explicit strict pause: acknowledge only after runtime work is quiescent.
+	// False preserves the ordinary pause contract used by older controllers.
+	RequireQuiescence bool `protobuf:"varint,7,opt,name=require_quiescence,json=requireQuiescence,proto3" json:"require_quiescence,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *PauseRequest) Reset() {
@@ -5626,6 +5629,13 @@ func (x *PauseRequest) GetRunSupervisionToken() []byte {
 	return nil
 }
 
+func (x *PauseRequest) GetRequireQuiescence() bool {
+	if x != nil {
+		return x.RequireQuiescence
+	}
+	return false
+}
+
 type PauseAck struct {
 	state                    protoimpl.MessageState `protogen:"open.v1"`
 	Accepted                 bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
@@ -5633,8 +5643,11 @@ type PauseAck struct {
 	AppliedOperationId       string                 `protobuf:"bytes,3,opt,name=applied_operation_id,json=appliedOperationId,proto3" json:"applied_operation_id,omitempty"`
 	ErrorMessage             string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
 	AppliedOperationSequence uint64                 `protobuf:"varint,5,opt,name=applied_operation_sequence,json=appliedOperationSequence,proto3" json:"applied_operation_sequence,omitempty"`
-	unknownFields            protoimpl.UnknownFields
-	sizeCache                protoimpl.SizeCache
+	// Presence distinguishes old peers from an explicit failed/confirmed proof.
+	// True is valid only for an accepted, committed strict pause operation.
+	QuiescenceConfirmed *bool `protobuf:"varint,6,opt,name=quiescence_confirmed,json=quiescenceConfirmed,proto3,oneof" json:"quiescence_confirmed,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *PauseAck) Reset() {
@@ -5700,6 +5713,13 @@ func (x *PauseAck) GetAppliedOperationSequence() uint64 {
 		return x.AppliedOperationSequence
 	}
 	return 0
+}
+
+func (x *PauseAck) GetQuiescenceConfirmed() bool {
+	if x != nil && x.QuiescenceConfirmed != nil {
+		return *x.QuiescenceConfirmed
+	}
+	return false
 }
 
 type HeartbeatPing struct {
@@ -7127,20 +7147,23 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x06adjust\x18\x01 \x01(\v2\x1c.apexload.v1.VUserAdjustmentH\x00R\x06adjust\x12.\n" +
 	"\x04stop\x18\x02 \x01(\v2\x18.apexload.v1.StopRequestH\x00R\x04stop\x121\n" +
 	"\x05pause\x18\x03 \x01(\v2\x19.apexload.v1.PauseRequestH\x00R\x05pauseB\b\n" +
-	"\x06signal\"\xf6\x01\n" +
+	"\x06signal\"\xa5\x02\n" +
 	"\fPauseRequest\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x14\n" +
 	"\x05pause\x18\x02 \x01(\bR\x05pause\x121\n" +
 	"\x14execution_generation\x18\x03 \x01(\x04R\x13executionGeneration\x12!\n" +
 	"\foperation_id\x18\x04 \x01(\tR\voperationId\x12-\n" +
 	"\x12operation_sequence\x18\x05 \x01(\x04R\x11operationSequence\x122\n" +
-	"\x15run_supervision_token\x18\x06 \x01(\fR\x13runSupervisionToken\"\xe2\x01\n" +
+	"\x15run_supervision_token\x18\x06 \x01(\fR\x13runSupervisionToken\x12-\n" +
+	"\x12require_quiescence\x18\a \x01(\bR\x11requireQuiescence\"\xb3\x02\n" +
 	"\bPauseAck\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12%\n" +
 	"\x0ecurrent_paused\x18\x02 \x01(\bR\rcurrentPaused\x120\n" +
 	"\x14applied_operation_id\x18\x03 \x01(\tR\x12appliedOperationId\x12#\n" +
 	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x12<\n" +
-	"\x1aapplied_operation_sequence\x18\x05 \x01(\x04R\x18appliedOperationSequence\"\x91\x01\n" +
+	"\x1aapplied_operation_sequence\x18\x05 \x01(\x04R\x18appliedOperationSequence\x126\n" +
+	"\x14quiescence_confirmed\x18\x06 \x01(\bH\x00R\x13quiescenceConfirmed\x88\x01\x01B\x17\n" +
+	"\x15_quiescence_confirmed\"\x91\x01\n" +
 	"\rHeartbeatPing\x12!\n" +
 	"\fgenerator_id\x18\x01 \x01(\tR\vgeneratorId\x12*\n" +
 	"\x11timestamp_unix_ms\x18\x02 \x01(\x03R\x0ftimestampUnixMs\x121\n" +
@@ -7461,6 +7484,7 @@ func file_api_proto_generator_proto_init() {
 		(*ControlSignal_Stop)(nil),
 		(*ControlSignal_Pause)(nil),
 	}
+	file_api_proto_generator_proto_msgTypes[49].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

@@ -60,6 +60,7 @@ const (
 // extract aggregated metrics during or after a run.
 type Engine struct {
 	runtimeResources   *engineRuntimeResources
+	runtimePause       *engineRuntimePause
 	pooledPilot        *javaPooledPilot
 	brokerExecution    *javaBrokerExecution
 	evidenceSchedule   []VUserLifetime
@@ -205,6 +206,7 @@ func New(cfg Config) (*Engine, error) {
 	metrics.initializationObserver = cfg.InitializationObserver
 	return &Engine{
 		runtimeResources: runtimeResources,
+		runtimePause:     newEngineRuntimePause(runtimeResources, false),
 		evidenceSchedule: append([]VUserLifetime(nil), cfg.EvidenceSchedule...),
 		evidenceStarted:  cfg.EvidenceStarted, completionObserver: cfg.CompletionObserver,
 		script:              cfg.Script,
@@ -233,6 +235,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 		return nil, err
 	}
 	defer e.runtimeResources.release()
+	defer e.runtimePause.close()
 	// Re-check durable import gates at the actual execution boundary. Engine
 	// construction and execution are intentionally separate, and callers retain
 	// the Script pointer, so a draft can acquire a blocker after New returns.
@@ -249,7 +252,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 	if err := e.runtimeResources.adopt(ctx); err != nil {
 		return nil, err
 	}
-	ctx = e.runtimeResources.bind(ctx, "")
+	ctx = e.runtimePause.bind(e.runtimeResources.bind(ctx, ""), "")
 
 	var sourceErr error
 	e.sourceParameters, sourceErr = newSourceParameterState([]*dsl.Script{e.script})
@@ -642,6 +645,7 @@ func javaVuserActionsUsePhaseLifecycle(actions []dsl.Action) bool {
 }
 
 func (e *Engine) Stop() {
+	e.runtimePause.beginTerminal(true)
 	e.mu.Lock()
 	cancel := e.cancel
 	e.mu.Unlock()
@@ -651,6 +655,7 @@ func (e *Engine) Stop() {
 }
 
 func (e *Engine) GracefulStop() {
+	e.runtimePause.beginTerminal(false)
 	e.mu.Lock()
 	cancel := e.softStop
 	e.mu.Unlock()

@@ -8,8 +8,11 @@ import (
 	"fmt"
 	eh "github.com/Azure/azure-sdk-for-go/sdk/messaging/azeventhubs/v2"
 	"github.com/jasonczech/apexload/pkg/identitypolicy"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 const maxProcessorEventBytes = 1 << 20
@@ -21,19 +24,22 @@ type processorPartition interface {
 	Close(context.Context) error
 }
 type eventHubsProcessor struct {
-	ctx            context.Context
-	cancel         context.CancelFunc
-	done           chan struct{}
-	deliveries     chan event
-	failure        chan error
-	store          *fencedCheckpointStore
-	cleanupMu      sync.Mutex
-	cleanupErr     error
-	closeTimeout   time.Duration
-	closeTransport func(context.Context) error
-	consumer       *eh.ConsumerClient
-	progress       *processorProgress
-	tailDone       chan struct{}
+	pauseGate         protocol.RuntimePauseGate
+	heartbeatInterval time.Duration
+	demands           processorDemandSet
+	ctx               context.Context
+	cancel            context.CancelFunc
+	done              chan struct{}
+	deliveries        chan event
+	failure           chan error
+	store             *fencedCheckpointStore
+	cleanupMu         sync.Mutex
+	cleanupErr        error
+	closeTimeout      time.Duration
+	closeTransport    func(context.Context) error
+	consumer          *eh.ConsumerClient
+	progress          *processorProgress
+	tailDone          chan struct{}
 }
 
 // Admission waiting is bounded by the caller, without spawning waiter goroutines.
@@ -97,6 +103,11 @@ func (c *realClient) receiveProcessed(ctx context.Context, hub, group string, ti
 	}
 	session := c.processor
 	c.processorMu.Unlock()
+	releaseDemand, err := session.registerDemand(budget)
+	if err != nil {
+		return event{}, -1, err
+	}
+	defer releaseDemand()
 	select {
 	case ev := <-session.deliveries:
 		return ev, -1, nil
@@ -176,7 +187,7 @@ func (c *realClient) startProcessor(ctx context.Context) (*eventHubsProcessor, e
 	if err != nil {
 		return nil, err
 	}
-	store := &fencedCheckpointStore{records: blobCheckpointRecords{client: blobs}, namespace: namespace, hub: c.cfg.EventHub, group: c.cfg.ConsumerGroup, owner: cc.InstanceID(), partitions: partitions, progress: c.cfg.progress}
+	store := &fencedCheckpointStore{pauseGate: c.cfg.pauseGate, records: blobCheckpointRecords{client: blobs}, namespace: namespace, hub: c.cfg.EventHub, group: c.cfg.ConsumerGroup, owner: cc.InstanceID(), partitions: partitions, progress: c.cfg.progress}
 	start := eh.StartPosition{}
 	yes := true
 	if c.cfg.StartPosition == "earliest" {
@@ -184,9 +195,12 @@ func (c *realClient) startProcessor(ctx context.Context) (*eventHubsProcessor, e
 	} else {
 		start.Latest = &yes
 	}
-	processor, err := eh.NewProcessor(cc, store, &eh.ProcessorOptions{Prefetch: -1, StartPositions: eh.StartPositions{Default: start}})
-	if err != nil {
-		return nil, err
+	var processor *eh.Processor
+	if c.cfg.pauseGate == nil {
+		processor, err = eh.NewProcessor(cc, store, &eh.ProcessorOptions{Prefetch: -1, StartPositions: eh.StartPositions{Default: start}})
+		if err != nil {
+			return nil, err
+		}
 	}
 	session.store = store
 	session.progress = c.cfg.progress
@@ -204,6 +218,23 @@ func (c *realClient) startProcessor(ctx context.Context) (*eventHubsProcessor, e
 	go func() {
 		defer session.finishProcessor(child, ownedParent)
 		defer cancel()
+		if session.pauseGate != nil {
+			if err := session.runGovernedProcessor(child, c.cfg.StartPosition, func(id, generation string, position eh.StartPosition) (processorPartition, error) {
+				return &governedPartition{store: store, partition: id, generation: generation, anchor: position, queryBoundary: cc.GetPartitionProperties, reopen: func(position eh.StartPosition) (partitionReceiver, error) {
+					private, err := eh.NewConsumerClient(namespace, c.cfg.EventHub, c.cfg.ConsumerGroup, cred, &eh.ConsumerClientOptions{InstanceID: store.owner})
+					if err != nil {
+						return nil, err
+					}
+					owned := &ownedPartitionReceiver{consumer: private}
+					level := int64(0)
+					owned.inner, err = private.NewPartitionClient(id, &eh.PartitionClientOptions{OwnerLevel: &level, Prefetch: -1, StartPosition: position})
+					return owned, err
+				}}, nil
+			}); err != nil {
+				session.fail(err)
+			}
+			return
+		}
 		var workers sync.WaitGroup
 		dispatched := make(chan struct{})
 		go func() {
@@ -231,7 +262,7 @@ func (c *realClient) startProcessor(ctx context.Context) (*eventHubsProcessor, e
 // inventory request, so even failed startup closes through the same proof path.
 func (c *realClient) ownProcessorConsumer(consumer *eh.ConsumerClient) *eventHubsProcessor {
 	lifetime, cancel := context.WithCancel(c.cfg.Lifetime)
-	session := &eventHubsProcessor{ctx: lifetime, cancel: cancel, done: make(chan struct{}), deliveries: make(chan event), failure: make(chan error, 1), consumer: consumer, closeTransport: consumer.Close, progress: c.cfg.progress}
+	session := &eventHubsProcessor{pauseGate: c.cfg.pauseGate, ctx: lifetime, cancel: cancel, done: make(chan struct{}), deliveries: make(chan event), failure: make(chan error, 1), consumer: consumer, closeTransport: consumer.Close, progress: c.cfg.progress}
 	c.mu.Lock()
 	c.processorCancel = cancel
 	c.processorOwnedConsumer = consumer
@@ -348,7 +379,7 @@ func (s *eventHubsProcessor) fail(err error) {
 
 // An error is deliberately redaction-safe; provider errors can contain tokens
 // or destination details. Unproven closes retain their resource entitlement.
-func (s *eventHubsProcessor) closePartition(partition processorPartition, worker *processorWorkerLease, rejected *processorLease) {
+func (s *eventHubsProcessor) closePartition(partition processorPartition, worker *processorWorkerLease, rejected *processorLease) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), s.cleanupTimeout())
 	defer cancel()
 	if err := partition.Close(ctx); err != nil {
@@ -356,9 +387,11 @@ func (s *eventHubsProcessor) closePartition(partition processorPartition, worker
 			rejected.quarantine()
 		}
 		s.recordCleanupError("Event Hubs processor partition cleanup incomplete")
+		return false
 	} else if worker != nil {
 		worker.release()
 	}
+	return true
 }
 func (s *eventHubsProcessor) cleanupTimeout() time.Duration {
 	if s.closeTimeout > 0 {
@@ -383,65 +416,184 @@ func (s *eventHubsProcessor) partitionWorker(partition processorPartition) {
 }
 
 func (s *eventHubsProcessor) partitionWorkerWithLease(partition processorPartition, worker *processorWorkerLease) {
-	defer s.closePartition(partition, worker, nil)
-	fence, err := s.store.ownershipFence(s.ctx, partition.PartitionID())
+	s.partitionWorkerContext(partition, worker, s.ctx)
+}
+func (s *eventHubsProcessor) partitionWorkerContext(partition processorPartition, worker *processorWorkerLease, workerCtx context.Context, expectedGeneration ...string) {
+	var unresolvedReceiveProof func()
+	defer func() {
+		// Only an actual proved exclusive connection close can discharge a
+		// receive whose first cleanup returned an error. Resource retention alone
+		// is insufficient to keep PauseAndWait from claiming quiescence.
+		if s.closePartition(partition, worker, nil) && unresolvedReceiveProof != nil {
+			unresolvedReceiveProof()
+		}
+	}()
+	fence, err := s.store.ownershipFence(workerCtx, partition.PartitionID())
 	if err != nil {
 		if !errors.Is(err, errCheckpointFence) && s.ctx.Err() == nil {
 			s.fail(fmt.Errorf("processor ownership verification failed: %w", err))
 		}
 		return
 	}
+	if len(expectedGeneration) > 0 && fence != expectedGeneration[0] {
+		return
+	}
 	failures := 0
 	for {
-		events, err := partition.ReceiveEvents(s.ctx, 1, nil)
+		if workerCtx.Err() != nil {
+			return
+		}
+		receiveCtx, releaseReceive, err := s.receiveAdmission(s.pauseGate != nil, workerCtx)
 		if err != nil {
+			if workerCtx.Err() != nil || s.ctx.Err() != nil {
+				return
+			}
+			if s.pauseGate != nil && !errors.Is(err, protocol.ErrRuntimePauseAdmissionInvalid) {
+				continue
+			}
+			s.fail(err)
+			return
+		}
+		if s.pauseGate != nil {
+			current, verifyErr := s.store.ownershipFence(receiveCtx, partition.PartitionID())
+			if verifyErr != nil || current != fence {
+				cancelled := receiveCtx.Err() != nil
+				releaseReceive()
+				if errors.Is(verifyErr, errCheckpointFence) || verifyErr == nil {
+					s.progress.ownership(partition.PartitionID(), fence, "lost", nil, "")
+					return
+				}
+				if cancelled {
+					continue
+				}
+				s.fail(errors.New("processor ownership could not be verified before receive"))
+				return
+			}
+		}
+		operationCtx, cancelOperation := context.WithCancel(receiveCtx)
+		stopWorker := context.AfterFunc(workerCtx, cancelOperation)
+		events, err := partition.ReceiveEvents(operationCtx, 1, nil)
+		interrupted := s.pauseInterrupted(operationCtx, err)
+		stopWorker()
+		cancelOperation()
+		if errors.Is(err, errProcessorReceiveCleanupUnproven) {
+			unresolvedReceiveProof = releaseReceive
+			s.recordCleanupError("processor receive transport cleanup incomplete")
+			return
+		}
+		releaseReceive()
+		if err != nil {
+			if errors.Is(err, errCheckpointFence) {
+				s.progress.ownership(partition.PartitionID(), fence, "lost", nil, "")
+				return
+			}
 			var providerErr *eh.Error
 			if errors.As(err, &providerErr) && providerErr.Code == eh.ErrorCodeOwnershipLost {
 				s.progress.ownership(partition.PartitionID(), fence, "lost", nil, "")
 				return
 			}
-			if s.ctx.Err() != nil {
+			if s.ctx.Err() != nil || workerCtx.Err() != nil {
 				return
 			}
-			s.fail(err)
+			if interrupted {
+				if len(events) == 0 {
+					continue
+				}
+			} else {
+				s.fail(err)
+				return
+			}
+		}
+		if len(events) > 1 {
+			s.fail(errors.New("processor receive exceeded bounded event count"))
 			return
 		}
 		if len(events) == 0 {
 			continue
 		}
 		rd := events[0]
-		if rd == nil || len(rd.Body) > maxProcessorEventBytes || len(rd.Properties) > 256 {
-			s.fail(fmt.Errorf("processor event exceeds the 1 MiB body or property limit"))
+		if rd == nil || rd.SequenceNumber < 0 || !validProviderOffset(rd.Offset) || len(rd.Body) > maxProcessorEventBytes || len(rd.Properties) > 256 {
+			s.fail(errors.New("processor event cursor or retained payload exceeds limits"))
 			return
 		}
-		ev := event{Body: rd.Body, Properties: nil, PartitionID: partition.PartitionID(), Offset: rd.SequenceNumber, SequenceNum: rd.SequenceNumber}
-		properties, err := processorProperties(rd.Properties, len(rd.Body))
-		ev.Properties = properties
-		if err != nil {
-			s.fail(fmt.Errorf("processor event retained bytes exceed 1 MiB"))
-			return
-		}
+		retainedBytes := len(rd.Body) + len(rd.Offset)
+		partitionKey := ""
 		if rd.PartitionKey != nil {
-			ev.PartitionKey = *rd.PartitionKey
+			if len(*rd.PartitionKey) > 64<<10 || !utf8.ValidString(*rd.PartitionKey) {
+				s.fail(errors.New("processor partition key exceeds limits"))
+				return
+			}
+			partitionKey = strings.Clone(*rd.PartitionKey)
+			retainedBytes += len(partitionKey)
 		}
+		if retainedBytes > maxProcessorEventBytes {
+			s.fail(errors.New("processor retained event exceeds 1 MiB"))
+			return
+		}
+		properties, err := processorProperties(rd.Properties, retainedBytes)
+		if err != nil {
+			s.fail(errors.New("processor retained event exceeds 1 MiB"))
+			return
+		}
+		ev := event{Body: append([]byte(nil), rd.Body...), Properties: properties, PartitionID: partition.PartitionID(), Offset: rd.SequenceNumber, SequenceNum: rd.SequenceNumber, PartitionKey: partitionKey}
 		if rd.EnqueuedTime != nil {
 			ev.EnqueuedAt = *rd.EnqueuedTime
 		}
+		// SDK raw AMQP/system metadata can contain additional unbounded fields.
+		// Keep only the cursor consumed by UpdateCheckpoint across the ACK/CAS
+		// wait, with selected payload copied into the bounded application event.
+		rd = &eh.ReceivedEventData{SequenceNumber: rd.SequenceNumber, Offset: strings.Clone(rd.Offset)}
+		events = nil
 		deliveredBefore := false
 		for {
-			receipt := &processorReceipt{acks: make(chan processorAck, 1), result: make(chan error, 1), lifetime: s.ctx}
+			receipt := &processorReceipt{acks: make(chan processorAck, 1), result: make(chan error, 1), lifetime: workerCtx}
 			ev.receipt = receipt
+			deliveryCtx, releaseDelivery, err := s.receiveAdmission(s.pauseGate != nil, workerCtx)
+			if err != nil {
+				if workerCtx.Err() != nil || s.ctx.Err() != nil {
+					return
+				}
+				if errors.Is(err, protocol.ErrRuntimePauseAdmissionInvalid) {
+					s.fail(err)
+					return
+				}
+				continue
+			}
+			if s.pauseGate != nil {
+				current, verifyErr := s.store.ownershipFence(deliveryCtx, partition.PartitionID())
+				if verifyErr != nil || current != fence {
+					cancelled := deliveryCtx.Err() != nil
+					releaseDelivery()
+					if errors.Is(verifyErr, errCheckpointFence) || verifyErr == nil {
+						s.progress.ownership(partition.PartitionID(), fence, "lost", nil, "")
+						return
+					}
+					if cancelled {
+						continue
+					}
+					s.fail(errors.New("processor ownership could not be verified before delivery"))
+					return
+				}
+			}
 			select {
 			case s.deliveries <- ev:
 				s.progress.deliveredEvent(partition.PartitionID(), fence, rd.SequenceNumber, rd.Offset, deliveredBefore)
 				deliveredBefore = true
-			case <-s.ctx.Done():
+			case <-deliveryCtx.Done():
+				releaseDelivery()
+				if workerCtx.Err() != nil || s.ctx.Err() != nil {
+					return
+				}
+				continue
+			case <-workerCtx.Done():
+				releaseDelivery()
 				return
 			}
+			releaseDelivery()
 			var ack processorAck
 			select {
 			case ack = <-receipt.acks:
-			case <-s.ctx.Done():
+			case <-workerCtx.Done():
 				return
 			}
 			if !ack.accept {
@@ -450,7 +602,7 @@ func (s *eventHubsProcessor) partitionWorkerWithLease(partition processorPartiti
 			}
 			checkpointCtx := context.WithValue(ack.ctx, checkpointFenceContextKey{}, fence)
 			checkpointCtx = context.WithValue(checkpointCtx, checkpointRetryContextKey{}, failures > 0)
-			err := partition.UpdateCheckpoint(checkpointCtx, rd, nil)
+			err = partition.UpdateCheckpoint(checkpointCtx, rd, nil)
 			receipt.result <- err
 			if errors.Is(err, errCheckpointFence) {
 				return
@@ -472,16 +624,16 @@ func processorProperties(values map[string]any, bodyBytes int) (map[string]strin
 	out := map[string]string{}
 	total := bodyBytes
 	for key, value := range values {
-		if len(key) > 256 {
+		if len(key) > 256 || !utf8.ValidString(key) {
 			return nil, fmt.Errorf("processor property key exceeds limit")
 		}
 		var text string
 		switch v := value.(type) {
 		case string:
-			if len(v) > 64<<10 {
+			if len(v) > 64<<10 || !utf8.ValidString(v) {
 				return nil, fmt.Errorf("processor property exceeds limit")
 			}
-			text = v
+			text = strings.Clone(v)
 		case []byte:
 			if len(v) > 64<<10 {
 				return nil, fmt.Errorf("processor property exceeds limit")
@@ -500,7 +652,7 @@ func processorProperties(values map[string]any, bodyBytes int) (map[string]strin
 		if total > maxProcessorEventBytes {
 			return nil, fmt.Errorf("processor retained event exceeds 1 MiB")
 		}
-		out[key] = text
+		out[strings.Clone(key)] = text
 	}
 	return out, nil
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"io"
 	"net/http"
 	"net/url"
@@ -42,6 +43,7 @@ type checkpointRecordIO interface {
 // fence the checkpoint against ownership takeover atomically; independent blobs
 // cannot provide this boundary.
 type fencedCheckpointStore struct {
+	pauseGate                    protocol.RuntimePauseGate
 	mu                           sync.Mutex
 	records                      checkpointRecordIO
 	namespace, hub, group, owner string
@@ -187,6 +189,14 @@ func (s *fencedCheckpointStore) ListCheckpoints(ctx context.Context, namespace, 
 	return out, nil
 }
 func (s *fencedCheckpointStore) SetCheckpoint(ctx context.Context, cp eh.Checkpoint, _ *eh.SetCheckpointOptions) (result error) {
+	if s.pauseGate != nil {
+		lease, err := protocol.AdmitRuntimePause(ctx, s.pauseGate, protocol.RuntimePauseCheckpoint)
+		if err != nil {
+			return err
+		}
+		defer lease.Release()
+		ctx = lease.Context()
+	}
 	started := time.Now()
 	fence, _ := ctx.Value(checkpointFenceContextKey{}).(string)
 	wrote := false

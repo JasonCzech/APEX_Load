@@ -1189,6 +1189,11 @@ func (s *Service) StreamMetrics(stream pb.GeneratorControl_StreamMetricsServer) 
 				return
 			}
 
+			if pause.GetRequireQuiescence() {
+				recvErr <- status.Error(codes.InvalidArgument, "strict pause requires the acknowledged SetPaused RPC")
+				return
+			}
+
 			if err := s.setPaused(stream.Context(), pause.GetTestId(), pause.GetPause(), pause.GetExecutionGeneration(), pause.GetRunSupervisionToken()); err != nil {
 				recvErr <- err
 				return
@@ -1553,6 +1558,11 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 			features = append(features, FeatureMessagingRollupV1, FeatureMessagingScopeV1, FeatureMessagingEvidenceV2)
 			if _, ok := instance.(protocol.MessagingProgressProvider); ok {
 				features = append(features, FeatureMessagingProgressV1)
+			}
+			// This feature describes the acknowledged engine/runtime pause gate,
+			// not ordinary messaging execution. Never infer it from progress alone.
+			if messagingRuntimeQuiescenceAvailable(instance, runtimeAvailable) {
+				features = append(features, FeatureMessagingRuntimeQuiescenceV1)
 			}
 		}
 		if normalized == "websocket" {

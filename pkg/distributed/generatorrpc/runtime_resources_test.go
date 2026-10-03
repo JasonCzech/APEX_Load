@@ -82,6 +82,44 @@ func TestRuntimeResourceClaimBoundsAndFingerprint(t *testing.T) {
 		t.Fatal("assignment claim aliases caller")
 	}
 }
+func TestValidRuntimeResourceClaimRejectsMalformedAndZeroIntents(t *testing.T) {
+	if ValidRuntimeResourceClaim(nil) {
+		t.Fatal("canonical nil zero demand became positive resource intent")
+	}
+	for _, tc := range []struct {
+		name  string
+		edit  func(*pb.RuntimeResourceClaim)
+		valid bool
+	}{
+		{name: "valid peak claim", valid: true},
+		{name: "zero-floor once phase", edit: func(c *pb.RuntimeResourceClaim) {
+			c.PeakVusers = 0
+			c.Requested.Processors = 1
+			c.Requested.Workers = 8
+		}, valid: true},
+		{name: "unknown contract", edit: func(c *pb.RuntimeResourceClaim) { c.Contract = "next" }},
+		{name: "wrong protocol", edit: func(c *pb.RuntimeResourceClaim) { c.Protocol = "kafka" }},
+		{name: "missing vector", edit: func(c *pb.RuntimeResourceClaim) { c.Requested = nil }},
+		{name: "negative peak", edit: func(c *pb.RuntimeResourceClaim) { c.PeakVusers = -1 }},
+		{name: "zero processors", edit: func(c *pb.RuntimeResourceClaim) { c.Requested.Processors = 0; c.Requested.Workers = 0 }},
+		{name: "negative processors", edit: func(c *pb.RuntimeResourceClaim) { c.Requested.Processors = -1 }},
+		{name: "oversized processors", edit: func(c *pb.RuntimeResourceClaim) { c.Requested.Processors = int64(maxGeneratorVUsers) + 1 }},
+		{name: "wrong worker charge", edit: func(c *pb.RuntimeResourceClaim) { c.Requested.Workers-- }},
+		{name: "missing partition ceiling", edit: func(c *pb.RuntimeResourceClaim) { c.Requested.MaxPartitionsPerProcessor = 0 }},
+		{name: "oversized partition ceiling", edit: func(c *pb.RuntimeResourceClaim) { c.Requested.MaxPartitionsPerProcessor = 33 }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			claim := testResourceClaim()
+			if tc.edit != nil {
+				tc.edit(claim)
+			}
+			if got := ValidRuntimeResourceClaim(claim); got != tc.valid {
+				t.Fatalf("claim valid=%t want=%t: %v", got, tc.valid, claim)
+			}
+		})
+	}
+}
+
 func TestRuntimeResourceAdmissionClonesAndRejectsUnprovenClaims(t *testing.T) {
 	claim := testResourceClaim()
 	a := &pb.RuntimeResourceAdmission{Claim: CloneRuntimeResourceClaim(claim), Admitted: proto.Clone(claim.Requested).(*pb.RuntimeResourceDemand), Current: true}

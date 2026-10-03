@@ -54,10 +54,16 @@ func CloneRuntimeResourceAdmissions(values map[string]*pb.RuntimeResourceAdmissi
 	return out
 }
 
+// ValidRuntimeResourceClaim verifies a nonempty versioned resource intent.
+// Canonical zero demand is represented by nil and is not a positive claim.
+func ValidRuntimeResourceClaim(claim *pb.RuntimeResourceClaim) bool {
+	return claim != nil && validateRuntimeResourceClaim(claim, 0) == nil
+}
+
 // ValidRuntimeResourceAdmission verifies the exact negotiated intent, not a
 // generator's ability to run an arbitrary claim or a future target inventory.
 func ValidRuntimeResourceAdmission(claim *pb.RuntimeResourceClaim, a *pb.RuntimeResourceAdmission) bool {
-	return claim != nil && validateRuntimeResourceClaim(claim, 0) == nil && a != nil && a.Current && proto.Equal(claim, a.Claim) && proto.Equal(claim.Requested, a.Admitted)
+	return ValidRuntimeResourceClaim(claim) && a != nil && a.Current && proto.Equal(claim, a.Claim) && proto.Equal(claim.Requested, a.Admitted)
 }
 
 // NewRuntimeResourceClaim is the single controller/generator bridge to the

@@ -768,6 +768,9 @@ message PauseRequest {
   string operation_id = 4;
   uint64 operation_sequence = 5;
   bytes run_supervision_token = 6;
+  // Explicit strict pause: acknowledge only after runtime work is quiescent.
+  // False preserves the ordinary pause contract used by older controllers.
+  bool require_quiescence = 7;
 }
 
 message PauseAck {
@@ -776,6 +779,9 @@ message PauseAck {
   string applied_operation_id = 3;
   string error_message = 4;
   uint64 applied_operation_sequence = 5;
+  // Presence distinguishes old peers from an explicit failed/confirmed proof.
+  // True is valid only for an accepted, committed strict pause operation.
+  optional bool quiescence_confirmed = 6;
 }
 
 message HeartbeatPing {

@@ -51,6 +51,7 @@ func init() {
 }
 
 type config struct {
+	pauseGate                 protocol.RuntimePauseGate
 	ObservePartitionTail      bool
 	TailPollInterval          time.Duration
 	progress                  *processorProgress
@@ -90,7 +91,8 @@ type EventHubs struct {
 	observer *messaging.Session[struct{}]
 }
 
-func (e *EventHubs) Name() string { return e.name }
+func (e *EventHubs) Name() string              { return e.name }
+func (*EventHubs) RuntimePauseSupported() bool { return realEventHubsAvailable }
 
 func (e *EventHubs) MessagingProgressSnapshot() *protocol.MessagingProgressSnapshot {
 	return e.progressSnapshot.Load().snapshot()
@@ -200,6 +202,12 @@ func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 	if (e.cfg.ConsumerMode == "processor" || e.cfg.ConsumerMode == "exclusive") && !realEventHubsAvailable {
 		return fmt.Errorf("Event Hubs %s consumer requires an eventhubs_real build", e.cfg.ConsumerMode)
 	}
+	if gate, bound := protocol.RuntimePauseGateFromContext(ctx, eventHubsProtocolName); bound {
+		if gate == nil || e.cfg.ConsumerMode != "processor" {
+			return protocol.ErrRuntimePauseAdmissionInvalid
+		}
+		e.cfg.pauseGate = gate
+	}
 	if e.cfg.ConsumerMode == "processor" {
 		pool, err := defaultProcessorPool()
 		if err != nil {
@@ -268,10 +276,18 @@ func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 }
 
 func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
-	start := time.Now()
 	if action == nil {
 		return nil, fmt.Errorf("eventhubs action is required")
 	}
+	if e.cfg.pauseGate != nil {
+		lease, err := protocol.AdmitRuntimePause(ctx, e.cfg.pauseGate, protocol.RuntimePauseAction)
+		if err != nil {
+			return nil, err
+		}
+		defer lease.Release()
+		ctx = lease.Context()
+	}
+	start := time.Now()
 	if e.client == nil {
 		// Execute should never run before Init in the normal engine flow, but if
 		// it does we fail closed rather than silently substituting a working mock

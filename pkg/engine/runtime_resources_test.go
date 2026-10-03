@@ -820,3 +820,78 @@ func TestRuntimeResourceRepeatedManualZeroGrowthUsesFreshParents(t *testing.T) {
 		}
 	}
 }
+
+func TestRuntimeResourceProfileRejectsNewConsumptionBeforeRun(t *testing.T) {
+	for _, multi := range []bool{false, true} {
+		for _, initial := range []string{"producer", "observer", "http"} {
+			t.Run(fmt.Sprintf("multi=%t/%s", multi, initial), func(t *testing.T) {
+				script := processorResourceScript()
+				if initial == "producer" {
+					script.Actions[0].Type = "eventhubs_produce"
+				} else if initial == "observer" {
+					script.Config.EventHubs.ConsumerMode = "observer"
+					script.Config.EventHubs.ProcessorMaxPartitions = 0
+				} else {
+					script.Protocol = "http"
+					script.Actions[0].Type = "http_request"
+				}
+				var run func(context.Context) error
+				var resources *engineRuntimeResources
+				if multi {
+					load, err := NewMultiGroup(MultiGroupConfig{Duration: time.Second, Groups: []GroupConfig{{Name: "group", Script: script, VUsers: 1}}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					resources = load.runtimeResources
+					run = func(ctx context.Context) error { _, err := load.Run(ctx); return err }
+				} else {
+					load, err := New(Config{Duration: time.Second, Script: script, VUsers: 1})
+					if err != nil {
+						t.Fatal(err)
+					}
+					resources = load.runtimeResources
+					run = func(ctx context.Context) error { _, err := load.Run(ctx); return err }
+				}
+				if len(resources.bindings) != 0 || len(resources.profiles) != 1 {
+					t.Fatal("resource-free profile gained a reservation or lost its immutable guard")
+				}
+				// Neither public constructor executes Init. Run must detect the new
+				// consumption before protocol lookup, preflight, Init, or target calls.
+				script.Protocol = "eventhubs"
+				script.Actions[0].Type = "eventhubs_consume"
+				script.Config.EventHubs.ConsumerMode = "processor"
+				if err := run(context.Background()); err == nil || err.Error() != "runtime resource plan changed before execution" {
+					t.Fatalf("mutated workload crossed execution boundary: %v", err)
+				}
+				if len(resources.bindings) != 0 {
+					t.Fatal("mutated workload acquired a processor reservation")
+				}
+			})
+		}
+	}
+}
+
+func TestRuntimeResourceProfilePreservesResourceFreeProducer(t *testing.T) {
+	script := processorResourceScript()
+	script.Actions[0].Type = "eventhubs_produce"
+	resources, err := newEngineRuntimeResources([]GroupConfig{{Name: "producer", Script: script, VUsers: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := resources.reserve(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(resources.bindings) != 0 || len(resources.profiles) != 1 {
+		t.Fatal("unchanged producer acquired a processor binding")
+	}
+	ctx := resources.bind(context.Background(), "producer")
+	if reservation, present := protocol.RuntimeResourceReservationFromContext(ctx, "eventhubs"); present || reservation != nil {
+		t.Fatal("unchanged producer acquired an explicit nil resource authority")
+	}
+	if err := resources.adopt(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(resources.bindings) != 0 {
+		t.Fatal("execution adoption acquired producer resources")
+	}
+}

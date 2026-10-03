@@ -4468,7 +4468,15 @@ func (tr *TestRunner) applyDurationAdjustment(test *ManagedTest, multiEngine *en
 
 func (tr *TestRunner) applyPause(test *ManagedTest, multiEngine *engine.MultiGroupEngine, backend testExecutionBackend) error {
 	if multiEngine != nil {
-		return multiEngine.Pause()
+		tr.mu.RLock()
+		parent := test.executionCtx
+		tr.mu.RUnlock()
+		if parent == nil {
+			parent = context.Background()
+		}
+		ctx, cancel := context.WithTimeout(parent, localPauseQuiescenceTimeout)
+		defer cancel()
+		return multiEngine.PauseAndWait(ctx)
 	}
 	pausable, ok := backend.(pausableExecutionBackend)
 	if !ok {
@@ -4787,12 +4795,21 @@ func (tr *TestRunner) PauseTest(id string) error {
 	}
 	if err := tr.applyPause(test, multiEngine, backend); err != nil {
 		var uncertain *distributedPauseUncertainError
-		if errors.As(err, &uncertain) {
+		if errors.As(err, &uncertain) || errors.Is(err, engine.ErrPauseQuiescenceUnproven) {
 			return tr.failClosedUncertainPauseControl(test, "RUNNING", backend, err)
 		}
 		return err
 	}
 
+	pauseStartedAt := time.Now().UTC()
+	if multiEngine != nil {
+		started, confirmed := multiEngine.PauseStartedAt()
+		if !confirmed {
+			err := &engine.PauseQuiescenceUnprovenError{Cause: fmt.Errorf("local pause changed before controller confirmation")}
+			return tr.failClosedUncertainPauseControl(test, "RUNNING", backend, err)
+		}
+		pauseStartedAt = started.UTC()
+	}
 	tr.mu.Lock()
 	if !tr.isExecutionLeader() {
 		tr.mu.Unlock()
@@ -4818,7 +4835,7 @@ func (tr *TestRunner) PauseTest(id string) error {
 		}
 		return fmt.Errorf("test changed from RUNNING to %s while pause was being applied", currentStatus)
 	}
-	pausedAt := time.Now().UTC()
+	pausedAt := pauseStartedAt
 	previousEarlyStopBreachStartedAt := cloneTimePtr(test.earlyStopBreachStartedAt)
 	test.Status = "PAUSED"
 	test.PausedAt = &pausedAt
@@ -5039,16 +5056,19 @@ func (tr *TestRunner) failClosedUncertainPauseControl(test *ManagedTest, expecte
 		return errors.Join(controlErr, fmt.Errorf("cannot persist uncertain remote control from %s; test is now %s", expectedStatus, current))
 	}
 	test.Status = "STOPPING"
-	test.Error = "remote pause/resume state is uncertain: " + controlErr.Error()
+	test.Error = "pause/resume state is uncertain: " + controlErr.Error()
 	persistErr := retryDurableTransition(func() error { return tr.saveManagedTestRecord(test) })
 	tr.cancelAllVUserScaleRampsLocked(test)
 	cancel := test.cancel
+	multiEngine := test.multiEngine
 	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	tr.mu.Unlock()
 	tr.broadcastEvent("test_stopping", eventSnapshot)
 
 	var stopErr error
-	if stoppable, ok := backend.(contextStoppableExecutionBackend); ok {
+	if multiEngine != nil {
+		multiEngine.Stop()
+	} else if stoppable, ok := backend.(contextStoppableExecutionBackend); ok {
 		stopErr = stoppable.StopTestContext(context.Background(), tr, test)
 	} else if stoppable, ok := backend.(stoppableExecutionBackend); ok {
 		stopErr = stoppable.StopTest(tr, test)

@@ -140,6 +140,8 @@ type DurationResult struct {
 }
 
 type PauseControl struct {
+	// RequireQuiescence requests the strict acknowledged runtime pause boundary.
+	RequireQuiescence   bool
 	TestID              string
 	ExecutionGeneration uint64
 	Pause               bool
@@ -149,6 +151,8 @@ type PauseControl struct {
 }
 
 type PauseResult struct {
+	// Nil means the peer did not provide the optional quiescence contract.
+	QuiescenceConfirmed      *bool
 	Accepted                 bool
 	CurrentPaused            bool
 	AppliedOperationID       string
@@ -999,10 +1003,15 @@ func (c *Client) AdjustDuration(ctx context.Context, adjustment DurationAdjustme
 }
 
 // SetPaused is the acknowledged control path. Unlike the legacy metrics-stream
-// signal, a successful return proves the generator applied the engine state.
+// signal, its result identifies the applied engine state and operation. Explicit
+// strict requests additionally require committed runtime quiescence proof.
 // OperationID makes retries after a lost response idempotent.
 func (c *Client) SetPaused(ctx context.Context, control PauseControl) (PauseResult, error) {
+	if err := validateStrictPauseRequest(control); err != nil {
+		return PauseResult{}, err
+	}
 	ack, err := c.rpc.SetPaused(ctx, &pb.PauseRequest{
+		RequireQuiescence:   control.RequireQuiescence,
 		TestId:              control.TestID,
 		ExecutionGeneration: control.ExecutionGeneration,
 		Pause:               control.Pause,
@@ -1013,13 +1022,8 @@ func (c *Client) SetPaused(ctx context.Context, control PauseControl) (PauseResu
 	if err != nil {
 		return PauseResult{}, err
 	}
-	return PauseResult{
-		Accepted:                 ack.GetAccepted(),
-		CurrentPaused:            ack.GetCurrentPaused(),
-		AppliedOperationID:       ack.GetAppliedOperationId(),
-		AppliedOperationSequence: ack.GetAppliedOperationSequence(),
-		ErrorMessage:             ack.GetErrorMessage(),
-	}, nil
+	result := pauseResultFromProto(ack)
+	return result, ValidatePauseAcknowledgement(control, result)
 }
 
 func (c *Client) OpenMetricsStream(ctx context.Context) (*MetricsStream, error) {
@@ -1399,6 +1403,9 @@ func (s *HeartbeatStream) CloseSend() error {
 }
 
 func (s *MetricsStream) SendPause(control PauseControl) error {
+	if control.RequireQuiescence {
+		return fmt.Errorf("strict pause requires the acknowledged SetPaused RPC")
+	}
 	return s.stream.Send(&pb.ControlSignal{
 		Signal: &pb.ControlSignal_Pause{
 			Pause: &pb.PauseRequest{

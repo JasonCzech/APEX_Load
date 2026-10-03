@@ -661,6 +661,12 @@ func (vu *VUser) executeWithRetryStream(
 	errCfg dsl.ErrorHandlingConfig,
 	emit func(*protocol.Result) error,
 ) (finalResult *protocol.Result, finalErr error) {
+	var releasePause func()
+	ctx, releasePause, finalErr = vu.admitRuntimePauseAction(ctx)
+	if finalErr != nil {
+		return nil, finalErr
+	}
+	defer releasePause()
 	var actionSpan trace.Span
 	attemptCount := 0
 	if apptelemetry.ShouldStartActionSpan(ctx) {

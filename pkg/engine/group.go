@@ -101,6 +101,7 @@ type MultiGroupConfig struct {
 
 type MultiGroupEngine struct {
 	runtimeResources *engineRuntimeResources
+	runtimePause     *engineRuntimePause
 	brokerRunUsed    atomic.Bool
 	terminationMode  string
 	groups           []GroupConfig
@@ -485,6 +486,7 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 	}
 	mge := &MultiGroupEngine{
 		runtimeResources:      runtimeResources,
+		runtimePause:          newEngineRuntimePause(runtimeResources, cfg.StartPaused),
 		groups:                cfg.Groups,
 		duration:              cfg.Duration,
 		terminationMode:       cfg.TerminationMode,
@@ -581,6 +583,7 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	}
 	defer mge.readyOnce.Do(func() { close(mge.readyCh) })
 	defer mge.runtimeResources.release()
+	defer mge.runtimePause.close()
 	remote := false
 	for _, group := range mge.groups {
 		remote = remote || group.javaBroker != nil
@@ -732,13 +735,7 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	}
 	releaseMockNamespace := protocol.AcquireRuntimeNamespace(mge.mockNamespace)
 	defer releaseMockNamespace()
-	go func() {
-		<-baseCtx.Done()
-		mge.mu.Lock()
-		mge.scalingOpen = false
-		mge.controlsReady = false
-		mge.mu.Unlock()
-	}()
+	go mge.closeRuntimeAdmissionOnDone(baseCtx)
 
 	defer baseCancel()
 	defer loopCancel()
@@ -1792,8 +1789,12 @@ type groupLifecycleBlockOutcome struct {
 }
 
 func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx context.Context, group GroupConfig, protoConfig map[string]any, actions []dsl.Action, phase string) groupLifecycleBlockOutcome {
-	actionCtx = mge.runtimeResources.bind(actionCtx, group.Name)
-	boundaryCtx = mge.runtimeResources.bind(boundaryCtx, group.Name)
+	actionCtx = mge.runtimePause.bind(mge.runtimeResources.bind(actionCtx, group.Name), group.Name)
+	boundaryCtx = mge.runtimePause.bind(mge.runtimeResources.bind(boundaryCtx, group.Name), group.Name)
+	if phase == "teardown" {
+		actionCtx = mge.runtimePause.bindTeardown(actionCtx, group.Name)
+		boundaryCtx = mge.runtimePause.bindTeardown(boundaryCtx, group.Name)
+	}
 	if len(actions) == 0 {
 		return groupLifecycleBlockOutcome{completed: true}
 	}
@@ -1965,7 +1966,7 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 	if gracefulCtx == nil {
 		gracefulCtx = baseCtx
 	}
-	vuCtx, vuCancel := context.WithCancel(mge.runtimeResources.bind(parentCtx, group.Name))
+	vuCtx, vuCancel := context.WithCancel(mge.runtimePause.bind(mge.runtimeResources.bind(parentCtx, group.Name), group.Name))
 	// shedCtx interrupts the in-flight iteration body on scale/ramp-down and on
 	// hard stops. It is a child of baseCtx (NOT loopCtx, so NOT a descendant of
 	// vuCtx): a shared-goal exhaustion cancels loopCtx — and thus vuCtx — which
@@ -1973,7 +1974,7 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 	// VUser that already claimed a goal reservation finishes its current
 	// iteration. cancelVUser sheds load promptly by cancelling BOTH shedCtx (the
 	// running iteration) and vuCtx (no further iterations).
-	shedCtx, shedCancel := context.WithCancel(mge.runtimeResources.bind(baseCtx, group.Name))
+	shedCtx, shedCancel := context.WithCancel(mge.runtimePause.bind(mge.runtimeResources.bind(baseCtx, group.Name), group.Name))
 	// Boundary cancellation is distinct from vuCtx. The shared goal limiter
 	// cancels loopCtx/vuCtx after exhaustion, but a VUser that already reserved an
 	// iteration is entitled to finish every action. Only explicit graceful stop,
@@ -2478,10 +2479,10 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 	if parentCtx == nil {
 		parentCtx = mge.baseCtx
 	}
-	vuCtx, vuCancel := context.WithCancel(mge.runtimeResources.bind(parentCtx, group.Name))
+	vuCtx, vuCancel := context.WithCancel(mge.runtimePause.bind(mge.runtimeResources.bind(parentCtx, group.Name), group.Name))
 	// See spawnVUser: shedCtx interrupts the running iteration on stop/hard-stop
 	// without being tripped by a shared-goal soft stop.
-	shedCtx, shedCancel := context.WithCancel(mge.runtimeResources.bind(mge.baseCtx, group.Name))
+	shedCtx, shedCancel := context.WithCancel(mge.runtimePause.bind(mge.runtimeResources.bind(mge.baseCtx, group.Name), group.Name))
 	boundaryCtx, boundaryCancel := context.WithCancel(shedCtx)
 	stopGracefulLink := context.AfterFunc(mge.gracefulCtx, boundaryCancel)
 	cancelVUser := func() {
@@ -2963,8 +2964,13 @@ func (mge *MultiGroupEngine) GetGroupVUsers() map[string]int {
 func (mge *MultiGroupEngine) Pause() error {
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
+	return mge.pauseLocked()
+}
+
+func (mge *MultiGroupEngine) pauseLocked() error {
 
 	if mge.baseCtx == nil {
+		mge.runtimePause.latch()
 		mge.pauseRequested = true
 		mge.paused = true
 		return nil
@@ -2972,6 +2978,7 @@ func (mge *MultiGroupEngine) Pause() error {
 	if mge.baseCtx.Err() != nil || (!mge.controlsReady && !mge.launchOpen) {
 		return fmt.Errorf("engine not running")
 	}
+	mge.runtimePause.latch()
 	if mge.paused {
 		mge.pauseRequested = true
 		return nil
@@ -3003,11 +3010,57 @@ func (mge *MultiGroupEngine) Pause() error {
 	return nil
 }
 
+// PauseAndWait acknowledges only local messaging quiescence. Actual SDK and
+// store returns discharge activity leases; requesting cancellation is not proof.
+func (mge *MultiGroupEngine) PauseAndWait(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	mge.mu.Lock()
+	if err := mge.pauseLocked(); err != nil {
+		mge.mu.Unlock()
+		return err
+	}
+	epochs := mge.runtimePause.latch()
+	mge.mu.Unlock()
+	for gate, epoch := range epochs {
+		if err := gate.wait(ctx, epoch); err != nil {
+			return &PauseQuiescenceUnprovenError{Cause: err}
+		}
+	}
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return &PauseQuiescenceUnprovenError{Cause: err}
+	}
+	for gate, epoch := range epochs {
+		if !gate.proven(epoch) {
+			return &PauseQuiescenceUnprovenError{Cause: protocol.ErrRuntimePauseAdmissionInvalid}
+		}
+	}
+	if !mge.paused || mge.hardStopRequested || mge.baseCtx != nil && (mge.baseCtx.Err() != nil || !mge.launchOpen && !mge.controlsReady) {
+		return &PauseQuiescenceUnprovenError{Cause: protocol.ErrRuntimePauseAdmissionInvalid}
+	}
+	return nil
+}
+
+// PauseStartedAt exposes the local active-clock latch to the same-process
+// controller. It is not a timestamp to translate or infer across peers.
+func (mge *MultiGroupEngine) PauseStartedAt() (time.Time, bool) {
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+	return mge.pauseStartTime, mge.paused && !mge.pauseStartTime.IsZero()
+}
+
 func (mge *MultiGroupEngine) Resume() error {
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 
 	if mge.baseCtx == nil {
+		mge.runtimePause.resume()
 		mge.pauseRequested = false
 		mge.paused = false
 		return nil
@@ -3015,6 +3068,7 @@ func (mge *MultiGroupEngine) Resume() error {
 	if mge.baseCtx.Err() != nil || (!mge.controlsReady && !mge.launchOpen) {
 		return fmt.Errorf("engine not running")
 	}
+	mge.runtimePause.resume()
 	mge.pauseRequested = false
 	if !mge.paused {
 		return nil
@@ -3184,6 +3238,15 @@ func (mge *MultiGroupEngine) WaitIfPaused(ctx context.Context) error {
 	}
 }
 
+func (mge *MultiGroupEngine) closeRuntimeAdmissionOnDone(ctx context.Context) {
+	<-ctx.Done()
+	mge.mu.Lock()
+	mge.scalingOpen = false
+	mge.controlsReady = false
+	mge.runtimePause.beginTerminal(true)
+	mge.mu.Unlock()
+}
+
 func (mge *MultiGroupEngine) Stop() {
 	mge.stop(true)
 }
@@ -3197,6 +3260,7 @@ func (mge *MultiGroupEngine) stop(hard bool) {
 	mge.launchOpen = false
 	mge.scalingOpen = false
 	mge.controlsReady = false
+	mge.runtimePause.beginTerminal(hard)
 	if hard {
 		mge.hardStopRequested = true
 	}
@@ -3222,6 +3286,7 @@ func (mge *MultiGroupEngine) GracefulStop() {
 		close(mge.gracefulStopCh)
 	}
 	mge.gracefulStopRequested = true
+	mge.runtimePause.beginTerminal(false)
 	// Close scale admission at the same linearization point as the graceful
 	// fence. Relying on holdScaleGuard to observe loopCtx asynchronously leaves
 	// a window where a control plan admitted before the fence can spawn VUsers

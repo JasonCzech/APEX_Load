@@ -302,7 +302,7 @@ local validation by using in-memory mocks or fail-fast availability gates.
 | --- | --- | --- | --- |
 | JMS family | Partial | Mock/default; Solace and Azure Service Bus real adapters are build-tag gated | IBM MQ is mock-only; non-mock scripts fail validation and initialization. Generic acknowledgement/transaction actions are mock-only. |
 | Apache Kafka | Partial | Mock/default; real franz-go adapter behind `-tags kafka_real` | Includes produce/consume/request-reply and Event Hubs Kafka-endpoint profile guidance; seek is mock-only. |
-| Azure Event Hubs | Partial | Mock/default; native AMQP adapter behind `-tags eventhubs_real` | Producer/observer, AAD processor ownership/checkpoints with resource admission and bounded progress evidence, plus fixed-partition exclusive consumers. Strict processor pause/recovery and live Azure qualification remain open. |
+| Azure Event Hubs | Partial | Mock/default; native AMQP adapter behind `-tags eventhubs_real` | Producer/observer, AAD processor ownership/checkpoints with resource admission and bounded progress evidence, plus fixed-partition exclusive consumers. Strict processor pause confirms actual receive/tail/checkpoint quiescence; recovery and live Azure qualification remain open. |
 | AsyncAPI import | Partial | Generates Kafka/Event Hubs or review drafts depending on bindings and adapter availability | Unsupported bindings remain review-only rather than pretending to execute. |
 
 Real broker adapters are intentionally opt-in so standard binaries remain
