@@ -2756,7 +2756,7 @@ func TestAuraMessageParameterizationsSkipsCorrelatedValues(t *testing.T) {
 	refs := []actionRef{{
 		Sequence: 7,
 		Action: &dsl.Action{
-			Body: `{"actions":[{"params":{"recordId":"001D000000IqhSLIAZ","contactId":"003D000000Zx1AAAS"}}]}`,
+			Body: `{"actions":[{"id":"synthetic-id","descriptor":"synthetic","params":{"recordId":"001D000000IqhSLIAZ","contactId":"003D000000Zx1AAAS"}}]}`,
 		},
 	}}
 	// recordId is already produced by an earlier response (correlated); only the
@@ -2807,11 +2807,11 @@ func TestClassifySalesforceFlowAnchoredShapesBeatObjectNames(t *testing.T) {
 }
 
 func TestAuraMessageParameterizationsTerminatesOnNameCollision(t *testing.T) {
-	// Columns rec_3, rec, rec with distinct SF-ID values previously caused a
-	// non-terminating disambiguation loop (param_rec collided with param_rec_3).
+	// Case variants share the same column slug; distinct occurrences must receive
+	// deterministic unique names and independently bindable columns.
 	refs := []actionRef{
-		{Sequence: 1, Action: &dsl.Action{Body: `{"actions":[{"params":{"rec 3":"001D000000IqhSLIAZ","rec":"5003000000D8cuIAAR"}}]}`}},
-		{Sequence: 2, Action: &dsl.Action{Body: `{"actions":[{"params":{"rec":"00Q3000001AbCdEFGH"}}]}`}},
+		{Sequence: 1, Action: &dsl.Action{Body: `{"actions":[{"id":"synthetic-id","descriptor":"synthetic","params":{"RecordId":"001D000000IqhSLIAZ","recordId":"5003000000D8cuIAAR"}}]}`}},
+		{Sequence: 2, Action: &dsl.Action{Body: `{"actions":[{"id":"synthetic-id","descriptor":"synthetic","params":{"recordId":"00Q3000001AbCdEFGH"}}]}`}},
 	}
 	got := auraMessageParameterizations(refs, nil)
 	if len(got) != 3 {
@@ -2829,7 +2829,7 @@ func TestAuraMessageParameterizationsTerminatesOnNameCollision(t *testing.T) {
 func TestAuraMessageBodyHandlesRawJSONWithEmbeddedQueryString(t *testing.T) {
 	// A raw-JSON Aura body whose string value contains "&message=" must not be
 	// mis-split by url.ParseQuery; the recordId candidate must still surface.
-	body := `{"actions":[{"params":{"recordId":"001D000000IqhSLIAZ","redirect":"https://x?a=1&message=2"}}]}`
+	body := `{"actions":[{"id":"synthetic-id","descriptor":"synthetic","params":{"recordId":"001D000000IqhSLIAZ","redirect":"https://x?a=1&message=2"}}]}`
 	got := auraMessageParameterizations([]actionRef{{Sequence: 1, Action: &dsl.Action{Body: body}}}, nil)
 	if len(got) != 1 || got[0].ParamKey != "recordId" {
 		t.Fatalf("candidates = %#v, want a single recordId candidate from raw JSON", got)

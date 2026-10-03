@@ -67,6 +67,12 @@ export interface ImportRepairSuggestion {
 
 export type ParameterizationKind = 'correlation' | 'data_param' | 'secret'
 
+export interface AuraParameterRoutePart {
+  kind: 'key' | 'index' | 'json_string'
+  key?: string
+  index?: number
+}
+
 export interface ParameterizationLocation {
   section: string
   action_index: number
@@ -74,6 +80,11 @@ export interface ParameterizationLocation {
   field: string
   search_text?: string
   replace_text: string
+  action_path?: string
+  aura_route?: AuraParameterRoutePart[]
+  decoded_field_path?: string
+  encoding_layers?: string[]
+  payload_shape?: string
 }
 
 export interface ParameterizationSuggestion {
@@ -102,9 +113,26 @@ export interface ParameterizationSummary {
   pre_applied_count: number
 }
 
+export interface AuraPayloadCoverage {
+  complete: boolean
+  recognized_bodies: number
+  inspected_bodies: number
+  rejected_bodies: number
+  omitted_bodies: number
+  string_fields: number
+  unsupported_number_fields: number
+  unsupported_other_fields: number
+  unsafe_path_fields: number
+  candidate_fields: number
+  retained_candidates: number
+  omitted_candidates: number
+}
+
 export interface Parameterization {
   suggestions: ParameterizationSuggestion[]
   summary: ParameterizationSummary
+  warnings?: string[]
+  aura_payload?: AuraPayloadCoverage
 }
 
 export interface ParameterizationDiff {
@@ -479,6 +507,9 @@ export interface SalesforceNativePreview {
 }
 
 export interface SalesforceParameterizationCandidate {
+  action_path?: string
+  decoded_field_path?: string
+  encoding_layers?: string[]
   name: string
   source: string
   expression: string

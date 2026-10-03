@@ -18,7 +18,9 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
 	"github.com/jasonczech/apexload/pkg/protocol/aura"
 )
 
@@ -104,15 +106,18 @@ type CorrelationCandidate struct {
 // These are surfaced for review and are not auto-applied; the value comes from a
 // user-supplied dataset via the parameterization-review flow.
 type ParameterizationCandidate struct {
-	Name        string `json:"name"`
-	Source      string `json:"source"`
-	Expression  string `json:"expression"`
-	ActionSeq   int    `json:"action_seq,omitempty"`
-	ParamKey    string `json:"param_key"`
-	SampleValue string `json:"sample_value,omitempty"`
-	Kind        string `json:"kind"`
-	Column      string `json:"column"`
-	Template    string `json:"template"`
+	Name             string   `json:"name"`
+	Source           string   `json:"source"`
+	Expression       string   `json:"expression"`
+	ActionSeq        int      `json:"action_seq,omitempty"`
+	ActionPath       string   `json:"action_path,omitempty"`
+	DecodedFieldPath string   `json:"decoded_field_path,omitempty"`
+	EncodingLayers   []string `json:"encoding_layers,omitempty"`
+	ParamKey         string   `json:"param_key"`
+	SampleValue      string   `json:"sample_value,omitempty"`
+	Kind             string   `json:"kind"`
+	Column           string   `json:"column"`
+	Template         string   `json:"template"`
 }
 
 type actionRef struct {
@@ -235,7 +240,9 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 		review.Blockers = append(review.Blockers, "Salesforce correlation analysis was incomplete: "+warning)
 	}
 	review.CorrelationConfidence = correlationConfidence(correlations, len(entries))
-	review.Parameterizations = auraMessageParameterizations(refs, correlations)
+	var parameterWarnings []string
+	review.Parameterizations, parameterWarnings = auraMessageParameterizationsChecked(refs, correlations)
+	review.Warnings = append(review.Warnings, parameterWarnings...)
 	if opts.BuildNative {
 		preview, err := buildNativePreview(script, refs, entries, matches, correlations)
 		if err != nil {
@@ -2939,138 +2946,150 @@ func dynamicJSONKey(key string) bool {
 	return containsAny(lower, "token", "access_token", "id_token", "refresh_token", "session", "sessionid", "sid", "csrf", "xsrf", "auth", "nonce", "state", "recordid", "record_id", "interactionid", "interaction_id", "workorderid", "work_order_id", "accountid", "account_id", "contactid", "contact_id", "orderid", "order_id", "cartid", "cart_id", "id")
 }
 
-// auraMessageParameterizations cracks open the Aura `message` envelope of each
-// /aura request and proposes data-source parameterization for record/object
-// identifiers carried in action params. Values that are already correlated
-// (produced by an earlier response) are skipped — those are handled
-// deterministically by the correlation pass instead.
+const (
+	maxAuraParamInspectionBytes = 64 << 20
+	maxAuraParamCandidateBytes  = 128 << 10
+	maxAuraParamCandidates      = 2048
+)
+
+// auraMessageParameterizations is retained for callers interested only in the
+// candidates. Analyze uses the checked form so incomplete coverage is visible.
 func auraMessageParameterizations(refs []actionRef, correlations []correlate.Correlation) []ParameterizationCandidate {
+	candidates, _ := auraMessageParameterizationsChecked(refs, correlations)
+	return candidates
+}
+
+func auraMessageParameterizationsChecked(refs []actionRef, correlations []correlate.Correlation) ([]ParameterizationCandidate, []string) {
 	correlated := make(map[string]bool, len(correlations))
 	for _, corr := range correlations {
 		if corr.Value != "" {
 			correlated[corr.Value] = true
 		}
 	}
-	seenValues := map[string]bool{}
 	usedNames := map[string]bool{}
 	out := make([]ParameterizationCandidate, 0)
+	warnings := make([]string, 0)
+	work, retainedBytes, omitted, uninspected, rejected, unsupported, unsafePaths := 0, 0, 0, 0, 0, 0, 0
+	detailsFull := false
 	for _, ref := range refs {
-		if ref.Action == nil {
+		if ref.Action == nil || ref.Action.Body == "" || ref.Kind != "aura" && ref.Kind != "" {
 			continue
 		}
-		message := auraMessageBody(ref.Action.Body)
-		if message == "" {
+		remaining := maxAuraParamInspectionBytes - work
+		if len(ref.Action.Body) > remaining {
+			uninspected++
 			continue
 		}
-		var decoded any
-		if err := json.Unmarshal([]byte(message), &decoded); err != nil {
+		inspection, err := aurapayload.InspectWithWorkLimit(ref.Action.Body, ref.Action.BodyEncoding, remaining)
+		if err != nil {
+			if bounded, ok := err.(*aurapayload.Error); ok {
+				work += bounded.WorkBytes
+				if bounded.Code == aurapayload.WorkLimit && remaining < aurapayload.MaxWorkBytes {
+					uninspected++
+					continue
+				}
+			}
+			rejected++
 			continue
 		}
-		actions, ok := auraMessageActions(decoded)
-		if !ok {
-			continue
-		}
-		for actionIndex, actionValue := range actions {
-			params, ok := auraActionParams(actionValue)
-			if !ok {
+		work += inspection.WorkBytes
+		for _, leaf := range inspection.Leaves {
+			if !auraBusinessParamRoute(leaf.Route) {
 				continue
 			}
-			base := fmt.Sprintf("actions[%d].params", actionIndex)
-			walkAuraParams(params, base, "", func(key, value, expression string) {
-				kind, ok := auraParamIdentifierKind(key, value)
-				if !ok || correlated[value] || seenValues[value] {
-					return
+			if leaf.ValueType != "string" {
+				if paramize.LooksAuraParameterName(leaf.Key) {
+					unsupported++
 				}
-				seenValues[value] = true
-				column := correlate.Slug(key)
-				if column == "" {
-					column = "record_id"
-				}
-				name := "param_" + column
-				for i := 2; usedNames[name]; i++ {
-					name = fmt.Sprintf("param_%s_%d", column, i)
-				}
-				usedNames[name] = true
-				out = append(out, ParameterizationCandidate{
-					Name:        name,
-					Source:      "aura_message",
-					Expression:  expression,
-					ActionSeq:   ref.Sequence,
-					ParamKey:    key,
-					SampleValue: correlate.Truncate(value, 80),
-					Kind:        kind,
-					Column:      column,
-					Template:    "{{data.salesforce_records." + column + "}}",
-				})
-			})
+				continue
+			}
+			kind, ok := auraParamIdentifierKind(leaf.Key, leaf.Value)
+			if !ok || correlated[leaf.Value] || strings.Contains(leaf.Value, "{{") {
+				continue
+			}
+			if !paramize.SafeAuraParameterRoute(leaf.Route) {
+				unsafePaths++
+				continue
+			}
+			if detailsFull {
+				omitted++
+				continue
+			}
+			column := correlate.Slug(leaf.Key)
+			if len(column) > 64 {
+				column = column[:64]
+			}
+			if column == "" {
+				column = "record_id"
+			}
+			name := "param_" + column
+			for suffix := 2; usedNames[name]; suffix++ {
+				name = fmt.Sprintf("param_%s_%d", column, suffix)
+			}
+			column = strings.TrimPrefix(name, "param_")
+			expression := auraParamExpression(leaf.Route)
+			candidate := ParameterizationCandidate{
+				Name: name, Source: "aura_message", Expression: expression, ActionSeq: ref.Sequence, ActionPath: ref.ActionPath,
+				DecodedFieldPath: leaf.DisplayPath, EncodingLayers: append([]string(nil), leaf.EncodingLayers...),
+				ParamKey: leaf.Key, SampleValue: correlate.Truncate(leaf.Value, 80), Kind: kind, Column: column,
+				Template: "{{data.salesforce_records." + column + "}}",
+			}
+			encoded, _ := json.Marshal(candidate)
+			if len(out) >= maxAuraParamCandidates || len(encoded) > maxAuraParamCandidateBytes-retainedBytes {
+				omitted++
+				detailsFull = true
+				continue
+			}
+			usedNames[name] = true
+			retainedBytes += len(encoded)
+			out = append(out, candidate)
 		}
 	}
-	return out
+	if rejected > 0 {
+		warnings = append(warnings, fmt.Sprintf("Aura parameter inspection could not inspect %d request(s): malformed, ambiguous, unsupported body encoding or inspection limits. No candidates were produced from those requests.", rejected))
+	}
+	if uninspected > 0 {
+		warnings = append(warnings, fmt.Sprintf("Aura parameter inspection omitted %d request(s) after its %d-byte aggregate work limit; coverage is incomplete.", uninspected, maxAuraParamInspectionBytes))
+	}
+	if omitted > 0 {
+		warnings = append(warnings, fmt.Sprintf("Aura parameter review omitted %d candidate(s) after bounded detail retention; inspect those source fields manually.", omitted))
+	}
+	if unsafePaths > 0 {
+		warnings = append(warnings, fmt.Sprintf("Aura parameter inspection excluded %d field(s) whose safe structural paths could not be published; review those source fields manually.", unsafePaths))
+	}
+	if unsupported > 0 {
+		warnings = append(warnings, fmt.Sprintf("Aura parameter inspection left %d non-string business field(s) unchanged; structured substitution currently supports string values.", unsupported))
+	}
+	return out, warnings
 }
 
-// auraMessageBody returns the decoded Aura `message` payload from a request
-// body. Lightning posts /aura as application/x-www-form-urlencoded with a
-// url-encoded JSON `message` field; recorded/imported bodies may also carry the
-// raw JSON directly. Returns "" when no Aura message envelope is present.
-func auraMessageBody(body string) string {
-	trimmed := strings.TrimSpace(body)
-	if trimmed == "" {
-		return ""
+func auraBusinessParamRoute(route []aurapayload.Segment) bool {
+	if len(route) < 4 || route[0].Kind != aurapayload.KeySegment || route[0].Key != "actions" || route[1].Kind != aurapayload.IndexSegment || route[2].Kind != aurapayload.KeySegment || route[2].Key != "params" {
+		return false
 	}
-	// Raw-JSON Aura bodies start with '{'; form-encoded bodies (message=...&aura.token=...)
-	// never do. Detect raw JSON first so url.ParseQuery does not mis-split a JSON
-	// string value that happens to contain a "message=" / "&...=" substring.
-	if strings.HasPrefix(trimmed, "{") {
-		if strings.Contains(trimmed, `"actions"`) {
-			return trimmed
-		}
-		return ""
-	}
-	if values, err := url.ParseQuery(trimmed); err == nil {
-		if msg := strings.TrimSpace(values.Get("message")); msg != "" {
-			return msg
+	for _, segment := range route[3:] {
+		if segment.Kind == aurapayload.KeySegment && credential.SensitiveName(segment.Key) {
+			return false
 		}
 	}
-	if strings.Contains(trimmed, `"actions"`) {
-		return trimmed
-	}
-	return ""
+	return true
 }
 
-func auraMessageActions(decoded any) ([]any, bool) {
-	obj, ok := decoded.(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	actions, ok := obj["actions"].([]any)
-	return actions, ok
-}
-
-func auraActionParams(actionValue any) (any, bool) {
-	obj, ok := actionValue.(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	params, ok := obj["params"]
-	return params, ok
-}
-
-// walkAuraParams visits every string leaf in an Aura action params tree,
-// reporting the leaf key, value, and JMESPath expression rooted at the params
-// node.
-func walkAuraParams(value any, path, key string, visit func(key, value, expression string)) {
-	switch typed := value.(type) {
-	case map[string]any:
-		for childKey, child := range typed {
-			walkAuraParams(child, appendJMESPath(path, childKey), childKey, visit)
+// Keep the historical JMESPath display only when no decoding boundary exists.
+// Nested JSON strings use the explicit DecodedFieldPath and EncodingLayers.
+func auraParamExpression(route []aurapayload.Segment) string {
+	path := ""
+	for _, segment := range route {
+		switch segment.Kind {
+		case aurapayload.KeySegment:
+			path = appendJMESPath(path, segment.Key)
+		case aurapayload.IndexSegment:
+			path = fmt.Sprintf("%s[%d]", path, segment.Index)
+		case aurapayload.JSONStringSegment:
+			return ""
 		}
-	case []any:
-		for index, child := range typed {
-			walkAuraParams(child, fmt.Sprintf("%s[%d]", path, index), key, visit)
-		}
-	case string:
-		visit(key, typed, path)
 	}
+	return path
 }
 
 // auraParamIdentifierKind classifies an Aura param value as a Salesforce

@@ -218,6 +218,20 @@ func TestJMeterBatchRepairedSaveTransaction(t *testing.T) {
 	if !recoveredJMeterImportIdentityMatches(server, saved.Scripts, requested, nil, nil) {
 		t.Fatal("saved batch provenance prevents receipt recovery")
 	}
+	// Recovery ignores only response-only projection bookkeeping. Changes
+	// to source behavior or its durable review gate must still fence adoption.
+	changedBehavior := append([]*dsl.Script(nil), requested...)
+	changedBehavior[0] = cloneScriptDefinition(requested[0])
+	changedBehavior[0].Actions[0].Target += "/changed"
+	if recoveredJMeterImportIdentityMatches(server, saved.Scripts, changedBehavior, nil, nil) {
+		t.Fatal("changed source behavior passed batch receipt recovery")
+	}
+	changedGate := append([]*dsl.Script(nil), requested...)
+	changedGate[0] = cloneScriptDefinition(requested[0])
+	changedGate[0].Actions[0].Metadata["execution_blocker"] = "changed_source_gate"
+	if recoveredJMeterImportIdentityMatches(server, saved.Scripts, changedGate, nil, nil) {
+		t.Fatal("changed durable source gate passed batch receipt recovery")
+	}
 	previous := batchJSONDigest(w.Body.Bytes())
 	w = httptest.NewRecorder()
 	server.handleSaveJMeterImport(w, httptest.NewRequest("POST", "/", bytes.NewReader(payload)))

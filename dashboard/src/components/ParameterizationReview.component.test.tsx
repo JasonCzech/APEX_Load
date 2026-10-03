@@ -89,6 +89,112 @@ describe('ParameterizationReview', () => {
     return onApplied
   }
 
+  it('shows incomplete Aura inspection and unsupported fields when no selectable candidates remain', () => {
+    render({ ...buildParameterization([]), aura_payload: {
+      complete: false, recognized_bodies: 5, inspected_bodies: 3, rejected_bodies: 1, omitted_bodies: 1,
+      string_fields: 12, unsupported_number_fields: 2, unsupported_other_fields: 3, unsafe_path_fields: 4,
+      candidate_fields: 6, retained_candidates: 0, omitted_candidates: 6,
+    } })
+    const coverage = container.querySelector('[aria-label="Aura payload inspection"]')!
+    expect(coverage.textContent).toContain('3 of 5 recognized request bodies inspected. Inspection incomplete.')
+    expect(coverage.textContent).toContain('12 string fields checked; 6 candidate fields, 0 retained candidates.')
+    expect(coverage.textContent).toContain('1 request bodies rejected; 1 request bodies not fully inspected.')
+    expect(coverage.textContent).not.toContain('omitted by inspection limits')
+    expect(coverage.textContent).toContain('2 numeric fields and 3 boolean, null, or other fields remain unchanged.')
+    expect(coverage.textContent).toContain('4 fields excluded because a safe structural path could not be published.')
+    expect(coverage.textContent).toContain('6 candidate fields omitted by review limits.')
+    expect(container.textContent).toContain('No selectable parameter suggestions were produced.')
+    expect(container.querySelector('button')).toBeNull()
+  })
+
+  it('reports detection omissions even when no body was classified as Aura', () => {
+    render({ ...buildParameterization([]), aura_payload: {
+      complete: false, recognized_bodies: 0, inspected_bodies: 0, rejected_bodies: 0, omitted_bodies: 2,
+      string_fields: 0, unsupported_number_fields: 0, unsupported_other_fields: 0, unsafe_path_fields: 0,
+      candidate_fields: 0, retained_candidates: 0, omitted_candidates: 0,
+    } })
+    const coverage = container.querySelector('[aria-label="Aura payload inspection"]')!
+    expect(coverage.textContent).toContain('0 of 0 recognized request bodies inspected. Inspection incomplete.')
+    expect(coverage.textContent).toContain('0 request bodies rejected; 2 request bodies not fully inspected.')
+    expect(coverage.textContent).not.toContain('omitted by inspection limits')
+    expect(container.querySelector('button')).toBeNull()
+  })
+
+  it('shows complete Aura coverage without implying that unsupported scalar fields were parameterized', () => {
+    render({ ...buildParameterization([]), aura_payload: {
+      complete: true, recognized_bodies: 1, inspected_bodies: 1, rejected_bodies: 0, omitted_bodies: 0,
+      string_fields: 0, unsupported_number_fields: 1, unsupported_other_fields: 0, unsafe_path_fields: 0,
+      candidate_fields: 0, retained_candidates: 0, omitted_candidates: 0,
+    } })
+    expect(container.textContent).toContain('Inspection complete.')
+    expect(container.textContent).toContain('1 numeric fields and 0 boolean, null, or other fields remain unchanged.')
+    expect(container.textContent).not.toContain('could not be fully inspected')
+    expect(container.querySelector('button')).toBeNull()
+  })
+
+  it('previews the authoritative nested Aura location without captured values and preserves its route on apply', async () => {
+    const location = {
+      section: 'actions', action_index: 987, action_name: 'Captured action label', field: 'body',
+      action_path: 'actions[0].control.steps[1].params.requests[2]',
+      decoded_field_path: 'actions[0].params.details::<json>.recordId',
+      aura_route: [{ kind: 'key' as const, key: 'actions' }, { kind: 'index' as const, index: 0 }, { kind: 'key' as const, key: 'params' }, { kind: 'key' as const, key: 'details' }, { kind: 'json_string' as const }, { kind: 'key' as const, key: 'recordId' }],
+      encoding_layers: ['base64', 'url_form', 'json', 'json_string'], payload_shape: 'private-shape-digest',
+      search_text: 'private-search-payload', replace_text: 'private-replace-payload',
+    }
+    const parameterization = buildParameterization([suggestion({
+      id: 'pz_aura', locations: [location], literal_value: 'private-record-value', sample_value: 'private-record-value',
+      rationale: 'private-rationale-value', auto_apply: true,
+    })])
+    applyMock.mockResolvedValue({ script, applied_count: 1, diffs: [
+      { suggestion_id: 'pz_aura', path: '/actions/0/control/steps/1/params/requests/2/body', kind: 'value_replaced', before: 'private-full-body-before', after: 'private-full-body-after {{var.user_id}}' },
+      { path: '/data_sources/0', kind: 'data_source_added', before: 'private-unattributed-before', after: 'private-unattributed-after' },
+      { suggestion_id: 'pz_aura', path: '/parameters/user_id', kind: 'parameter_added', after: 'private-parameter-configuration' },
+    ] })
+    const onApplied = vi.fn()
+    act(() => root.render(<ParameterizationReview guided parameterization={parameterization} script={script} onApplied={onApplied} />))
+    expect(container.textContent).toContain(location.action_path)
+    expect(container.textContent).toContain(location.decoded_field_path)
+    expect(container.textContent).toContain('Base64 body → URL form message → JSON envelope → JSON string')
+    expect(container.textContent).not.toContain('987')
+    expect(container.textContent).not.toContain('Captured action label')
+    await act(async () => { [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Preview parameter changes')!.click() })
+    const preview = container.querySelector('[aria-label="Parameter suggestion preview"]')!
+    expect(preview.textContent).toContain(location.decoded_field_path)
+    expect(preview.textContent).toContain('Captured value hidden')
+    expect(preview.textContent).toContain('1 selected suggestion.')
+    expect(preview.textContent).not.toContain('1 selected suggestions.')
+    await act(async () => { [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Apply reviewed parameter changes')!.click() })
+    expect(applyMock.mock.calls[0][0].suggestions[0].locations).toEqual([location])
+    expect(onApplied).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('Decoded field updated')
+    expect(container.textContent).toContain('Data source created')
+    expect(container.textContent).toContain('Parameter binding created')
+    expect([...container.querySelectorAll('.paramize-diffs .paramize-after')].map(item => item.textContent)).toEqual(['Decoded field updated', 'Data source created', 'Parameter binding created'])
+    for (const value of ['private-record-value', 'private-search-payload', 'private-replace-payload', 'private-shape-digest', 'private-rationale-value', 'private-full-body-before', 'private-full-body-after', 'private-unattributed-before', 'private-unattributed-after', 'private-parameter-configuration']) {
+      expect(container.innerHTML).not.toContain(value)
+    }
+  })
+
+  it('keeps missing Aura path metadata explicit and never guesses from an import ordinal', () => {
+    render(buildParameterization([suggestion({ locations: [{ section: 'actions', action_index: 987, action_name: 'Captured action label', field: 'body', aura_route: [], replace_text: '' }] })]))
+    expect(container.textContent).toContain('Action path unavailable')
+    expect(container.textContent).toContain('Decoded field path unavailable')
+    expect(container.textContent).toContain('Encoding unavailable')
+    expect(container.textContent).not.toContain('actions[987]')
+    expect(container.textContent).not.toContain('12345')
+  })
+
+  it('bounds Aura location rendering without dropping occurrences from the selected request', async () => {
+    const locations = Array.from({ length: 21 }, (_, index) => ({ section: 'actions', action_index: index, field: 'body', replace_text: '',
+      action_path: `actions[${index}]`, decoded_field_path: `actions[${index}].params.recordId`, aura_route: [], encoding_layers: ['json'] }))
+    render(buildParameterization([suggestion({ id: 'pz_aura_many', locations, auto_apply: true })]))
+    expect(container.querySelectorAll('[aria-label="Decoded Aura field"]')).toHaveLength(20)
+    expect(container.textContent).toContain('1 more occurrences')
+    applyMock.mockResolvedValue({ script, diffs: [], applied_count: 21 })
+    await act(async () => { container.querySelector<HTMLButtonElement>('button.btn-primary')!.click() })
+    expect(applyMock.mock.calls[0][0].suggestions[0].locations).toHaveLength(21)
+  })
+
   it('pre-checks only auto-apply suggestions', () => {
     render(buildParameterization([
       suggestion({ id: 'pz_auto', kind: 'correlation', var_name: 'corr_token', confidence: 0.9, auto_apply: true }),
@@ -471,6 +577,7 @@ it('requires a fresh guided preview after selection or draft changes and masks s
     act(() => button('Preview parameter changes').click())
     expect(container.textContent).not.toContain('never-show-this')
     expect(container.textContent).toContain('High risk: explicitly selected')
+    expect(container.querySelector('[aria-label="Parameter suggestion preview"]')!.textContent).toContain('2 selected suggestions.')
     act(() => render({ ...script, name: 'Changed draft' }))
     expect(container.querySelector('[aria-label="Parameter suggestion preview"]')).toBeNull()
     act(() => button('Preview parameter changes').click())

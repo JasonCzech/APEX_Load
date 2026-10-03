@@ -69,3 +69,59 @@ test('Aura HAR review exposes HTTP200 failures and missing responses with safe s
   await page.getByRole('tab', { name: 'Review', exact: true }).click()
   await expect(outcomes).toBeVisible()
 })
+
+test('Aura parameter review applies one nested field without changing repeated sibling values', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const workspace = await createWorkspace(page.context().request)
+  await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Find a source format' }).fill('HAR Traffic')
+  await page.getByRole('button', { name: /^HAR HAR Traffic/ }).click()
+  const literal = '001D000000IqhSLIAZ'
+  const nested = JSON.stringify({ records: [{ recordId: literal }, { recordId: literal }], note: literal })
+  const body = new URLSearchParams({ message: JSON.stringify({ actions: [{ id: 'synthetic-action', descriptor: 'synthetic://Account/ACTION$save', params: { input: nested, recordId: literal } }] }) }).toString()
+  const capture = { log: { version: '1.2', creator: { name: 'synthetic', version: '1' }, entries: [entry('/aura', body, JSON.stringify({ actions: [{ id: 'synthetic-action', state: 'SUCCESS', returnValue: {} }] }))] } }
+  const controls = page.getByRole('group', { name: 'Script import controls' })
+  await controls.locator('input[type=file]').first().setInputFiles({ name: 'aura-nested-parameters.har', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(capture)) })
+  const imported = mutation(page, 'POST', '/api/v1/scripts/import/har')
+  await controls.getByRole('button', { name: 'Inspect & review', exact: true }).click()
+  const response = await imported
+  expect(response.ok(), await response.text()).toBeTruthy()
+  type Advice = { id: string; kind: string; var_name: string; replacement: string; locations?: { decoded_field_path?: string; encoding_layers?: string[] }[] }
+  const result = await json(response)
+  const suggestions = (result.parameterization as { suggestions: Advice[] }).suggestions.filter(item => item.kind === 'data_param')
+  const selected = suggestions.find(item => item.locations?.some(location => location.decoded_field_path?.includes('records[0]')))
+  expect(selected).toBeDefined()
+  expect(suggestions.filter(item => item.locations?.some(location => location.decoded_field_path?.includes('records[1]')))).toHaveLength(1)
+  await controls.getByRole('tab', { name: 'Data & parameters', exact: true }).click()
+  const panel = controls.locator('.paramize-review')
+  const row = panel.locator('.paramize-item').filter({ has: page.getByText(selected!.var_name, { exact: true }) })
+  await expect(row).toHaveCount(1)
+  await expect(row).toContainText('records[0]')
+  await expect(row).toContainText('JSON')
+  await row.getByRole('checkbox').check()
+  await panel.getByRole('button', { name: 'Preview parameter changes', exact: true }).click()
+  const preview = panel.getByRole('region', { name: 'Parameter suggestion preview', exact: true })
+  await expect(preview).toContainText('records[0]')
+  await expect(preview).not.toContainText('records[1]')
+  await preview.screenshot({ path: testInfo.outputPath('aura-nested-parameter-preview.png') })
+  const applied = mutation(page, 'POST', '/api/v1/scripts/import/parameterize/apply')
+  await panel.getByRole('button', { name: 'Apply reviewed parameter changes', exact: true }).click()
+  const appliedResponse = await applied
+  expect(appliedResponse.ok(), await appliedResponse.text()).toBeTruthy()
+  const outcome = await json(appliedResponse)
+  expect(outcome.applied_count).toBe(1)
+  const script = outcome.script as { actions: { body: string }[] }
+  type Envelope = { actions: { params: { input: string; recordId: string } }[] }
+  const message = JSON.parse(new URLSearchParams(script.actions[0].body).get('message') || '') as Envelope
+  const payload = JSON.parse(message.actions[0].params.input) as { records: { recordId: string }[]; note: string }
+  expect(payload.records[0].recordId).toBe(selected!.replacement)
+  expect(payload.records[1].recordId).toBe(literal)
+  expect(payload.note).toBe(literal)
+  expect(message.actions[0].params.recordId).toBe(literal)
+  await expect(panel).toContainText('Applied Changes')
+  await page.setViewportSize({ width: 760, height: 1000 })
+  expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await panel.locator('.paramize-diffs').screenshot({ path: testInfo.outputPath('aura-nested-parameter-narrow.png') })
+})

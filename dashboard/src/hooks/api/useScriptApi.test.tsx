@@ -11,6 +11,7 @@ vi.mock('../apiClient', () => ({
 
 import { apiFetch, request } from '../apiClient'
 import { useScriptApi } from './useScriptApi'
+import type { ApplyParameterizationRequest } from '../../types/scriptImports'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -43,6 +44,25 @@ describe('useScriptApi import wrappers', () => {
     vi.useRealTimers()
     vi.restoreAllMocks()
     vi.clearAllMocks()
+  })
+
+  it('preserves exact Aura action routes and encoding metadata in the apply request', async () => {
+    const payload: ApplyParameterizationRequest = {
+      script: { name: 'Aura draft', version: '1', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [] },
+      suggestions: [{ id: 'nested', kind: 'data_param', var_name: 'recordid', replacement: '{{data.records.recordid}}', confidence: 0.7,
+        rule_id: 'aura', rationale: 'Reviewed field', auto_apply: false, high_risk: false,
+        locations: [{ section: 'actions', action_index: 99, field: 'body', replace_text: '',
+          action_path: 'actions[0].control.steps[1].params.requests[2]',
+          aura_route: [{ kind: 'key', key: 'actions' }, { kind: 'index', index: 0 }, { kind: 'json_string' }, { kind: 'key', key: 'recordId' }],
+          decoded_field_path: 'actions[0].params.details::<json>.recordId',
+          encoding_layers: ['url_form', 'json', 'json_string'], payload_shape: 'structural-digest' }] }],
+      selected_ids: ['nested'], confirm_high_risk: false,
+    }
+    await api.applyImportParameterization(payload)
+    const [url, options] = (request as Mock).mock.calls[0]
+    expect(url).toBe('/scripts/import/parameterize/apply')
+    expect(options.method).toBe('POST')
+    expect(JSON.parse(options.body)).toEqual(payload)
   })
 
   it.each(['importEnterpriseArchive', 'validateEnterpriseArchiveImport'] as const)(

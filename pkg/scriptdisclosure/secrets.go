@@ -9,17 +9,59 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/javarunner"
 )
 
+const (
+	maxStructuredCollectionBytes  = 64 << 20
+	maxStructuredBodyBytes        = 8 << 20
+	maxStructuredCollectionValues = 1_000_000
+	maxStructuredCollectionDepth  = 128
+	maxStructuredJSONStringLayers = 3
+)
+
+var plausibleCollectionTemplateExpression = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*(?:\(\s*[A-Za-z0-9_.+\s,-]*\))?$`)
+
+type structuredCollectionBudget struct {
+	bytes      int
+	values     int
+	incomplete bool
+}
+
+func newStructuredCollectionBudget() *structuredCollectionBudget {
+	return &structuredCollectionBudget{bytes: maxStructuredCollectionBytes, values: maxStructuredCollectionValues}
+}
+
+func (b *structuredCollectionBudget) reserveBytes(n int) bool {
+	if b.incomplete || n < 0 || n > b.bytes {
+		b.incomplete = true
+		return false
+	}
+	b.bytes -= n
+	return true
+}
+
+func (b *structuredCollectionBudget) reserveValue() bool {
+	if b.incomplete || b.values <= 0 {
+		b.incomplete = true
+		return false
+	}
+	b.values--
+	return true
+}
+
 type secretCollector struct {
 	values                   map[string]struct{}
+	structuredBudget         *structuredCollectionBudget
 	credentialParameterNames map[string]struct{}
 	sensitiveSourceColumns   map[string][]string
 }
@@ -30,13 +72,15 @@ func newSecretCollector(
 ) *secretCollector {
 	return &secretCollector{
 		values:                   make(map[string]struct{}),
+		structuredBudget:         newStructuredCollectionBudget(),
 		credentialParameterNames: credentialParameterNames,
 		sensitiveSourceColumns:   sensitiveSourceColumns,
 	}
 }
 
 func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
-	if depth > maxProjectionDepth {
+	if depth > maxProjectionDepth || !c.structuredBudget.reserveValue() {
+		c.structuredBudget.incomplete = true
 		return
 	}
 	switch typed := value.(type) {
@@ -128,16 +172,28 @@ func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
 }
 
 func (c *secretCollector) addNode(value any) {
+	c.addSensitiveNode(value, 0)
+}
+
+func (c *secretCollector) addSensitiveNode(value any, depth int) {
+	if depth > maxProjectionDepth || !c.structuredBudget.reserveValue() {
+		c.structuredBudget.incomplete = true
+		return
+	}
 	switch typed := value.(type) {
 	case string:
 		c.add(typed)
+		nested := bytes.TrimSpace([]byte(typed))
+		if looksStructuredJSON(nested) {
+			c.collectJSON(nested, true, 0, true)
+		}
 	case []any:
 		for _, child := range typed {
-			c.addNode(child)
+			c.addSensitiveNode(child, depth+1)
 		}
 	case map[string]any:
 		for _, child := range typed {
-			c.addNode(child)
+			c.addSensitiveNode(child, depth+1)
 		}
 	}
 }
@@ -356,12 +412,38 @@ func disclosureStringAt(raw any, index int) (string, bool) {
 	return "", false
 }
 
+// Validate original string bytes before the outer script JSON marshal can
+// replace invalid UTF8. This bounded scan shares the collection work budget.
+func (c *secretCollector) collectOriginalBodyValidity(script *dsl.Script) {
+	if err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		stored := ""
+		if ref.Action != nil {
+			stored = ref.Action.Body
+		} else if ref.Request != nil {
+			stored, _ = ref.Request["body"].(string)
+		}
+		if len(stored) > maxStructuredBodyBytes || !c.structuredBudget.reserveBytes(len(stored)) || !utf8.ValidString(stored) {
+			c.structuredBudget.incomplete = true
+		}
+		return nil
+	}); err != nil {
+		c.structuredBudget.incomplete = true
+	}
+}
+
 func (c *secretCollector) collectBody(stored string, owner map[string]any) {
-	if stored == "" || isPortableBinding(stored) {
+	if stored == "" || isPortableBinding(stored) || c.structuredBudget.incomplete {
+		return
+	}
+	if len(stored) > maxStructuredBodyBytes {
+		c.structuredBudget.incomplete = true
 		return
 	}
 	payload := []byte(stored)
 	if strings.EqualFold(strings.TrimSpace(stringValue(owner["body_encoding"])), "base64") {
+		if !c.structuredBudget.reserveBytes(len(stored)) {
+			return
+		}
 		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(stored))
 		if err != nil {
 			return
@@ -372,6 +454,10 @@ func (c *secretCollector) collectBody(stored string, owner map[string]any) {
 }
 
 func (c *secretCollector) collectStructuredBody(payload []byte, contentType string) {
+	if len(payload) > maxStructuredBodyBytes || !c.structuredBudget.reserveBytes(len(payload)) {
+		c.structuredBudget.incomplete = true
+		return
+	}
 	trimmed := bytes.TrimSpace(payload)
 	if len(trimmed) == 0 {
 		return
@@ -386,57 +472,292 @@ func (c *secretCollector) collectStructuredBody(payload []byte, contentType stri
 		c.collectXMLBody(payload)
 		return
 	case mediaType == "application/graphql":
-		c.collectGraphQLBody(trimmed)
+		c.collectQueryBody(string(trimmed), false, 0)
 		return
 	}
-	if trimmed[0] == '{' || trimmed[0] == '[' {
-		decoder := json.NewDecoder(bytes.NewReader(trimmed))
-		decoder.UseNumber()
-		var raw any
-		if decoder.Decode(&raw) == nil {
-			c.collectStructuredNode(raw, "")
-		}
+	if looksStructuredJSON(trimmed) {
+		c.collectJSON(trimmed, false, 0, false)
 		return
 	}
 	if looksLikeGraphQLBody(trimmed) {
-		c.collectGraphQLBody(trimmed)
+		c.collectQueryBody(string(trimmed), false, 0)
 		return
 	}
 	if bytes.Contains(trimmed, []byte("=")) && !bytes.ContainsAny(trimmed, "\r\n\x00") {
-		if values, err := url.ParseQuery(string(trimmed)); err == nil {
-			for name, entries := range values {
-				if !credential.SensitiveName(name) {
-					continue
-				}
-				for _, entry := range entries {
-					c.add(entry)
-				}
+		remaining := string(trimmed)
+		for {
+			if !c.structuredBudget.reserveValue() {
+				return
 			}
+			part, tail, more := strings.Cut(remaining, "&")
+			rawName, rawValue, _ := strings.Cut(part, "=")
+			name, nameErr := url.QueryUnescape(rawName)
+			value, valueErr := url.QueryUnescape(rawValue)
+			if nameErr != nil || valueErr != nil {
+				if !more {
+					return
+				}
+				remaining = tail
+				continue
+			}
+			sensitive := isSensitiveKey(name)
+			if sensitive {
+				c.add(value)
+			}
+			nested := bytes.TrimSpace([]byte(value))
+			if normalizeName(name) == "query" || looksLikeGraphQLBody(nested) {
+				c.collectQueryBody(value, sensitive, 0)
+			} else if looksStructuredJSON(nested) {
+				c.collectJSON(nested, sensitive, 0, true)
+			}
+			if !more || c.structuredBudget.incomplete {
+				return
+			}
+			remaining = tail
 		}
 	}
 }
 
-func (c *secretCollector) collectStructuredNode(value any, name string) {
-	if isSensitiveKey(name) {
-		c.addNode(value)
+func looksStructuredJSON(value []byte) bool {
+	return len(value) > 0 && !bytes.Equal(value, []byte(credential.Redacted)) && !wholeCollectionRuntimeTemplate(string(value)) && (value[0] == '{' || value[0] == '[')
+}
+
+// Plausible scalar template syntax is separate from runtime portability:
+// unsupported names/functions still become literal credentials in sensitive
+// fields. JSON-like double braces with member punctuation must reach the
+// malformed-credential hint instead of hiding a credential occurrence.
+func wholeCollectionRuntimeTemplate(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if !strings.HasPrefix(trimmed, "{{") || portableTemplatePattern.FindString(trimmed) != trimmed {
+		return false
+	}
+	return isSupportedPortableTemplate(trimmed) || plausibleCollectionTemplateExpression.MatchString(strings.TrimSpace(trimmed[2:len(trimmed)-2]))
+}
+
+// Collect directly from JSON tokens so duplicate members and encoded JSON
+// string boundaries cannot hide a credential occurrence. Every parse shares
+// one script-wide byte/value budget; incomplete collection stops disclosure.
+func (c *secretCollector) collectJSON(payload []byte, sensitive bool, layers int, charge bool) {
+	if layers > maxStructuredJSONStringLayers || len(payload) > maxStructuredBodyBytes || (charge && !c.structuredBudget.reserveBytes(len(payload))) {
+		c.structuredBudget.incomplete = true
 		return
 	}
-	if normalizeName(name) == "query" {
-		if query, ok := value.(string); ok {
-			c.collectGraphQLBody([]byte(query))
-			return
+	if !c.structuredBudget.reserveBytes(len(payload)) || !validCollectionJSONUnicode(payload) {
+		c.structuredBudget.incomplete = true
+		return
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	complete := c.collectJSONValue(decoder, sensitive, 0, layers, "")
+	if complete {
+		_, err := decoder.Token()
+		complete = err == io.EOF
+	}
+	if !complete && !c.structuredBudget.incomplete {
+		// Existing credential-free malformed/template authoring remains
+		// readable. A partial parse with any credential-shaped name cannot
+		// prove replica safety and must stop the entire disclosure copy.
+		if c.malformedCollectionCredentialHint(payload, layers) {
+			c.structuredBudget.incomplete = true
 		}
 	}
-	switch typed := value.(type) {
-	case map[string]any:
-		for key, child := range typed {
-			c.collectStructuredNode(child, key)
+}
+
+// encoding/json normalizes invalid strings. Reject those semantic losses
+// before collecting literals, while leaving ordinary syntax errors to the
+// central body projector's fail-closed body handling.
+func (c *secretCollector) malformedCollectionCredentialHint(payload []byte, layers int) bool {
+	if layers > maxStructuredJSONStringLayers || !c.structuredBudget.reserveBytes(2*len(payload)) {
+		return true
+	}
+	for i := 0; i < len(payload); {
+		if payload[i] == '"' {
+			start := i
+			i++
+			for i < len(payload) {
+				if payload[i] == '\\' {
+					i += 2
+					continue
+				}
+				if payload[i] == '"' {
+					break
+				}
+				i++
+			}
+			if !c.structuredBudget.reserveValue() {
+				return true
+			}
+			if i < len(payload) {
+				var decoded string
+				if json.Unmarshal(payload[start:i+1], &decoded) == nil {
+					if isSensitiveKey(decoded) {
+						return true
+					}
+					nested := bytes.TrimSpace([]byte(decoded))
+					if looksStructuredJSON(nested) && c.malformedCollectionCredentialHint(nested, layers+1) {
+						return true
+					}
+				} else if c.malformedCollectionRawNameHint(payload[start : i+1]) {
+					return true
+				}
+				i++
+			} else if c.malformedCollectionRawNameHint(payload[start:]) {
+				return true
+			}
+			continue
 		}
-	case []any:
-		for _, child := range typed {
-			c.collectStructuredNode(child, name)
+		if !collectionNameByte(payload[i]) {
+			i++
+			continue
+		}
+		start := i
+		for i < len(payload) && collectionNameByte(payload[i]) {
+			i++
+		}
+		if !c.structuredBudget.reserveValue() || isSensitiveKey(string(payload[start:i])) {
+			return true
 		}
 	}
+	return false
+}
+
+func (c *secretCollector) malformedCollectionRawNameHint(payload []byte) bool {
+	// Decode only well-formed unicode name escapes; malformed quoted syntax
+	// is not proof that a later credential name is absent.
+	var normalized strings.Builder
+	normalized.Grow(len(payload))
+	for i := 0; i < len(payload); i++ {
+		if i+5 < len(payload) && payload[i] == '\\' && payload[i+1] == 'u' {
+			code, err := strconv.ParseUint(string(payload[i+2:i+6]), 16, 16)
+			if err == nil {
+				normalized.WriteRune(rune(code))
+				i += 5
+				continue
+			}
+		}
+		normalized.WriteByte(payload[i])
+	}
+	text := normalized.String()
+	for i := 0; i < len(text); {
+		if !collectionNameByte(text[i]) {
+			i++
+			continue
+		}
+		start := i
+		for i < len(text) && collectionNameByte(text[i]) {
+			i++
+		}
+		if !c.structuredBudget.reserveValue() || isSensitiveKey(text[start:i]) {
+			return true
+		}
+	}
+	return false
+}
+
+func collectionNameByte(ch byte) bool {
+	return ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || ch == '_' || ch == '-' || ch == '.'
+}
+
+func validCollectionJSONUnicode(payload []byte) bool {
+	if !utf8.Valid(payload) {
+		return false
+	}
+	inString := false
+	for i := 0; i < len(payload); i++ {
+		if payload[i] == '"' {
+			inString = !inString
+			continue
+		}
+		if !inString || payload[i] != '\\' {
+			continue
+		}
+		i++
+		if i >= len(payload) {
+			return true
+		}
+		if payload[i] != 'u' || i+4 >= len(payload) {
+			continue
+		}
+		code, err := strconv.ParseUint(string(payload[i+1:i+5]), 16, 16)
+		if err != nil {
+			continue
+		}
+		i += 4
+		if code >= 0xd800 && code <= 0xdbff {
+			if i+6 >= len(payload) || payload[i+1] != '\\' || payload[i+2] != 'u' {
+				return false
+			}
+			low, err := strconv.ParseUint(string(payload[i+3:i+7]), 16, 16)
+			if err != nil || low < 0xdc00 || low > 0xdfff {
+				return false
+			}
+			i += 6
+		} else if code >= 0xdc00 && code <= 0xdfff {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *secretCollector) collectJSONValue(decoder *json.Decoder, sensitive bool, depth, layers int, name string) bool {
+	if depth > maxStructuredCollectionDepth || !c.structuredBudget.reserveValue() {
+		c.structuredBudget.incomplete = true
+		return false
+	}
+	token, err := decoder.Token()
+	if err != nil {
+		return false
+	}
+	switch value := token.(type) {
+	case json.Delim:
+		switch value {
+		case '{':
+			for decoder.More() {
+				if !c.structuredBudget.reserveValue() {
+					return false
+				}
+				key, err := decoder.Token()
+				name, ok := key.(string)
+				if err != nil || !ok {
+					return false
+				}
+				if !c.collectJSONValue(decoder, sensitive || isSensitiveKey(name), depth+1, layers, name) {
+					return false
+				}
+			}
+		case '[':
+			for decoder.More() {
+				if !c.collectJSONValue(decoder, sensitive, depth+1, layers, name) {
+					return false
+				}
+			}
+		default:
+			return false
+		}
+		if _, err := decoder.Token(); err != nil {
+			// EOF after every child token was consumed leaves only a missing
+			// container terminator. The central body policy still masks/gates
+			// this body; collected literals can safely mask its outside replicas.
+			// EOF in a key/value or any other syntax error remains incomplete.
+			return err == io.EOF
+		}
+	case string:
+		if sensitive {
+			c.add(value)
+		}
+		nested := bytes.TrimSpace([]byte(value))
+		if normalizeName(name) == "query" {
+			c.collectQueryBody(value, sensitive, layers+1)
+			return !c.structuredBudget.incomplete
+		}
+		if looksStructuredJSON(nested) {
+			c.collectJSON(nested, sensitive, layers+1, true)
+			if c.structuredBudget.incomplete {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func requestBodyContentType(owner map[string]any) string {
@@ -587,12 +908,31 @@ func looksLikeGraphQLBody(payload []byte) bool {
 	return false
 }
 
+// Every declared, inferred, JSON-string and form query uses this admission
+// before scalar collection. No source-specific branch bypasses its budget or
+// malformed JSON-member handling.
+func (c *secretCollector) collectQueryBody(value string, sensitive bool, layers int) {
+	queryJSON, work, classifyErr := credentialpolicy.InspectQueryValueStructure(value, c.structuredBudget.bytes)
+	if !c.structuredBudget.reserveBytes(work) || classifyErr != nil {
+		c.structuredBudget.incomplete = true
+		return
+	}
+	if queryJSON && !wholeCollectionRuntimeTemplate(value) {
+		c.collectJSON([]byte(value), sensitive, layers, true)
+		return
+	}
+	c.collectGraphQLBody([]byte(value))
+}
+
 func (c *secretCollector) collectGraphQLBody(payload []byte) {
 	var pendingSensitive bool
 	var awaitingValue bool
 	for index := 0; index < len(payload); {
 		switch {
 		case isGraphQLNameStart(payload[index]):
+			if !c.structuredBudget.reserveValue() {
+				return
+			}
 			start := index
 			index++
 			for index < len(payload) && isGraphQLNameContinue(payload[index]) {
@@ -604,6 +944,9 @@ func (c *secretCollector) collectGraphQLBody(payload []byte) {
 			awaitingValue = pendingSensitive
 			index++
 		case payload[index] == '"':
+			if !c.structuredBudget.reserveValue() {
+				return
+			}
 			value, next, ok := graphQLStringLiteral(payload, index)
 			if !ok {
 				return

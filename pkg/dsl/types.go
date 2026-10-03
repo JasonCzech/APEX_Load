@@ -70,10 +70,13 @@ const (
 	// application/x-www-form-urlencoded body whose literal spans are already
 	// escaped but whose runtime template values still need component escaping.
 	ImportURLFormTemplateValueEncodingMetadataKey = "body_template_value_encoding"
-	// ImportURLFormTemplateValueEncodingQueryComponent is the only recognized
-	// marker value. Older runtimes treat the metadata as inert instead of
-	// applying an unintended whole-body transform.
+	// ImportURLFormTemplateValueEncodingQueryComponent escapes each resolved
+	// template as a form component while preserving imported literal spans.
 	ImportURLFormTemplateValueEncodingQueryComponent = "url_query_component"
+	// ImportAuraJSONTemplateValueEncoding opts into bounded structural Aura
+	// substitution through JSON strings and the outer form component. Invalid
+	// or unsupported payloads fail before traffic; legacy modes are unchanged.
+	ImportAuraJSONTemplateValueEncoding = "aura_json_strings"
 )
 
 type Script struct {

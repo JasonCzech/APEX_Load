@@ -1230,7 +1230,7 @@ func sanitizeImportParameterization(input *paramize.Result, scriptValues ...any)
 			}
 		}
 		cloned := suggestion
-		cloned.Locations = append([]paramize.Location(nil), suggestion.Locations...)
+		cloned.Locations = cloneParameterizationLocations(suggestion.Locations)
 		for index := range cloned.Locations {
 			cloned.Locations[index].SearchText = ""
 		}
@@ -1254,8 +1254,8 @@ func sanitizeImportParameterization(input *paramize.Result, scriptValues ...any)
 
 // filterTrustedImportParameterization keeps exact importer-authored review data
 // while rejecting suggestions that cannot be re-derived from the converted
-// script. Import review is an authoring surface, so its literals and locations
-// must not be redacted.
+// script. Structured Aura expected values stay server-side; their safe routes
+// and encoding layers remain available for review.
 func filterTrustedImportParameterization(input *paramize.Result, scriptValues ...any) *paramize.Result {
 	if input == nil {
 		return &paramize.Result{Suggestions: []paramize.Suggestion{}}
@@ -1274,10 +1274,20 @@ func filterTrustedImportParameterization(input *paramize.Result, scriptValues ..
 			}
 		}
 		cloned := suggestion
-		cloned.Locations = append([]paramize.Location(nil), suggestion.Locations...)
+		cloned.Locations = cloneParameterizationLocations(suggestion.Locations)
 		if suggestion.FoundInAction != nil {
 			found := *suggestion.FoundInAction
 			cloned.FoundInAction = &found
+		}
+
+		for index := range cloned.Locations {
+			if len(cloned.Locations[index].AuraRoute) > 0 {
+				cloned.Locations[index].SearchText = ""
+				cloned.LiteralValue = ""
+				cloned.SampleValue = ""
+				cloned.Parameter = nil
+				cloned.Rationale = safeParameterizationRationale(cloned)
+			}
 		}
 		output.Suggestions = append(output.Suggestions, cloned)
 	}

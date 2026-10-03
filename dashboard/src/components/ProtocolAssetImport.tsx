@@ -13,6 +13,7 @@ import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImp
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import AuraOutcomeReview from './AuraOutcomeReview'
+import AuraParameterLocationDetails from './AuraParameterLocationDetails'
 import ImportCoverageButton from './ImportCoverageButton'
 import ImportDropzone from './ImportDropzone'
 import BrowserReplayProgress from './BrowserReplayProgress'
@@ -2753,8 +2754,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                     <p className="sample-import-subtitle">Aura parameterization candidates</p>
                     <ul className="sample-import-findings">
                       {salesforceReview.parameterizations!.slice(0, 6).map(param => (
-                        <li key={`${param.param_key}-${param.expression}`}>
-                          <strong>{param.param_key}</strong> ({param.kind}){param.sample_value ? ` e.g. ${param.sample_value}` : ''} → <code>{param.template}</code>
+                        <li key={param.name}>
+                          <strong>{param.param_key}</strong> ({param.kind}) → <code>{param.template}</code>
+                          {param.decoded_field_path && <AuraParameterLocationDetails location={param} />}
                         </li>
                       ))}
                     </ul>

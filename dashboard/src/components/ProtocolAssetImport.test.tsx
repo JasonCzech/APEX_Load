@@ -457,7 +457,7 @@ describe('ProtocolAssetImport', () => {
           lightning_endpoints: [{ method: 'GET', path: '/lightning', host: 'acme.my.salesforce.com', count: 1 }],
           apex_rest_endpoints: [{ method: 'GET', path: '/services/apexrest/Acct', host: 'acme.my.salesforce.com', count: 3 }],
           composite_endpoints: [{ method: 'POST', path: '/services/data/v60.0/composite', host: 'acme.my.salesforce.com', count: 2 }],
-          parameterizations: [{ name: 'param_recordid', source: 'aura_message', expression: 'actions[0].params.recordId', param_key: 'recordId', sample_value: '001D000000IqhSLIAZ', kind: 'record_id', column: 'recordid', template: '{{data.salesforce_records.recordid}}' }],
+          parameterizations: [{ name: 'param_recordid', source: 'aura_message', expression: 'actions[0].params.recordId', action_path: 'actions[0].control.steps[1]', decoded_field_path: 'actions[0].params.details::<json>.recordId', encoding_layers: ['url_form', 'json', 'json_string'], param_key: 'recordId', sample_value: '001D000000IqhSLIAZ', kind: 'record_id', column: 'recordid', template: '{{data.salesforce_records.recordid}}' }],
           transactions: [{ name: 'Salesforce Login', source: 'har', request_count: 2, aura_actions: 1 }],
           correlation_confidence: 'high',
           har_match_coverage: { har_provided: true, imported_requests: 2, matched_requests: 2, coverage_pct: 100 },
@@ -2000,6 +2000,12 @@ describe('ProtocolAssetImport', () => {
 
 	  it('imports Salesforce HAR files through the native review flow', async () => {
 	    const salesforceResult = await apiMock.importSalesforce()
+        const candidate = salesforceResult.summary.salesforce_review.parameterizations[0]
+        salesforceResult.summary.salesforce_review.parameterizations = [
+          { ...candidate, expression: '', name: 'param_recordid_first', decoded_field_path: 'actions[0].params.details::<json>.records[0].recordId' },
+          { ...candidate, expression: '', name: 'param_recordid_second', decoded_field_path: 'actions[0].params.details::<json>.records[1].recordId' },
+        ]
+        const consoleError = vi.spyOn(console, 'error')
 	    apiMock.importHAR.mockResolvedValueOnce(salesforceResult)
 	    await act(async () => {
 	      root.render(<ProtocolAssetImport kind="har" projectId="project-1" />)
@@ -2041,6 +2047,15 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('Composite')
     // Aura message parameterization candidates (G3)
     expect(container.textContent).toContain('Aura parameterization candidates')
+    const parameterLocation = container.querySelector('.aura-parameter-location-details')!
+    expect(parameterLocation.textContent).toContain('actions[0].control.steps[1]')
+    expect(parameterLocation.textContent).toContain('JSON string')
+    expect(parameterLocation.parentElement?.textContent).not.toContain('001D000000IqhSLIAZ')
+    expect(container.querySelectorAll('.aura-parameter-location-details')).toHaveLength(2)
+    expect(container.textContent).toContain('records[0].recordId')
+    expect(container.textContent).toContain('records[1].recordId')
+    expect(consoleError.mock.calls.flat().map(String).join(' ')).not.toContain('same key')
+    consoleError.mockRestore()
     expect(container.textContent).toContain('recordId')
     // Agentforce panel from preserved metadata (G4)
     expect(container.textContent).toContain('Agentforce Agent API Review')

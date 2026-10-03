@@ -96,6 +96,12 @@ type VUser struct {
 	// A managed run ID must be supplied by the scheduler. Never send a literal
 	// {{run.id}} placeholder to an external target from a direct/library run.
 	unresolvedRunRefs []string
+	// bodyResolutionError prevents an opted-in structural body from falling back
+	// to legacy interpolation after a malformed payload or a codec limit.
+	bodyResolutionError error
+	// The exact resolved action prevents reclassifying inserted literal body
+	// data as newly authored parameter references after structural resolution.
+	structuredBodyResolvedAction *protocol.Action
 	// actionCredentialComposites carries the platform-managed credential
 	// spellings for the protocol action produced by the most recent
 	// resolveAction, for the execution path to register before that action runs.

@@ -37,6 +37,7 @@ import { groupImportFindings, draftImportFindings, reviewSectionFindings, type I
 import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import AuraOutcomeReview from './AuraOutcomeReview'
+import AuraParameterLocationDetails from './AuraParameterLocationDetails'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { salesforceApiSurfaceSummary } from './salesforceReviewSummary'
@@ -4979,7 +4980,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                   {salesforceReview.parameterizations?.length ? (
                     <ul className="lr-salesforce-blockers">
                       {salesforceReview.parameterizations.slice(0, 4).map((param, index) => (
-                        <li key={index}>{param.param_key} ({param.kind}) → {param.template}</li>
+                        <li key={index}>{param.param_key} ({param.kind}) → {param.template}
+                          {param.decoded_field_path && <AuraParameterLocationDetails location={param} />}
+                        </li>
                       ))}
                     </ul>
                   ) : null}

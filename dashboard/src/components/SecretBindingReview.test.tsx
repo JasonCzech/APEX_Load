@@ -604,7 +604,9 @@ describe('SecretBindingReview', () => {
     expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(100)
     expect(container.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('SHARED_TOKEN_101')
     expect(pagination.textContent).toContain('Showing credential groups 101–200 of 10000. Page 2 of 100.')
-  })
+    // This large fixture verifies bounded batching and rendering, independent
+    // of scheduling delays while the full dashboard suite is running.
+  }, 30_000)
 
   it('rechecks more than 256 credential names in bounded batches before commit', async () => {
     const batchedRequirements = Array.from({ length: 300 }, (_, index): SecretBindingRequirement => ({

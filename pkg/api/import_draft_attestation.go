@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/importsession"
 )
 
@@ -838,7 +839,7 @@ func fingerprintImportDraftCredentials(
 	}
 	projected := importResponseRawScriptValue(projectedScript)
 	requirements := secretBindingRequirementsForImportScripts(projected)
-	if opaqueImportSourceProjectionChanged(raw, projected) {
+	if opaqueImportSourceProjectionChanged(raw, projected) || unlocatedRequestBodyProjectionChanged(script, projectedScript, requirements) {
 		digest, err := fullImportDraftExecutionDigest(script)
 		return importDraftCredentialFingerprint{
 			ExecutionGraphDigest: executionGraphDigest,
@@ -967,6 +968,19 @@ func canonicalImportDraftStructureDigestFromProjection(projected *dsl.Script) (s
 	if err := sanitizePersistentImportReviewSurfaces(projected); err != nil {
 		return "", err
 	}
+	// A disclosure response may already carry the transient marker before
+	// projection runs again. It identifies response-only masking, not source
+	// behavior. Keep all durable review gates in the digest, but do not let
+	// this marker prevent receipt recovery for the same authoritative draft.
+	if err := dslwalk.Walk(projected, func(ref dslwalk.SurfaceRef) error {
+		metadata := ref.Metadata()
+		if scriptProjectionResponseGateMarker(metadata) {
+			delete(metadata, scriptProjectionResponseGateMetadataKey)
+		}
+		return nil
+	}); err != nil {
+		return "", fmt.Errorf("inspect projected import draft markers: %w", err)
+	}
 	projected.ID = ""
 	projected.RefKey = ""
 	projected.Name = ""
@@ -1033,6 +1047,9 @@ func runtimeCredentialSourceProjectionChanged(raw, projected *dsl.Script) bool {
 			return true
 		}
 	}
+	if unlocatedRequestBodyProjectionChanged(raw, projected, nil) {
+		return true
+	}
 	if len(raw.DataSources) != len(projected.DataSources) ||
 		len(raw.Parameters) != len(projected.Parameters) {
 		return false
@@ -1051,6 +1068,61 @@ func runtimeCredentialSourceProjectionChanged(raw, projected *dsl.Script) bool {
 				return true
 			}
 		}
+	}
+	return false
+}
+
+// Changed wire bytes are guided only when every projected span has a complete
+// existing locator. Encoded/nested values without such locators require an
+// exact execution digest even when another header/body has guided credentials.
+func unlocatedRequestBodyProjectionChanged(raw, projected *dsl.Script, requirements []SecretBindingRequirement) bool {
+	type bodyIdentity struct{ body, encoding string }
+	bodies := map[string]bodyIdentity{}
+	readBody := func(ref dslwalk.SurfaceRef) bodyIdentity {
+		if ref.Action != nil {
+			return bodyIdentity{ref.Action.Body, ref.Action.BodyEncoding}
+		}
+		body, _ := ref.Request["body"].(string)
+		encoding, _ := ref.Request["body_encoding"].(string)
+		return bodyIdentity{body, encoding}
+	}
+	covered := map[string][]SecretBindingRequirement{}
+	for _, requirement := range requirements {
+		covered[requirement.Path] = append(covered[requirement.Path], requirement)
+	}
+	if err := dslwalk.Walk(raw, func(ref dslwalk.SurfaceRef) error { bodies[ref.Path] = readBody(ref); return nil }); err != nil {
+		return true
+	}
+	changed := false
+	visited := 0
+	if err := dslwalk.Walk(projected, func(ref dslwalk.SurfaceRef) error {
+		expected, exists := bodies[ref.Path]
+		actual := readBody(ref)
+		visited++
+		if !exists || expected.encoding != actual.encoding {
+			changed = true
+			return nil
+		}
+		if expected.body == actual.body {
+			return nil
+		}
+		bodyRequirements := covered[dslWalkPathJSONPointer(ref.Path)+"/body"]
+		removed, aligned := extractLinearlyProjectedRedactions(expected.body, actual.body)
+		if !aligned || len(removed) == 0 || len(removed) != len(bodyRequirements) {
+			changed = true
+			return nil
+		}
+		seen := map[int]bool{}
+		for _, requirement := range bodyRequirements {
+			if requirement.Occurrence < 0 || requirement.Occurrence >= len(removed) || seen[requirement.Occurrence] {
+				changed = true
+				return nil
+			}
+			seen[requirement.Occurrence] = true
+		}
+		return nil
+	}); err != nil || changed || visited != len(bodies) {
+		return true
 	}
 	return false
 }

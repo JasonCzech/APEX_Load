@@ -443,7 +443,10 @@ func (vu *VUser) safeProtoExecute(ctx context.Context, action *protocol.Action) 
 }
 
 func (vu *VUser) safeProtoExecuteStream(ctx context.Context, action *protocol.Action, emit func(*protocol.Result) error) (result *protocol.Result, err error) {
-	if len(vu.unresolvedParameterRefs) > 0 || actionContainsUnresolvedParameter(action) {
+	if vu.bodyResolutionError != nil {
+		return nil, fmt.Errorf("refusing to execute action with invalid structured body: %w", vu.bodyResolutionError)
+	}
+	if len(vu.unresolvedParameterRefs) > 0 || actionContainsUnresolvedParameterExceptBody(action, vu.structuredBodyResolvedAction == action) {
 		// Name the offending reference when resolveAction recorded one, so the
 		// diagnostic points at the specific binding instead of only the action.
 		if refs := dedupeTemplateRefs(vu.unresolvedParameterRefs); len(refs) > 0 {
@@ -579,6 +582,10 @@ func anyValueContainsUnresolvedParam(value any) bool {
 // held to the struct by TestActionUnresolvedParameterScanCoversEveryStringField,
 // which fails if protocol.Action grows a string-bearing field this misses.
 func actionContainsUnresolvedParameter(action *protocol.Action) bool {
+	return actionContainsUnresolvedParameterExceptBody(action, false)
+}
+
+func actionContainsUnresolvedParameterExceptBody(action *protocol.Action, skipResolvedBody bool) bool {
 	if action == nil {
 		return false
 	}
@@ -593,7 +600,7 @@ func actionContainsUnresolvedParameter(action *protocol.Action) bool {
 	) {
 		return true
 	}
-	if bytesContainUnresolvedParamToken(action.Body) || bytesContainUnresolvedParamToken(action.RedactedBody) {
+	if !skipResolvedBody && (bytesContainUnresolvedParamToken(action.Body) || bytesContainUnresolvedParamToken(action.RedactedBody)) {
 		return true
 	}
 	if stringMapContainsUnresolvedParam(action.Headers) ||

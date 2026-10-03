@@ -985,6 +985,7 @@ export default function ScriptImportReview({
   const editableSharedCandidates = onSharedValuesApplied ? (sharedValues?.candidates || []).filter(candidate => !candidate.credential_shaped) : []
   const requiredDataCount = editableSharedCandidates.filter(candidate => candidate.kind === 'source_variable').length
   const optionalDataCount = editableSharedCandidates.length - requiredDataCount + (onParameterizationApplied ? parameterization?.suggestions?.length || 0 : 0)
+  const hasParameterizationReview = !!parameterization && (!!parameterization.aura_payload || (!!onParameterizationApplied && (parameterization.suggestions?.length ?? 0) > 0))
   const protectedSessionLabel = protectedImportExpiryLabel(protectedImportSessionExpiresAt)
   const importDraftExpiry = importDraftExpiryStatus(importDraftExpiresAt)
   const importDraftExpired = importDraftExpiry?.expired === true
@@ -1115,8 +1116,8 @@ export default function ScriptImportReview({
       {tabbed && onSettingsApplied && <ImportParameterInventory script={script} />}
       <ImportDataExtras>
       {dataContent}
-      {tabbed && !onSettingsApplied && !dataContent && !sharedValues?.candidates?.length && !parameterization?.suggestions?.length && <p className="import-review-empty">No editable data substitutions were reported. Review unresolved variables in Review and configure their producers in the Visual Editor.</p>}
-      {((onSharedValuesApplied && !!sharedValues?.candidates?.length) || (onParameterizationApplied && !!parameterization?.suggestions?.length)) && <details className="import-review-suggestions" open={tabbed || !compactReview}><summary>Suggested changes</summary>
+      {tabbed && !onSettingsApplied && !dataContent && !sharedValues?.candidates?.length && !hasParameterizationReview && <p className="import-review-empty">No editable data substitutions were reported. Review unresolved variables in Review and configure their producers in the Visual Editor.</p>}
+      {((onSharedValuesApplied && !!sharedValues?.candidates?.length) || hasParameterizationReview) && <details className="import-review-suggestions" open={tabbed || !compactReview}><summary>Suggested changes</summary>
       {sharedValues && onSharedValuesApplied && (sharedValues.candidates?.length ?? 0) > 0 && (
         <SharedImportValues
           guided={compactReview}
@@ -1130,17 +1131,17 @@ export default function ScriptImportReview({
         />
       )}
 
-      {parameterization && onParameterizationApplied && (parameterization.suggestions?.length ?? 0) > 0 && (
+      {parameterization && hasParameterizationReview && (
         <ParameterizationReview
-          guided={compactReview}
+          guided={compactReview || !!parameterization.aura_payload}
           parameterization={parameterization}
           script={script}
           scriptName={script.name}
           reviewGeneration={reviewGeneration}
-          disabled={credentialEditing || settingsBusy || importDraftExpired || saving || reviewBusy || credentialAction !== null}
+          disabled={!onParameterizationApplied || credentialEditing || settingsBusy || importDraftExpired || saving || reviewBusy || credentialAction !== null}
           onApplyingChange={handleParameterizationApplyingChange}
           onApplied={(parameterizedScript, diffs, selectedIds, nextImportDraftExpiresAt) => {
-            onParameterizationApplied(parameterizedScript, diffs, selectedIds, nextImportDraftExpiresAt)
+            onParameterizationApplied?.(parameterizedScript, diffs, selectedIds, nextImportDraftExpiresAt)
           }}
         />
       )}

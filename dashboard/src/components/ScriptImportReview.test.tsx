@@ -72,6 +72,59 @@ describe('ScriptImportReview', () => {
     container.remove()
   })
 
+  it('keeps Aura inspection coverage available in data review even without suggestions or an apply handler', () => {
+    const parameterization: Parameterization = {
+      suggestions: [], summary: { total: 0, by_kind: {}, auto_apply_count: 0, review_count: 0, high_risk_count: 0, pre_applied_count: 0 },
+      aura_payload: { complete: false, recognized_bodies: 1, inspected_bodies: 1, rejected_bodies: 0, omitted_bodies: 0,
+        string_fields: 0, unsupported_number_fields: 1, unsupported_other_fields: 1, unsafe_path_fields: 0,
+        candidate_fields: 0, retained_candidates: 0, omitted_candidates: 0 },
+    }
+    act(() => root.render(<ScriptImportReview tabbed compactReview title="Aura review" script={script} parameterization={parameterization} />))
+    const dataTab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(tab => tab.getAttribute('aria-label') === 'Data & parameters')!
+    expect(dataTab).toBeDefined()
+    act(() => dataTab.click())
+    const coverage = container.querySelector('[aria-label="Aura payload inspection"]')!
+    expect(coverage.textContent).toContain('Inspection incomplete.')
+    expect(coverage.textContent).toContain('1 numeric fields and 1 boolean, null, or other fields remain unchanged.')
+    expect(container.querySelector<HTMLDetailsElement>('.import-review-suggestions')!.open).toBe(true)
+    expect(container.querySelector('.import-review-suggestion-actions')).toBeNull()
+    expect(container.textContent).not.toContain('No editable data substitutions were reported.')
+  })
+
+  it('requires an exact decoded Aura preview before apply in the expanded native import review', async () => {
+    const actionPath = 'actions[0].control.steps[1].params.requests[2]'
+    const decodedPath = '$.actions[0].params.input::json.records[0].recordId'
+    const parameterization: Parameterization = {
+      suggestions: [{ id: 'aura-record', kind: 'data_param', var_name: 'recordid', replacement: '{{var.recordid}}',
+        confidence: 0.6, rule_id: 'data_param.aura_business_leaf', rationale: 'Business field', auto_apply: false, high_risk: false,
+        locations: [{ section: 'actions', action_index: 0, field: 'body', replace_text: '{{var.recordid}}', action_path: actionPath,
+          decoded_field_path: decodedPath, encoding_layers: ['url_form', 'json', 'json_string'], aura_route: [] }] }],
+      summary: { total: 1, by_kind: { data_param: 1 }, auto_apply_count: 0, review_count: 1, high_risk_count: 0, pre_applied_count: 0 },
+      aura_payload: { complete: true, recognized_bodies: 1, inspected_bodies: 1, rejected_bodies: 0, omitted_bodies: 0,
+        string_fields: 1, unsupported_number_fields: 0, unsupported_other_fields: 0, unsafe_path_fields: 0,
+        candidate_fields: 1, retained_candidates: 1, omitted_candidates: 0 },
+    }
+    const onApplied = vi.fn()
+    apiMock.applyImportParameterization.mockResolvedValue({ script, diffs: [], applied_count: 1 })
+    act(() => root.render(<ScriptImportReview title="Native Aura review" script={script} parameterization={parameterization} onParameterizationApplied={onApplied} />))
+    const panel = container.querySelector('.paramize-review')!
+    expect(panel.textContent).not.toContain('Apply Selected')
+    const previewButton = [...panel.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Preview parameter changes')!
+    expect(previewButton.disabled).toBe(true)
+    act(() => panel.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
+    expect(previewButton.disabled).toBe(false)
+    act(() => previewButton.click())
+    const preview = panel.querySelector('[aria-label="Parameter suggestion preview"]')!
+    expect(preview.textContent).toContain(actionPath)
+    expect(preview.textContent).toContain(decodedPath)
+    expect(preview.textContent).toContain('URL form message → JSON envelope → JSON string')
+    expect(apiMock.applyImportParameterization).not.toHaveBeenCalled()
+    const applyButton = [...panel.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Apply reviewed parameter changes')!
+    await act(async () => applyButton.click())
+    expect(apiMock.applyImportParameterization).toHaveBeenCalledWith(expect.objectContaining({ selected_ids: ['aura-record'] }))
+    expect(onApplied).toHaveBeenCalledTimes(1)
+  })
+
   it('retains LoadRunner section navigation when a compact review supplies preview data', () => {
     act(() => root.render(<ScriptImportReview compactReview title="LoadRunner review" script={script} previewData={script} />))
     const section = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.startsWith('Section'))!

@@ -40,7 +40,7 @@ var logicalNamePattern = regexp.MustCompile(`^` + LogicalNameInputPattern + `$`)
 var envKeyInvalidChars = regexp.MustCompile(`[^A-Z0-9_]+`)
 
 var sensitiveNames = map[string]struct{}{
-	"accesskey": {}, "accesskeyid": {}, "accesstoken": {}, "accountkey": {}, "acktoken": {}, "apikey": {},
+	"accesskey": {}, "accesskeyid": {}, "accesstoken": {}, "accountkey": {}, "acktoken": {}, "apikey": {}, "apitoken": {},
 	"auth": {}, "authentication": {}, "authorization": {}, "basicauth": {},
 	"clientsecret": {}, "connectionstring": {}, "cookie": {}, "credential": {}, "credentials": {}, "csrf": {},
 	"csrftoken": {}, "deliverytag": {}, "dsn": {}, "idsecret": {}, "idtoken": {},

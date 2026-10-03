@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
@@ -231,6 +232,8 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	vu.unresolvedFileRefs = nil
 	vu.unresolvedParameterRefs = nil
 	vu.unresolvedRunRefs = nil
+	vu.bodyResolutionError = nil
+	vu.structuredBodyResolvedAction = nil
 	target, redactedTarget := vu.interpolateWithSecrets(action.Target)
 	selector, redactedSelector := vu.interpolateWithSecrets(action.Selector)
 	value, redactedValue := vu.interpolateWithSecrets(action.Value)
@@ -316,6 +319,9 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	// {{secret.NAME}} has already been replaced by its value. Both per-action
 	// surfaces — the auth block and the target's URL userinfo — are enumerated
 	// by actionCredentialCompositeSurfaces.
+	if actionBodyTemplateValueEncoding(action.Metadata) == dsl.ImportAuraJSONTemplateValueEncoding && vu.bodyResolutionError == nil {
+		vu.structuredBodyResolvedAction = resolved
+	}
 	vu.actionCredentialComposites = resolvedActionCredentialComposites{
 		action: resolved,
 		values: runtimeActionCompositeValues(&action, resolved),
@@ -399,6 +405,29 @@ func actionBodyTemplateValueEncoding(metadata map[string]any) string {
 }
 
 func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding string) (string, string) {
+	if templateValueEncoding == dsl.ImportAuraJSONTemplateValueEncoding {
+		remaining := aurapayload.MaxTemplateOccurrences
+		var interpolationErr error
+		resolved, redacted, err := aurapayload.Resolve(body, encoding, func(value string) (string, string) {
+			if interpolationErr != nil {
+				return value, value
+			}
+			actual, safe, err := vu.interpolateWithSecretsTransformBounded(value, nil, aurapayload.MaxBodyBytes, &remaining)
+			if err != nil {
+				interpolationErr = err
+				return value, value
+			}
+			return actual, safe
+		})
+		if interpolationErr != nil {
+			err = interpolationErr
+		}
+		if err != nil {
+			vu.bodyResolutionError = err
+			return body, body
+		}
+		return resolved, redacted
+	}
 	interpolate := vu.interpolateWithSecrets
 	if templateValueEncoding == dsl.ImportURLFormTemplateValueEncodingQueryComponent {
 		interpolate = vu.interpolateURLFormTemplateValuesWithSecrets
@@ -680,37 +709,62 @@ func (vu *VUser) interpolateURLFormTemplateValuesWithSecrets(s string) (string, 
 }
 
 func (vu *VUser) interpolateWithSecretsTransform(s string, transform func(string) string) (string, string) {
+	resolved, redacted, _ := vu.interpolateWithSecretsTransformBounded(s, transform, 0, nil)
+	return resolved, redacted
+}
+
+// Selected structured bodies check length while appending each authored
+// occurrence. Runtime values are never expanded into an unbounded temporary
+// string before the codec can enforce its own escaped/output work bounds.
+func (vu *VUser) interpolateWithSecretsTransformBounded(s string, transform func(string) string, maxBytes int, remaining *int) (string, string, error) {
+	if maxBytes > 0 && len(s) > maxBytes {
+		return "", "", &aurapayload.Error{Code: aurapayload.ByteLimit}
+	}
 	if s == "" {
-		return s, s
+		return s, s, nil
 	}
-	matches := templatePattern.FindAllStringIndex(s, -1)
+	matchLimit := -1
+	if remaining != nil {
+		matchLimit = *remaining + 1
+	}
+	matches := templatePattern.FindAllStringIndex(s, matchLimit)
+	if remaining != nil {
+		if len(matches) > *remaining {
+			return "", "", &aurapayload.Error{Code: aurapayload.TokenLimit}
+		}
+		*remaining -= len(matches)
+	}
 	if len(matches) == 0 {
-		return s, s
+		return s, s, nil
 	}
-	var resolved strings.Builder
-	var redacted strings.Builder
+	var resolved, redacted strings.Builder
 	resolved.Grow(len(s))
 	redacted.Grow(len(s))
-	hasRedaction := false
-	last := 0
+	writePair := func(actual, safe string) error {
+		if maxBytes > 0 && (len(actual) > maxBytes-resolved.Len() || len(safe) > maxBytes-redacted.Len()) {
+			return &aurapayload.Error{Code: aurapayload.ByteLimit}
+		}
+		resolved.WriteString(actual)
+		redacted.WriteString(safe)
+		return nil
+	}
+	hasRedaction, last := false, 0
 	for _, match := range matches {
 		token := s[match[0]:match[1]]
 		expr := strings.TrimSpace(token[2 : len(token)-2])
-		resolved.WriteString(s[last:match[0]])
-		redacted.WriteString(s[last:match[0]])
+		if err := writePair(s[last:match[0]], s[last:match[0]]); err != nil {
+			return "", "", err
+		}
 		last = match[1]
 		if expr == "" {
-			resolved.WriteString(token)
-			redacted.WriteString(token)
+			if err := writePair(token, token); err != nil {
+				return "", "", err
+			}
 			continue
 		}
-		resolvedValue := token
-		redactedValue := token
-		resolvedOK := false
+		resolvedValue, redactedValue, resolvedOK := token, token, false
 		if value, ok := vu.resolveTemplateValue(expr); ok {
-			resolvedValue = value
-			redactedValue = value
-			resolvedOK = true
+			resolvedValue, redactedValue, resolvedOK = value, value, true
 		} else if strings.HasPrefix(expr, "secret.") {
 			vu.unresolvedSecretRefs = append(vu.unresolvedSecretRefs, expr)
 		} else if strings.HasPrefix(expr, "file.") {
@@ -729,22 +783,22 @@ func (vu *VUser) interpolateWithSecretsTransform(s string, transform func(string
 				redactedValue = "[FILE:" + strings.TrimSpace(strings.TrimPrefix(expr, "file.")) + "]"
 			}
 		}
-		if resolvedOK {
-			if transform != nil {
-				resolvedValue = transform(resolvedValue)
-				redactedValue = transform(redactedValue)
-			}
+		if resolvedOK && transform != nil {
+			resolvedValue = transform(resolvedValue)
+			redactedValue = transform(redactedValue)
 		}
-		resolved.WriteString(resolvedValue)
-		redacted.WriteString(redactedValue)
+		if err := writePair(resolvedValue, redactedValue); err != nil {
+			return "", "", err
+		}
 	}
-	resolved.WriteString(s[last:])
+	if err := writePair(s[last:], s[last:]); err != nil {
+		return "", "", err
+	}
 	if !hasRedaction {
-		resolvedString := resolved.String()
-		return resolvedString, resolvedString
+		actual := resolved.String()
+		return actual, actual, nil
 	}
-	redacted.WriteString(s[last:])
-	return resolved.String(), redacted.String()
+	return resolved.String(), redacted.String(), nil
 }
 
 func (vu *VUser) interpolateMap(m map[string]string) map[string]string {
