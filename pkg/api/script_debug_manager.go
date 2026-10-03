@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,30 +75,31 @@ type ScriptDebugLogEntry struct {
 }
 
 type ScriptDebugSession struct {
-	ID                string                      `json:"id"`
-	Mode              string                      `json:"mode,omitempty"`
-	ScriptID          string                      `json:"script_id,omitempty"`
-	ProjectID         string                      `json:"project_id,omitempty"`
-	Status            string                      `json:"status"`
-	Group             string                      `json:"group"`
-	Protocol          string                      `json:"protocol"`
-	LogLevel          string                      `json:"log_level"`
-	RuntimeProfile    engine.ReplayRuntimeProfile `json:"runtime_profile,omitempty"`
-	Preflight         *ReplayPreflight            `json:"preflight,omitempty"`
-	StartedAt         *time.Time                  `json:"started_at,omitempty"`
-	CompletedAt       *time.Time                  `json:"completed_at,omitempty"`
-	CurrentEventIndex int                         `json:"current_event_index"`
-	CurrentAction     *engine.ReplayDebugAction   `json:"current_action,omitempty"`
-	CurrentEvent      *engine.ReplayActionEvent   `json:"current_event,omitempty"`
-	Breakpoints       []ScriptDebugBreakpoint     `json:"breakpoints,omitempty"`
-	BreakOnFailure    bool                        `json:"break_on_failure"`
-	Events            []engine.ReplayActionEvent  `json:"events,omitempty"`
-	DroppedEventCount int                         `json:"dropped_event_count,omitempty"`
-	Logs              []ScriptDebugLogEntry       `json:"logs,omitempty"`
-	RawOutput         []string                    `json:"raw_output,omitempty"`
-	logBytes          int
-	FinalReport       *engine.ReplayReport `json:"report,omitempty"`
-	Error             string               `json:"error,omitempty"`
+	RuntimeEvidenceUnavailable bool                        `json:"runtime_evidence_unavailable,omitempty"`
+	ID                         string                      `json:"id"`
+	Mode                       string                      `json:"mode,omitempty"`
+	ScriptID                   string                      `json:"script_id,omitempty"`
+	ProjectID                  string                      `json:"project_id,omitempty"`
+	Status                     string                      `json:"status"`
+	Group                      string                      `json:"group"`
+	Protocol                   string                      `json:"protocol"`
+	LogLevel                   string                      `json:"log_level"`
+	RuntimeProfile             engine.ReplayRuntimeProfile `json:"runtime_profile,omitempty"`
+	Preflight                  *ReplayPreflight            `json:"preflight,omitempty"`
+	StartedAt                  *time.Time                  `json:"started_at,omitempty"`
+	CompletedAt                *time.Time                  `json:"completed_at,omitempty"`
+	CurrentEventIndex          int                         `json:"current_event_index"`
+	CurrentAction              *engine.ReplayDebugAction   `json:"current_action,omitempty"`
+	CurrentEvent               *engine.ReplayActionEvent   `json:"current_event,omitempty"`
+	Breakpoints                []ScriptDebugBreakpoint     `json:"breakpoints,omitempty"`
+	BreakOnFailure             bool                        `json:"break_on_failure"`
+	Events                     []engine.ReplayActionEvent  `json:"events,omitempty"`
+	DroppedEventCount          int                         `json:"dropped_event_count,omitempty"`
+	Logs                       []ScriptDebugLogEntry       `json:"logs,omitempty"`
+	RawOutput                  []string                    `json:"raw_output,omitempty"`
+	logBytes                   int
+	FinalReport                *engine.ReplayReport `json:"report,omitempty"`
+	Error                      string               `json:"error,omitempty"`
 	// ConditionEvidence carries the most recent evaluated operands/result for each
 	// control_if / control_loop container, keyed by conditionEvidenceKey, so the
 	// debugger can show why a branch was taken or a loop pass ran.
@@ -454,6 +456,9 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 			}
 			session.CompletedAt = &completedAt
 			session.terminalFenceEstablished = terminalFenceEstablished
+			if report != nil && report.RuntimeEvidenceUnavailable {
+				session.omitRuntimeEvidenceLocked()
+			}
 			if report != nil && terminalFenceEstablished {
 				session.FinalReport = report
 				session.Events = nil
@@ -858,7 +863,8 @@ func sessionRetentionSortTime(startedAt *time.Time, terminalAt *time.Time, lastA
 }
 
 func (m *ScriptDebugManager) handleReplayProgress(ctx context.Context, session *ScriptDebugSession, event engine.ReplayProgressEvent) {
-	if session == nil || ctx.Err() != nil {
+	unavailableSignal := event.RuntimeEvidenceUnavailable || (event.Report != nil && event.Report.RuntimeEvidenceUnavailable)
+	if session == nil || (ctx.Err() != nil && !unavailableSignal) {
 		return
 	}
 	m.mu.RLock()
@@ -867,6 +873,11 @@ func (m *ScriptDebugManager) handleReplayProgress(ctx context.Context, session *
 		return
 	}
 	session.mu.Lock()
+	newlyUnavailable := unavailableSignal && !session.RuntimeEvidenceUnavailable && !session.workerAbandoned
+	if unavailableSignal && !session.workerAbandoned {
+		session.omitRuntimeEvidenceLocked()
+	}
+	unavailable := session.RuntimeEvidenceUnavailable
 	abandoned := session.workerAbandoned
 	if !abandoned {
 		// Engine callbacks are authoritative liveness evidence for WebSocket-only
@@ -876,6 +887,28 @@ func (m *ScriptDebugManager) handleReplayProgress(ctx context.Context, session *
 	session.mu.Unlock()
 	if abandoned {
 		return
+	}
+	if ctx.Err() != nil {
+		// Draining cancelled workers can discover a classification failure.
+		// Admit only that omission signal; never restore cancelled progress.
+		if newlyUnavailable {
+			m.broadcast("script_debug_evidence_unavailable", session, event.EventIndex, nil, nil, nil)
+		}
+		return
+	}
+	if unavailable {
+		// A later callback cannot restore detail retained under an older matcher.
+		event.Action = cloneScriptDebugAction(event.Action)
+		engine.OmitUnavailableReplayDebugAction(event.Action)
+		event.Condition = nil
+		if event.Event != nil {
+			event.Event = omitUnavailableScriptDebugEvent(event.Event)
+			if event.Event == nil {
+				session.mu.Lock()
+				session.DroppedEventCount++
+				session.mu.Unlock()
+			}
+		}
 	}
 	switch event.Type {
 	case engine.ReplayProgressActionStarted:
@@ -894,6 +927,8 @@ func (m *ScriptDebugManager) handleReplayProgress(ctx context.Context, session *
 		}
 		if event.Event != nil {
 			m.broadcast(messageType, session, event.EventIndex, event.Event, event.Action, nil)
+		} else if newlyUnavailable {
+			m.broadcast("script_debug_evidence_unavailable", session, event.EventIndex, nil, nil, nil)
 		}
 	case engine.ReplayProgressEventRun:
 		var retainedEvent *engine.ReplayActionEvent
@@ -928,6 +963,12 @@ func (m *ScriptDebugManager) handleReplayProgress(ctx context.Context, session *
 			m.broadcast("script_debug_paused", session, event.EventIndex, nil, nil, nil)
 		}
 	case engine.ReplayProgressCondition:
+		if unavailable {
+			// The first unavailable callback can be a condition delta. Publish the
+			// admission flag even though its operands must be omitted.
+			m.broadcast("script_debug_condition", session, event.EventIndex, nil, event.Action, nil)
+			break
+		}
 		if event.Action != nil && event.Condition != nil {
 			session.mu.Lock()
 			if session.ConditionEvidence == nil {
@@ -937,6 +978,12 @@ func (m *ScriptDebugManager) handleReplayProgress(ctx context.Context, session *
 			session.ConditionEvidence[key] = *event.Condition
 			session.mu.Unlock()
 			m.broadcast("script_debug_condition", session, event.EventIndex, nil, event.Action, nil)
+		}
+	default:
+		// Final refresh can fail before deferred protocol cleanup returns.
+		// WebSocket-only clients must invalidate prior details immediately.
+		if newlyUnavailable {
+			m.broadcast("script_debug_evidence_unavailable", session, event.EventIndex, nil, nil, nil)
 		}
 	}
 }
@@ -1417,6 +1464,7 @@ func (m *ScriptDebugManager) broadcast(messageType string, session *ScriptDebugS
 	}
 	session.mu.RLock()
 	sessionID, scriptID, projectID := session.ID, session.ScriptID, session.ProjectID
+	unavailable := session.RuntimeEvidenceUnavailable
 	session.mu.RUnlock()
 	message := map[string]any{
 		"type":              messageType,
@@ -1425,6 +1473,18 @@ func (m *ScriptDebugManager) broadcast(messageType string, session *ScriptDebugS
 		"script_id":         scriptID,
 		"project_id":        projectID,
 		"timestamp":         time.Now(),
+	}
+	if unavailable {
+		message["runtime_evidence_unavailable"] = true
+		action = cloneScriptDebugAction(action)
+		engine.OmitUnavailableReplayDebugAction(action)
+		if event != nil {
+			event = omitUnavailableScriptDebugEvent(event)
+		}
+		if report != nil {
+			report = cloneBrowserReplayReport(report)
+			engine.OmitUnavailableReplayReport(report)
+		}
 	}
 	// Per-leaf messages already contain their delta. Attaching the accumulated
 	// session here made n actions serialize O(n²) data. Lifecycle/configuration
@@ -1562,17 +1622,31 @@ func (s *ScriptDebugSession) terminalSnapshot() *ScriptDebugSession {
 func (s *ScriptDebugSession) snapshotLocked() *ScriptDebugSession {
 	clone := s.snapshotBaseLocked()
 	clone.FinalReport = cloneBrowserReplayReport(s.FinalReport)
+	if s.RuntimeEvidenceUnavailable {
+		engine.OmitUnavailableReplayReport(clone.FinalReport)
+	}
 	if s.CurrentAction != nil {
 		clone.CurrentAction = cloneScriptDebugAction(s.CurrentAction)
+		if s.RuntimeEvidenceUnavailable {
+			engine.OmitUnavailableReplayDebugAction(clone.CurrentAction)
+		}
 	}
 	if s.CurrentEvent != nil {
 		currentEvent := cloneBrowserReplayEvent(*s.CurrentEvent)
 		clone.CurrentEvent = &currentEvent
+		if s.RuntimeEvidenceUnavailable {
+			clone.CurrentEvent = omitUnavailableScriptDebugEvent(&currentEvent)
+		}
 	}
 	if len(s.Events) > 0 {
 		clone.Events = make([]engine.ReplayActionEvent, len(s.Events))
 		for i, event := range s.Events {
 			clone.Events[i] = cloneBrowserReplayEvent(event)
+		}
+		if s.RuntimeEvidenceUnavailable {
+			projection := &engine.ReplayReport{Events: clone.Events}
+			engine.OmitUnavailableReplayReport(projection)
+			clone.Events = projection.Events
 		}
 	}
 	return clone
@@ -1580,22 +1654,23 @@ func (s *ScriptDebugSession) snapshotLocked() *ScriptDebugSession {
 
 func (s *ScriptDebugSession) snapshotBaseLocked() *ScriptDebugSession {
 	clone := &ScriptDebugSession{
-		ID:                s.ID,
-		Mode:              s.Mode,
-		ScriptID:          s.ScriptID,
-		ProjectID:         s.ProjectID,
-		Status:            s.Status,
-		Group:             s.Group,
-		Protocol:          s.Protocol,
-		LogLevel:          s.LogLevel,
-		RuntimeProfile:    cloneEngineReplayRuntimeProfile(&s.RuntimeProfile),
-		Preflight:         cloneReplayPreflight(s.Preflight),
-		StartedAt:         cloneReplaySessionTime(s.StartedAt),
-		CompletedAt:       cloneReplaySessionTime(s.CompletedAt),
-		CurrentEventIndex: s.CurrentEventIndex,
-		DroppedEventCount: s.DroppedEventCount,
-		BreakOnFailure:    s.BreakOnFailure,
-		Error:             s.Error,
+		ID:                         s.ID,
+		RuntimeEvidenceUnavailable: s.RuntimeEvidenceUnavailable,
+		Mode:                       s.Mode,
+		ScriptID:                   s.ScriptID,
+		ProjectID:                  s.ProjectID,
+		Status:                     s.Status,
+		Group:                      s.Group,
+		Protocol:                   s.Protocol,
+		LogLevel:                   s.LogLevel,
+		RuntimeProfile:             cloneEngineReplayRuntimeProfile(&s.RuntimeProfile),
+		Preflight:                  cloneReplayPreflight(s.Preflight),
+		StartedAt:                  cloneReplaySessionTime(s.StartedAt),
+		CompletedAt:                cloneReplaySessionTime(s.CompletedAt),
+		CurrentEventIndex:          s.CurrentEventIndex,
+		DroppedEventCount:          s.DroppedEventCount,
+		BreakOnFailure:             s.BreakOnFailure,
+		Error:                      s.Error,
 	}
 	if len(s.Breakpoints) > 0 {
 		clone.Breakpoints = make([]ScriptDebugBreakpoint, len(s.Breakpoints))
@@ -1615,6 +1690,12 @@ func (s *ScriptDebugSession) snapshotBaseLocked() *ScriptDebugSession {
 			clone.Breakpoints[i] = cloned
 		}
 	}
+	if s.RuntimeEvidenceUnavailable {
+		clone.Group = "script debug"
+		clone.RuntimeProfile = engine.ReplayRuntimeProfile{}
+		clone.Error = "Runtime evidence unavailable"
+		return clone
+	}
 	if len(s.Logs) > 0 {
 		clone.Logs = append([]ScriptDebugLogEntry(nil), s.Logs...)
 	}
@@ -1628,6 +1709,20 @@ func (s *ScriptDebugSession) snapshotBaseLocked() *ScriptDebugSession {
 		}
 	}
 	return clone
+}
+
+// The bounded report projection may evict even its sole event when numeric
+// evidence cannot be encoded. Keep that omission safe at every API boundary.
+func omitUnavailableScriptDebugEvent(event *engine.ReplayActionEvent) *engine.ReplayActionEvent {
+	if event == nil {
+		return nil
+	}
+	projection := &engine.ReplayReport{Events: []engine.ReplayActionEvent{*event}}
+	engine.OmitUnavailableReplayReport(projection)
+	if len(projection.Events) == 0 {
+		return nil
+	}
+	return &projection.Events[0]
 }
 
 func cloneScriptDebugAction(action *engine.ReplayDebugAction) *engine.ReplayDebugAction {
@@ -1652,7 +1747,27 @@ func cloneScriptDebugAction(action *engine.ReplayDebugAction) *engine.ReplayDebu
 	return &cloned
 }
 
+// omitRuntimeEvidenceLocked invalidates every public cache once credential
+// classification fails. Private diagnosis is also rejected as incomplete.
+// The engine's terminal report retains bounded structural/numeric outcomes.
+func (s *ScriptDebugSession) omitRuntimeEvidenceLocked() {
+	if s.RuntimeEvidenceUnavailable {
+		return
+	}
+	s.RuntimeEvidenceUnavailable = true
+	s.CurrentAction, s.CurrentEvent = nil, nil
+	s.Events, s.eventJSONBytes = nil, nil
+	s.retainedEventJSONBytes = 0
+	s.Logs, s.RawOutput, s.ConditionEvidence = nil, nil, nil
+	s.logBytes = 0
+	s.Error = "Runtime evidence unavailable"
+	s.rejectCorrelationEvidenceLocked("runtime evidence unavailable")
+}
+
 func (s *ScriptDebugSession) appendLogLocked(level string, category string, message string, raw string, event *engine.ReplayActionEvent) {
+	if s.RuntimeEvidenceUnavailable {
+		return
+	}
 	level = normalizeDebugLogLevel(level)
 	if debugLogLevelWeight(level) > debugLogLevelWeight(s.LogLevel) {
 		return
@@ -2045,12 +2160,26 @@ func (c scriptDebugController) AfterAction(ctx context.Context, action engine.Re
 		return nil
 	}
 
+	actionCopy := *cloneScriptDebugAction(&action)
 	paused := false
 	if !c.manager.withCurrentWorkerSession(c.session, func() {
 		c.session.mu.Lock()
 		defer c.session.mu.Unlock()
 		if !c.session.BreakOnFailure || c.session.Status != ScriptDebugRunning {
 			return
+		}
+		// Concurrent leaves publish their evidence after joining. The actual
+		// pause boundary is the group supplied by the engine, which must also
+		// be authoritative in polling snapshots.
+		c.session.CurrentAction = &actionCopy
+		if actionCopy.ActionType == "http_sequence" {
+			// The final sibling may have succeeded, or the failed leaf may have
+			// been omitted. Neither is a valid substitute for failure evidence.
+			c.session.CurrentEvent = pausedConcurrentFailureEvent(c.session.Events, actionCopy, *event)
+			c.session.CurrentEventIndex = -1
+			if c.session.CurrentEvent != nil {
+				c.session.CurrentEventIndex = c.session.CurrentEvent.EventIndex
+			}
 		}
 		c.session.Status = ScriptDebugPaused
 		c.session.stepOnce = false
@@ -2063,7 +2192,6 @@ func (c scriptDebugController) AfterAction(ctx context.Context, action engine.Re
 		return nil
 	}
 
-	actionCopy := action
 	c.manager.broadcastIfCurrent("script_debug_paused", c.session, actionCopy.EventIndex, nil, &actionCopy, nil)
 
 	for {
@@ -2091,6 +2219,24 @@ func (c scriptDebugController) AfterAction(ctx context.Context, action engine.Re
 		case <-stateChanged:
 		}
 	}
+}
+
+// pausedConcurrentFailureEvent selects only retained evidence from this exact
+// group invocation. Nil explicitly means no matching failed evidence remains.
+func pausedConcurrentFailureEvent(events []engine.ReplayActionEvent, action engine.ReplayDebugAction, group engine.ReplayActionEvent) *engine.ReplayActionEvent {
+	for _, leaf := range events {
+		if leaf.Success || leaf.Phase != action.Phase || leaf.ActionIndex != action.ActionIndex || leaf.StartedAt.Before(group.StartedAt) || !slices.Equal(leaf.IterationPath, action.IterationPath) {
+			continue
+		}
+		child := leaf.RequestIndex != nil && leaf.ParentActionName == action.ActionName && !leaf.CompletedAt.After(group.CompletedAt) && len(leaf.StepPath) > len(action.StepPath) && slices.Equal(leaf.StepPath[:len(action.StepPath)], action.StepPath)
+		// An admission failure is synthesized after the attempted group returns.
+		parent := leaf.RequestIndex == nil && leaf.ActionName == action.ActionName && leaf.ActionType == "http_sequence" && slices.Equal(leaf.StepPath, action.StepPath)
+		if child || parent {
+			failure := cloneBrowserReplayEvent(leaf)
+			return &failure
+		}
+	}
+	return nil
 }
 
 // debugLeafSuffix renders the sub-request / sub-step identity of a leaf action

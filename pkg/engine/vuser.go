@@ -98,7 +98,12 @@ type VUser struct {
 	unresolvedRunRefs []string
 	// bodyResolutionError prevents an opted-in structural body from falling back
 	// to legacy interpolation after a malformed payload or a codec limit.
-	bodyResolutionError error
+	bodyResolutionError                           error
+	concurrentPreparation                         *httpPreparationBudget
+	concurrentPublicationRedaction                *RedactionConfig
+	concurrentPublicationUnavailable              bool
+	concurrentGroupMetadata                       map[string]any
+	concurrentGroupHierarchy, concurrentGroupPage string
 	// The exact resolved action prevents reclassifying inserted literal body
 	// data as newly authored parameter references after structural resolution.
 	structuredBodyResolvedAction *protocol.Action
@@ -1667,7 +1672,7 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 	}
 	tctx, tcancel := teardownContext()
 	defer tcancel()
-	if err := callProtocolTeardown(tctx, vu.Proto, vu.RedactionConfig); err != nil {
+	if err := callProtocolTeardown(tctx, vu.Proto, vu.resultPublicationRedactionConfig()); err != nil {
 		return err
 	}
 	vu.bindRuntimeTextRedactor()

@@ -1796,7 +1796,13 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 	}
 	detachInitAdmission()
 	defer cancelInit()
-	defer runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
+	var vu *VUser
+	defer runProtocolTeardown(vuProto, func() *RedactionConfig {
+		if vu != nil {
+			return vu.resultPublicationRedactionConfig()
+		}
+		return group.RedactionConfig
+	})
 	// Protocol adapters are allowed to ignore their Init context. Recheck the
 	// lifecycle boundary before creating any user-phase cleanup obligation.
 	if boundaryCtx.Err() != nil || actionCtx.Err() != nil {
@@ -1807,7 +1813,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 	if phase != "teardown" && mge.gracefulCtx != nil {
 		entitledBoundaryCtx = mge.gracefulCtx
 	}
-	vu := &VUser{
+	vu = &VUser{
 		ID:                           -1,
 		TotalVUsers:                  group.VUsers,
 		ParameterAllocation:          groupParameterAllocation(group, 0),
@@ -2058,7 +2064,7 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 		var vu *VUser
 		redaction := func() *RedactionConfig {
 			if vu != nil {
-				return vu.RedactionConfig
+				return vu.resultPublicationRedactionConfig()
 			}
 			return prepared.group.RedactionConfig
 		}
@@ -2564,7 +2570,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		var vu *VUser
 		redaction := func() *RedactionConfig {
 			if vu != nil {
-				return vu.RedactionConfig
+				return vu.resultPublicationRedactionConfig()
 			}
 			return group.RedactionConfig
 		}

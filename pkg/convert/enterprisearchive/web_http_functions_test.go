@@ -25,8 +25,8 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_cache_cleanup":              {"web", SourceFunctionSupportExecutable},
 	"web_cleanup_auto_headers":       {"web", SourceFunctionSupportExecutable},
 	"web_cleanup_cookies":            {"web", SourceFunctionSupportExecutable},
-	"web_concurrent_end":             {"web", SourceFunctionSupportNativeNoop},
-	"web_concurrent_start":           {"web", SourceFunctionSupportNativeNoop},
+	"web_concurrent_end":             {"web", SourceFunctionSupportExecutable},
+	"web_concurrent_start":           {"web", SourceFunctionSupportExecutable},
 	"web_convert_date_param":         {"parameter", SourceFunctionSupportReviewOnly},
 	"web_convert_from_formatted":     {"parameter", SourceFunctionSupportReviewOnly},
 	"web_convert_param":              {"parameter", SourceFunctionSupportExecutable},
@@ -230,9 +230,9 @@ func sampleWebFunctionCall(name string) string {
 	case "web_remove_auto_filter":
 		return `web_remove_auto_filter(LAST);`
 	case "web_concurrent_start":
-		return `web_concurrent_start(NULL);`
+		return `web_concurrent_start(NULL);web_url("Concurrent", "URL=https://example.test/concurrent", LAST);web_concurrent_end(NULL);`
 	case "web_concurrent_end":
-		return `web_concurrent_end(NULL);`
+		return `web_concurrent_start(NULL);web_url("Concurrent", "URL=https://example.test/concurrent", LAST);web_concurrent_end(NULL);`
 	case "web_convert_param":
 		return `web_convert_param("Param", "SourceEncoding=HTML", "TargetEncoding=URL", LAST);`
 	case "web_convert_date_param":
@@ -505,18 +505,6 @@ func TestWebStreamFunctionsAreReviewOnly(t *testing.T) {
 	}
 	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "web_stream_open", SourceFunctionSupportReviewOnly)
 	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "web_stream_play", SourceFunctionSupportReviewOnly)
-}
-
-func TestWebConcurrentGroupWarnsAndSerializes(t *testing.T) {
-	result := convertSingleWebSource(t, `
-	web_concurrent_start(NULL);
-	web_url("A", "URL=https://example.test/a", LAST);
-	web_url("B", "URL=https://example.test/b", LAST);
-	web_concurrent_end(NULL);`)
-	if !hasWarningContaining(result.Warnings, "replayed sequentially") {
-		t.Errorf("expected a serialization warning for web_concurrent_start, got %v", result.Warnings)
-	}
-	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "web_concurrent_start", SourceFunctionSupportNativeNoop)
 }
 
 func hasWarningContaining(warnings []string, substr string) bool {

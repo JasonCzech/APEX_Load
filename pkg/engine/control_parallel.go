@@ -18,12 +18,13 @@ const (
 )
 
 type parallelBranchResult struct {
-	index     int
-	name      string
-	variables map[string]string
-	extracted map[string]int
-	err       error
-	failed    bool
+	index                      int
+	name                       string
+	variables                  map[string]string
+	extracted                  map[string]int
+	err                        error
+	failed                     bool
+	publicationRedactionFailed bool
 }
 
 type parallelResultSink struct {
@@ -78,6 +79,9 @@ func (vu *VUser) runParallelBranches(ctx context.Context, control *dsl.ControlFl
 	if vu == nil || vu.Script == nil || control == nil || len(control.Branches) < 2 {
 		return false
 	}
+	if vu.runtimeCredentialRedactionError() != nil {
+		return false
+	}
 	if !parallelActionsRuntimeSafe(control.Branches) {
 		return false
 	}
@@ -114,6 +118,12 @@ func (vu *VUser) runParallelBranches(ctx context.Context, control *dsl.ControlFl
 		}()
 	}
 	wg.Wait()
+	for _, result := range results {
+		if result.publicationRedactionFailed {
+			vu.failRuntimeCredentialRedaction(fmt.Errorf("runtime credential redaction capacity exceeded"))
+			return false
+		}
+	}
 	success := true
 	for _, result := range results {
 		if result.err != nil || result.failed {
@@ -133,6 +143,10 @@ func (vu *VUser) runParallelBranches(ctx context.Context, control *dsl.ControlFl
 
 func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.ParallelBranch, phase string) (result parallelBranchResult) {
 	result = parallelBranchResult{index: index, name: strings.TrimSpace(branch.Name)}
+	if err := vu.runtimeCredentialRedactionError(); err != nil {
+		result.err, result.failed = err, true
+		return
+	}
 	instance, err := protocol.Get(vu.Script.Protocol)
 	if err != nil {
 		result.err, result.failed = err, true
@@ -171,6 +185,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		extractedVariables:           make(map[string]int),
 		sourceTransactions:           make(map[string]*sourceTransactionRuntimeState),
 	}
+	defer func() { result.publicationRedactionFailed = branchVU.runtimeCredentialRedactionErr != nil }()
 	defer branchVU.closeErrorLogs()
 	branchVU.ensureImportedCredentialInspection()
 	branchVU.bindRuntimeTextRedactor()
@@ -185,7 +200,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 	defer func() {
 		teardownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
-		if teardownErr := callProtocolTeardown(teardownCtx, instance, vu.RedactionConfig); teardownErr != nil && result.err == nil {
+		if teardownErr := callProtocolTeardown(teardownCtx, instance, branchVU.resultPublicationRedactionConfig()); teardownErr != nil && result.err == nil {
 			result.err, result.failed = teardownErr, true
 		}
 	}()

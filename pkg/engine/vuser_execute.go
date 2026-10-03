@@ -32,6 +32,10 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 			}
 		}
 	}
+	declaredTransactionName := ""
+	if result.BusinessTransaction {
+		declaredTransactionName = result.ActionName
+	}
 	// CorrelationEvidence is a replay-only, pre-scrub side channel. No metrics or
 	// ResultSink implementation may retain it, even accidentally in-process.
 	result.CorrelationEvidence = nil
@@ -59,10 +63,23 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 		clearUnredactableResultEvidence(result)
 	}
 	retainResponseBody := shouldRetainResultResponseBody(result, logCfg)
-	scrubSensitiveStructuredResult(result, vu.RedactionConfig)
-	scrubSensitiveResultWithOptions(result, vu.RedactionConfig, retainResponseBody)
+	publicationConfig := vu.resultPublicationRedactionConfig()
+	// Concurrent workers retain exact raw outputs until source-ordered merge.
+	// A complete joined matcher governs their public projection independently;
+	// failed joined admission cannot publish neutral replicas of unseen tokens.
+	if vu.resultPublicationUnavailable() {
+		result.Extractions = nil
+		result.ExtractionsIncomplete = true
+		if result.ProtocolEvidence == nil {
+			result.ProtocolEvidence = make(map[string]any)
+		}
+		result.ProtocolEvidence["concurrent_group_extractions_omitted"] = true
+	}
+	scrubSensitiveStructuredResult(result, publicationConfig)
+	scrubSensitiveResultWithOptions(result, publicationConfig, retainResponseBody)
 	boundResultEvidence(result)
 	result.PropertyDimensions = promotedPropertyDimensions(vu.Script, result.Extractions)
+	metricResult := vu.metricResultWithDeclaredIdentity(result, declaredTransactionName)
 	if result.BusinessTransaction {
 		// Streamed adapters (notably java_vuser) emit completed business
 		// transactions as child results. Route those through the same cumulative
@@ -70,9 +87,9 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 		// ordinary ResultSink call below exactly once. Some sinks already interpret
 		// BusinessTransaction in RecordResult, so also calling TransactionSink here
 		// would duplicate their transaction records.
-		vu.Metrics.RecordTransactionResult(result)
+		vu.Metrics.RecordTransactionResult(metricResult)
 	} else {
-		vu.Metrics.Record(result)
+		vu.Metrics.Record(metricResult)
 	}
 	vu.handleSnapshot(result, errCfg)
 	if vu.ResultSink != nil {
@@ -80,36 +97,31 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	}
 }
 
+// Explicit aggregation keys remain internal metric identity even when public
+// runtime evidence is unavailable. No request/source detail is restored.
+func (vu *VUser) metricResultWithDeclaredIdentity(result *protocol.Result, transactionName string) *protocol.Result {
+	if result == nil || !vu.resultPublicationUnavailable() {
+		return result
+	}
+	copy := *result
+	copy.Group = vu.Group
+	if result.BusinessTransaction && transactionName != "" {
+		copy.ActionName = transactionName
+	}
+	return &copy
+}
+
 func clearUnredactableResultEvidence(result *protocol.Result) {
 	if result == nil {
 		return
 	}
+	omitConcurrentPublicEvidence(result)
 	result.Success = false
+	result.ActionName = "Action evidence unavailable"
 	result.ErrorMessage = "runtime credential redaction failed"
-	result.ResponseBody = ""
 	result.CorrelationEvidence = nil
 	result.ExtractionsIncomplete = true
 	result.Extractions = nil
-	result.CorrelationID = ""
-	result.DependencyTarget = ""
-	result.PageURL = ""
-	result.PageTitle = ""
-	result.HTML = ""
-	result.ScreenshotBase64 = ""
-	result.ConsoleEntries = nil
-	result.NetworkEntries = nil
-	result.DOMSummary = nil
-	result.ClientMetrics = nil
-	result.ServerTelemetry = nil
-	result.ProtocolEvidence = nil
-	result.Snapshot = nil
-	result.SourceAction = ""
-	result.SourceActionName = ""
-	result.SourceTransaction = ""
-	result.SourcePath = ""
-	result.Hierarchy = ""
-	result.SourceUID = ""
-	result.OperationKind = ""
 }
 
 func shouldRetainResultResponseBody(result *protocol.Result, logCfg dsl.LogConfig) bool {
@@ -193,12 +205,15 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	// not pass through recordResult. Apply the same detach, exact-secret
 	// redaction, and evidence bounds before either metrics or archive sinks can
 	// retain adapter-controlled metadata or error text.
+	if vu.runtimeCredentialRedactionErr != nil {
+		clearUnredactableResultEvidence(tx)
+	}
 	scrubSensitiveStructuredResult(tx, vu.RedactionConfig)
 	scrubSensitiveResultWithOptions(tx, vu.RedactionConfig, false)
 	boundResultEvidence(tx)
 	tx.PropertyDimensions = promotedPropertyDimensions(vu.Script, tx.Extractions)
 	if vu.Metrics != nil {
-		vu.Metrics.RecordTransactionResult(tx)
+		vu.Metrics.RecordTransactionResult(vu.metricResultWithDeclaredIdentity(tx, name))
 	}
 	if sink, ok := vu.ResultSink.(TransactionSink); ok {
 		_ = sink.RecordTransaction(tx)
@@ -668,6 +683,10 @@ func (vu *VUser) executeWithRetryStream(
 	errCfg dsl.ErrorHandlingConfig,
 	emit func(*protocol.Result) error,
 ) (finalResult *protocol.Result, finalErr error) {
+	return vu.executeRetryInternal(ctx, action, errCfg, emit, false)
+}
+
+func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Action, errCfg dsl.ErrorHandlingConfig, emit func(*protocol.Result) error, prepared bool) (finalResult *protocol.Result, finalErr error) {
 	var actionSpan trace.Span
 	attemptCount := 0
 	if apptelemetry.ShouldStartActionSpan(ctx) {
@@ -706,14 +725,16 @@ func (vu *VUser) executeWithRetryStream(
 			actionSpan.End()
 		}()
 	}
-	if err := vu.checkResolvedSecrets(); err != nil {
-		return nil, err
-	}
-	if err := vu.runtimeCredentialRedactionError(); err != nil {
-		return nil, err
-	}
-	if err := vu.extendRuntimeRedactionForResolvedAction(action); err != nil {
-		return nil, err
+	if !prepared {
+		if err := vu.checkResolvedSecrets(); err != nil {
+			return nil, err
+		}
+		if err := vu.runtimeCredentialRedactionError(); err != nil {
+			return nil, err
+		}
+		if err := vu.extendRuntimeRedactionForResolvedAction(action); err != nil {
+			return nil, err
+		}
 	}
 	if errCfg.MaxRetries < 0 || errCfg.MaxRetries > dsl.MaxErrorRetries {
 		return nil, fmt.Errorf("max_retries must be between 0 and %d", dsl.MaxErrorRetries)
@@ -794,6 +815,15 @@ func (vu *VUser) executeWithRetryStream(
 		}
 		result, err := vu.safeProtoExecuteStream(ctx, action, childEmitter)
 		if err != nil {
+			if result != nil && (result.ExtractionsIncomplete || len(result.Extractions) != 0) {
+				// Diagnostic outputs will be discarded without a variable merge.
+				// Their classification cannot silently disappear while an earlier
+				// sibling/alias or the opaque error remains publicly observable.
+				// Prepared workers own this error; the join propagates it before
+				// any source-ordered parent publication.
+				vu.failRuntimeCredentialRedaction(fmt.Errorf("runtime credential diagnostic extraction classification unavailable"))
+				err = fmt.Errorf("runtime credential diagnostic extraction classification unavailable")
+			}
 			// Adapters are permitted to return diagnostic Result data alongside an
 			// error. The caller intentionally discards that result, so detach and zero
 			// the replay-only raw exchange before an adapter-retained pointer can outlive
@@ -817,6 +847,14 @@ func (vu *VUser) executeWithRetryStream(
 		applyProtocolResultSourceMetadata(result, action.Metadata)
 		applyProtocolResultAttribution(result, action)
 		applyMessageDetailRequest(result, action)
+		if !prepared {
+			if err := vu.observeExtractionClassification(result); err != nil {
+				clearUnredactableResultEvidence(result)
+				// A complete matcher cannot be recovered by another retry. No
+				// further traffic/publication may use the discarded output.
+				return result, nil
+			}
+		}
 		lastResult = result
 
 		if result.Success {
@@ -910,7 +948,14 @@ func boundedRetryBackoff(base time.Duration, attempt int) time.Duration {
 }
 
 func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Action, errCfg dsl.ErrorHandlingConfig) (*protocol.Result, error) {
+	mode, _, modeErr := dsl.HTTPSequenceExecutionSettings(action)
+	if modeErr == nil && mode == dsl.HTTPSequenceConcurrent {
+		return vu.executeConcurrentHTTPSequence(ctx, action, errCfg)
+	}
 	children, err := httpSequenceChildActions(action)
+	if modeErr != nil {
+		err = modeErr
+	}
 	start := time.Now()
 	aggregate := &protocol.Result{
 		ActionName:          action.Name,
@@ -975,10 +1020,11 @@ func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Actio
 			continue
 		}
 		vu.logDiagnosticResult("sequence action", child.Name, resolved, result)
+		rawExtractions := cloneStringMap(result.Extractions)
 		vu.recordResult(result, errCfg, vu.Script.Config.Log)
 		measuredDuration += result.Duration
 		copySequenceSourceResult(aggregate, result)
-		for key, value := range result.Extractions {
+		for key, value := range rawExtractions {
 			if err := protocol.StoreExtraction(aggregate, key, value); err != nil {
 				aggregate.Success = false
 				aggregate.Extractions = nil

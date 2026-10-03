@@ -203,6 +203,7 @@ import {
   upsertReplayActivity,
 } from './scriptEditorReplayModel'
 import { useScriptReplayDebuggerController } from './useScriptReplayDebuggerController'
+import { omitUnavailableReplayReport, omitUnavailableReplaySession, replayVariablesForInspection, runtimeEvidenceUnavailable } from './runtimeVariableEvidence'
 import { ScriptReplayDebuggerView } from './ScriptReplayDebuggerView'
 import {
   applyValidationRuntimeSettingsMetadata,
@@ -575,6 +576,7 @@ function EditorRailActionIcon({ kind }: { kind: EditorRailActionIconKind }) {
 }
 
 interface ReplayWSMessage extends WSMessage {
+  runtime_evidence_unavailable?: boolean
   replay_session_id?: string
   debug_session_id?: string
   event_id?: string
@@ -734,6 +736,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   // Holds the latest resolved debug-run variables so the {{...}} hover can show
   // concrete values without rebuilding the (otherwise stable) editor extensions.
   const replayVariableInspectorRef = useRef<Record<string, string> | null>(null)
+  const [unavailableRuntimeSessionId, setUnavailableRuntimeSessionId] = useState<string | null>(null)
   const scriptAssistExtensions = useMemo(
     () => buildDslAssistExtensions(
       script => api.validateDraftScript(script as ScriptDefinition, projectId, folderId ?? undefined),
@@ -755,7 +758,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const {
     activeAction,
     activeReplaySessionId,
-    browserReplaySession,
+    browserReplaySession: retainedBrowserReplaySession,
     copiedReplaySnapshotSection,
     dataEditorMode,
     dataSourceHistory,
@@ -771,10 +774,10 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     openDataEditor,
     parameterCandidates,
     pendingParameterDraft,
-    replayActivity,
+    replayActivity: retainedReplayActivity,
     replayEventRefs,
     replayOptions,
-    replayReport,
+    replayReport: retainedReplayReport,
     replayScreenshotSelection,
     replaySeedVariables,
     replaying,
@@ -814,6 +817,25 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     warnings,
     closeReplayScreenshot,
   } = useScriptEditorState(initialScript)
+  const runtimeVariablesUnavailable = runtimeEvidenceUnavailable(retainedBrowserReplaySession, retainedReplayReport)
+    || unavailableRuntimeSessionId !== null
+  // Project before any controller, history or export consumer can use a stale
+  // snapshot. The sticky signal is scoped to the current run.
+  const browserReplaySession = useMemo(() => retainedBrowserReplaySession && runtimeVariablesUnavailable
+    ? omitUnavailableReplaySession(retainedBrowserReplaySession) : retainedBrowserReplaySession,
+  [retainedBrowserReplaySession, runtimeVariablesUnavailable])
+  const replayReport = useMemo(() => retainedReplayReport && runtimeVariablesUnavailable
+    ? omitUnavailableReplayReport(retainedReplayReport) : retainedReplayReport,
+  [retainedReplayReport, runtimeVariablesUnavailable])
+  const replayActivity = useMemo(() => runtimeVariablesUnavailable
+    ? retainedReplayActivity.map(activity => ({ id: activity.id, kind: activity.kind, timestamp: activity.timestamp,
+      success: activity.success, title: 'Runtime evidence unavailable' })) : retainedReplayActivity,
+  [retainedReplayActivity, runtimeVariablesUnavailable])
+  useEffect(() => {
+    if (!runtimeEvidenceUnavailable(retainedBrowserReplaySession, retainedReplayReport)) return
+    const sessionId = activeReplaySessionId || retainedBrowserReplaySession?.id || retainedReplayReport?.replay_session_id
+    if (sessionId) setUnavailableRuntimeSessionId(sessionId)
+  }, [activeReplaySessionId, retainedBrowserReplaySession, retainedReplayReport])
   const beforeDocumentEditRef = useRef<() => void>(() => undefined)
   const setScript = useCallback((update: React.SetStateAction<ScriptData>) => { beforeDocumentEditRef.current(); editScript(update) }, [editScript])
   const editorMountedRef = useRef(false)
@@ -1401,6 +1423,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setReplayStartPending(false)
     setReplayEditableActionsKey(null)
     setActiveReplaySessionId(null)
+    setUnavailableRuntimeSessionId(null)
     setBrowserReplaySession(null)
     setReplayReport(null)
     setReplayActivity([])
@@ -1874,6 +1897,10 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     const msg = message as ReplayWSMessage
     const trackedSessionId = activeReplaySessionId || (replayStartPending ? replayStartAttemptRef.current?.sessionId : null)
     if (!trackedSessionId || (msg.replay_session_id !== trackedSessionId && msg.debug_session_id !== trackedSessionId)) return
+    // Sticky per run, including delta-only messages and stale snapshots.
+    if (runtimeEvidenceUnavailable(msg, msg.session, msg.report, msg.session?.report)) {
+      setUnavailableRuntimeSessionId(trackedSessionId)
+    }
 
     if (msg.type === 'script_debug_started' && msg.session) {
       const session = msg.session
@@ -2891,7 +2918,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   }, [activateWorkspaceTab, setDebuggerSettingsOpen])
 
   const currentRunRef = useRef<Omit<DebugRunRecord, 'report'> | null>(null)
-  const [debugRunHistory, setDebugRunHistory] = useState<DebugRunRecord[]>([])
+  const [retainedDebugRunHistory, setDebugRunHistory] = useState<DebugRunRecord[]>([])
+  const debugRunHistory = useMemo(() => retainedDebugRunHistory.map(record =>
+    runtimeEvidenceUnavailable(record.report) || (runtimeVariablesUnavailable &&
+      (record.id === currentRunRef.current?.id || record.id === unavailableRuntimeSessionId || record.report.replay_session_id === unavailableRuntimeSessionId))
+      ? { ...record, report: omitUnavailableReplayReport(record.report) } : record),
+  [retainedDebugRunHistory, runtimeVariablesUnavailable, unavailableRuntimeSessionId])
   useEffect(() => {
     if (!replayReport?.completed_at || !currentRunRef.current) return
     const record = structuredClone({ ...currentRunRef.current, report: replayReport })
@@ -2968,6 +3000,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         inputs: (currentScript.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed })),
       }
       const replayGroup = payload.group_name || `${currentScript.name || 'script'}-replay`
+      setUnavailableRuntimeSessionId(null)
       setActiveReplaySessionId(replaySessionId)
       setBrowserReplaySession(null)
       setReplaySeedVariables(variables || {})
@@ -3345,11 +3378,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       ? 'Success'
       : 'Failed'
   const replayLatestActivity = replayActivity[replayActivity.length - 1]
-  const replayVariableInspector = replayReport
-    ? (replayReport.completed_at && replayReport.final_variables
-        ? replayReport.final_variables
-        : mergeReplayVariables(replaySeedVariables, replayReport.events))
-    : null
+  const replayVariableInspector = replayVariablesForInspection(replayReport, replaySeedVariables, runtimeVariablesUnavailable)
   const hasReplayVariableInspectorData = replayVariableInspector ? Object.keys(replayVariableInspector).length > 0 : false
   replayVariableInspectorRef.current = replayVariableInspector
 
@@ -3383,8 +3412,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setScriptRecordingStatusRetryGeneration(generation => generation + 1)
   }
   const replayVariableDiffs = useMemo(
-    () => replayReport ? buildReplayVariableDiffs(replaySeedVariables, replayReport.events) : [],
-    [replayReport, replaySeedVariables],
+    () => replayReport && !runtimeVariablesUnavailable ? buildReplayVariableDiffs(replaySeedVariables, replayReport.events) : [],
+    [replayReport, replaySeedVariables, runtimeVariablesUnavailable],
   )
   const replayConfiguredVariables = useMemo(
     () => safeParseReplayVariables(replayOptions.variablesText),
@@ -3738,6 +3767,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         const res = await api.getScriptDebugSession(activeReplaySessionId)
         if (cancelled || !res?.session) return
         const session = res.session
+        if (runtimeEvidenceUnavailable(session, session.report)) setUnavailableRuntimeSessionId(session.id)
         if (
           replayStartAttemptRef.current?.sessionId === session.id &&
           replayStartAttemptRef.current.awaitingReconciliation
@@ -5653,7 +5683,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         <ScriptBrowserEvidence
           key={activeReplaySessionId || 'idle'}
           event={selectedReplayEvent}
-          variables={mergeReplayVariables(replaySeedVariables, replayDebuggerController.debugEvents.slice(0, (replayDebuggerController.selectedReplayEventIndex ?? -1) + 1))}
+          variables={runtimeVariablesUnavailable ? {} : mergeReplayVariables(replaySeedVariables, replayDebuggerController.debugEvents.slice(0, (replayDebuggerController.selectedReplayEventIndex ?? -1) + 1))}
           running={replaying}
           onEdit={!replaying && !jsonParseMessage && selectedReplayEvent && replayEditableActionsKey === currentEditableActionsKey ? () => editReplayAction(selectedReplayEvent) : undefined}
           onApplyLocator={!replaying && !jsonParseMessage && replayEditableActionsKey === currentEditableActionsKey ? applyReplaySuggestedLocator : undefined}
@@ -6375,6 +6405,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             replayStatusLabel={replayStatusLabel}
             replayVariableDiffs={replayVariableDiffs}
             replayVariableInspector={replayVariableInspector}
+            runtimeVariablesUnavailable={runtimeVariablesUnavailable}
             replayVariableTimeline={replayVariableTimeline}
             saving={saving}
             script={script}
@@ -6818,7 +6849,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
               ))}
             </ParameterDataCellDraftProvider>, centerTabPanelElements['parameter-data'])}
 
-          {replayScreenshotSelection && (
+          {replayScreenshotSelection && !runtimeVariablesUnavailable && (
             <ReplayScreenshotDialog
               alt={replayScreenshotSelection.alt}
               onClose={closeReplayScreenshot}

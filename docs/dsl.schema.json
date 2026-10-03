@@ -3619,12 +3619,25 @@
             ]
           },
           "then": {
-            "description": "Composite step that issues an ordered list of child HTTP requests as one reported unit.",
+            "description": "Composite HTTP step with sequential execution by default or bounded concurrent requests sharing one VUser session.",
             "properties": {
               "params": {
                 "properties": {
+                  "execution_mode": {
+                    "description": "Sequential when absent. Concurrent requests share the parent HTTP session; debugger pause and step occur at the group boundary.",
+                    "enum": [
+                      "sequential",
+                      "concurrent"
+                    ],
+                    "type": "string"
+                  },
+                  "max_concurrency": {
+                    "description": "Integer 1..16. Concurrent default is min(8, child count). Concurrent preparation is bounded to 16 MiB of source and prepared surfaces and 64 MiB of work. Duplicate extractor names and nonzero child think time are rejected before traffic.",
+                    "maximum": 16,
+                    "type": "integer"
+                  },
                   "requests": {
-                    "description": "Child requests: {name, method (or type), target, headers, header_list, body}. Header occurrence and transport-normalization rules match top-level requests. At least one required.",
+                    "description": "Child HTTP requests with full action fields. At least one required; concurrent mode permits at most 256. Concurrent children are prepared in source order, joined, then publish extractions in source order.",
                     "type": "array"
                   }
                 },

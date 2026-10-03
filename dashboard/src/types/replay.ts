@@ -163,12 +163,16 @@ export interface BrowserReplayEvent {
   parent_action_name?: string
   request_index?: number
   request_count?: number
+  leaf_ordinal?: number
   step_path?: string[]
   iteration?: number
   iteration_path?: number[]
 }
 
 export interface BrowserReplayReport {
+  runtime_evidence_unavailable?: boolean
+  dropped_event_count?: number
+  truncated_event_evidence_count?: number
   stopped?: boolean
   replay_session_id?: string
   script_hash?: string
@@ -188,6 +192,8 @@ export interface BrowserReplayReport {
 }
 
 export interface BrowserReplaySession {
+  runtime_evidence_unavailable?: boolean
+  dropped_event_count?: number
   id: string
   mode?: string
   script_id?: string
@@ -275,6 +281,7 @@ export interface ScriptDebugAction {
   parent_action_name?: string
   request_index?: number
   request_count?: number
+  leaf_ordinal?: number
   step_path?: string[]
   iteration?: number
   iteration_path?: number[]
@@ -295,6 +302,8 @@ export interface ConditionEvidence {
 export type ScriptDebugStepMode = 'into' | 'over' | 'loop_end'
 
 export interface ScriptDebugSession {
+  runtime_evidence_unavailable?: boolean
+  dropped_event_count?: number
   id: string
   mode?: string
   script_id?: string

@@ -358,6 +358,9 @@ IDs in test titles link failures to the audit. A mapped ID means the assertions 
 | U22 | `tier0-routes.spec.ts`, `workflow-recovery.spec.ts` | Resolved route content and page-error checks across 16 views; creation-capability failure exposes an actionable retry. |
 | U23 | `tier0-bruno-import.spec.ts` | Governed Bruno import inspection, acknowledgement and protected commit behavior. |
 | U24 | `workflow-recovery.spec.ts` | Recorder startup failure preserves its target and leaves the retry control usable. |
+| Concurrent HTTP authoring | `workflow-http-concurrent.spec.ts` | Explicit mode/fanout preserve every child and unknown field through save/reopen; real siblings overlap on the inherited parent session; source-order parameter allocation and extraction follow the join; debugger stepping pauses only at the group boundary. |
+| LoadRunner concurrent import | `workflow-http-concurrent.spec.ts` | A synthetic source archive preserves exact child source mappings through protected import/save/reopen and executes the concurrent group against a loopback session target. |
+| Unavailable runtime evidence | `workflow-http-concurrent.spec.ts` | Synthetic transport DTOs verify sticky omission across watches, event details, run history and JSON downloads while retaining execution outcomes, ordinals and evidence-retention counts. |
 
 ### Fixtures and evidence
 

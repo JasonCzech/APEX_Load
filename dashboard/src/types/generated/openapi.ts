@@ -49038,6 +49038,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -60658,6 +60659,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -60696,6 +60698,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -61152,6 +61155,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -61190,6 +61194,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -77783,6 +77788,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -78378,6 +78384,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -78416,6 +78423,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -78877,6 +78885,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -78915,6 +78924,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -100937,6 +100947,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -101532,6 +101543,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -101570,6 +101582,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -102031,6 +102044,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -102069,6 +102083,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -107918,6 +107933,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -109155,6 +109171,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -110521,6 +110538,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -110559,6 +110577,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -111834,6 +111853,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -111872,6 +111892,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -113148,6 +113169,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -113186,6 +113208,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -114461,6 +114484,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -114499,6 +114523,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -115085,6 +115110,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -115123,6 +115149,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -115593,6 +115620,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -115631,6 +115659,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -116079,6 +116108,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -116669,6 +116699,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -116707,6 +116738,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -117163,6 +117195,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -117201,6 +117234,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -129253,6 +129287,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -129291,6 +129326,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -129761,6 +129797,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -129799,6 +129836,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -130269,6 +130307,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -130307,6 +130346,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -130777,6 +130817,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;
@@ -130815,6 +130856,7 @@ export interface operations {
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
+              "runtime_evidence_unavailable"?: boolean;
               "runtime_profile"?: {
                 "browser_engine"?: string;
                 "capture_mode"?: string;
@@ -134904,6 +134946,7 @@ export interface operations {
                   "title": string;
                 }>;
                 "replay_session_id"?: string;
+                "runtime_evidence_unavailable"?: boolean;
                 "runtime_profile"?: {
                   "browser_engine"?: string;
                   "capture_mode"?: string;

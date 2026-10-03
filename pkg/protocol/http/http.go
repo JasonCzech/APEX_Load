@@ -135,6 +135,12 @@ func (h *HTTP) Name() string { return "http" }
 
 func (h *HTTP) ParallelSafe() bool { return true }
 
+// Initialized options are immutable during a group. net/http clients and cookie
+// jars are concurrent-safe; cache, verification, network shaping, and streaming
+// state have their own locks. Resource waves retain request-local observation.
+// Teardown and iteration resets occur only after the engine's join barrier.
+func (h *HTTP) SharedSessionConcurrentSafe() bool { return h != nil && h.client != nil }
+
 func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	if err := validateHTTPRuntimeConfigBounds(config); err != nil {
 		return err
@@ -726,6 +732,7 @@ extractors:
 		if err := extractorWork.charge(ext); err != nil {
 			result.Success = false
 			result.Extractions = nil
+			result.ExtractionsIncomplete = true
 			result.ErrorMessage = fmt.Sprintf("extractor %q input rejected: %v", ext.Name, err)
 			break
 		}
@@ -734,6 +741,7 @@ extractors:
 			if errors.Is(err, errExtractorResourceLimit) {
 				result.Success = false
 				result.Extractions = nil
+				result.ExtractionsIncomplete = true
 				result.ErrorMessage = fmt.Sprintf("extractor %q output rejected: %v", ext.Name, err)
 				break
 			}
@@ -787,6 +795,7 @@ extractors:
 		if errors.Is(err, errExtractorResourceLimit) {
 			result.Success = false
 			result.Extractions = nil
+			result.ExtractionsIncomplete = true
 			result.ErrorMessage = fmt.Sprintf("extractor %q output rejected: %v", ext.Name, err)
 			break
 		}
@@ -973,6 +982,7 @@ func storeHTTPExtraction(result *protocol.Result, extractor protocol.Extractor, 
 	if err := protocol.StoreExtraction(result, key, value); err != nil {
 		result.Success = false
 		result.Extractions = nil
+		result.ExtractionsIncomplete = true
 		result.ErrorMessage = fmt.Sprintf("extractor %q output rejected: %v", extractor.Name, err)
 		return false
 	}

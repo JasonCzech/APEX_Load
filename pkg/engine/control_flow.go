@@ -108,8 +108,12 @@ func (vu *VUser) evalConditionEvidence(cond *dsl.Condition) (bool, ConditionEvid
 	}
 	if expr := strings.TrimSpace(cond.Expr); expr != "" {
 		result := vu.evalConditionExpr(expr)
+		publicExpr := scrubSensitiveTextWithConfig(expr, vu.resultPublicationRedactionConfig())
+		if vu.resultPublicationUnavailable() {
+			publicExpr = ""
+		}
 		return result, ConditionEvidence{
-			Expr:   scrubSensitiveTextWithConfig(expr, vu.RedactionConfig),
+			Expr:   publicExpr,
 			Result: result,
 		}
 	}

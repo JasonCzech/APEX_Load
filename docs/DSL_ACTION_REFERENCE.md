@@ -1009,11 +1009,13 @@ Fetch and cache an OAuth2 access token for later HTTP requests.
 
 ### `http_sequence`
 
-Composite step that issues an ordered list of child HTTP requests as one reported unit.
+Composite HTTP step with sequential execution by default or bounded concurrent requests sharing one VUser session.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `params.requests` | array | yes | Child requests: {name, method (or type), target, headers, header_list, body}. Header occurrence and transport-normalization rules match top-level requests. At least one required. |
+| `params.requests` | array | yes | Child HTTP requests with full action fields. At least one required; concurrent mode permits at most 256. Concurrent children are prepared in source order, joined, then publish extractions in source order. |
+| `params.execution_mode` | enum: sequential\|concurrent |  | Sequential when absent. Concurrent requests share the parent HTTP session; debugger pause and step occur at the group boundary. |
+| `params.max_concurrency` | int |  | Integer 1..16. Concurrent default is min(8, child count). Concurrent preparation is bounded to 16 MiB of source and prepared surfaces and 64 MiB of work. Duplicate extractor names and nonzero child think time are rejected before traffic. |
 
 ## Protocol: java_http
 

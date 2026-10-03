@@ -75,6 +75,14 @@ type ParallelSafetyProvider interface {
 	ParallelSafe() bool
 }
 
+// SharedSessionConcurrencyProvider admits concurrent immutable requests on one
+// initialized protocol instance. Unlike ParallelSafetyProvider, this retains
+// the parent session; lifecycle changes must happen outside the joined group.
+type SharedSessionConcurrencyProvider interface {
+	SharedSessionConcurrentSafe() bool
+	ValidateSharedSessionAction(*Action) error
+}
+
 // RuntimeCapabilityProvider lets optional sidecar-backed protocols advertise
 // availability, scheduler features, and a protocol-specific VUser ceiling
 // without teaching the distributed service protocol names.

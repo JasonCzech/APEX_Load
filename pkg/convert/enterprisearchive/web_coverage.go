@@ -83,8 +83,8 @@ var webFunctionCoverageDetail = map[string]webCoverageDetail{
 	"web_add_filter":                 {"config.web_runtime attribute", "No auto-resource fetch; native no-op."},
 	"web_add_auto_filter":            {"config.web_runtime attribute", "No auto-resource fetch; native no-op."},
 	"web_remove_auto_filter":         {"config.web_runtime attribute", "No auto-resource fetch; native no-op."},
-	"web_concurrent_start":           {"Block marker (preserved)", "Inner requests replayed sequentially; warned."},
-	"web_concurrent_end":             {"Block marker (preserved)", "Closes the concurrent group."},
+	"web_concurrent_start":           {"Concurrent http_sequence boundary", "Only matched same-scope groups of 1–256 independent HTTP requests; barriers, conflicts, waits and malformed boundaries require review."},
+	"web_concurrent_end":             {"Concurrent http_sequence boundary", "Closes a validated explicit source group; unsupported spans remain execution-gated review cases."},
 	"web_convert_param":              {"source_parameter action", "Encoding/format conversion."},
 	"web_convert_date_param":         {"Import review", "Date conversion is preserved for review; no APEX runtime equivalent yet."},
 	"web_convert_from_formatted":     {"Import review", "Formatted-string parse is preserved for review; no APEX runtime equivalent yet."},
@@ -155,7 +155,7 @@ func RenderWebHTTPFunctionCoverageMarkdown() string {
 	b.WriteString("| Disposition | Count | Meaning |\n")
 	b.WriteString("|---|---|---|\n")
 	fmt.Fprintf(&b, "| `executable` | %d | Translated to an executable DSL action or config mapping. |\n", counts["executable"])
-	fmt.Fprintf(&b, "| `native_noop` | %d | Preserved as a runtime-compatibility attribute; a guaranteed no-op in APEX Load (no client cache / no auto-resource fetch / no concurrent-request primitive). |\n", counts["native_noop"])
+	fmt.Fprintf(&b, "| `native_noop` | %d | Preserved as a runtime-compatibility attribute; a guaranteed no-op in APEX Load (no client cache / no auto-resource fetch). |\n", counts["native_noop"])
 	fmt.Fprintf(&b, "| `review_only` | %d | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |\n\n", counts["review_only"])
 
 	b.WriteString("Every published function resolves to one of the dispositions above — none falls through to a `custom_call` review stub. This is enforced by `TestWebHTTPFunctionRegistryResolvesEveryPublishedFunction`.\n\n")

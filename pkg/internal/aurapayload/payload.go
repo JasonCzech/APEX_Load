@@ -258,10 +258,27 @@ func ReplaceWithWorkAccounting(body, bodyEncoding string, edits []Edit, maxWork 
 // never reparses inserted values, including template-looking or JSON-looking
 // values, and returns independently escaped executable and redacted bodies.
 func Resolve(body, bodyEncoding string, resolve func(string) (string, string)) (string, string, error) {
-	p, err := readPayload(body, bodyEncoding)
+	actual, safe, _, err := ResolveWithWorkAccounting(body, bodyEncoding, resolve, MaxWorkBytes)
+	return actual, safe, err
+}
+
+// ResolveWithWorkAccounting bounds one resolution by the caller's remaining
+// shared work allowance and reports actual work without changing Resolve semantics.
+func ResolveWithWorkAccounting(body, bodyEncoding string, resolve func(string) (string, string), maxWork int) (string, string, int, error) {
+	p, err := readPayloadLimit(body, bodyEncoding, maxWork)
 	if err != nil {
-		return "", "", err
+		work := 0
+		if failure, ok := err.(*Error); ok {
+			work = failure.WorkBytes
+		}
+		return "", "", work, err
 	}
+	actual, safe, err := resolvePayload(p, resolve)
+	return actual, safe, p.budget.work, err
+}
+
+func resolvePayload(p *payload, resolve func(string) (string, string)) (string, string, error) {
+	var err error
 	if resolve == nil {
 		return "", "", fail(InvalidRoute)
 	}
@@ -365,6 +382,12 @@ func readPayloadLimit(body, encoding string, maxWork int) (result *payload, err 
 	case "base64":
 		if len(body) > MaxEncodedInputBytes {
 			return nil, fail(ByteLimit)
+		}
+		// DecodeString allocates from the full (possibly wrapped) encoded
+		// length; admit that allocation and the detached wire string first.
+		predicted := base64.StdEncoding.DecodedLen(len(strings.TrimSpace(body)))
+		if predicted > (b.limit-b.work)/2 {
+			return nil, fail(WorkLimit)
 		}
 		decoded, _, err := dsl.DecodeBodyEncoding(body, encoding, MaxBodyBytes)
 		if err != nil {

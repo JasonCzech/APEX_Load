@@ -13,6 +13,7 @@ import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { formatSOAPFaultSummary } from './soapFaultUtils'
 import ScriptEditor from './ScriptEditor'
+import { RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
 
 const { downloadTextFileMock } = vi.hoisted(() => ({
   downloadTextFileMock: vi.fn(),
@@ -364,6 +365,7 @@ function AppShellScriptEditorHarness({ initialScript }: { initialScript: ScriptD
 }
 
 function debugSessionResponse(report: {
+  replay_session_id?: string
   group: string
   protocol: string
   started_at: string
@@ -371,6 +373,7 @@ function debugSessionResponse(report: {
   success: boolean
   error?: string
   final_variables?: Record<string, string>
+  runtime_evidence_unavailable?: boolean
   events: unknown[]
 }, overrides: Record<string, unknown> = {}) {
   const terminal = Boolean(report.completed_at)
@@ -5612,6 +5615,71 @@ describe('ScriptEditor', () => {
       expect.any(Array),
       'debug-session-1',
     )
+  })
+
+  it('keeps delta-only runtime unavailability sticky across stale session snapshots and clears it for a new run', async () => {
+    const retainedReport = {
+      group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', success: true,
+      events: [{ phase: 'action', action_index: 0, action_name: 'Read products', action_type: 'GET', target: '/api/products', success: true,
+        started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z', duration_ms: 1, body: 'retained-runtime-value', snapshot: { response_body: 'retained-runtime-value', screenshot_base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0nQAAAAASUVORK5CYII=' }, protocol_evidence: { detail: 'retained-runtime-value' }, extractions: { ordinary: 'retained-runtime-value' } }],
+    }
+    apiMock.startScriptDebugSession.mockResolvedValueOnce(debugSessionResponse(retainedReport))
+    apiMock.getScriptDebugSession.mockReturnValue(new Promise(() => {}))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    const socket = () => (useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage: (message: unknown) => void }).onMessage
+    await act(async () => socket()({ type: 'script_debug_event', debug_session_id: 'debug-session-1', event_index: 0, event: retainedReport.events[0] }))
+    const fullSize = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'View full size')
+    expect(fullSize).toBeDefined()
+    await act(async () => fullSize!.click())
+    expect(container.querySelector('[aria-label="Replay Screenshot"]')).not.toBeNull()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent === 'Live Variables')!.click())
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain('retained-runtime-value')
+    await act(async () => socket()({ type: 'script_debug_condition', debug_session_id: 'foreign-session', runtime_evidence_unavailable: true }))
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    await act(async () => socket()({ type: 'script_debug_condition', debug_session_id: 'debug-session-1', runtime_evidence_unavailable: true }))
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    expect(container.querySelector('[aria-label="Replay Screenshot"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain('retained-runtime-value')
+    const terminal = { ...retainedReport, replay_session_id: 'stale-embedded-report', completed_at: '2026-05-14T20:00:02Z', final_variables: { ordinary: 'stale-final-value' }, runtime_evidence_unavailable: false }
+    await act(async () => socket()({ type: 'script_debug_completed', debug_session_id: 'debug-session-1', report: terminal,
+      session: { ...debugSessionResponse(terminal).session, id: 'stale-embedded-session', runtime_evidence_unavailable: false, logs: [{ message: 'retained-runtime-value' }], raw_output: ['retained-runtime-value'], condition_evidence: { 'action#0#': { left: 'retained-runtime-value', result: true } } } }))
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain('stale-final-value')
+    expect(container.querySelector('.replay-variable-timeline')).toBeNull()
+    // A stale terminal DTO must not restore detail through history or downloads.
+    expect(container.textContent).not.toContain('retained-runtime-value')
+    expect(container.textContent).not.toContain('stale-final-value')
+    await act(async () => findButtonByTitle(container, 'Download Debug JSON')!.click())
+    const exported = JSON.parse(downloadTextFileMock.mock.calls[downloadTextFileMock.mock.calls.length - 1][0])
+    expect(exported.report.runtime_evidence_unavailable).toBe(true)
+    expect(exported.session.runtime_evidence_unavailable).toBe(true)
+    expect(exported.report.events[0]).toMatchObject({ phase: 'action', action_index: 0, success: true, duration_ms: 1 })
+    expect(JSON.stringify(exported)).not.toContain('retained-runtime-value')
+    expect(JSON.stringify(exported)).not.toContain('stale-final-value')
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({ ...debugSessionResponse(terminal), replay_session_id: 'debug-session-2', debug_session_id: 'debug-session-2', session: { ...debugSessionResponse({ ...terminal, replay_session_id: 'debug-session-2' }).session, id: 'debug-session-2' } })
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain('stale-final-value')
+  })
+
+  it.each(['session', 'report'] as const)('hides retained variables when terminal polling marks %s evidence unavailable', async source => {
+    const running = { group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', success: true, events: [] }
+    const terminal = { ...running, completed_at: '2026-05-14T20:00:02Z', final_variables: { ordinary: 'terminal-retained-value' },
+      runtime_evidence_unavailable: source === 'report' }
+    apiMock.startScriptDebugSession.mockResolvedValueOnce(debugSessionResponse(running))
+    apiMock.getScriptDebugSession.mockResolvedValueOnce(debugSessionResponse(terminal, { runtime_evidence_unavailable: source === 'session' }))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent === 'Variables')!.click())
+    const watches = container.querySelector('[aria-label="Variable watches"]')
+    expect(watches?.textContent).toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    expect(watches?.textContent).not.toContain('terminal-retained-value')
+    expect(watches?.querySelector('table')).toBeNull()
+    expect(watches?.querySelector('details')).toBeNull()
   })
 
   it('keeps tracking an acknowledged stop until the final WebSocket event arrives', async () => {

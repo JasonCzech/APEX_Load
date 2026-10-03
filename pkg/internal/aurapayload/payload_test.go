@@ -460,3 +460,34 @@ func TestInspectDisclosureSentinelIsLiteralAndKeepsBusinessSibling(t *testing.T)
 		t.Fatal("fixed sentinel exception admitted arbitrary malformed nested JSON")
 	}
 }
+
+func TestResolveSharedWorkAccounting(t *testing.T) {
+	body := `{"actions":[{"id":"1","descriptor":"fixture","params":{"recordId":"{{var.record}}"}}]}`
+	callback := func(value string) (string, string) {
+		if value == "{{var.record}}" {
+			return "resolved", "resolved"
+		}
+		return value, value
+	}
+	actual, safe, work, err := ResolveWithWorkAccounting(body, "", callback, MaxWorkBytes)
+	if err != nil || work <= len(body) || actual != safe {
+		t.Fatalf("accounted resolution work=%d err=%v", work, err)
+	}
+	legacy, legacySafe, legacyErr := Resolve(body, "", callback)
+	if legacyErr != nil || legacy != actual || legacySafe != safe {
+		t.Fatal("legacy resolution changed")
+	}
+	_, _, boundedWork, err := ResolveWithWorkAccounting(body, "", callback, work-1)
+	if err == nil || boundedWork > work {
+		t.Fatal("shared work limit ignored")
+	}
+}
+
+func TestResolveSharedWorkRejectsDecodeAllocationBeforeCallback(t *testing.T) {
+	body := base64.StdEncoding.EncodeToString([]byte(`{"actions":[{"id":"synthetic;a","descriptor":"synthetic","params":{"recordId":"safe"}}]}`))
+	callbacks := 0
+	_, _, work, err := ResolveWithWorkAccounting(body, "base64", func(value string) (string, string) { callbacks++; return value, value }, len(body)+2)
+	if err == nil || callbacks != 0 || work != len(body) {
+		t.Fatal("unadmitted base64 decode reached callback")
+	}
+}

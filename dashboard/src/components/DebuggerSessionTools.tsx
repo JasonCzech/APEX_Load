@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { BrowserReplayEvent, BrowserReplayReport, ScriptDebugBreakpoint } from '../types/replay'
 import type { ReplayOptionsState } from './scriptEditorState'
 import { compareRuns, eventLocation, readProfiles, safeProfile, variablesAt, type DebugRunRecord } from './debuggerExperience'
+import { omitUnavailableReplayReport, RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
@@ -19,15 +20,16 @@ export function DebugProfiles({ options, onChange, disabled }: { options: Replay
   </div>
 }
 
-export function DebugVariableWatches({ events, seed, latest, selected, onSelect }: { events: BrowserReplayEvent[]; seed: Record<string, string>; latest: Record<string, string> | null; selected: number | null; onSelect: (index: number) => void }) {
+export function DebugVariableWatches({ events, seed, latest, selected, onSelect, evidenceUnavailable = false }: { events: BrowserReplayEvent[]; seed: Record<string, string>; latest: Record<string, string> | null; selected: number | null; onSelect: (index: number) => void; evidenceUnavailable?: boolean }) {
   const [scope, setScope] = useState<'latest' | 'selected'>('latest')
   const [search, setSearch] = useState('')
   const [changedOnly, setChangedOnly] = useState(false)
   const [pinned, setPinned] = useState<string[]>([])
   const index = scope === 'selected' ? selected ?? -1 : events.length - 1
-  const values = useMemo(() => scope === 'latest' ? latest || variablesAt(events, seed, index) : variablesAt(events, seed, index), [scope, latest, events, seed, index])
-  const before = useMemo(() => variablesAt(events, seed, index - 1), [events, seed, index])
+  const values = useMemo(() => evidenceUnavailable ? {} : scope === 'latest' ? latest || variablesAt(events, seed, index) : variablesAt(events, seed, index), [scope, latest, events, seed, index, evidenceUnavailable])
+  const before = useMemo(() => evidenceUnavailable ? {} : variablesAt(events, seed, index - 1), [events, seed, index, evidenceUnavailable])
   const names = [...new Set([...Object.keys(values), ...pinned])].filter(name => `${name} ${values[name] || ''}`.toLowerCase().includes(search.toLowerCase()) && (!changedOnly || before[name] !== values[name])).sort((a, b) => Number(pinned.includes(b)) - Number(pinned.includes(a)) || a.localeCompare(b))
+  if (evidenceUnavailable) return <section aria-label="Variable watches" className="debug-watch-panel"><p role="status">{RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE}</p></section>
   return <section aria-label="Variable watches" className="debug-watch-panel">
     <div className="debug-session-tools"><label>Search variables<input value={search} onChange={e => setSearch(e.target.value)} /></label><label>Values at<select value={scope} onChange={e => setScope(e.target.value as typeof scope)}><option value="latest">Latest session</option><option value="selected" disabled={selected == null}>Selected execution (after)</option></select></label><label><input type="checkbox" checked={changedOnly} onChange={e => setChangedOnly(e.target.checked)} />Changed at this execution</label></div>
     <p>{scope === 'selected' && selected != null ? `After ${eventLocation(events[selected])}` : 'Latest captured session values'} · Values unavailable in retained evidence cannot be reconstructed.</p>
@@ -49,6 +51,7 @@ export function DebugTimeline({ events, onSelect }: { events: BrowserReplayEvent
 function HistoricalEvidence({ report }: { report: BrowserReplayReport }) {
   const [selected, setSelected] = useState(0)
   const event = report.events[selected]
+  if (report.runtime_evidence_unavailable) return <p role="status">{RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE}</p>
   if (report.protocol === 'browser') return <BrowserReplayDebugger report={report} running={false} />
   return <div className="debug-history-evidence"><label>Historical execution<select value={selected} onChange={e => setSelected(Number(e.target.value))}>{report.events.map((e, index) => <option value={index} key={index}>{eventLocation(e)} · {e.action_name} · {e.success ? 'Passed' : 'Failed'}</option>)}</select></label>{event ? <>
     <p>{event.error_message || `${event.method || event.action_type} ${event.target}`}</p><p>Response status: {event.status_code ?? 'Not captured'}</p>
@@ -57,16 +60,20 @@ function HistoricalEvidence({ report }: { report: BrowserReplayReport }) {
   </> : <p>No retained executions.</p>}</div>
 }
 export function DebugRunHistory({ runs, current, currentRecord }: { runs: DebugRunRecord[]; current: BrowserReplayReport | null; currentRecord?: Omit<DebugRunRecord, 'report'> | null }) {
-  const [selectedId, setSelectedId] = useState(''), [pinnedBaseline, setPinnedBaseline] = useState<DebugRunRecord | null>(null)
-  const selected = runs.find(r => r.id === selectedId) || runs[0]
-  const baseline = pinnedBaseline || selected
-  const diff = useMemo(() => baseline && current ? compareRuns(baseline.report, current) : [], [baseline, current])
+  const [selectedId, setSelectedId] = useState(''), [pinnedBaselineId, setPinnedBaselineId] = useState<string | null>(null)
+  const admittedRuns = useMemo(() => runs.map(run => run.report.runtime_evidence_unavailable
+    ? { ...run, report: omitUnavailableReplayReport(run.report) } : run), [runs])
+  const admittedCurrent = useMemo(() => current?.runtime_evidence_unavailable ? omitUnavailableReplayReport(current) : current, [current])
+  const selected = admittedRuns.find(r => r.id === selectedId) || admittedRuns[0]
+  const baseline = admittedRuns.find(run => run.id === pinnedBaselineId) || selected
+  const diff = useMemo(() => baseline && admittedCurrent ? compareRuns(baseline.report, admittedCurrent) : [], [baseline, admittedCurrent])
   if (!selected) return null
   const configuration = (record: Omit<DebugRunRecord, 'report'> | null | undefined, report: BrowserReplayReport) => ({ target: record?.target, failurePolicy: record?.failurePolicy, capture: record?.options.capture, ignoreThinkTime: record?.options.ignoreThinkTime, inputs: record?.inputs, runtime: report.runtime_profile })
-  return <details className="debug-run-history"><summary>Recent runs ({runs.length}) · Compare evidence</summary><p>Evidence stays in this editor session (up to 5 runs). Export to retain it before closing.</p><label>Inspect run<select value={selected.id} onChange={e => setSelectedId(e.target.value)}>{runs.map(r => <option key={r.id} value={r.id}>{r.report.started_at} · {r.report.protocol} · {r.report.stopped ? 'Stopped' : r.report.success ? 'Passed' : 'Failed'}</option>)}</select></label><button type="button" aria-pressed={pinnedBaseline?.id === selected.id} onClick={() => setPinnedBaseline(selected)}>Pin comparison baseline</button>
+  return <details className="debug-run-history"><summary>Recent runs ({runs.length}) · Compare evidence</summary><p>Evidence stays in this editor session (up to 5 runs). Export to retain it before closing.</p><label>Inspect run<select value={selected.id} onChange={e => setSelectedId(e.target.value)}>{admittedRuns.map(r => <option key={r.id} value={r.id}>{r.report.started_at} · {r.report.protocol} · {r.report.stopped ? 'Stopped' : r.report.success ? 'Passed' : 'Failed'}</option>)}</select></label><button type="button" aria-pressed={pinnedBaselineId === selected.id} onClick={() => setPinnedBaselineId(selected.id)}>Pin comparison baseline</button>
     <p>{selected.draft ? 'Unsaved draft' : 'Saved script'} · {selected.report.script_revision || selected.report.script_hash || 'Revision identity unavailable'} · {selected.target} · {selected.failurePolicy}</p>
+    {Boolean(selected.report.dropped_event_count || selected.report.truncated_event_evidence_count) && <p className="debug-history-retention">{selected.report.dropped_event_count || 0} executions omitted · {selected.report.truncated_event_evidence_count || 0} execution details truncated in retained evidence.</p>}
     <HistoricalEvidence key={selected.id} report={selected.report} />
-    {current && <details><summary>Compare baseline with current run</summary><p>Baseline: {baseline.report.started_at} · Current: {current.started_at}</p><div className="debug-history-columns"><section><h4>Baseline configuration</h4><SnapshotBodyPreview body={JSON.stringify(configuration(baseline, baseline.report), null, 2)} /></section><section><h4>Current configuration</h4><SnapshotBodyPreview body={JSON.stringify(configuration(currentRecord, current), null, 2)} /></section></div>{diff.filter(row => row.fields.length).map(row => <details key={row.key}><summary>{(row.after || row.before)!.action_name} · {eventLocation((row.after || row.before)!)} · {row.fields.join(', ')}</summary><div className="debug-history-columns"><SnapshotBodyPreview body={JSON.stringify(row.before || null, null, 2)} /><SnapshotBodyPreview body={JSON.stringify(row.after || null, null, 2)} /></div></details>)}{diff.every(row => !row.fields.length) && <p>No outcome, request, response, assertion or variable differences in retained evidence.</p>}</details>}
+    {admittedCurrent && <details><summary>Compare baseline with current run</summary><p>Baseline: {baseline.report.started_at} · Current: {admittedCurrent.started_at}</p><div className="debug-history-columns"><section><h4>Baseline configuration</h4><SnapshotBodyPreview body={JSON.stringify(configuration(baseline, baseline.report), null, 2)} /></section><section><h4>Current configuration</h4><SnapshotBodyPreview body={JSON.stringify(configuration(currentRecord, admittedCurrent), null, 2)} /></section></div>{diff.filter(row => row.fields.length).map(row => <details key={row.key}><summary>{(row.after || row.before)!.action_name} · {eventLocation((row.after || row.before)!)} · {row.fields.join(', ')}</summary><div className="debug-history-columns"><SnapshotBodyPreview body={JSON.stringify(row.before || null, null, 2)} /><SnapshotBodyPreview body={JSON.stringify(row.after || null, null, 2)} /></div></details>)}{diff.every(row => !row.fields.length) && <p>No outcome, request, response, assertion or variable differences in retained evidence.</p>}</details>}
   </details>
 }
 
