@@ -112,4 +112,31 @@ describe('useScriptImportReviewController', () => {
     expect(getController().sourceMappingWorkspaceMaximized).toBe(true)
     expect(onWorkspaceMaximizedChange).toHaveBeenCalledWith(true)
   })
+  it('uses exact mapping identities for historical source navigation and suppresses legacy current action targets', () => {
+    const script = importedScript()
+    const review = script.metadata!.import!.preserved!.source_review as { target_domain?: string; mappings: { id: string; source_file: string; target_path: string; status: string }[] }
+    review.target_domain = 'original_import'
+    const get = renderController({ activeCenterTabId: 'imported-metadata', editorHistory: { past: [], future: [] }, importBaselineScript: null, onWorkspaceMaximizedChange: vi.fn(), script, scriptId: 'native' })
+    expect(get().importedCorrelationFocusTargets[0].foundAtActionIndex).toBeNull()
+    act(() => { get().focusSourceMappingForAction(0) })
+    expect(get().sourceMappingFocus).toEqual({ mappingId: '', requestId: 0 })
+    act(() => { get().focusSourceMapping({ ...review.mappings[0], start_line: 1 }) })
+    expect(get().sourceMappingFocus).toEqual({ mappingId: 'login', requestId: 1 })
+    act(() => { get().focusSourceMapping({ ...review.mappings[0], start_line: 1, source_file: 'other.har' }) })
+    expect(get().sourceMappingFocus.requestId).toBe(1)
+  })
+
+  it('suppresses current action inference for legacy native-selected imports without changing exact source navigation', () => {
+    const script = importedScript()
+    script.metadata!.import!.source = 'salesforce'
+    script.metadata!.import!.preserved!.salesforce_review = { native_preview: { correlations: [] } }
+    const get = renderController({ activeCenterTabId: 'imported-metadata', editorHistory: { past: [], future: [] }, importBaselineScript: null, onWorkspaceMaximizedChange: vi.fn(), script, scriptId: 'legacy-native' })
+    expect(get().sourceReview?.target_domain).toBe('original_import')
+    expect(get().importedCorrelationFocusTargets[0].foundAtActionIndex).toBeNull()
+    act(() => { get().focusSourceMappingForAction(0) })
+    expect(get().sourceMappingFocus).toEqual({ mappingId: '', requestId: 0 })
+    act(() => { get().focusSourceMapping(get().sourceReview!.mappings![0]) })
+    expect(get().sourceMappingFocus).toEqual({ mappingId: 'login', requestId: 1 })
+  })
+
 })

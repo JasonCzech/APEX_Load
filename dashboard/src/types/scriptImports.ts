@@ -490,7 +490,50 @@ export interface SalesforceHARMatchCoverage {
   coverage_pct: number
 }
 
+export interface SalesforceNativeRequestReference {
+  har_entry_id: number
+  original_action_path?: string
+  source_mapping_id?: string
+  source_file?: string
+  native_action_path?: string
+}
+
+export interface SalesforceCorrelationCoverage {
+  complete: boolean
+  details_complete: boolean
+  catalog_limited?: boolean
+  discovered_correlations: number
+  import_matched_producer_correlations: number
+  import_unmatched_producer_correlations: number
+  observed_consumer_references: number
+  import_matched_consumer_references: number
+  import_unmatched_consumer_references: number
+  source_review_available: boolean
+  source_linked_producer_correlations: number
+  source_unlinked_producer_correlations: number
+  source_linked_consumer_references: number
+  source_unlinked_consumer_references: number
+  native_mapped_producer_correlations: number
+  native_unmapped_producer_correlations: number
+  native_mapped_consumer_references: number
+  native_unmapped_consumer_references: number
+  pre_applied_correlations: number
+  manual_correlations: number
+  retained_correlations: number
+  omitted_correlations: number
+  retained_consumer_references: number
+  omitted_consumer_references: number
+  correlation_detail_limit: number
+  consumer_reference_detail_limit: number
+  detail_byte_limit: number
+}
+
 export interface SalesforceCorrelationCandidate {
+  pre_applied?: boolean
+  review_action?: string
+  producer_reference?: SalesforceNativeRequestReference
+  consumer_references?: SalesforceNativeRequestReference[]
+  consumer_references_omitted?: number
   name: string
   source: string
   expression: string
@@ -502,6 +545,8 @@ export interface SalesforceCorrelationCandidate {
 }
 
 export interface SalesforceNativePreview {
+  native_path_domain?: string
+  correlation_coverage?: SalesforceCorrelationCoverage
   script?: ScriptDefinition
   correlations?: SalesforceCorrelationCandidate[]
 }

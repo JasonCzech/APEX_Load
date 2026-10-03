@@ -159,6 +159,10 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 // Return the private, read-only disclosure projection separately so source
 // credential discovery can reuse it. It must never be an HTTP response field.
 func newScriptImportResponseWithProjection(opts scriptImportResponseOptions) (map[string]any, any) {
+	scriptForNativeRefs, _ := opts.Script.(*dsl.Script)
+	if review := trustedNativeSalesforceReview(scriptForNativeRefs); review != nil && review.NativePreview.NativePathDomain == "final_native" {
+		opts.Correlations = review.NativePreview.Correlations
+	}
 	// Imported scripts and collections are operator-owned authoring artifacts.
 	// Publish them exactly as converted; redaction belongs only to run/debug
 	// evidence and must never rewrite an import draft or its review material.

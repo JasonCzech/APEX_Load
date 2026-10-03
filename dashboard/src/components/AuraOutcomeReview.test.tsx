@@ -114,4 +114,14 @@ describe('AuraOutcomeReview', () => {
     const remaining = [...container.querySelectorAll('details')].find(detail => detail.querySelector('summary')?.textContent === 'Remaining action outcomes (1)')!
     expect(remaining.textContent).toContain('Action 51: UNKNOWN')
   })
+  it('does not navigate duplicate mapping IDs across different source paths or empty source files', () => {
+    const mapping = { id: 'duplicate', source_file: 'capture.har', start_line: 1, target_kind: 'action', target_path: 'actions[0]', status: 'converted' }
+    const onViewSource = vi.fn()
+    for (const mappings of [[mapping, { ...mapping, source_file: 'other.har', target_path: 'actions[1]' }], [{ ...mapping, source_file: '' }], [{ ...mapping, id: '' }]]) {
+      act(() => { root.render(<AuraOutcomeReview report={report()} sourceReview={{ target_domain: 'original_import', mappings }} onViewSource={onViewSource} />) })
+      expect([...container.querySelectorAll('button')].some(button => button.textContent?.includes('source mapping'))).toBe(false)
+    }
+    expect(onViewSource).not.toHaveBeenCalled()
+  })
+
 })

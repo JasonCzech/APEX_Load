@@ -107,21 +107,38 @@ func DiagnoseReplayChecked(recorded, replay []Observation) ([]RepairSuggestion, 
 	return diagnoseReplayCheckedWithLimits(recorded, replay, defaultRepairAnalysisLimits)
 }
 
+// DiagnoseReplayReviewChecked returns the same checked repair analysis plus
+// bounded, value-free relationship coverage. Detection and replay candidate
+// indexing each run once; an exhausted analysis never returns partial advice.
+func DiagnoseReplayReviewChecked(recorded, replay []Observation) (ReplayDiagnosis, error) {
+	return diagnoseReplayReviewCheckedWithLimits(recorded, replay, defaultRepairAnalysisLimits)
+}
+
 func diagnoseReplayCheckedWithLimits(recorded, replay []Observation, limits repairAnalysisLimits) ([]RepairSuggestion, error) {
+	diagnosis, err := diagnoseReplayReviewCheckedWithLimits(recorded, replay, limits)
+	return diagnosis.Suggestions, err
+}
+
+func diagnoseReplayReviewCheckedWithLimits(recorded, replay []Observation, limits repairAnalysisLimits) (ReplayDiagnosis, error) {
 	correlations, err := DetectChecked(recorded)
 	if err != nil {
-		return nil, err
+		return ReplayDiagnosis{}, err
 	}
 	replayCandidatesByID, replayIndexTruncated, err := candidateIndexChecked(replay)
 	if err != nil {
-		return nil, err
+		return ReplayDiagnosis{}, err
 	}
 	if replayIndexTruncated {
 		// Diagnose stays fail-closed: a partially indexed replay would let
 		// missing suggestions read as a clean replay.
-		return nil, fmt.Errorf("%w: aggregate candidate count exceeds %d", ErrCorrelationWorkLimit, maxCorrelationCandidatesPerAnalysis)
+		return ReplayDiagnosis{}, fmt.Errorf("%w: aggregate candidate count exceeds %d", ErrCorrelationWorkLimit, maxCorrelationCandidatesPerAnalysis)
 	}
 	replayByID := indexObservations(replay)
+	coverage := newRelationshipCoverage(recorded, replayByID)
+	if len(correlations) == 0 {
+		coverage.Complete = false
+	}
+	missingConsumerWarnings := make(map[int]bool)
 	suggestions := make([]RepairSuggestion, 0)
 	var repairSearchBytes int64
 	repairLocations := 0
@@ -144,27 +161,54 @@ func diagnoseReplayCheckedWithLimits(recorded, replay []Observation, limits repa
 	}
 
 	for _, c := range correlations {
-		rep, ok := replayByID[c.FoundInID]
-		if !ok {
+		coverage.ProducerCount++
+		_, producerObserved := replayByID[c.FoundInID]
+		replayValue, extractorAvailable := lookupCandidateValue(replayCandidatesByID[c.FoundInID], c)
+		extractorAvailable = producerObserved && extractorAvailable && replayValue != ""
+		for _, usedID := range c.UsedInIDs {
+			if _, exists := replayByID[usedID]; exists {
+				continue
+			}
+			coverage.record(c, usedID, RelationshipConsumerMissing, producerObserved, extractorAvailable, false)
+			if !missingConsumerWarnings[usedID] {
+				if err := appendSuggestion(missingCorrelationConsumerSuggestion(c.FoundInID, usedID)); err != nil {
+					return ReplayDiagnosis{}, err
+				}
+				missingConsumerWarnings[usedID] = true
+			}
+		}
+		recordObservedConsumers := func(state RelationshipState) {
+			for _, usedID := range c.UsedInIDs {
+				if _, exists := replayByID[usedID]; exists {
+					coverage.record(c, usedID, state, producerObserved, extractorAvailable, true)
+				}
+			}
+		}
+		if !producerObserved {
+			coverage.MissingProducers++
+			coverage.Complete = false
+			recordObservedConsumers(RelationshipProducerMissing)
 			if err := appendSuggestion(missingCorrelationSourceSuggestion(c,
 				fmt.Sprintf("Step %d was not observed in the replay, so the recorded extractor for %q could not be verified.", c.FoundInID, c.Name))); err != nil {
-				return nil, err
+				return ReplayDiagnosis{}, err
 			}
 			continue
 		}
-		replayValue, _ := lookupCandidateValue(replayCandidatesByID[rep.ID], c)
-
-		if replayValue == "" {
+		if !extractorAvailable {
+			coverage.UnavailableExtractors++
+			coverage.Complete = false
+			recordObservedConsumers(RelationshipExtractorUnavailable)
 			// The recording extracted this value here, but the replay response no
 			// longer exposes it — the boundary or JSON path likely drifted.
 			if err := appendSuggestion(missingCorrelationSourceSuggestion(c,
 				fmt.Sprintf("Step %d no longer exposes %q at the recorded extractor location; the response boundary may have changed or become ambiguous.", c.FoundInID, c.Name))); err != nil {
-				return nil, err
+				return ReplayDiagnosis{}, err
 			}
 			continue
 		}
 
 		if replayValue == c.Value {
+			recordObservedConsumers(RelationshipProducerUnchanged)
 			// Value did not rotate between record and replay; treating it as a hard
 			// dynamic value would be a false positive, so skip.
 			continue
@@ -180,14 +224,24 @@ func diagnoseReplayCheckedWithLimits(recorded, replay []Observation, limits repa
 			if used, ok := replayByID[usedID]; ok {
 				cost := correlationRequestEvidenceBytes(used)
 				if cost > limits.searchBytes-repairSearchBytes {
-					return nil, fmt.Errorf("%w: repair request-surface search exceeds %d bytes", ErrCorrelationWorkLimit, limits.searchBytes)
+					return ReplayDiagnosis{}, fmt.Errorf("%w: repair request-surface search exceeds %d bytes", ErrCorrelationWorkLimit, limits.searchBytes)
 				}
 				repairSearchBytes += cost
 				usage, overflow := staleRepairUsageForObservation(used, c.Value, replayValue, limits.locations-repairLocations)
 				if overflow {
-					return nil, fmt.Errorf("%w: repair location count exceeds %d", ErrCorrelationWorkLimit, limits.locations)
+					return ReplayDiagnosis{}, fmt.Errorf("%w: repair location count exceeds %d", ErrCorrelationWorkLimit, limits.locations)
 				}
 				usageByID[usedID] = usage
+				state := RelationshipNoStaleLiteral
+				switch {
+				case len(usage.nonRepairable) > 0:
+					state = RelationshipManualSurface
+				case len(usage.unsupportedEncoded) > 0:
+					state = RelationshipManualEncoding
+				case len(usage.raw) > 0 || len(usage.queryEncoded) > 0:
+					state = RelationshipStaleLiteral
+				}
+				coverage.record(c, usedID, state, true, true, true)
 				hasRawUsage = hasRawUsage || len(usage.raw) > 0
 				hasEncodedUsage = hasEncodedUsage || len(usage.queryEncoded) > 0
 			}
@@ -206,7 +260,7 @@ func diagnoseReplayCheckedWithLimits(recorded, replay []Observation, limits repa
 			}
 			if len(usage.raw) > 0 {
 				if err := appendSuggestion(staleValueSuggestion(c, usedID, replayValue, usage.raw, extractorFor(c), "")); err != nil {
-					return nil, err
+					return ReplayDiagnosis{}, err
 				}
 			}
 			if len(usage.queryEncoded) > 0 {
@@ -216,24 +270,24 @@ func diagnoseReplayCheckedWithLimits(recorded, replay []Observation, limits repa
 					extractor.Convert = convert
 					extractor.Name = encodedExtractorName
 					if err := appendSuggestion(staleValueSuggestion(c, usedID, replayValue, usage.queryEncoded, extractor, "The stale request value is query/form encoded.")); err != nil {
-						return nil, err
+						return ReplayDiagnosis{}, err
 					}
 				} else {
 					if err := appendSuggestion(manualEncodedRepairSuggestion(c, usedID, replayValue, usage.queryEncoded,
 						"The source conversion cannot be combined safely with url_encode; update this encoded request value manually.")); err != nil {
-						return nil, err
+						return ReplayDiagnosis{}, err
 					}
 				}
 			}
 			if len(usage.unsupportedEncoded) > 0 {
 				if err := appendSuggestion(manualEncodedRepairSuggestion(c, usedID, replayValue, usage.unsupportedEncoded,
 					"The stale request uses a path or non-canonical form encoding that the DSL's url_encode conversion cannot reproduce exactly; update it manually.")); err != nil {
-					return nil, err
+					return ReplayDiagnosis{}, err
 				}
 			}
 			if len(usage.nonRepairable) > 0 {
 				if err := appendSuggestion(manualNonRepairableSuggestion(c, usedID, replayValue, usage.nonRepairable)); err != nil {
-					return nil, err
+					return ReplayDiagnosis{}, err
 				}
 			}
 		}
@@ -246,7 +300,7 @@ func diagnoseReplayCheckedWithLimits(recorded, replay []Observation, limits repa
 	// explains so they are not silently missed.
 	for _, suggestion := range diagnoseUnexplainedRejections(replay, suggestions) {
 		if err := appendSuggestion(suggestion); err != nil {
-			return nil, err
+			return ReplayDiagnosis{}, err
 		}
 	}
 
@@ -260,7 +314,7 @@ func diagnoseReplayCheckedWithLimits(recorded, replay []Observation, limits repa
 		}
 		return suggestions[i].FailingStepID < suggestions[j].FailingStepID
 	})
-	return suggestions, nil
+	return ReplayDiagnosis{Suggestions: suggestions, RelationshipCoverage: coverage}, nil
 }
 
 type staleRepairUsage struct {
@@ -647,10 +701,10 @@ func missingCorrelationSourceSuggestion(c Correlation, detail string) RepairSugg
 	}
 }
 
-// diagnoseUnexplainedRejections flags replay steps the server rejected (HTTP
-// >=400) that no value-rotation suggestion already explains. It is additive and
-// only fires when callers supply Observation.ResponseStatus (default 0 → no-op),
-// so it never changes behavior for status-less inputs.
+// diagnoseUnexplainedRejections flags server rejection and assertion-aware
+// failure with a received HTTP response when existing repairs do not explain
+// the step. Unknown status remains a no-op; an asserted failure on HTTP 2xx/3xx
+// is manual-only and does not infer an authentication or correlation cause.
 func diagnoseUnexplainedRejections(replay []Observation, existing []RepairSuggestion) []RepairSuggestion {
 	explained := make(map[int]struct{}, len(existing))
 	for _, s := range existing {
@@ -659,11 +713,27 @@ func diagnoseUnexplainedRejections(replay []Observation, existing []RepairSugges
 		}
 	}
 	out := make([]RepairSuggestion, 0)
+	assertionsReported := make(map[int]bool)
 	for _, o := range replay {
-		if o.ResponseStatus < 400 {
+		if o.ResponseSuccess != nil && *o.ResponseSuccess {
 			continue
 		}
-		if o.ResponseSuccess != nil && *o.ResponseSuccess {
+		if o.ResponseStatus > 0 && o.ResponseStatus < 400 && o.ResponseSuccess != nil && !*o.ResponseSuccess {
+			if assertionsReported[o.ID] {
+				continue
+			}
+			assertionsReported[o.ID] = true
+			out = append(out, RepairSuggestion{
+				RuleID: "replay_assertion_failed_unexplained", Severity: SeverityWarning,
+				Title:         "Replay step failed without a detected cause",
+				Detail:        fmt.Sprintf("Step %d received HTTP %d, but the replay engine reported failure. This comparison does not identify the cause.", o.ID, o.ResponseStatus),
+				FailingStepID: o.ID,
+				Suggestion:    "Inspect action diagnostics, failed assertions, and response expectations manually before choosing a repair.",
+				Confidence:    0.4, ConfidenceBand: confidenceBand(0.4), ReviewAction: "manual_review_required",
+			})
+			continue
+		}
+		if o.ResponseStatus < 400 {
 			continue
 		}
 		if _, ok := explained[o.ID]; ok {

@@ -37,6 +37,7 @@ import { groupImportFindings, draftImportFindings, reviewSectionFindings, type I
 import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import AuraOutcomeReview from './AuraOutcomeReview'
+import SalesforceCorrelationReview from './SalesforceCorrelationReview'
 import AuraParameterLocationDetails from './AuraParameterLocationDetails'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
@@ -4915,6 +4916,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               </div>
             )}
 
+            <SalesforceCorrelationReview preview={salesforceReview?.native_preview} sourceReview={sourceReview || undefined} onViewSource={mapping => { setRepairSourceFocus(previous => ({ id: mapping.id, file: mapping.source_file, revision: previous.revision + 1 })); setValidationReviewTab('source') }} />
             <AuraOutcomeReview report={salesforceReview?.aura_outcomes} sourceReview={sourceReview || undefined} onViewSource={mapping => { setRepairSourceFocus(previous => ({ id: mapping.id, file: mapping.source_file, revision: previous.revision + 1 })); setValidationReviewTab('source') }} />
 
             {salesforceReview && (

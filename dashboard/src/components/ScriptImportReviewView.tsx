@@ -8,6 +8,9 @@ import type { ScriptDefinition, ScriptImportMetadata } from '../types/scripts'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { apexCodeMirrorTheme } from './codeMirrorTheme'
 import SourceMappingReview from './SourceMappingReview'
+import SalesforceCorrelationReview from './SalesforceCorrelationReview'
+import type { SalesforceReview } from '../types/scriptImports'
+import { sourceReviewIsSourceOnly } from './sourceReviewDomain'
 import {
   formatImportParameterMapping,
   formatPromotionCount,
@@ -298,7 +301,7 @@ export function ImportedMetadataUtilityPanel({
             <span className="metric-badge">{sourceReview.source_files?.length || 0} files</span>
             <span className="metric-badge">{importSummary.correlationSuggestions.length} correlations</span>
           </div>
-          {activeAction !== null && (
+          {activeAction !== null && !sourceReviewIsSourceOnly(sourceReview) && (
             <button type="button" className="btn btn-sm btn-secondary" onClick={() => controller.focusSourceMappingForAction(activeAction)}>
               Focus Selected Action
             </button>
@@ -505,6 +508,7 @@ export function SourceMappingReviewDocument({
   return (
     <section id="imported-metadata-section" className="center-document import-metadata-panel config-panel imported-metadata-section open" aria-label="Source Mapping">
       <div className="import-metadata-body">
+        <SalesforceCorrelationReview preview={(controller.importMetadata?.preserved?.salesforce_review as SalesforceReview | undefined)?.native_preview} sourceReview={sourceReview || undefined} onViewSource={controller.focusSourceMapping} />
         {sourceReview && (
           <SourceMappingReview
             focusRequestId={controller.sourceMappingFocus.requestId}

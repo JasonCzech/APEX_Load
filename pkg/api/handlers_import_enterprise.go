@@ -159,6 +159,7 @@ func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.C
 	reviewForResponse := salesforceReviewForResponse(review)
 	if importReq.SalesforceNative && review.NativePreview != nil && review.NativePreview.Script != nil {
 		preview := review.NativePreview.Script
+		result.SourceReview = originalImportSourceReview(result.SourceReview)
 		preview.ProjectID = normalizeProjectID(importReq.ProjectID)
 		attachSourceReviewToScript(preview, "salesforce", reviewScript.Name, result.SourceReview)
 		if preview.Metadata != nil && preview.Metadata.Import != nil {
@@ -708,6 +709,24 @@ func (s *Server) newEnterpriseArchiveImportResponse(r *http.Request, result *ent
 	}
 	augmented := draft.augment(r)
 	warnings = augmented.Warnings
+	// Persisting the archive summary creates a separate response-safe review
+	// before augmentation. Refresh that summary from the trusted review after
+	// the last executable transform; the earlier copy has preview-only paths.
+	if finalized := trustedNativeSalesforceReview(result.Script); finalized != nil && finalized.NativePreview.NativePathDomain == salesforce.FinalNativePathDomain {
+		includePreviewScript := summary.SalesforceReview != nil && summary.SalesforceReview.NativePreview != nil && summary.SalesforceReview.NativePreview.Script != nil
+		summary.SalesforceReview = salesforceReviewForResponse(finalized)
+		if includePreviewScript {
+			// The summary retains its existing preview-script contract. The
+			// persisted review keeps Script nil, avoiding a metadata cycle.
+			summary.SalesforceReview.NativePreview.Script = result.Script
+		}
+		for index := range augmented.Sections {
+			if augmented.Sections[index].Key == "salesforce_review" {
+				augmented.Sections[index].Summary = salesforceReviewSummary(summary.SalesforceReview)
+				augmented.Sections[index].Items = salesforceReviewItems(summary.SalesforceReview)
+			}
+		}
+	}
 
 	return s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:                 result,

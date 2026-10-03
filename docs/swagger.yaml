@@ -36517,6 +36517,10 @@ paths:
                     required:
                       - errors
                       - warnings
+                  relationship_coverage:
+                    type: object
+                    description: 'Go type: correlate.RelationshipCoverage'
+                    additionalProperties: true
                   suggestions:
                     type: array
                     items:
@@ -36532,6 +36536,7 @@ paths:
                   - blocking
                   - compared_recorded_steps
                   - counts
+                  - relationship_coverage
                   - suggestions
                   - total_recorded_steps
         "400":
@@ -165911,6 +165916,10 @@ paths:
                     required:
                       - errors
                       - warnings
+                  relationship_coverage:
+                    type: object
+                    description: 'Go type: correlate.RelationshipCoverage'
+                    additionalProperties: true
                   suggestions:
                     type: array
                     items:
@@ -165926,6 +165935,7 @@ paths:
                   - blocking
                   - compared_recorded_steps
                   - counts
+                  - relationship_coverage
                   - suggestions
                   - total_recorded_steps
         "400":

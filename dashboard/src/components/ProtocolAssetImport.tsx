@@ -13,6 +13,7 @@ import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImp
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import AuraOutcomeReview from './AuraOutcomeReview'
+import SalesforceCorrelationReview from './SalesforceCorrelationReview'
 import AuraParameterLocationDetails from './AuraParameterLocationDetails'
 import ImportCoverageButton from './ImportCoverageButton'
 import ImportDropzone from './ImportDropzone'
@@ -2710,6 +2711,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                     </button>
                   </div>
                 )}
+                <SalesforceCorrelationReview preview={salesforceReview.native_preview} sourceReview={sourceReview || undefined} onViewSource={mapping => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title: 'Captured correlation request', source: mapping.id, description: 'Inspect the exact original source mapping for this captured request.' }))} />
                 <AuraOutcomeReview report={salesforceReview.aura_outcomes} sourceReview={sourceReview || undefined} onViewSource={mapping => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title: 'Captured Aura request', source: mapping.id, description: 'Inspect the existing source mapping for this captured request.' }))} />
                 <ImportEvidenceFacts facts={[
                   { label: 'traffic match', value: salesforceReview.detected ? 'Detected' : 'Needs review' },

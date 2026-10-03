@@ -107,7 +107,24 @@ export interface CorrelationRepairSuggestion {
   review_action: string
 }
 
+export type CorrelationRelationshipState = 'producer_missing' | 'extractor_unavailable' | 'consumer_missing' | 'producer_unchanged' | 'stale_literal' | 'no_stale_literal' | 'manual_encoding' | 'manual_surface'
+
+export interface CorrelationRelationshipCoverage {
+  complete: boolean
+  producer_count: number
+  consumer_count: number
+  missing_producers: number
+  unavailable_extractors: number
+  missing_consumers: number
+  state_counts: Partial<Record<CorrelationRelationshipState, number>>
+  details_complete: boolean
+  details_omitted: number
+  detail_limit: number
+  relationships: { rule_id?: string; producer_step_id: number; consumer_step_id: number; state: CorrelationRelationshipState; producer_observed: boolean; extractor_available: boolean; consumer_observed: boolean }[]
+}
+
 export interface CorrelationDiagnoseResponse {
+  relationship_coverage?: CorrelationRelationshipCoverage
   suggestions: CorrelationRepairSuggestion[]
   blocking: boolean
   counts: { errors: number; warnings: number }
@@ -730,6 +747,8 @@ export interface SourceReviewMapping {
 }
 
 export interface SourceReview {
+  /** Nonempty domains describe historical source paths, not current DSL bindings. */
+  target_domain?: string
   source_files?: SourceReviewFile[]
   mappings?: SourceReviewMapping[]
   total_source_files?: number

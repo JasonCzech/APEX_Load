@@ -670,6 +670,7 @@ func TestDiagnoseScriptReplayUsesPrivateSessionEvidenceWithoutDisclosure(t *test
 	controller.ObserveCorrelationEvidence(context.Background(), engine.ReplayDebugAction{Phase: "action", ActionIndex: 1}, &engine.ReplayActionEvent{
 		Phase:       "action",
 		ActionIndex: 1,
+		Success:     true,
 		CorrelationEvidence: &protocol.CorrelationEvidence{
 			ResponseBody:   `{"csrf_token":"` + replayToken + `"}`,
 			ResponseStatus: http.StatusOK,

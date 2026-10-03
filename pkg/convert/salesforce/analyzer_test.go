@@ -1942,6 +1942,7 @@ func TestAnalyzeNativePreviewSynthesizesBulkPollLoop(t *testing.T) {
 			t.Fatalf("synthesized loop failed validation: %s", issue)
 		}
 	}
+	assertNativeReferencePath(t, review.NativePreview, 4, "actions[3]", "actions[3].control.steps[0]")
 }
 
 // TestCompositeCandidatesParsesReferenceIds covers the A5 composite parser: one
@@ -2556,6 +2557,9 @@ func TestAnalyzeNativePreviewCometdConnectLoop(t *testing.T) {
 	if connectStep.TimeoutMs <= 110000 {
 		t.Fatalf("connect loop step timeout_ms = %d, want > 110000 for the long-poll hold", connectStep.TimeoutMs)
 	}
+
+	assertNativeReferencePath(t, review.NativePreview, 3, "actions[2]", "actions[2].control.steps[0]")
+	assertNativeReferencePath(t, review.NativePreview, 4, "actions[3]", "")
 }
 
 func TestWrapCometdConnectLoopRewritesRawMessageID(t *testing.T) {
@@ -2622,7 +2626,7 @@ func TestWrapCometdConnectLoopLeavesBatchedMessageIDAlone(t *testing.T) {
 // connect — folding it would repeat the subscribe.
 func TestIsCometdConnectActionExcludesBatchedMessages(t *testing.T) {
 	cometdMeta := map[string]any{"salesforce": map[string]any{"classification": "cometd"}}
-	pureConnect := &dsl.Action{Metadata: cometdMeta, Body: `message=[{"channel":"/meta/connect","clientId":"x"}]`}
+	pureConnect := &dsl.Action{Metadata: cometdMeta, Body: `message=[{"id":"1","channel":"/meta/connect","clientId":"x"}]`}
 	if !isCometdConnectAction(pureConnect) {
 		t.Fatal("a pure /meta/connect request should be foldable")
 	}

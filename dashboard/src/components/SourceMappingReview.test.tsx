@@ -1160,4 +1160,37 @@ describe('SourceMappingReview', () => {
     await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: ']' })))
     expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('homepage')
   })
+  it.each(['original_import', 'future_domain'])('keeps %s captured source navigable without current destination or review claims', async domain => {
+    const marked = { ...sourceReview, target_domain: domain }
+    const unrelated = { ...script, actions: [{ name: 'Unrelated transformed action', type: 'control_loop', target: '/unrelated' }] }
+    const onChange = vi.fn(), onEdit = vi.fn(), onRepair = vi.fn()
+    await act(async () => { root.render(<SourceMappingReview sourceReview={marked} script={unrelated} baselineScript={script} onChangeReview={onChange} onEditTarget={onEdit} onRepairTarget={onRepair} />) })
+    await flushPromises()
+    expect(container.querySelector('[aria-label="Original import source review"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Generated DSL"]')).toBeNull()
+    expect(container.querySelector('.source-map-panels')?.children.length).toBe(1)
+    expect(container.textContent).toContain('Original import path: actions[0]')
+    for (const text of ['Destination identity', 'Destination version', 'Record review decision', 'Re-link to this destination', 'Edit destination in Author', 'Review related import issue', 'Acknowledged', 'Not reviewed', 'Unrelated transformed action']) expect(container.textContent).not.toContain(text)
+    const select = sourceFileSelect(container)
+    await act(async () => { select.value = 'vuser_end.c'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    await flushPromises()
+    expect(container.querySelector('[aria-label="vuser_end.c source"]')?.textContent).toContain('Logout')
+    const exportButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Export filtered mappings')!
+    await act(async () => { exportButton.click() })
+    expect(downloadTextFileMock.mock.calls[0][0]).toContain('Original Import Path')
+    expect(downloadTextFileMock.mock.calls[0][0]).not.toContain('Current Target Path')
+    expect(downloadTextFileMock.mock.calls[0][0]).not.toContain('Review Decision')
+    expect(onChange).not.toHaveBeenCalled(); expect(onEdit).not.toHaveBeenCalled(); expect(onRepair).not.toHaveBeenCalled()
+  })
+
+  it('keeps legacy native-selected imports source-only when the captured review has no domain marker', async () => {
+    const native = { ...script, metadata: { import: { source: 'salesforce', preserved: { source_review: sourceReview, salesforce_review: { native_preview: { correlations: [] } }, source_mapping_review: { version: 1, importRevision: 'legacy', capturedAt: 'old', bindings: {}, decisions: { homepage: { outcome: 'acknowledged' } } } } } } }
+    await act(async () => { root.render(<SourceMappingReview sourceReview={sourceReview} script={native} baselineScript={script} onChangeReview={vi.fn()} />) })
+    await flushPromises()
+    expect(container.querySelector('[aria-label="Original import source review"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Generated DSL"]')).toBeNull()
+    for (const text of ['Destination identity', 'Destination version', 'Record review decision', 'Acknowledged', 'Not reviewed']) expect(container.textContent).not.toContain(text)
+    expect(container.textContent).toContain('Original import path: actions[0]')
+  })
+
 })

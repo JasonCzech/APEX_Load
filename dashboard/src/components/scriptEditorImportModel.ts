@@ -1,3 +1,4 @@
+import { sourceReviewForImport, sourceReviewIsSourceOnly } from './sourceReviewDomain'
 import type {
   ScriptActionDefinition,
   ScriptDataSource,
@@ -241,7 +242,7 @@ export function readSourceReview(metadata?: ScriptImportMetadata | null): Source
   const value = readPreservedImportObject(metadata, 'source_review')
   if (!value) return null
   if (!Array.isArray(value.source_files) && !Array.isArray(value.mappings)) return null
-  return value as SourceArchiveReview
+  return sourceReviewForImport(value as SourceArchiveReview, metadata)
 }
 
 function normalizeMappingText(value: unknown): string {
@@ -287,6 +288,7 @@ export function findSourceMappingForAction(
   action: ScriptActionDefinition | undefined,
   actionIndex: number,
 ): SourceArchiveReviewMapping | null {
+  if (sourceReviewIsSourceOnly(sourceReview)) return null
   const mappings = (sourceReview?.mappings || []).filter(mapping => mapping && mapping.id)
   if (mappings.length === 0 || !action || actionIndex < 0) return null
   const actionName = normalizeMappingText(action.name)
@@ -711,7 +713,9 @@ export function buildImportedParameterFileMappings(
 export function buildImportedCorrelationFocusTargets(
   actions: ScriptActionDefinition[],
   correlations: ImportCorrelationSuggestion[],
+  sourceReview?: SourceArchiveReview | null,
 ): ImportedCorrelationFocusTarget[] {
+  if (sourceReviewIsSourceOnly(sourceReview)) actions = []
   return correlations.map((correlation) => {
     const foundAtActionIndex = findActionIndexByImportedLocation(actions, correlation.found_at)
     const usedAtLocations = correlation.used_at.map((location) => {

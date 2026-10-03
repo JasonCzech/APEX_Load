@@ -1,3 +1,5 @@
+import CorrelationRelationshipCoverage from './CorrelationRelationshipCoverage'
+import { admitRelationshipEvidence } from './correlationEvidenceAdmission'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   CorrelationDiagnoseResponse,
@@ -106,7 +108,7 @@ export function CorrelationDiagnosePanel({
   const rulesetApi = useCorrelationRulesetApi()
   const [suggestions, setSuggestions] = useState<CorrelationRepairSuggestion[] | null>(null)
   const [presentedDiagnosisKey, setPresentedDiagnosisKey] = useState<string | null>(null)
-  const [diagnosisCoverage, setDiagnosisCoverage] = useState<Pick<CorrelationDiagnoseResponse, 'compared_recorded_steps' | 'total_recorded_steps' | 'truncated'> | null>(null)
+  const [diagnosisCoverage, setDiagnosisCoverage] = useState<Pick<CorrelationDiagnoseResponse, 'compared_recorded_steps' | 'total_recorded_steps' | 'truncated' | 'relationship_coverage'> | null>(null)
   const [automaticRepairSupported, setAutomaticRepairSupported] = useState(false)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -264,6 +266,7 @@ export function CorrelationDiagnosePanel({
       compared_recorded_steps: response.compared_recorded_steps ?? 0,
       total_recorded_steps: response.total_recorded_steps ?? 0,
       truncated: response.truncated,
+      relationship_coverage: response.relationship_coverage,
     })
     // A fresh diagnosis produces a new suggestion set, so re-enable "Save as
     // ruleset" — otherwise it stays stuck disabled for the rest of the session
@@ -427,6 +430,8 @@ export function CorrelationDiagnosePanel({
     ? `The stored baseline retains ${baselineRetained ?? 'only part'} of ${baselineTotal ?? 'all'} request observations; diagnosis will cover only that retained scope.`
     : null
   const diagnosisInconclusive = currentDiagnosisCoverage?.compared_recorded_steps === 0
+  const relationshipEvidence = useMemo(() => admitRelationshipEvidence(currentDiagnosisCoverage?.relationship_coverage), [currentDiagnosisCoverage?.relationship_coverage])
+  const relationshipInconclusive = relationshipEvidence.present && (relationshipEvidence.malformed || relationshipEvidence.coverage?.complete !== true)
 
   return (
     <div className="replay-detail-block correlation-diagnose" aria-label="Correlation diagnosis">
@@ -435,6 +440,7 @@ export function CorrelationDiagnosePanel({
         Compare this replay against the recording to find values that rotated (session tokens, CSRF, view-state) and add the extractors that fix them.
       </p>
 
+      <CorrelationRelationshipCoverage coverage={currentDiagnosisCoverage?.relationship_coverage} />
       {currentSuggestions === null ? (
         <div className="correlation-diagnose-actions">
           {recordingStatusState === 'loading' ? (
@@ -499,7 +505,9 @@ export function CorrelationDiagnosePanel({
         <div className="correlation-diagnose-empty">
           {diagnosisInconclusive
             ? 'Correlation diagnosis was inconclusive because no recorded request steps were compared.'
-            : 'No correlation issues detected in the compared recording/replay scope.'}
+            : relationshipInconclusive
+              ? 'Correlation relationship evidence is incomplete. Review missing observations and unresolved values before drawing a replay conclusion.'
+              : 'No correlation issues detected in the compared recording/replay scope.'}
           {coverageMessage && <span className="extractor-tester-note">{coverageMessage}</span>}
           {!automaticRepairSupported && <span className="extractor-tester-note">The replay evidence was disclosure-safe only, so verify this result manually with a saved replay session.</span>}
           <button type="button" className="btn btn-sm btn-ghost" onClick={resetDiagnosis}>Try another diagnosis</button>

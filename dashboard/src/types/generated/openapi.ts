@@ -43065,6 +43065,7 @@ export interface operations {
               "errors": number;
               "warnings": number;
             };
+            "relationship_coverage": Record<string, unknown>;
             "suggestions": Array<Record<string, unknown>>;
             "total_recorded_steps": number;
             "truncated"?: boolean;
@@ -43157,6 +43158,7 @@ export interface operations {
               "errors": number;
               "warnings": number;
             };
+            "relationship_coverage": Record<string, unknown>;
             "suggestions": Array<Record<string, unknown>>;
             "total_recorded_steps": number;
             "truncated"?: boolean;

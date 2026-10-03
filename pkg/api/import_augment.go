@@ -97,7 +97,9 @@ func (d *importDraft) augmentWithAgentforceTransform(agentforceTransform bool) i
 	// governed secret references. It must run before validation and preflight so
 	// those describe the draft the operator will actually save, not the
 	// pre-transform one.
+	nativeSalesforceReview := trustedNativeSalesforceReview(primary)
 	sections = attachAgentforceReview(primary, d.Source, sections, agentforceTransform)
+	finalizeSalesforceNativeReferences(nativeSalesforceReview, primary, d.SourceReview)
 
 	augmented := importAugmentation{Sections: sections, Warnings: d.Warnings, Accounting: d.Accounting}
 

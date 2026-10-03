@@ -2,6 +2,7 @@ import TooltipButton from './ux/TooltipButton'
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
 import { MappingReviewDetails } from './MappingReviewDetails'
 import { useMappingReviewState } from './useMappingReviewState'
+import { scriptHasSourceOnlyReview, sourceReviewIsSourceOnly } from './sourceReviewDomain'
 import { decisionMatches, type MappingReviewState } from './sourceMappingReviewState'
 import { Suspense, lazy, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
@@ -219,10 +220,12 @@ export default function SourceMappingReview({
   onToggleWorkspaceMaximized,
   showTitle = true,
   sourceReview,
-  script,
+  script: providedScript,
   title = 'Source Mapping',
   workspaceMaximized = false,
 }: Props) {
+  const sourceOnly = sourceReviewIsSourceOnly(sourceReview) || scriptHasSourceOnlyReview(providedScript)
+  const script = sourceOnly ? null : providedScript
   const [wrapLines, setWrapLines] = useCodeLineWrapPreference()
   const files = useMemo(() => normalizeFiles(sourceReview), [sourceReview])
   const mappings = useMemo(() => normalizeMappings(sourceReview), [sourceReview])
@@ -269,16 +272,18 @@ export default function SourceMappingReview({
   const [copied, setCopied] = useState<'source' | 'dsl' | ''>('')
   const [exportError, setExportError] = useState('')
   const [isTableCollapsed, setIsTableCollapsed] = useState(true)
-  const [maximizedPane, setMaximizedPane] = useState<'source' | 'dsl' | null>(null)
+  const [storedMaximizedPane, setMaximizedPane] = useState<'source' | 'dsl' | null>(null)
+  const maximizedPane = sourceOnly ? null : storedMaximizedPane
   const [destinationView, setDestinationView] = useState<'current' | 'baseline'>('current')
   const [contextOnly, setContextOnly] = useState(false)
   const [revealRequestId, setRevealRequestId] = useState(1)
-  const [noOriginTarget, setNoOriginTarget] = useState('')
+  const [storedNoOriginTarget, setNoOriginTarget] = useState('')
+  const noOriginTarget = sourceOnly ? '' : storedNoOriginTarget
   const [showNoOrigin, setShowNoOrigin] = useState(false)
   const keyboardSelection = useRef(false)
   const openingScript = useRef(script)
   const identity = useMappingReviewState(script, baselineScript || openingScript.current, sourceReview)
-  const effectiveMappings = useMemo(() => mappings.map(mapping => ({ ...mapping, target_path: identity.resolved[mapping.id]?.path })), [mappings, identity.resolved])
+  const effectiveMappings = useMemo(() => sourceOnly ? mappings : mappings.map(mapping => ({ ...mapping, target_path: identity.resolved[mapping.id]?.path })), [mappings, identity.resolved, sourceOnly])
   const acknowledgedMappingIds = useMemo(() => new Set(mappings.filter(mapping => identity.state && decisionMatches(identity.state.decisions[mapping.id], identity.state, identity.resolved[mapping.id]) && identity.state.decisions[mapping.id]?.outcome === 'acknowledged').map(mapping => mapping.id)), [mappings, identity.state, identity.resolved])
   const tableWrapRef = useRef<HTMLDivElement | null>(null)
   const reviewRootRef = useRef<HTMLElement | null>(null)
@@ -521,9 +526,12 @@ export default function SourceMappingReview({
 
   const exportCsv = async () => {
     setExportError('')
-    const header = ['Source File', 'Start Line', 'Function', 'Target Path', 'Status', 'Review Decision', 'Reviewer', 'Reviewed At', 'Review Note', 'Current Target Path', 'Target Identity', 'Support Mode', 'Notes'].join(',')
+    const header = (sourceOnly
+      ? ['Source File', 'Start Line', 'Function', 'Original Import Path', 'Original Conversion Status', 'Original Support Mode', 'Notes']
+      : ['Source File', 'Start Line', 'Function', 'Target Path', 'Status', 'Review Decision', 'Reviewer', 'Reviewed At', 'Review Note', 'Current Target Path', 'Target Identity', 'Support Mode', 'Notes']).join(',')
     const rows = filteredMappings.map(m => {
       const isApproved = acknowledgedMappingIds.has(m.id)
+      if (sourceOnly) return [csvCell(m.source_file), m.start_line || '', csvCell(m.function), csvCell(m.target_path), csvCell(m.status), csvCell(m.support_mode), csvCell(m.notes)].join(',')
       return [
         csvCell(m.source_file || ''),
         m.start_line || '',
@@ -656,13 +664,13 @@ export default function SourceMappingReview({
   ]
 
   return (
-    <section ref={reviewRootRef} id={id} className="source-map-review">
+    <section ref={reviewRootRef} id={id} className={`source-map-review${sourceOnly ? ' source-map-original-only' : ''}`} aria-label={sourceOnly ? 'Original import source review' : undefined}>
       <div className={`source-map-header ${showTitle ? '' : 'title-hidden'}`}>
         {showTitle && (
-          <ImportReviewSectionHeader title={title} description="Compare source and draft code. Select either side to highlight the corresponding mapping." />
+          <ImportReviewSectionHeader title={title} description={sourceOnly ? 'Inspect captured source and original import paths. Native transformations can change action positions.' : 'Compare source and draft code. Select either side to highlight the corresponding mapping.'} />
         )}
         <div className="source-map-header-controls">
-          <div className="source-map-coverage" role="group" aria-label="Conversion coverage">
+          <div className="source-map-coverage" role="group" aria-label={sourceOnly ? 'Original import conversion coverage' : 'Conversion coverage'}>
             {coverageChips.map(chip => {
               const category = chip.key as MappingCategory
               const active = categoryFilter === category
@@ -704,6 +712,8 @@ export default function SourceMappingReview({
           )}
         </div>
       </div>
+
+      {sourceOnly && <p role="note">These mappings describe the original import before native transformations. Source navigation and conversion coverage refer to that captured import.</p>}
 
       {(omittedFiles.length > 0 || truncatedFiles.length > 0 || unaccountedFiles > 0) && (
         <aside className="source-map-incomplete" role="note" aria-label="Source preview limits">
@@ -794,16 +804,16 @@ export default function SourceMappingReview({
             Export filtered mappings
           </button>
 
-        <label>Comparison scope<select value={contextOnly ? 'context' : 'full'} onChange={event => { setContextOnly(event.target.value === 'context'); setRevealRequestId(value => value + 1) }}><option value="context">Mapped context</option><option value="full">Full document</option></select></label>
-        <label>Destination version<select value={destinationView} onChange={event => { setDestinationView(event.target.value as typeof destinationView); setNoOriginTarget(''); setRevealRequestId(value => value + 1) }}><option value="current">Current draft</option><option value="baseline" disabled={!identity.state?.snapshot}>Review baseline</option></select></label>
+        <label>{sourceOnly ? 'Source scope' : 'Comparison scope'}<select value={contextOnly ? 'context' : 'full'} onChange={event => { setContextOnly(event.target.value === 'context'); setRevealRequestId(value => value + 1) }}><option value="context">Mapped context</option><option value="full">Full document</option></select></label>
+        {!sourceOnly && <label>Destination version<select value={destinationView} onChange={event => { setDestinationView(event.target.value as typeof destinationView); setNoOriginTarget(''); setRevealRequestId(value => value + 1) }}><option value="current">Current draft</option><option value="baseline" disabled={!identity.state?.snapshot}>Review baseline</option></select></label>}
         <details><summary>Keyboard shortcuts</summary><p>In the mapping list, use ↑/↓ and Home/End to select. Use [ and ] to move between unacknowledged review items while focus is in this workspace.</p></details>
       </div>
       </details>
       </div>
-      {destinationView === 'baseline' && <p>Review baseline captured {identity.state?.capturedAt ? new Date(identity.state.capturedAt).toLocaleString() : 'when this script was opened'}. This is a review reference, not a verified original import snapshot.</p>}
+      {!sourceOnly && destinationView === 'baseline' && <p>Review baseline captured {identity.state?.capturedAt ? new Date(identity.state.capturedAt).toLocaleString() : 'when this script was opened'}. This is a review reference, not a verified original import snapshot.</p>}
       {identity.error && <p role="alert">{identity.error}</p>}
 
-      {showNoOrigin && !identity.checking && <div className="source-map-origin-list" aria-label="Destination items without source origin">{dslStatus.withoutOrigin.length ? dslStatus.withoutOrigin.map(path => <button className="btn btn-sm btn-ghost" type="button" key={path} onClick={() => { setNoOriginTarget(path); setRevealRequestId(value => value + 1) }}>{path}</button>) : <p>Every tracked destination item has a source mapping.</p>}</div>}
+      {!sourceOnly && showNoOrigin && !identity.checking && <div className="source-map-origin-list" aria-label="Destination items without source origin">{dslStatus.withoutOrigin.length ? dslStatus.withoutOrigin.map(path => <button className="btn btn-sm btn-ghost" type="button" key={path} onClick={() => { setNoOriginTarget(path); setRevealRequestId(value => value + 1) }}>{path}</button>) : <p>Every tracked destination item has a source mapping.</p>}</div>}
       <div className={`source-map-workspace ${isTableCollapsed ? '' : 'with-navigator'}`}>
       <div ref={tableWrapRef} className="source-map-table-wrap" data-table-pagination="off" role="region" aria-label="Source mapping table keyboard navigation" tabIndex={0} onKeyDownCapture={handleTableKeyDown} style={{ display: isTableCollapsed ? 'none' : 'block' }}>
         <table className="source-map-table" aria-label="Source conversion mappings">
@@ -817,7 +827,7 @@ export default function SourceMappingReview({
             <tr>
               <th scope="col" aria-sort={sortField === 'source' ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'none'}><button type="button" onClick={() => handleSort('source')}>Source</button></th>
               <th scope="col" aria-sort={sortField === 'function' ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'none'}><button type="button" onClick={() => handleSort('function')}>Function</button></th>
-              <th scope="col" aria-sort={sortField === 'target' ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'none'}><button type="button" onClick={() => handleSort('target')}>Imported target</button></th>
+              <th scope="col" aria-sort={sortField === 'target' ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'none'}><button type="button" onClick={() => handleSort('target')}>{sourceOnly ? 'Original import path' : 'Imported target'}</button></th>
               <th scope="col" aria-sort={sortField === 'status' ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'none'}><button type="button" onClick={() => handleSort('status')}>Status</button></th>
             </tr>
           </thead>
@@ -850,7 +860,7 @@ export default function SourceMappingReview({
                         {formatSupportModeLabel(mapping.support_mode)}
                       </span>
                     )}
-                    <span>{identity.state?.decisions[mapping.id] ? acknowledgedMappingIds.has(mapping.id) ? 'Acknowledged' : 'Review decision recorded — inspect details' : 'Not reviewed'}</span>
+                    {!sourceOnly && <span>{identity.state?.decisions[mapping.id] ? acknowledgedMappingIds.has(mapping.id) ? 'Acknowledged' : 'Review decision recorded — inspect details' : 'Not reviewed'}</span>}
                   </div>
                 </td>
               </tr>
@@ -870,17 +880,17 @@ export default function SourceMappingReview({
       </div>
 
       <div className="source-map-comparison">
-      <nav className="lr-mapping-navigation" aria-label="Review mapping navigation">{[-1, 1].map(direction => <button key={direction} type="button" className="btn btn-secondary btn-sm" disabled={!mappings.some(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status))} onClick={() => { const reviewItems = mappings.filter(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status)); const index = reviewItems.findIndex(m => m.id === selectedMappingId); selectMapping(reviewItems[index < 0 ? direction < 0 ? reviewItems.length - 1 : 0 : (index + direction + reviewItems.length) % reviewItems.length]) }}>{direction < 0 ? 'Previous review mapping' : 'Next review mapping'}</button>)}<details className="source-map-status-help"><summary>About review status</summary><p>Conversion coverage describes source mappings, not import issues or execution readiness. Not reviewed means no acknowledgement has been recorded. Review acknowledgement does not resolve blockers.</p></details></nav>
+      <nav className="lr-mapping-navigation" aria-label="Review mapping navigation">{[-1, 1].map(direction => <button key={direction} type="button" className="btn btn-secondary btn-sm" disabled={!mappings.some(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status))} onClick={() => { const reviewItems = mappings.filter(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status)); const index = reviewItems.findIndex(m => m.id === selectedMappingId); selectMapping(reviewItems[index < 0 ? direction < 0 ? reviewItems.length - 1 : 0 : (index + direction + reviewItems.length) % reviewItems.length]) }}>{direction < 0 ? 'Previous review mapping' : 'Next review mapping'}</button>)}<details className="source-map-status-help"><summary>About review status</summary><p>{sourceOnly ? 'Conversion coverage describes original import mappings. It does not establish native replay or current draft readiness.' : 'Conversion coverage describes source mappings, not import issues or execution readiness. Not reviewed means no acknowledgement has been recorded. Review acknowledgement does not resolve blockers.'}</p></details></nav>
       {unmappedIssueFocus && <p className="source-map-issue-focus" role="status">No direct source mapping was identified for “{unmappedIssueFocus.title}”. {unmappedIssueFocus.filePath ? `Showing ${unmappedIssueFocus.filePath}${unmappedIssueFocus.line ? `:${unmappedIssueFocus.line}` : ''} for inspection.` : 'Select a captured source file to inspect this finding.'}</p>}
       {selectedMapping && !noOriginTarget && <div className="source-map-selected-details">
         <strong>{selectedMapping.function || formatSourceRange(selectedMapping)}</strong>
-        <span>Conversion: {formatStatusLabel(selectedMapping.status)} · Runtime support: {formatSupportModeLabel(selectedMapping.support_mode) || 'Not specified'}</span>
-        <span>Destination identity: {identity.checking ? 'Verifying…' : identity.resolved[selectedMapping.id]?.status || 'Unavailable'}</span>
-        {selectedMapping.notes && <p>{selectedMapping.notes}</p>}{onRepairTarget && selectedMapping.target_path && (!repairPaths || repairPaths.includes(selectedMapping.target_path)) && <button type="button" className="btn btn-primary btn-sm" onClick={() => onRepairTarget(selectedMapping.target_path!)}>Review related import issue</button>}
+        <span>{sourceOnly ? 'Original conversion' : 'Conversion'}: {formatStatusLabel(selectedMapping.status)} · {sourceOnly ? 'Original support mode' : 'Runtime support'}: {formatSupportModeLabel(selectedMapping.support_mode) || 'Not specified'}</span>
+        {sourceOnly ? <span>Original import path: <code>{selectedMapping.target_path || 'Unavailable'}</code></span> : <span>Destination identity: {identity.checking ? 'Verifying…' : identity.resolved[selectedMapping.id]?.status || 'Unavailable'}</span>}
+        {selectedMapping.notes && <p>{selectedMapping.notes}</p>}{!sourceOnly && onRepairTarget && selectedMapping.target_path && (!repairPaths || repairPaths.includes(selectedMapping.target_path)) && <button type="button" className="btn btn-primary btn-sm" onClick={() => onRepairTarget(selectedMapping.target_path!)}>Review related import issue</button>}
         {!filteredMappings.some(mapping => mapping.id === selectedMapping.id) && <p role="status">The selected mapping is outside the current filters. Clear filters to reveal it in the list.</p>}
-        <MappingReviewDetails key={selectedMapping.id + (identity.state?.decisions[selectedMapping.id]?.reviewedAt || '') + (identity.resolved[selectedMapping.id]?.path || '')} mapping={selectedMapping} script={script} state={identity.state} resolution={identity.resolved[selectedMapping.id]} onChange={onChangeReview} dirty={draftDirty} />
+        {!sourceOnly && <MappingReviewDetails key={selectedMapping.id + (identity.state?.decisions[selectedMapping.id]?.reviewedAt || '') + (identity.resolved[selectedMapping.id]?.path || '')} mapping={selectedMapping} script={script} state={identity.state} resolution={identity.resolved[selectedMapping.id]} onChange={onChangeReview} dirty={draftDirty} />}
       </div>}
-      {onEditTarget && destinationPath && destinationView === 'current' && <button type="button" className="btn btn-sm btn-secondary" onClick={() => onEditTarget(destinationPath)}>Edit destination in Author</button>}
+      {!sourceOnly && onEditTarget && destinationPath && destinationView === 'current' && <button type="button" className="btn btn-sm btn-secondary" onClick={() => onEditTarget(destinationPath)}>Edit destination in Author</button>}
       {exportError && <div className="scenario-script-status error" role="alert">{exportError}</div>}
 
       <div className="source-map-panels">
@@ -892,9 +902,9 @@ export default function SourceMappingReview({
                 {copied === 'source' ? 'Copied' : 'Copy mapped source'}
               </button>
               <button type="button" className="btn btn-sm btn-ghost" disabled={!copySupported || !selectedFile} onClick={() => void copyValue('source', selectedFile?.content || '')}>Copy whole source file</button>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'source' ? null : 'source')}>
+              {!sourceOnly && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'source' ? null : 'source')}>
                 {maximizedPane === 'source' ? 'Return to comparison' : 'Expand source'}
-              </button>
+              </button>}
             </div>
           </div>
           {selectedFile && !noOriginTarget ? (
@@ -919,7 +929,7 @@ export default function SourceMappingReview({
           )}
         </div>
 
-        <div className={`source-map-panel ${maximizedPane === 'source' ? 'hidden' : maximizedPane === 'dsl' ? 'maximized' : ''}`}>
+        {!sourceOnly && <div className={`source-map-panel ${maximizedPane === 'source' ? 'hidden' : maximizedPane === 'dsl' ? 'maximized' : ''}`}>
           <div className="source-map-panel-header">
             <strong title={destinationPath}>Destination · {destinationView === 'baseline' ? 'Review baseline' : 'Current draft'} · {destinationPath || 'No verified mapping'}</strong>
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -953,7 +963,7 @@ export default function SourceMappingReview({
           ) : (
             <div className="source-map-empty">{!dslDocument ? 'Destination is not available yet.' : identity.checking ? 'Verifying mapping identity…' : !selectedMapping ? unmappedIssueFocus ? 'No destination mapping is linked to this finding. Other mappings for this source file are listed above.' : 'This captured file has no destination mappings. Select a mapped file or inspect destination items without source origin.' : !selectedMapping.target_path && !identity.resolved[selectedMapping.id]?.path ? 'This source construct has no mapped destination. Its conversion status and review notes explain what needs attention.' : 'No verified destination. Inspect mapping details to re-link an edited, removed, or ambiguous target.'}</div>
           )}
-        </div>
+        </div>}
       </div>
       </div>
       </div>

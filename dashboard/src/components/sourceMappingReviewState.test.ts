@@ -78,4 +78,56 @@ describe('durable source mapping identity', () => {
     expect(reopened.decisions['__proto__']).toBeUndefined()
     expect((await resolveMappingBindings(script, hostile.mappings, state))['__proto__'].path).toBe('actions[0].target')
   })
+  it.each(['original_import', 'future_domain', ' '])('keeps %s paths source-only and removes legacy decisions on save without changing source evidence', async domain => {
+    const legacy = await createMappingReviewState(script, review)
+    const resolution = (await resolveMappingBindings(script, review.mappings!, legacy)).first
+    const oldDecision = { outcome: 'acknowledged' as const, reviewer: 'old-reviewer', reviewedAt: 'old-time', importRevision: legacy.importRevision, targetDigest: resolution.targetDigest!, note: 'Old annotation' }
+    const markedReview = { ...review, target_domain: domain }
+    const native: ScriptDefinition = { ...withMappingReviewState(script, { ...legacy, decisions: { first: oldDecision } }), actions: [{ type: 'control_loop', name: 'Transformed native action', target: '' }], metadata: { import: { preserved: { source_review: markedReview, source_mapping_review: { ...legacy, decisions: { first: oldDecision } }, keep: 'preserved' } } } }
+    const before = JSON.stringify(native)
+    expect(readMappingReviewState(native)).toBeNull()
+    const inert = await createMappingReviewState(native, markedReview)
+    expect(inert).toMatchObject({ sourceOnly: true, bindings: {}, decisions: {} })
+    expect(inert.snapshot).toBeUndefined()
+    expect((await resolveMappingBindings(native, markedReview.mappings!, legacy)).first).toEqual({ status: 'unmapped' })
+    expect((await resolveMappingBindings(script, markedReview.mappings!, inert)).first).toEqual({ status: 'unmapped' })
+    expect(decisionMatches(oldDecision, inert, resolution)).toBe(false)
+    await expect(rebindMapping(native, markedReview.mappings![0], legacy, 'actions[0]')).rejects.toThrow('Original source paths')
+    await expect(rebindMapping(script, markedReview.mappings![0], inert, 'actions[0]')).rejects.toThrow('Original source paths')
+    const saved = await preserveMappingBindings(native, script)
+    expect(saved.metadata?.import?.preserved?.source_mapping_review).toBeUndefined()
+    expect(saved.metadata?.import?.preserved?.source_review).toEqual(markedReview)
+    expect(saved.metadata?.import?.preserved?.keep).toBe('preserved')
+    expect(saved.actions).toEqual(native.actions)
+    expect(withMappingReviewState(native, legacy).metadata?.import?.preserved?.source_mapping_review).toBeUndefined()
+    expect(JSON.stringify(native)).toBe(before)
+    expect(readMappingReviewState(JSON.parse(JSON.stringify(saved)))).toBeNull()
+  })
+
+  it('retains current-script bindings for absent or empty legacy domains', async () => {
+    for (const domain of [undefined, '']) {
+      const currentReview = { ...review, target_domain: domain }
+      const current = { ...script, metadata: { import: { preserved: { source_review: currentReview } } } }
+      const state = await createMappingReviewState(current, currentReview)
+      expect((await resolveMappingBindings(current, currentReview.mappings!, state)).first.status).toBe('matched')
+      expect(readMappingReviewState(withMappingReviewState(current, state))).not.toBeNull()
+    }
+  })
+
+  it('clears stale annotations from a legacy native-selected draft without a domain marker', async () => {
+    const state = await createMappingReviewState(script, review)
+    const native: ScriptDefinition = { ...script, metadata: { import: { source: 'salesforce', preserved: { source_review: review, salesforce_review: { native_preview: { correlations: [] } }, source_mapping_review: { ...state, decisions: { first: { outcome: 'acknowledged', reviewer: 'old', reviewedAt: 'old', importRevision: state.importRevision, targetDigest: 'old', note: 'Old annotation' } } } } } } }
+    const original = JSON.stringify(native)
+    expect(readMappingReviewState(native)).toBeNull()
+    expect(await createMappingReviewState(native, review)).toMatchObject({ sourceOnly: true, bindings: {}, decisions: {} })
+    expect((await resolveMappingBindings(native, review.mappings!, state)).first).toEqual({ status: 'unmapped' })
+    await expect(rebindMapping(native, review.mappings![0], state, 'actions[0]')).rejects.toThrow('Original source paths')
+    const saved = await preserveMappingBindings(native, script)
+    expect(saved.metadata?.import?.preserved?.source_mapping_review).toBeUndefined()
+    expect(saved.metadata?.import?.preserved?.source_review).toEqual(review)
+    expect(saved.metadata?.import?.preserved?.salesforce_review).toEqual(native.metadata?.import?.preserved?.salesforce_review)
+    expect(JSON.stringify(native)).toBe(original)
+    expect(readMappingReviewState(JSON.parse(JSON.stringify(saved)))).toBeNull()
+  })
+
 })

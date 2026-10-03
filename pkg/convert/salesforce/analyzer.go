@@ -83,21 +83,27 @@ type MatchCoverage struct {
 }
 
 type NativePreview struct {
-	Script       *dsl.Script            `json:"script,omitempty"`
-	Correlations []CorrelationCandidate `json:"correlations,omitempty"`
+	Script              *dsl.Script                `json:"script,omitempty"`
+	Correlations        []CorrelationCandidate     `json:"correlations,omitempty"`
+	NativePathDomain    string                     `json:"native_path_domain,omitempty"`
+	CorrelationCoverage *NativeCorrelationCoverage `json:"correlation_coverage,omitempty"`
+	referenceCatalog    *nativeReferenceCatalog
 }
 
 type CorrelationCandidate struct {
-	Name         string   `json:"name"`
-	Source       string   `json:"source"`
-	Expression   string   `json:"expression"`
-	FoundInSeq   int      `json:"found_in_seq"`
-	UsedInSeqs   []int    `json:"used_in_seqs,omitempty"`
-	RuleID       string   `json:"rule_id,omitempty"`
-	Confidence   float64  `json:"confidence,omitempty"`
-	Reasons      []string `json:"reasons,omitempty"`
-	PreApplied   bool     `json:"pre_applied,omitempty"`
-	ReviewAction string   `json:"review_action,omitempty"`
+	Name                      string                   `json:"name"`
+	Source                    string                   `json:"source"`
+	Expression                string                   `json:"expression"`
+	FoundInSeq                int                      `json:"found_in_seq"`
+	UsedInSeqs                []int                    `json:"used_in_seqs,omitempty"`
+	RuleID                    string                   `json:"rule_id,omitempty"`
+	Confidence                float64                  `json:"confidence,omitempty"`
+	Reasons                   []string                 `json:"reasons,omitempty"`
+	PreApplied                bool                     `json:"pre_applied,omitempty"`
+	ReviewAction              string                   `json:"review_action,omitempty"`
+	ProducerReference         *NativeRequestReference  `json:"producer_reference,omitempty"`
+	ConsumerReferences        []NativeRequestReference `json:"consumer_references,omitempty"`
+	ConsumerReferencesOmitted int                      `json:"consumer_references_omitted,omitempty"`
 }
 
 // ParameterizationCandidate is a record/object identifier discovered inside an
@@ -249,6 +255,10 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 			return nil, err
 		}
 		review.NativePreview = preview
+		if preview.CorrelationCoverage != nil && len(correlationWarnings) > 0 {
+			preview.referenceCatalog.base.Complete = false
+			preview.CorrelationCoverage.Complete = false
+		}
 	}
 	return review, nil
 }
@@ -1306,13 +1316,15 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 		action.HeaderList = applyCorrelationVarsToHeaderList(action.HeaderList, actionVars)
 	}
 
+	originalCorrelationRefs := make(map[int]*actionRef, len(harIDToRef))
+	for id, ref := range harIDToRef {
+		copied := *ref
+		originalCorrelationRefs[id] = &copied
+	}
 	synthesizeBulkPollLoops(cloneRefs)
 	collapseCometdConnectLoops(clone)
 
-	return &NativePreview{
-		Script:       clone,
-		Correlations: correlationSummaries(namedCorrelations, harIDToRef, applications),
-	}, nil
+	return newNativeReferencePreview(clone, correlations, namedCorrelations, originalCorrelationRefs, applications), nil
 }
 
 // collapseCometdConnectLoops folds a contiguous run of CometD Bayeux
@@ -1329,24 +1341,50 @@ func collapseCometdConnectLoops(script *dsl.Script) {
 }
 
 func collapseCometdConnectRun(actions []dsl.Action) []dsl.Action {
-	out := make([]dsl.Action, 0, len(actions))
-	for i := 0; i < len(actions); {
-		if isCometdConnectAction(&actions[i]) {
-			j := i + 1
-			for j < len(actions) && isCometdConnectAction(&actions[j]) {
-				j++
-			}
-			if j-i >= 2 && cometdConnectExtractorsAreEquivalent(actions[i:j]) {
-				connect := actions[i]
-				out = append(out, wrapCometdConnectLoop(connect, j-i))
-				i = j
-				continue
-			}
-		}
-		out = append(out, actions[i])
-		i++
-	}
+	out, _ := collapseCometdConnectRunInspected(actions)
 	return out
+}
+
+// Keep at most the current signature and one pending signature. Every request
+// is admitted/normalized once, including the first non-equivalent next request.
+func collapseCometdConnectRunInspected(actions []dsl.Action) ([]dsl.Action, int) {
+	out := make([]dsl.Action, 0, len(actions))
+	inspections := 0
+	pendingIndex := -1
+	var pending dsl.Action
+	pendingOK := false
+	prepare := func(index int) (dsl.Action, bool) {
+		if index == pendingIndex {
+			pendingIndex = -1
+			return pending, pendingOK
+		}
+		inspections++
+		return cometdConnectComparisonAction(actions[index])
+	}
+	for i := 0; i < len(actions); {
+		first, ok := prepare(i)
+		if !ok {
+			out = append(out, actions[i])
+			i++
+			continue
+		}
+		j := i + 1
+		for j < len(actions) {
+			candidate, admitted := prepare(j)
+			if !admitted || !cometdConnectComparisonsEqual(first, candidate) {
+				pendingIndex, pending, pendingOK = j, candidate, admitted
+				break
+			}
+			j++
+		}
+		if j-i >= 2 && cometdConnectExtractorsAreEquivalent(actions[i:j]) {
+			out = append(out, wrapCometdConnectLoop(actions[i], j-i))
+		} else {
+			out = append(out, actions[i:j]...)
+		}
+		i = j
+	}
+	return out, inspections
 }
 
 // cometdConnectExtractorsAreEquivalent keeps correlation timing intact when a
@@ -1378,13 +1416,17 @@ func isCometdConnectAction(action *dsl.Action) bool {
 	if action == nil || actionClassification(action) != "cometd" {
 		return false
 	}
-	body := strings.ToLower(action.Body)
-	// Only a request whose Bayeux payload is purely /meta/connect is foldable: a
-	// batched message that also carries /meta/subscribe or /meta/handshake must
-	// stay a discrete step (folding it would repeat the subscribe/handshake).
-	return strings.Contains(body, "/meta/connect") &&
-		!strings.Contains(body, "/meta/subscribe") &&
-		!strings.Contains(body, "/meta/handshake")
+	// Only a bounded, unambiguous single connect
+	// can become a repeated action. Channel text elsewhere is not evidence.
+	if strings.TrimSpace(action.BodyEncoding) != "" {
+		return false
+	}
+	message, ok := cometdConnectMessageBody(action.Body)
+	if !ok {
+		return false
+	}
+	_, _, ok = singleBayeuxConnectMessage(message)
+	return ok
 }
 
 func actionClassification(action *dsl.Action) string {
@@ -1435,6 +1477,9 @@ func wrapCometdConnectLoop(connect dsl.Action, count int) dsl.Action {
 }
 
 func rewriteCometdConnectLoopID(body string) string {
+	if len(body) > maxCometdConnectBodyBytes {
+		return body
+	}
 	trimmed := strings.TrimSpace(body)
 	if trimmed == "" {
 		return body
@@ -1452,40 +1497,16 @@ func rewriteCometdConnectLoopID(body string) string {
 }
 
 func rewriteFormEncodedCometdMessage(body string) (string, bool) {
-	parts := strings.Split(body, "&")
-	messageIndex := -1
-	messageKey := ""
-	messageValue := ""
-	for index, part := range parts {
-		key, value, ok := strings.Cut(part, "=")
-		if !ok {
-			continue
-		}
-		decodedKey, err := url.QueryUnescape(key)
-		if err != nil || decodedKey != "message" {
-			continue
-		}
-		if messageIndex >= 0 {
-			return "", false
-		}
-		decodedValue, err := url.QueryUnescape(value)
-		if err != nil {
-			return "", false
-		}
-		messageIndex = index
-		messageKey = key
-		messageValue = decodedValue
-	}
-	if messageIndex < 0 {
+	message, ok := cometdConnectMessageBody(body)
+	if !ok {
 		return "", false
 	}
-	rewrittenMessage, ok := rewriteBayeuxConnectMessageID(messageValue)
+	rewrittenMessage, ok := rewriteBayeuxConnectMessageID(message)
 	if !ok {
 		return "", false
 	}
 	encodedMessage := preserveTemplateBraces(url.QueryEscape(rewrittenMessage))
-	parts[messageIndex] = messageKey + "=" + encodedMessage
-	return strings.Join(parts, "&"), true
+	return replaceCometdFormMessage(body, encodedMessage)
 }
 
 func preserveTemplateBraces(value string) string {
@@ -1497,26 +1518,15 @@ func preserveTemplateBraces(value string) string {
 }
 
 func rewriteBayeuxConnectMessageID(raw string) (string, bool) {
-	var messages []map[string]any
-	if err := json.Unmarshal([]byte(raw), &messages); err == nil {
-		if len(messages) != 1 || !rewriteSingleBayeuxConnectID(messages[0]) {
-			return "", false
-		}
-		rewritten, err := json.Marshal(messages)
-		if err != nil {
-			return "", false
-		}
-		return string(rewritten), true
-	}
-
-	var message map[string]any
-	if err := json.Unmarshal([]byte(raw), &message); err != nil {
+	message, array, ok := singleBayeuxConnectMessage(raw)
+	if !ok || !rewriteSingleBayeuxConnectID(message) {
 		return "", false
 	}
-	if !rewriteSingleBayeuxConnectID(message) {
-		return "", false
+	var value any = message
+	if array {
+		value = []map[string]any{message}
 	}
-	rewritten, err := json.Marshal(message)
+	rewritten, err := json.Marshal(value)
 	if err != nil {
 		return "", false
 	}

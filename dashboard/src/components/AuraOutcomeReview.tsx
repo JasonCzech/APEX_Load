@@ -46,7 +46,9 @@ function issueLabel(code: string): string {
 function sourceMapping(batch: AuraOutcomeBatch, sourceReview?: SourceReview): SourceReviewMapping | undefined {
   if (!batch.action_path) return undefined
   const matches = sourceReview?.mappings?.filter(mapping => mapping.target_path === batch.action_path && mapping.target_kind === 'action') || []
-  return matches.length === 1 ? matches[0] : undefined
+  const mapping = matches.length === 1 ? matches[0] : undefined
+  if (!mapping?.id || !mapping.source_file) return undefined
+  return sourceReview?.mappings?.filter(candidate => candidate.id === mapping.id).length === 1 ? mapping : undefined
 }
 function batchStatus(batch: AuraOutcomeBatch): string {
   if (batch.analysis.has_response !== true) return 'No response captured'
