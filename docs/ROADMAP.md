@@ -4,6 +4,8 @@ Status: Roadmap. Planned and in-progress engineering work with the current state
 
 Source note: consolidated 2026-09-24 from the former `RUNTIME_TELEMETRY_SLA_PLAN.md`, `PROTOCOL_TELEMETRY_PARITY_PLAN.md`, `SCRIPT_AUTHORING_CONSOLIDATION_ROADMAP.md`, `PT_ANALYSIS_PARQUET_IMPORT_PLAN.md`, `MESSAGING_PLAN.md`, `BROWSER_ROADMAP.md` and `CLOUDTEST_PARITY_PROGRAM.md`. Older design sketches can be recovered from git history. Current support guidance lives in [Browser and mobile support](PROTOCOL_SUPPORT.md#browser-execution-and-mobile-emulation) and [Messaging support](PROTOCOL_SUPPORT.md#broker-and-messaging-support); benchmark procedure lives in [PERFORMANCE_BENCHMARKS.md](PERFORMANCE_BENCHMARKS.md#browser-benchmark-runbook).
 
+The [feature completion specification](FEATURE_COMPLETION_SPEC.md) evaluates the published 2026-10-02 implementation and defines full remaining requirements, interfaces, release sequencing and acceptance for Event Hubs/messaging, browser evidence/intelligence, telemetry reporting, native analytics and authoring cleanup. Implementation was authorized 2026-10-02; it is not a support-promotion record; source-backed corrections there supersede older design assumptions.
+
 ## Track status
 
 | Track | Status | Open work |
@@ -200,7 +202,7 @@ Scope: importing, running and evaluating results for JMS, Apache Kafka, Solace P
 | P2.6 Solace native SMF transport | Not built | Solace is JMS-over-AMQP 1.0 only (`jms_solace_real`). No direct vs guaranteed, wildcards, partitioned queues, DMQ/max-redelivery, replay. Spec below. |
 | Event Hubs deployment env vars and HOWTO | Implemented | Optional auth/probe-group defaults preserve explicit script settings; [deployment guide](EVENT_HUBS_HOWTO.md) documents identity, real-adapter builds, consumer isolation and terminal lag gates. Live Azure acceptance remains open. |
 | Event Hubs consumer-side parity | Processor implemented; live acceptance pending | Opt-in AAD processor with balanced ownership, fenced durable Blob checkpoints and restart recovery. Epoch-exclusive fixed-partition consumption is implemented; live Azure rebalance/crash/epoch-takeover acceptance remains open; observer probes remain available. |
-| Messaging depth gaps | Partial | Broker-backed Kafka transaction/EOS/rebalance acceptance, unified offset/queue-depth lag across providers, not every adapter populates the reliability counters, no Event Hubs GA emulator so live coverage needs a namespace, many JMS/AMQP/Solace/MQ/MQTT AsyncAPI bindings still downgrade to review-only. |
+| Messaging depth gaps | Partial | Broker-backed Kafka transaction/EOS/rebalance acceptance, unified offset/queue-depth lag across providers, not every adapter populates the reliability counters, the Event Hubs emulator covers only its documented local subset, so identity/service-recovery acceptance still needs Azure, many JMS/AMQP/Solace/MQ/MQTT AsyncAPI bindings still downgrade to review-only. |
 
 IBM MQ is very low priority at user direction (2026-10-01); do not include it in the current analytics slice.
 
@@ -274,7 +276,7 @@ Design: add `pkg/protocol/jms/solace_smf.go` (`//go:build jms_solace_smf`) imple
 
 DSL and catalog (`pkg/dsl/catalog_jms.go`): on `jms_publish` add `params.delivery_mode` (`direct|persistent`), `params.partition_key`, `params.dmq_eligible`, `params.ttl_ms`; on `jms_consume` add `params.access_type` (`exclusive|nonexclusive`), `params.max_redelivery` (0-255), `params.flow_window`, `params.replay` (`none|all|msg-id|timestamp`), `params.replay_from`. Config keys: `jms_transport`, `jms_publisher_ack_window`, `jms_compression` (1-9), `jms_replay`, `jms_replay_from`. Validation in `validateJMSScriptIssues`: redelivery range, `replay_from` required for msg-id/timestamp, SMF availability gate. Telemetry: `RedeliveryCount` from SMF delivery count, extractions `jms_redelivered`, `solace_partition_key`, `solace_replay_offset`.
 
-Build and CI: add `solace.dev/go/messaging` to `go.mod`; tags `jms_solace_smf` and `jms_solace_smf_integration`; a lane in the `protocol-tags` job; integration against a `solace/solace-pubsub-standard` testcontainer. Acceptance mirrors the goal list plus a clear fail-closed error ("build with -tags jms_solace_smf") in the default build. Effort XL. Risks: confirm the SDK is CGO-free for the linux/amd64 generator image, otherwise fall back to the sidecar adapter path; replay and DMQ need broker-side provisioning in the harness; partitioned queues need a recent broker; ack/flow-window tuning interacts with VUser density targets.
+Build and CI: add `solace.dev/go/messaging` to `go.mod`; tags `jms_solace_smf` and `jms_solace_smf_integration`; a lane in the `protocol-tags` job; integration against a `solace/solace-pubsub-standard` testcontainer. Acceptance mirrors the goal list plus a clear fail-closed error ("build with -tags jms_solace_smf") in the default build. Effort XL. Risks: the official Go SDK uses CGO and requires an explicit native generator profile and platform qualification; see the completion specification; replay and DMQ need broker-side provisioning in the harness; partitioned queues need a recent broker; ack/flow-window tuning interacts with VUser density targets.
 
 ### Azure Event Hubs design record
 
@@ -300,7 +302,7 @@ Two additive deliverables: a Kafka protocol plugin (`pkg/protocol/kafka`, direct
 
 - Every change: table-driven unit tests, `go test ./...`, browser verification for dashboard changes.
 - Build-tag matrix proving both gating directions: default, `kafka_real`, `jms_solace_real`, `jms_servicebus_real`, `eventhubs_real`, plus `ibmmq_real` and `jms_solace_smf` when built; each tagged job runs `go test -tags <tag> ./pkg/dsl ./pkg/protocol/...` (`ci.yml` `protocol-tags`, enterprise Dockerfile profile).
-- Integration via testcontainers behind the build tag and an opt-in env: Kafka (Redpanda/Apache) plus schema registry, IBM MQ, Solace, ActiveMQ Artemis. Service Bus has an official emulator; Event Hubs has no GA emulator, so live coverage needs a namespace, otherwise mock and contract tests only.
+- Integration via testcontainers behind the build tag and an opt-in env: Kafka (Redpanda/Apache) plus schema registry, IBM MQ, Solace, ActiveMQ Artemis. Service Bus has an official emulator; Event Hubs has an official emulator for a documented local subset; live identity/ownership/recovery coverage still needs an approved namespace. See the completion specification for separate emulator/live gates.
 - Event Hubs mock end-to-end: `apexctl run` with an `eventhubs` producer script (`mock:true`) plus observer probe, and a `kafka` script with `profile:eventhubs`; confirm throughput, ack latency, simulated throttling, per-partition distribution and probe E2E latency in `GET /api/v1/tests/{id}/metrics`. Import checks: AsyncAPI with an EH binding yields `kafka.profile=eventhubs`; Capture Avro yields produce DSL. Also `terraform validate` in `deployments/azure/terraform` and `helm lint`.
 
 ---
