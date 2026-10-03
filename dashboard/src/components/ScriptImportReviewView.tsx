@@ -9,6 +9,7 @@ import { dialogBackdropProps } from './dialogBackdropProps'
 import { apexCodeMirrorTheme } from './codeMirrorTheme'
 import SourceMappingReview from './SourceMappingReview'
 import SalesforceCorrelationReview from './SalesforceCorrelationReview'
+import RecordingEnvironmentReview from './RecordingEnvironmentReview'
 import type { SalesforceReview } from '../types/scriptImports'
 import { sourceReviewIsSourceOnly } from './sourceReviewDomain'
 import {
@@ -508,6 +509,7 @@ export function SourceMappingReviewDocument({
   return (
     <section id="imported-metadata-section" className="center-document import-metadata-panel config-panel imported-metadata-section open" aria-label="Source Mapping">
       <div className="import-metadata-body">
+        <RecordingEnvironmentReview script={script} />
         <SalesforceCorrelationReview preview={(controller.importMetadata?.preserved?.salesforce_review as SalesforceReview | undefined)?.native_preview} sourceReview={sourceReview || undefined} onViewSource={controller.focusSourceMapping} />
         {sourceReview && (
           <SourceMappingReview

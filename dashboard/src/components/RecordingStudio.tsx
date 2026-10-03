@@ -2763,12 +2763,12 @@ export default function RecordingStudio({
                 />
               </div>
               <div className="rec-form-row">
-                <div className="rec-label">Device</div>
+                <div className="rec-label">Emulated device preset</div>
                 <select
                   className="rec-input"
                   value={browserDevice}
                   onChange={(e) => setBrowserDevice(e.target.value)}
-                  aria-label="Device preset"
+                  aria-label="Emulated device preset"
                 >
                   <option value="">Desktop (default)</option>
                   {browserDevices
@@ -2780,6 +2780,10 @@ export default function RecordingStudio({
                     ))}
                 </select>
               </div>
+              <p className="rec-browser-emulation-note">
+                Presets emulate viewport, mobile mode and touch on the recording
+                workstation. They do not qualify Chrome on a physical iPad.
+              </p>
               <label className="rec-checkbox-row">
                 <input
                   type="checkbox"
