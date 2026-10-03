@@ -3,6 +3,7 @@ package protocol
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"testing"
 )
 
@@ -75,7 +76,7 @@ func TestMessagingMergeMatchesSequential(t *testing.T) {
 	}
 	MergeMessagingSummary(&merged, one)
 	MergeMessagingSummary(&merged, two)
-	if merged.Dimensions[0] != sequential.Dimensions[0] {
+	if !reflect.DeepEqual(merged.Dimensions[0], sequential.Dimensions[0]) {
 		t.Fatalf("merge mismatch: %+v %+v", merged, sequential)
 	}
 }

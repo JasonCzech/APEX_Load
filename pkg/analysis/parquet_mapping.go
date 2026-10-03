@@ -107,6 +107,12 @@ func slicesEqual(a, b []string) bool {
 }
 func NormalizeUnit(unit string) (string, float64, error) {
 	switch unit {
+	case "observations":
+		return "count", 1, nil
+	case "observations/s":
+		return "count/s", 1, nil
+	case "%":
+		return "percent", 1, nil
 	case "s":
 		return "ms", 1000, nil
 	case "us":

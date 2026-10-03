@@ -102,11 +102,7 @@ func (q SeriesQuery) Validate() error {
 	if q.ProjectID == "" || q.DatasetID == "" || q.Metric == "" || len(q.Metric) > 256 || q.From.IsZero() || !q.To.After(q.From) || q.To.Sub(q.From) > 366*24*time.Hour || q.BucketSeconds < 1 || q.BucketSeconds > 86400 || math.Ceil(q.To.Sub(q.From).Seconds()/float64(q.BucketSeconds)) > analysis.MaxSeriesPoints {
 		return errors.New("invalid or excessive analytical series window")
 	}
-	switch q.Aggregation {
-	case "avg", "min", "max", "sum", "count", "p50", "p95", "p99", "rate":
-		return nil
-	}
-	return errors.New("unsupported analytical aggregation")
+	return analysis.ValidateScalarAggregationName(q.Aggregation)
 }
 
 // API callers use context cancellation and bounded job deadlines; no operation

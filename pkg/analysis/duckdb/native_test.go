@@ -175,3 +175,52 @@ func TestNativeRejectionProvenanceAndNullBuckets(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeSeriesPreservesBucketStatisticIdentity(t *testing.T) {
+	e, path := nativeFixture(t, "SELECT 1700000000000 AS ts, 1::DOUBLE AS value UNION ALL SELECT 1700000000100, 101::DOUBLE")
+	mapping := Mapping{Version: 1, Timestamp: Column{"ts"}, TimestampEncoding: "unix_ms", Timezone: "UTC", Measures: []Measure{{Value: Column{"value"}, Name: "latency", Kind: analysis.KindObservation, Unit: "ms"}}}
+	normalized, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, aggregate := range []string{"avg", "p95"} {
+		q := SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: "latency", From: time.UnixMilli(1700000000000), To: time.UnixMilli(1700000002000), BucketSeconds: 1, Aggregation: aggregate}
+		points, err := e.Series(context.Background(), normalized.Files, q)
+		if err != nil || len(points) != 2 {
+			t.Fatalf("series=%+v err=%v", points, err)
+		}
+		for _, point := range points {
+			if len(point.Derivation) != 1 || point.Derivation[0].Operation != aggregate || point.Derivation[0].BucketSeconds != 1 {
+				t.Fatalf("statistic identity lost: %+v", point)
+			}
+		}
+		points[0].Derivation[0].Operation = "mutated"
+		if points[1].Derivation[0].Operation != aggregate {
+			t.Fatal("missing bucket lineage aliases observed bucket")
+		}
+	}
+}
+
+func TestNativeCounterRatesRemainEpochUnqualified(t *testing.T) {
+	e, path := nativeFixture(t, "SELECT 1700000000000 AS ts, 10::DOUBLE AS value UNION ALL SELECT 1700000001000, 100::DOUBLE UNION ALL SELECT 1700000002000, 105::DOUBLE")
+	mapping := Mapping{Version: 1, Timestamp: Column{"ts"}, TimestampEncoding: "unix_ms", Timezone: "UTC", Measures: []Measure{{Value: Column{"value"}, Name: "requests", Kind: analysis.KindCounter, Unit: "count"}}}
+	normalized, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: "requests", From: time.UnixMilli(1700000000000), To: time.UnixMilli(1700000003000), BucketSeconds: 1, Aggregation: "rate"}
+	points, err := e.Series(context.Background(), normalized.Files, q)
+	if err != nil || len(points) != 3 || points[1].Value == nil || *points[1].Value != 90 {
+		t.Fatalf("legacy native rate=%+v error=%v", points, err)
+	}
+	for _, point := range points {
+		if len(point.Derivation) != 2 || point.Derivation[0].Operation != "legacy_derived" || point.Derivation[0].Algorithm != "unknown_counter_epoch" {
+			t.Fatalf("native counter epoch silently qualified: %+v", point)
+		}
+		point.Population, point.MetricVersion = analysis.PopulationInfrastructure, "requests.v1"
+		got, err := analysis.EvaluateBaselineDelta(point, point, false)
+		if err != nil || got.Value != nil || got.Reason != "unknown_measurement_semantics" {
+			t.Fatalf("native raw counter rate qualified: %+v error=%v", got, err)
+		}
+	}
+}

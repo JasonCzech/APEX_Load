@@ -232,20 +232,18 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 	}
 	var err error
 	var sent, received event
-	var hasSent, hasReceived bool
+	var hasSent, hasReceived, sendAttempted bool
 	switch strings.ToLower(action.Type) {
 	case "eventhubs_produce":
-		sent, err = e.produce(ctx, action, result)
-		hasSent = err == nil
+		sent, err = e.produce(ctx, action, result, &hasSent, &sendAttempted)
 	case "eventhubs_consume":
-		received, err = e.consume(ctx, action, result)
-		hasReceived = err == nil
+		received, err = e.consume(ctx, action, result, &hasReceived)
 	default:
 		err = fmt.Errorf("unsupported eventhubs action type %q", action.Type)
 	}
 
 	result.Duration = time.Since(start)
-	if err != nil && e.cfg.SampleTiming == "pnop_create_send_excludes_close" {
+	if err != nil && !hasSent && e.cfg.SampleTiming == "pnop_create_send_excludes_close" {
 		result.Duration = 0
 	}
 	// An empty observer probe (no event within the timeout) is an expected
@@ -257,7 +255,11 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 	if errors.Is(err, errNoEvent) {
 		err = nil
 	}
-	result.ServerTelemetry = finalizeTelemetry(result, sent, hasSent, received, hasReceived, err)
+	transportErr := err
+	if hasSent || hasReceived || !sendAttempted && strings.EqualFold(action.Type, "eventhubs_produce") {
+		transportErr = nil
+	}
+	result.ServerTelemetry = finalizeTelemetry(result, sent, hasSent, received, hasReceived, transportErr)
 	if result.ServerTelemetry != nil && hasReceived {
 		result.ServerTelemetry.SubscriptionID = paramString(action.Params, "consumer_group", e.cfg.ConsumerGroup)
 	}
@@ -267,7 +269,7 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 			result.StatusCode = 500
 		}
 		result.ErrorMessage = err.Error()
-		if strings.EqualFold(action.Type, "eventhubs_produce") {
+		if strings.EqualFold(action.Type, "eventhubs_produce") && !hasSent {
 			// Count a failed produce attempt so the messaging reliability telemetry
 			// reflects send failures instead of always reading zero.
 			if result.ServerTelemetry == nil {
@@ -275,6 +277,12 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 			}
 			result.ServerTelemetry.SendFailureCount++
 		}
+	}
+	if strings.EqualFold(action.Type, "eventhubs_produce") {
+		if result.ServerTelemetry == nil {
+			result.ServerTelemetry = &protocol.ServerTelemetry{}
+		}
+		protocol.AnnotateMessagingSendOutcome(result.ServerTelemetry, sendAttempted, hasSent, false)
 	}
 	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 	return result, nil
@@ -297,13 +305,20 @@ func (e *EventHubs) HealthCheck(ctx context.Context) error {
 	return e.client.HealthCheck(ctx)
 }
 
-func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result *protocol.Result) (event, error) {
+func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result *protocol.Result, accepted, attempted *bool) (observed event, operationErr error) {
+	var sent event
+	defer func() {
+		if *accepted {
+			observed = sent
+		}
+	}()
 	if value, present := action.Params["messages"]; present {
 		bodies, err := MessageBodies(value)
 		if err != nil {
 			return event{}, err
 		}
-		return e.produceBatch(ctx, action, result, bodies)
+		sent, operationErr = e.produceBatch(ctx, action, result, bodies, accepted, attempted)
+		return sent, operationErr
 	}
 	hub := e.hub(action)
 	if hub == "" {
@@ -313,6 +328,7 @@ func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result
 	if size := eventSize(ev); size > MaxEventHubsEventBytes {
 		return event{}, fmt.Errorf("event payload and properties exceed %d bytes", MaxEventHubsEventBytes)
 	}
+	*attempted = true
 	meta, err := e.client.Send(ctx, hub, ev)
 	if err != nil {
 		return event{}, err
@@ -322,6 +338,7 @@ func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result
 	if meta.PartitionID != "" {
 		ev.PartitionID = meta.PartitionID
 	}
+	sent, *accepted = ev, true
 	result.BytesSent = int64(len(ev.Body))
 	if err := addEventExtractions(result, ev); err != nil {
 		return event{}, err
@@ -398,7 +415,13 @@ func (e *EventHubs) validateActionBounds(action *protocol.Action) error {
 	return nil
 }
 
-func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result *protocol.Result) (event, error) {
+func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result *protocol.Result, received *bool) (observed event, operationErr error) {
+	var delivery event
+	defer func() {
+		if *received {
+			observed = delivery
+		}
+	}()
 	hub := e.hub(action)
 	if hub == "" {
 		return event{}, fmt.Errorf("event hub name is required")
@@ -424,6 +447,7 @@ func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result
 		result.StatusCode = 502
 		return event{}, err
 	}
+	delivery, *received = ev, true
 	accepted := false
 	defer func() {
 		if !accepted && ev.receipt != nil {

@@ -18058,7 +18058,239 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties: {}
+                properties:
+                  chunk_bytes:
+                    type: integer
+                    format: int64
+                  diagnostics_enabled:
+                    type: boolean
+                  enabled:
+                    type: boolean
+                  heavy_jobs:
+                    type: integer
+                    format: int64
+                  max_import_bytes:
+                    type: integer
+                    format: int64
+                  memory_limit:
+                    type: string
+                  metric_catalog:
+                    type: object
+                    properties:
+                      bounds:
+                        type: object
+                        properties:
+                          buckets:
+                            type: integer
+                            format: int64
+                          filters:
+                            type: integer
+                            format: int64
+                          grouping_dimensions:
+                            type: integer
+                            format: int64
+                          moving_buckets:
+                            type: integer
+                            format: int64
+                          series:
+                            type: integer
+                            format: int64
+                        required:
+                          - buckets
+                          - filters
+                          - grouping_dimensions
+                          - moving_buckets
+                          - series
+                      metrics:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            aggregations:
+                              type: array
+                              items:
+                                type: string
+                            baseline:
+                              type: boolean
+                            correlation:
+                              type: boolean
+                            derivations:
+                              type: array
+                              items:
+                                type: string
+                            input_kinds:
+                              type: array
+                              items:
+                                type: string
+                            missing_rule:
+                              type: string
+                            name:
+                              type: string
+                            native_wire_unit:
+                              type: string
+                            populations:
+                              type: array
+                              items:
+                                type: string
+                            query_profiles:
+                              type: array
+                              items:
+                                type: string
+                            required_evidence:
+                              type: array
+                              items:
+                                type: string
+                            reset_rule:
+                              type: string
+                            sla:
+                              type: boolean
+                            unit:
+                              type: string
+                            version:
+                              type: string
+                          required:
+                            - aggregations
+                            - baseline
+                            - correlation
+                            - derivations
+                            - input_kinds
+                            - missing_rule
+                            - name
+                            - native_wire_unit
+                            - populations
+                            - query_profiles
+                            - required_evidence
+                            - reset_rule
+                            - sla
+                            - unit
+                            - version
+                      operations:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            input_kinds:
+                              type: array
+                              items:
+                                type: string
+                            missing_rule:
+                              type: string
+                            name:
+                              type: string
+                            populations:
+                              type: array
+                              items:
+                                type: string
+                            raw_scalar:
+                              type: boolean
+                            raw_scalar_kinds:
+                              type: array
+                              items:
+                                type: string
+                            raw_scalar_qualification:
+                              type: string
+                            required_evidence:
+                              type: array
+                              items:
+                                type: string
+                            reset_rule:
+                              type: string
+                            unit_rule:
+                              type: string
+                          required:
+                            - input_kinds
+                            - missing_rule
+                            - name
+                            - raw_scalar
+                            - required_evidence
+                            - reset_rule
+                            - unit_rule
+                      query_profiles:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            allowed_aggregations:
+                              type: array
+                              items:
+                                type: string
+                            allowed_filters:
+                              type: array
+                              items:
+                                type: string
+                            evidence_mode:
+                              type: string
+                            grouping:
+                              type: string
+                            id:
+                              type: string
+                            live_bucket_mode:
+                              type: string
+                            max_bucket_seconds:
+                              type: integer
+                              format: int64
+                            max_buckets:
+                              type: integer
+                              format: int64
+                            max_series:
+                              type: integer
+                              format: int64
+                            max_window_seconds:
+                              type: integer
+                              format: int64
+                            population:
+                              type: string
+                            property_mode:
+                              type: string
+                            required_evidence:
+                              type: array
+                              items:
+                                type: string
+                            required_filters:
+                              type: array
+                              items:
+                                type: string
+                          required:
+                            - allowed_aggregations
+                            - allowed_filters
+                            - evidence_mode
+                            - id
+                            - max_bucket_seconds
+                            - max_buckets
+                            - max_series
+                            - max_window_seconds
+                            - population
+                            - property_mode
+                            - required_evidence
+                      version:
+                        type: string
+                    required:
+                      - bounds
+                      - metrics
+                      - operations
+                      - query_profiles
+                      - version
+                  monitoring_enabled:
+                    type: boolean
+                  native_parquet:
+                    type: boolean
+                  preparation_enabled:
+                    type: boolean
+                  threads:
+                    type: integer
+                    format: int64
+                required:
+                  - chunk_bytes
+                  - diagnostics_enabled
+                  - enabled
+                  - heavy_jobs
+                  - max_import_bytes
+                  - memory_limit
+                  - metric_catalog
+                  - monitoring_enabled
+                  - native_parquet
+                  - preparation_enabled
+                  - threads
         "401":
           description: Authentication required or invalid.
           content:
@@ -49058,6 +49290,18 @@ paths:
                         nullable: true
                       dataset_id:
                         type: string
+                      derivation:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            algorithm:
+                              type: string
+                            bucket_seconds:
+                              type: integer
+                              format: int64
+                            operation:
+                              type: string
                       dimensions:
                         type: object
                         additionalProperties:
@@ -49069,6 +49313,10 @@ paths:
                       kind:
                         type: string
                       metric_name:
+                        type: string
+                      metric_version:
+                        type: string
+                      population:
                         type: string
                       project_id:
                         type: string
@@ -326280,6 +326528,21 @@ paths:
                           nullable: true
                         dataset_id:
                           type: string
+                        derivation:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              algorithm:
+                                type: string
+                              bucket_seconds:
+                                type: integer
+                                format: int64
+                              operation:
+                                type: string
+                            required:
+                              - algorithm
+                              - operation
                         dimensions:
                           type: object
                           additionalProperties:
@@ -326291,6 +326554,10 @@ paths:
                         kind:
                           type: string
                         metric_name:
+                          type: string
+                        metric_version:
+                          type: string
+                        population:
                           type: string
                         project_id:
                           type: string

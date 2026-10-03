@@ -36,7 +36,7 @@ func TestMessagingSettlementTimingOnlyOnSuccessfulAdapterAcknowledgement(t *test
 				t.Fatal("failed acknowledgement invented")
 			}
 		} else {
-			if err != nil || result.ServerTelemetry.AcknowledgementMs == nil || *result.ServerTelemetry.AcknowledgementMs < 0 || result.ServerTelemetry.DeadLetteredCount != 1 {
+			if err != nil || result.ServerTelemetry.AcknowledgementMs == nil || *result.ServerTelemetry.AcknowledgementMs < 0 || result.ServerTelemetry.DeadLetteredCount != 1 || !result.ServerTelemetry.Messaging.Valid() || result.ServerTelemetry.Messaging.Durations[0].Metric != "settlement" {
 				t.Fatal("settlement evidence lost", err, result)
 			}
 		}
@@ -54,7 +54,7 @@ func TestMessagingJMSMessageAgeAvailabilityIncludesObservedZero(t *testing.T) {
 		t.Run(sample.name, func(t *testing.T) {
 			result := &protocol.Result{StartTime: observedAt.Add(-time.Millisecond), Duration: time.Millisecond, Extractions: map[string]string{}}
 			tel := finalizeJMSServerTelemetry(result, message{}, false, message{CreatedAt: sample.createdAt}, true)
-			if tel.ConsumerLagObserved != sample.observed || tel.ConsumerLagMs != sample.lag {
+			if tel.ConsumerLagObserved != sample.observed || tel.ConsumerLagMs != sample.lag || !tel.Messaging.Valid() || tel.Messaging.Durations[0].ValueMs != nil {
 				t.Fatalf("age availability: %+v", tel)
 			}
 			var summary *protocol.MessagingSummary
@@ -64,5 +64,12 @@ func TestMessagingJMSMessageAgeAvailabilityIncludesObservedZero(t *testing.T) {
 				t.Fatalf("observed moments: %+v", summary)
 			}
 		})
+	}
+}
+
+func TestMessagingJMSMockProducerDoesNotInventBrokerAcknowledgement(t *testing.T) {
+	telemetry := finalizeJMSServerTelemetry(&protocol.Result{}, message{}, true, message{}, false)
+	if !telemetry.Messaging.Valid() || telemetry.Messaging.Durations[0].Metric != "producer_ack" || telemetry.Messaging.Durations[0].ValueMs != nil || telemetry.Messaging.Durations[0].UnavailableReason != "not_observed" {
+		t.Fatalf("mock/local completion promoted: %+v", telemetry)
 	}
 }

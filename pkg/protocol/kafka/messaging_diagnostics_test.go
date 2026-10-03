@@ -11,11 +11,11 @@ func TestMessagingKafkaPartitionAndAcknowledgementAvailability(t *testing.T) {
 	ack := 2.0
 	result := &protocol.Result{StartTime: time.Now(), Duration: time.Millisecond, Extractions: map[string]string{}}
 	got := finalizeKafkaServerTelemetry(result, kafkaRecord{Partition: 3, AcknowledgementMs: &ack}, true, kafkaRecord{}, false)
-	if got.PartitionID != "3" || got.AcknowledgementMs == nil || *got.AcknowledgementMs != 2 {
+	if got.PartitionID != "3" || got.AcknowledgementMs == nil || *got.AcknowledgementMs != 2 || !got.Messaging.Valid() || got.Messaging.Durations[0].Metric != "producer_ack" || got.Messaging.Durations[0].ValueMs == nil {
 		t.Fatal("ack metadata discarded", got)
 	}
 	got = finalizeKafkaServerTelemetry(result, kafkaRecord{Partition: -1}, true, kafkaRecord{}, false)
-	if got.PartitionID != "" || got.AcknowledgementMs != nil {
+	if got.PartitionID != "" || got.AcknowledgementMs != nil || !got.Messaging.Valid() || got.Messaging.Durations[0].UnavailableReason != "not_observed" {
 		t.Fatal("unknown partition or mock ack invented", got)
 	}
 	got = finalizeKafkaServerTelemetry(result, kafkaRecord{}, false, kafkaRecord{Partition: 0}, true)
@@ -60,5 +60,14 @@ func TestMessagingKafkaRequestReplyPreservesAcknowledgementWithoutPartitionMisat
 	protocol.MergeMessagingTelemetry(&summary, tel, result.DependencyTarget, result.DependencyType)
 	if summary == nil || !summary.Incomplete || summary.Dimensions[0].Source != "" || summary.Dimensions[0].Partition != "" {
 		t.Fatalf("reply partition attributed to request topic: %+v", summary)
+	}
+}
+
+func TestMessagingKafkaDoesNotQualifyUncalibratedEnqueueClock(t *testing.T) {
+	observed := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
+	result := &protocol.Result{StartTime: observed, Duration: time.Millisecond, Extractions: map[string]string{}}
+	telemetry := finalizeKafkaServerTelemetry(result, kafkaRecord{}, false, kafkaRecord{Partition: 0, Timestamp: observed}, true)
+	if !telemetry.ConsumerLagObserved || telemetry.ConsumerLagMs != 1 || !telemetry.Messaging.Valid() || telemetry.Messaging.Durations[0].ValueMs != nil || telemetry.Messaging.Durations[0].UnavailableReason != "clock_unqualified" {
+		t.Fatalf("uncalibrated source clock promoted: %+v", telemetry)
 	}
 }

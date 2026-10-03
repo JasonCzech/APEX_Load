@@ -151,6 +151,14 @@ func sanitizeArchivedTransaction(item *TransactionEvent) {
 		}
 		cloned.GRPC = cloned.GRPC.Clone()
 		cloned.WebSocket = cloned.WebSocket.Clone()
+		if cloned.Messaging != nil && !cloned.Messaging.Valid() {
+			cloned.Messaging = &protocol.MessagingDiagnostics{}
+		} else {
+			cloned.Messaging = cloned.Messaging.Clone()
+		}
+		if cloned.Messaging != nil && !cloned.Messaging.Valid() {
+			cloned.Messaging = &protocol.MessagingDiagnostics{}
+		}
 		if !cloned.GRPC.Valid() {
 			cloned.GRPC = nil
 		} else {

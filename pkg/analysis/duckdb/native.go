@@ -373,14 +373,12 @@ func (e *Engine) Series(ctx context.Context, files []string, q SeriesQuery) (poi
 		if count != 1 {
 			return errors.New("incompatible metric kinds or units prevent overlay")
 		}
-		if kind == analysis.KindSummary {
-			return errors.New("preaggregated summary inputs require an explicit statistic selector; reaggregation is unavailable")
+		if err := analysis.ValidateScalarAggregation(kind, q.Aggregation); err != nil {
+			return err
 		}
-		if strings.HasPrefix(q.Aggregation, "p") && kind != analysis.KindObservation {
-			return errors.New("transaction percentiles require raw observations")
-		}
-		if kind == analysis.KindCounter && q.Aggregation != "rate" || kind != analysis.KindCounter && q.Aggregation == "rate" {
-			return errors.New("counters require rate conversion; rates require counters")
+		lineage, err := analysis.ScalarBucketDerivation(analysis.MetricPoint{Kind: kind}, q.BucketSeconds, q.Aggregation)
+		if err != nil {
+			return err
 		}
 		origin := "TIMESTAMPTZ " + literal(q.From.UTC().Format(time.RFC3339Nano))
 		bucket := "(" + origin + " + floor(epoch(timestamp_utc-" + origin + ")/" + strconv.Itoa(q.BucketSeconds) + ")*" + strconv.Itoa(q.BucketSeconds) + "*INTERVAL '1 second')"
@@ -415,7 +413,7 @@ func (e *Engine) Series(ctx context.Context, files []string, q SeriesQuery) (poi
 			if len(points) >= analysis.MaxSeriesPoints {
 				return errors.New("analytical result exceeds point limit")
 			}
-			p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: q.DatasetID, TimestampUTC: at.UTC(), MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Unit: unit, Quality: analysis.QualityMissing}
+			p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: q.DatasetID, TimestampUTC: at.UTC(), MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Derivation: append([]analysis.DerivationStep(nil), lineage...), Unit: unit, Quality: analysis.QualityMissing}
 			if value.Valid {
 				v := value.Float64
 				p.Value = &v
@@ -438,7 +436,7 @@ func (e *Engine) Series(ctx context.Context, files []string, q SeriesQuery) (poi
 		for at := q.From.UTC(); at.Before(q.To); at = at.Add(time.Duration(q.BucketSeconds) * time.Second) {
 			p, ok := byTime[at]
 			if !ok {
-				p = analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: q.DatasetID, TimestampUTC: at, MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Unit: unit, Quality: analysis.QualityMissing}
+				p = analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: q.DatasetID, TimestampUTC: at, MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Derivation: append([]analysis.DerivationStep(nil), lineage...), Unit: unit, Quality: analysis.QualityMissing}
 			}
 			points = append(points, p)
 		}

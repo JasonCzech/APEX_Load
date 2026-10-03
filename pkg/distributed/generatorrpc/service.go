@@ -1528,7 +1528,7 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 		available = append(available, normalized)
 		features = append(features, normalized)
 		if strings.HasPrefix(normalized, "jms") || normalized == "kafka" || normalized == "eventhubs" {
-			features = append(features, FeatureMessagingRollupV1, FeatureMessagingScopeV1)
+			features = append(features, FeatureMessagingRollupV1, FeatureMessagingScopeV1, FeatureMessagingEvidenceV2)
 		}
 		if normalized == "websocket" {
 			features = append(features, FeatureWebSocketDiagnosticsV1)
@@ -2247,41 +2247,43 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		var protoServerTelemetry *pb.ServerTelemetry
 		if tx.ServerTelemetry != nil {
 			protoServerTelemetry = &pb.ServerTelemetry{
-				SubscriptionId:            tx.ServerTelemetry.SubscriptionID,
-				AcknowledgementMs:         cloneMessagingAck(tx.ServerTelemetry.AcknowledgementMs),
-				Grpc:                      grpcDiagnosticsToProto(tx.ServerTelemetry.GRPC),
-				Websocket:                 websocketDiagnosticsToProto(tx.ServerTelemetry.WebSocket),
-				ServerProcessingMs:        tx.ServerTelemetry.ServerProcessingMs,
-				TransferMs:                tx.ServerTelemetry.TransferMs,
-				RequestPayloadKb:          tx.ServerTelemetry.RequestPayloadKB,
-				ResponsePayloadKb:         tx.ServerTelemetry.ResponsePayloadKB,
-				ConnectionReused:          tx.ServerTelemetry.ConnectionReused,
-				RequestSizeClass:          tx.ServerTelemetry.RequestSizeClass,
-				ResponseSizeClass:         tx.ServerTelemetry.ResponseSizeClass,
-				FirstEventMs:              tx.ServerTelemetry.FirstEventMs,
-				EventCount:                tx.ServerTelemetry.EventCount,
-				MessageLatencyMs:          tx.ServerTelemetry.MessageLatencyMs,
-				MessagesSent:              tx.ServerTelemetry.MessagesSent,
-				MessagesReceived:          tx.ServerTelemetry.MessagesReceived,
-				MessagesSentPerSec:        tx.ServerTelemetry.MessagesSentPerSec,
-				MessagesReceivedPerSec:    tx.ServerTelemetry.MessagesReceivedPerSec,
-				ConsumerLagMs:             tx.ServerTelemetry.ConsumerLagMs,
-				ConsumerLagObserved:       tx.ServerTelemetry.ConsumerLagObserved,
-				ConsumerOffsetLagObserved: tx.ServerTelemetry.ConsumerOffsetLagObserved,
-				SendFailureCount:          tx.ServerTelemetry.SendFailureCount,
-				RedeliveryCount:           tx.ServerTelemetry.RedeliveryCount,
-				DeadLetteredCount:         tx.ServerTelemetry.DeadLetteredCount,
-				DuplicateCount:            tx.ServerTelemetry.DuplicateCount,
-				OutOfOrderCount:           tx.ServerTelemetry.OutOfOrderCount,
-				CommitCount:               tx.ServerTelemetry.CommitCount,
-				AbortCount:                tx.ServerTelemetry.AbortCount,
-				ConsumerOffsetLag:         tx.ServerTelemetry.ConsumerOffsetLag,
-				ThrottledRequests:         tx.ServerTelemetry.ThrottledRequests,
-				ServerBusyCount:           tx.ServerTelemetry.ServerBusyCount,
-				QuotaExceededCount:        tx.ServerTelemetry.QuotaExceededCount,
-				EventTooLargeCount:        tx.ServerTelemetry.EventTooLargeCount,
-				EndToEndLatencyMs:         tx.ServerTelemetry.EndToEndLatencyMs,
-				PartitionId:               tx.ServerTelemetry.PartitionID,
+				SubscriptionId:              tx.ServerTelemetry.SubscriptionID,
+				AcknowledgementMs:           cloneMessagingAck(tx.ServerTelemetry.AcknowledgementMs),
+				MessagingDiagnosticsJson:    messagingDiagnosticsJSON(tx.ServerTelemetry.Messaging),
+				MessagingDiagnosticsVersion: messagingDiagnosticsVersion(tx.ServerTelemetry.Messaging),
+				Grpc:                        grpcDiagnosticsToProto(tx.ServerTelemetry.GRPC),
+				Websocket:                   websocketDiagnosticsToProto(tx.ServerTelemetry.WebSocket),
+				ServerProcessingMs:          tx.ServerTelemetry.ServerProcessingMs,
+				TransferMs:                  tx.ServerTelemetry.TransferMs,
+				RequestPayloadKb:            tx.ServerTelemetry.RequestPayloadKB,
+				ResponsePayloadKb:           tx.ServerTelemetry.ResponsePayloadKB,
+				ConnectionReused:            tx.ServerTelemetry.ConnectionReused,
+				RequestSizeClass:            tx.ServerTelemetry.RequestSizeClass,
+				ResponseSizeClass:           tx.ServerTelemetry.ResponseSizeClass,
+				FirstEventMs:                tx.ServerTelemetry.FirstEventMs,
+				EventCount:                  tx.ServerTelemetry.EventCount,
+				MessageLatencyMs:            tx.ServerTelemetry.MessageLatencyMs,
+				MessagesSent:                tx.ServerTelemetry.MessagesSent,
+				MessagesReceived:            tx.ServerTelemetry.MessagesReceived,
+				MessagesSentPerSec:          tx.ServerTelemetry.MessagesSentPerSec,
+				MessagesReceivedPerSec:      tx.ServerTelemetry.MessagesReceivedPerSec,
+				ConsumerLagMs:               tx.ServerTelemetry.ConsumerLagMs,
+				ConsumerLagObserved:         tx.ServerTelemetry.ConsumerLagObserved,
+				ConsumerOffsetLagObserved:   tx.ServerTelemetry.ConsumerOffsetLagObserved,
+				SendFailureCount:            tx.ServerTelemetry.SendFailureCount,
+				RedeliveryCount:             tx.ServerTelemetry.RedeliveryCount,
+				DeadLetteredCount:           tx.ServerTelemetry.DeadLetteredCount,
+				DuplicateCount:              tx.ServerTelemetry.DuplicateCount,
+				OutOfOrderCount:             tx.ServerTelemetry.OutOfOrderCount,
+				CommitCount:                 tx.ServerTelemetry.CommitCount,
+				AbortCount:                  tx.ServerTelemetry.AbortCount,
+				ConsumerOffsetLag:           tx.ServerTelemetry.ConsumerOffsetLag,
+				ThrottledRequests:           tx.ServerTelemetry.ThrottledRequests,
+				ServerBusyCount:             tx.ServerTelemetry.ServerBusyCount,
+				QuotaExceededCount:          tx.ServerTelemetry.QuotaExceededCount,
+				EventTooLargeCount:          tx.ServerTelemetry.EventTooLargeCount,
+				EndToEndLatencyMs:           tx.ServerTelemetry.EndToEndLatencyMs,
+				PartitionId:                 tx.ServerTelemetry.PartitionID,
 			}
 		}
 		protoTransactions = append(protoTransactions, &pb.TransactionMetric{
@@ -2999,7 +3001,7 @@ func engineActionMetricsToAggregates(values map[string]*engine.ActionMetrics) []
 		out = append(out, MetricAggregate{
 			DurationDigest:   engine.CloneTDigestSnapshot(metrics.DurationDigest),
 			Messaging:        engineMessagingSummary(metrics.ServerTelemetry),
-			MessagingVersion: 1,
+			MessagingVersion: messagingSummaryVersion(metrics.ServerTelemetry),
 			Name:             firstNonEmptyString(metrics.Name, name),
 			DependencyType:   metrics.DependencyType,
 			DependencyTarget: metrics.DependencyTarget,
@@ -3254,7 +3256,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	}
 	out.MessagingVersion = 1
 	for _, v := range values {
-		if v.Count > 0 && v.MessagingVersion != 1 {
+		if v.Count > 0 && !supportedMessagingSummaryVersion(v.MessagingVersion) {
 			out.MessagingVersion = 0
 			if out.Messaging != nil {
 				out.Messaging.Incomplete = true
@@ -3262,7 +3264,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 		}
 	}
 	if out.Messaging != nil {
-		out.MessagingVersion = 1
+		out.MessagingVersion = out.Messaging.EvidenceVersion()
 	}
 	divisor := float64(out.Count)
 	out.AvgMs = weightedAvgMs / divisor

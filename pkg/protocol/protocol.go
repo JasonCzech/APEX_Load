@@ -513,6 +513,7 @@ type ClientMetrics struct {
 type ServerTelemetry struct {
 	SubscriptionID string `json:"subscription_id,omitempty"`
 	// Successful client publish acknowledgement or settlement duration; unavailable for local/mock acknowledgements.
+	Messaging                 *MessagingDiagnostics `json:"messaging,omitempty"`
 	AcknowledgementMs         *float64              `json:"acknowledgement_ms,omitempty"`
 	WebSocket                 *WebSocketDiagnostics `json:"websocket,omitempty"`
 	GRPC                      *GRPCDiagnostics      `json:"grpc,omitempty"`

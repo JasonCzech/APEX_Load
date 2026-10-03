@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -52,6 +53,9 @@ type MetricPoint struct {
 	RelativeTimeMS  *int64            `json:"relative_time_ms,omitempty"`
 	ActiveRuntimeMS *int64            `json:"active_runtime_ms,omitempty"`
 	MetricName      string            `json:"metric_name"`
+	Population      string            `json:"population,omitempty"`
+	MetricVersion   string            `json:"metric_version,omitempty"`
+	Derivation      []DerivationStep  `json:"derivation,omitempty"`
 	Kind            string            `json:"kind"`
 	InputKind       string            `json:"input_kind,omitempty"` // Original semantics for derived bucket gauges.
 	Value           *float64          `json:"value,omitempty"`
@@ -76,9 +80,15 @@ func (p MetricPoint) Validate() error {
 	for name, value := range map[string]string{
 		"dataset_id": p.DatasetID, "run_id": p.RunID, "scenario_id": p.ScenarioID,
 		"host": p.Host, "service": p.Service, "unit": p.Unit,
+		"population": p.Population, "metric_version": p.MetricVersion,
 	} {
 		if len(value) > maxMetricIdentityBytes {
 			return fmt.Errorf("%s exceeds %d bytes", name, maxMetricIdentityBytes)
+		}
+	}
+	for name, value := range map[string]string{"population": p.Population, "metric_version": p.MetricVersion} {
+		if value != "" && (strings.TrimSpace(value) == "" || strings.ContainsRune(value, 0)) {
+			return fmt.Errorf("%s must contain nonempty non-NUL text when declared", name)
 		}
 	}
 	if p.TimestampUTC.IsZero() || p.TimestampUTC.Location() != time.UTC || p.TimestampUTC.Year() < 1 || p.TimestampUTC.Year() > 9999 {
@@ -102,6 +112,12 @@ func (p MetricPoint) Validate() error {
 		if p.Kind != KindGauge || (p.InputKind != KindCounter && p.InputKind != KindGauge && p.InputKind != KindObservation) {
 			return errors.New("invalid derived measurement semantics")
 		}
+	}
+	if len(p.Derivation) > 0 && (p.Kind != KindGauge || p.InputKind == "") {
+		return errors.New("measurement derivation requires a gauge with declared input kind")
+	}
+	if err := validateDerivation(p.Derivation, false); err != nil {
+		return err
 	}
 	switch p.Quality {
 	case QualityValid, QualityStale, QualityClockSkewed:
@@ -155,7 +171,7 @@ type AlignedPair struct {
 func sameMetric(a, b MetricPoint) bool {
 	return a.ProjectID == b.ProjectID && a.Source == b.Source &&
 		a.ScenarioID == b.ScenarioID && a.Host == b.Host && a.Service == b.Service &&
-		a.MetricName == b.MetricName && a.Kind == b.Kind && a.InputKind == b.InputKind && a.Unit == b.Unit &&
+		a.MetricName == b.MetricName && a.Population == b.Population && a.MetricVersion == b.MetricVersion && slices.Equal(a.Derivation, b.Derivation) && a.Kind == b.Kind && a.InputKind == b.InputKind && a.Unit == b.Unit &&
 		maps.Equal(a.Dimensions, b.Dimensions)
 }
 

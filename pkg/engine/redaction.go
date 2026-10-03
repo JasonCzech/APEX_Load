@@ -918,6 +918,11 @@ func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConf
 	}
 	if result.ServerTelemetry != nil {
 		result.ServerTelemetry.WebSocket = result.ServerTelemetry.WebSocket.Clone()
+		if result.ServerTelemetry.Messaging != nil && !result.ServerTelemetry.Messaging.Valid() {
+			result.ServerTelemetry.Messaging = &protocol.MessagingDiagnostics{}
+		} else {
+			result.ServerTelemetry.Messaging = result.ServerTelemetry.Messaging.Clone()
+		}
 		if result.ServerTelemetry.GRPC != nil {
 			result.ServerTelemetry.GRPC = result.ServerTelemetry.GRPC.Clone()
 			result.ServerTelemetry.GRPC.Method = scrubSensitiveTextWithConfig(result.ServerTelemetry.GRPC.Method, config)

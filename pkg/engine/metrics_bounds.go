@@ -72,6 +72,11 @@ func compactMetricsResult(input *protocol.Result) *protocol.Result {
 		}
 		server.GRPC = server.GRPC.Clone()
 		server.WebSocket = server.WebSocket.Clone()
+		if server.Messaging != nil && !server.Messaging.Valid() {
+			server.Messaging = &protocol.MessagingDiagnostics{}
+		} else {
+			server.Messaging = server.Messaging.Clone()
+		}
 		if !server.GRPC.Valid() {
 			server.GRPC = nil
 		}
@@ -160,8 +165,24 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 					bytes += int(unsafe.Sizeof(*telemetry.GRPC))
 				}
 				if telemetry.Messaging != nil {
+					bytes += int(unsafe.Sizeof(*telemetry.Messaging)) + cap(telemetry.Messaging.Dimensions)*int(unsafe.Sizeof(protocol.MessagingDimension{}))
 					for _, d := range telemetry.Messaging.Dimensions {
-						bytes += 256 + len(d.Protocol) + len(d.Group) + len(d.Source) + len(d.Partition) + len(d.Subscription)
+						bytes += len(d.Protocol) + len(d.Group) + len(d.Source) + len(d.Partition) + len(d.Subscription)
+						if e := d.Evidence; e != nil {
+							bytes += int(unsafe.Sizeof(*e)) + cap(e.Durations)*int(unsafe.Sizeof(protocol.MessagingDurationSummary{})) + cap(e.Counters)*int(unsafe.Sizeof(protocol.MessagingCounterSummary{}))
+							for _, duration := range e.Durations {
+								bytes += len(duration.Metric) + len(duration.Population)
+								if duration.Unavailable != nil {
+									bytes += 128
+								}
+								for reason := range duration.Unavailable {
+									bytes += len(reason) + 80
+								}
+							}
+							for _, counter := range e.Counters {
+								bytes += len(counter.Metric) + len(counter.Population) + len(counter.Scope)
+							}
+						}
 					}
 				}
 				for partition := range telemetry.PartitionEvents {

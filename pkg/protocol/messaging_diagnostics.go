@@ -51,19 +51,20 @@ func (m MessagingMoments) Mean() (float64, bool) {
 }
 
 type MessagingDimension struct {
-	Protocol     string           `json:"protocol,omitempty"`
-	Group        string           `json:"group,omitempty"`
-	Source       string           `json:"source"`
-	Partition    string           `json:"partition,omitempty"`
-	Subscription string           `json:"subscription,omitempty"`
-	Operations   int64            `json:"operations"`
-	Sent         int64            `json:"sent"`
-	Received     int64            `json:"received"`
-	Throttled    int64            `json:"throttled"`
-	Redelivered  int64            `json:"redelivered"`
-	Ack          MessagingMoments `json:"ack_ms"`
-	Age          MessagingMoments `json:"age_ms"`
-	Offset       MessagingMoments `json:"offset_lag"`
+	Protocol     string             `json:"protocol,omitempty"`
+	Group        string             `json:"group,omitempty"`
+	Source       string             `json:"source"`
+	Partition    string             `json:"partition,omitempty"`
+	Subscription string             `json:"subscription,omitempty"`
+	Operations   int64              `json:"operations"`
+	Sent         int64              `json:"sent"`
+	Received     int64              `json:"received"`
+	Throttled    int64              `json:"throttled"`
+	Redelivered  int64              `json:"redelivered"`
+	Ack          MessagingMoments   `json:"ack_ms"`
+	Age          MessagingMoments   `json:"age_ms"`
+	Offset       MessagingMoments   `json:"offset_lag"`
+	Evidence     *MessagingEvidence `json:"evidence,omitempty"`
 }
 
 // MessagingSummary preserves bounded source/partition/subscription intersections.
@@ -88,8 +89,14 @@ func (s *MessagingSummary) Clone() *MessagingSummary {
 	if s == nil {
 		return nil
 	}
+	if !s.Valid() {
+		return &MessagingSummary{Incomplete: true}
+	}
 	c := *s
 	c.Dimensions = append([]MessagingDimension(nil), s.Dimensions...)
+	for i := range c.Dimensions {
+		c.Dimensions[i].Evidence = s.Dimensions[i].Evidence.Clone()
+	}
 	return &c
 }
 func (s *MessagingSummary) Valid() bool {
@@ -113,6 +120,9 @@ func (d MessagingDimension) valid() bool {
 	if (d.Protocol != "" && d.Protocol != "kafka" && d.Protocol != "eventhubs" && d.Protocol != "jms") || messagingLabel(d.Group) != d.Group || messagingLabel(d.Source) != d.Source || messagingLabel(d.Partition) != d.Partition || messagingLabel(d.Subscription) != d.Subscription || !d.Ack.valid() || !d.Age.valid() || !d.Offset.valid() {
 		return false
 	}
+	if d.Evidence != nil && (!d.Evidence.Valid() || d.Evidence.Operations > d.Operations || d.Evidence.Operations < d.Operations && !d.Evidence.Incomplete) {
+		return false
+	}
 	for _, n := range []int64{d.Operations, d.Sent, d.Received, d.Throttled, d.Redelivered} {
 		if n < 0 || n > 1e12 {
 			return false
@@ -132,6 +142,10 @@ func MergeMessagingSummary(dst **MessagingSummary, src *MessagingSummary) {
 		*dst = &MessagingSummary{}
 	}
 	s := *dst
+	if !s.Valid() {
+		s = &MessagingSummary{Incomplete: true}
+		*dst = s
+	}
 	if !src.Valid() {
 		s.Incomplete = true
 		return
@@ -152,11 +166,20 @@ func MergeMessagingSummary(dst **MessagingSummary, src *MessagingSummary) {
 				s.Incomplete = true
 				continue
 			}
+			d.Evidence = d.Evidence.Clone()
 			s.Dimensions = append(s.Dimensions, d)
 			added = true
 			continue
 		}
 		candidate := s.Dimensions[index]
+		if !mergeMessagingEvidence(&candidate.Evidence, d.Evidence) {
+			s.Incomplete = true
+			continue
+		}
+		if candidate.Evidence != nil && (candidate.Evidence.Operations < candidate.Operations+d.Operations) {
+			candidate.Evidence.Incomplete = true
+			s.Incomplete = true
+		}
 		a := &candidate
 		a.Operations += d.Operations
 		a.Sent += d.Sent
@@ -170,6 +193,13 @@ func MergeMessagingSummary(dst **MessagingSummary, src *MessagingSummary) {
 			s.Dimensions[index] = candidate
 		} else {
 			s.Incomplete = true
+		}
+	}
+	if s.EvidenceVersion() == MessagingEvidenceVersion {
+		for _, dimension := range s.Dimensions {
+			if dimension.Evidence == nil || dimension.Evidence.Incomplete {
+				s.Incomplete = true
+			}
 		}
 	}
 	if added {
@@ -191,7 +221,7 @@ func MergeMessagingTelemetry(dst **MessagingSummary, t *ServerTelemetry, source 
 	if len(kinds) > 0 && !strings.HasPrefix(kinds[0], "jms") && !strings.HasPrefix(kinds[0], "kafka") && !strings.HasPrefix(kinds[0], "eventhubs") {
 		return
 	}
-	if t == nil || (t.PartitionID == "" && t.SubscriptionID == "" && t.MessagesSent == 0 && t.MessagesReceived == 0 && t.ThrottledRequests == 0 && t.RedeliveryCount == 0 && t.AcknowledgementMs == nil && !t.ConsumerLagObserved && !t.ConsumerOffsetLagObserved) {
+	if t == nil || (t.PartitionID == "" && t.SubscriptionID == "" && t.MessagesSent == 0 && t.MessagesReceived == 0 && t.ThrottledRequests == 0 && t.RedeliveryCount == 0 && t.AcknowledgementMs == nil && t.Messaging == nil && !t.ConsumerLagObserved && !t.ConsumerOffsetLagObserved) {
 		return
 	}
 	d := MessagingDimension{Source: messagingLabel(source), Partition: messagingLabel(t.PartitionID), Subscription: messagingLabel(t.SubscriptionID), Operations: 1, Sent: int64(t.MessagesSent), Received: int64(t.MessagesReceived), Throttled: int64(t.ThrottledRequests), Redelivered: int64(t.RedeliveryCount)}
@@ -206,7 +236,10 @@ func MergeMessagingTelemetry(dst **MessagingSummary, t *ServerTelemetry, source 
 	if len(kinds) > 1 {
 		d.Group = messagingLabel(kinds[1])
 	}
-	incomplete := d.Source == "" || d.Source != strings.TrimSpace(source) || d.Partition != strings.TrimSpace(t.PartitionID) || d.Subscription != strings.TrimSpace(t.SubscriptionID)
+	if t.Messaging != nil {
+		d.Evidence = messagingEvidenceFromDiagnostic(t.Messaging)
+	}
+	incomplete := t.Messaging != nil && !t.Messaging.Valid() || d.Source == "" || d.Source != strings.TrimSpace(source) || d.Partition != strings.TrimSpace(t.PartitionID) || d.Subscription != strings.TrimSpace(t.SubscriptionID)
 	if len(kinds) > 1 && d.Group != strings.TrimSpace(kinds[1]) {
 		incomplete = true
 	}

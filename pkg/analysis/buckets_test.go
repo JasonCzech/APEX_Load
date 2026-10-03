@@ -75,3 +75,39 @@ func TestBucketSeriesPercentilesRequireObservations(t *testing.T) {
 		t.Fatal("gauge percentile accepted")
 	}
 }
+
+func TestBucketSeriesPreservesExplicitSemanticIdentity(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	input := qualifiedPoint(start, 3)
+	got, err := BucketSeries([]MetricPoint{input}, start, start.Add(time.Second), 1, "avg")
+	if err != nil || len(got) != 1 || got[0].Population != input.Population || got[0].MetricVersion != input.MetricVersion {
+		t.Fatalf("bucket identity: %+v error %v", got, err)
+	}
+	mixed := input
+	mixed.Population = PopulationTransaction
+	if _, err := BucketSeries([]MetricPoint{input, mixed}, start, start.Add(time.Second), 1, "count"); err == nil {
+		t.Fatal("merged different populations")
+	}
+}
+
+func TestEmptyBucketSeriesStillValidatesOperation(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		operation string
+		supported bool
+	}{
+		{"avg", true}, {"p95", true}, {"rate", true},
+		{"p90", false}, {"summary_value", false}, {"arbitrary", false},
+	} {
+		t.Run(test.operation, func(t *testing.T) {
+			points, err := BucketSeries(nil, start, start.Add(time.Second), 1, test.operation)
+			if test.supported {
+				if err != nil || points == nil || len(points) != 0 {
+					t.Fatalf("valid empty selection: %v %v", points, err)
+				}
+			} else if err == nil {
+				t.Fatal("unsupported operation accepted for empty input")
+			}
+		})
+	}
+}

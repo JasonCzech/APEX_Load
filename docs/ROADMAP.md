@@ -8,6 +8,11 @@ The [feature completion specification](FEATURE_COMPLETION_SPEC.md) evaluates the
 
 The [R0 prerequisite verification](qa/reviews/feature-completion-r0-2026-10-02/README.md) cleared the outstanding malformed-counter API/race and actual PostgreSQL release-26 migration gates against immutable baseline `025d5ed9`. New completion-program contracts and runtime slices remain in progress; this does not promote pending provider, browser or native-platform acceptance.
 
+The shared analytical contract slice adds a canonical metric/operation catalog, executable native query profiles, typed bounded derivations and statistic lineage. The existing analysis capabilities API/CLI exposes it independently of project enablement. [Review and checks](qa/reviews/feature-completion-catalog-2026-10-03/README.md) cover raw scalar/native query parity, qualified missing/zero behavior, and both authenticated dashboard profiles. R1 and NA-1 remain open for remaining contracts and user workflows; imported summaries/histograms, dimensions/partition manifests, broader native capture and worker isolation remain pending.
+
+The shared messaging evidence foundation adds optional v2 operation populations, mergeable bounded duration histograms, scoped reliability counters, explicit unavailable reasons and mixed-peer coverage. Engine/RPC/archive adapters preserve it with bounded retention and capability advertisement. Accepted sends and observed deliveries remain evidence even if a later assertion, extraction, reply or settlement fails; actual transport failures retain their eligible population. [Review and checks](qa/reviews/feature-completion-messaging-2026-10-03/README.md) distinguish local/tagged suites from pending real-provider qualification. Full MSG-1/MSG-2 workflows, management observations, clock-qualified enqueue/end-to-end age and broker certification remain open.
+
+
 ## Track status
 
 | Track | Status | Open work |

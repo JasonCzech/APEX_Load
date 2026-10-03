@@ -3467,7 +3467,7 @@ type MetricAggregate struct {
 	BytesReceived        int64                  `protobuf:"varint,16,opt,name=bytes_received,json=bytesReceived,proto3" json:"bytes_received,omitempty"`
 	Tps                  float64                `protobuf:"fixed64,17,opt,name=tps,proto3" json:"tps,omitempty"`
 	DurationDigest       *TDigestSnapshot       `protobuf:"bytes,18,opt,name=duration_digest,json=durationDigest,proto3" json:"duration_digest,omitempty"`
-	MessagingSummaryJson string                 `protobuf:"bytes,19,opt,name=messaging_summary_json,json=messagingSummaryJson,proto3" json:"messaging_summary_json,omitempty"` // bounded, validated protocol.MessagingSummary v1
+	MessagingSummaryJson string                 `protobuf:"bytes,19,opt,name=messaging_summary_json,json=messagingSummaryJson,proto3" json:"messaging_summary_json,omitempty"` // bounded, validated protocol.MessagingSummary v1/v2
 	MessagingVersion     uint32                 `protobuf:"varint,20,opt,name=messaging_version,json=messagingVersion,proto3" json:"messaging_version,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
@@ -3882,8 +3882,11 @@ type ServerTelemetry struct {
 	ConsumerOffsetLagObserved bool                  `protobuf:"varint,33,opt,name=consumer_offset_lag_observed,json=consumerOffsetLagObserved,proto3" json:"consumer_offset_lag_observed,omitempty"`
 	AcknowledgementMs         *float64              `protobuf:"fixed64,34,opt,name=acknowledgement_ms,json=acknowledgementMs,proto3,oneof" json:"acknowledgement_ms,omitempty"`
 	SubscriptionId            string                `protobuf:"bytes,35,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	// Optional bounded typed per-operation evidence; unknown/invalid versions are incomplete.
+	MessagingDiagnosticsJson    string `protobuf:"bytes,36,opt,name=messaging_diagnostics_json,json=messagingDiagnosticsJson,proto3" json:"messaging_diagnostics_json,omitempty"`
+	MessagingDiagnosticsVersion uint32 `protobuf:"varint,37,opt,name=messaging_diagnostics_version,json=messagingDiagnosticsVersion,proto3" json:"messaging_diagnostics_version,omitempty"`
+	unknownFields               protoimpl.UnknownFields
+	sizeCache                   protoimpl.SizeCache
 }
 
 func (x *ServerTelemetry) Reset() {
@@ -4159,6 +4162,20 @@ func (x *ServerTelemetry) GetSubscriptionId() string {
 		return x.SubscriptionId
 	}
 	return ""
+}
+
+func (x *ServerTelemetry) GetMessagingDiagnosticsJson() string {
+	if x != nil {
+		return x.MessagingDiagnosticsJson
+	}
+	return ""
+}
+
+func (x *ServerTelemetry) GetMessagingDiagnosticsVersion() uint32 {
+	if x != nil {
+		return x.MessagingDiagnosticsVersion
+	}
+	return 0
 }
 
 type WebSocketDiagnostics struct {
@@ -6500,7 +6517,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\vdevice_tier\x18\x03 \x01(\tR\n" +
 	"deviceTier\x12%\n" +
 	"\x0ebrowser_engine\x18\x04 \x01(\tR\rbrowserEngine\x125\n" +
-	"\ametrics\x18\x05 \x01(\v2\x1b.apexload.v1.BrowserMetricsR\ametrics\"\xee\f\n" +
+	"\ametrics\x18\x05 \x01(\v2\x1b.apexload.v1.BrowserMetricsR\ametrics\"\xf0\r\n" +
 	"\x0fServerTelemetry\x120\n" +
 	"\x14server_processing_ms\x18\x01 \x01(\x01R\x12serverProcessingMs\x12\x1f\n" +
 	"\vtransfer_ms\x18\x02 \x01(\x01R\n" +
@@ -6540,7 +6557,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x15consumer_lag_observed\x18  \x01(\bR\x13consumerLagObserved\x12?\n" +
 	"\x1cconsumer_offset_lag_observed\x18! \x01(\bR\x19consumerOffsetLagObserved\x122\n" +
 	"\x12acknowledgement_ms\x18\" \x01(\x01H\x00R\x11acknowledgementMs\x88\x01\x01\x12'\n" +
-	"\x0fsubscription_id\x18# \x01(\tR\x0esubscriptionIdB\x15\n" +
+	"\x0fsubscription_id\x18# \x01(\tR\x0esubscriptionId\x12<\n" +
+	"\x1amessaging_diagnostics_json\x18$ \x01(\tR\x18messagingDiagnosticsJson\x12B\n" +
+	"\x1dmessaging_diagnostics_version\x18% \x01(\rR\x1bmessagingDiagnosticsVersionB\x15\n" +
 	"\x13_acknowledgement_ms\"\xe5\x05\n" +
 	"\x14WebSocketDiagnostics\x12\x1c\n" +
 	"\toperation\x18\x01 \x01(\tR\toperation\x12!\n" +

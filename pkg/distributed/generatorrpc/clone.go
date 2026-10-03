@@ -114,6 +114,7 @@ func cloneServerTelemetry(input *protocol.ServerTelemetry) *ServerTelemetry {
 	return &ServerTelemetry{
 		SubscriptionID:            input.SubscriptionID,
 		AcknowledgementMs:         cloneMessagingAck(input.AcknowledgementMs),
+		Messaging:                 input.Messaging.Clone(),
 		GRPC:                      input.GRPC.Clone(),
 		WebSocket:                 input.WebSocket.Clone(),
 		ServerProcessingMs:        input.ServerProcessingMs,

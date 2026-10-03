@@ -7110,7 +7110,73 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "chunk_bytes": number;
+            "diagnostics_enabled": boolean;
+            "enabled": boolean;
+            "heavy_jobs": number;
+            "max_import_bytes": number;
+            "memory_limit": string;
+            "metric_catalog": {
+              "bounds": {
+                "buckets": number;
+                "filters": number;
+                "grouping_dimensions": number;
+                "moving_buckets": number;
+                "series": number;
+              };
+              "metrics": Array<{
+                "aggregations": Array<string>;
+                "baseline": boolean;
+                "correlation": boolean;
+                "derivations": Array<string>;
+                "input_kinds": Array<string>;
+                "missing_rule": string;
+                "name": string;
+                "native_wire_unit": string;
+                "populations": Array<string>;
+                "query_profiles": Array<string>;
+                "required_evidence": Array<string>;
+                "reset_rule": string;
+                "sla": boolean;
+                "unit": string;
+                "version": string;
+              }>;
+              "operations": Array<{
+                "input_kinds": Array<string>;
+                "missing_rule": string;
+                "name": string;
+                "populations"?: Array<string>;
+                "raw_scalar": boolean;
+                "raw_scalar_kinds"?: Array<string>;
+                "raw_scalar_qualification"?: string;
+                "required_evidence": Array<string>;
+                "reset_rule": string;
+                "unit_rule": string;
+              }>;
+              "query_profiles": Array<{
+                "allowed_aggregations": Array<string>;
+                "allowed_filters": Array<string>;
+                "evidence_mode": string;
+                "grouping"?: string;
+                "id": string;
+                "live_bucket_mode"?: string;
+                "max_bucket_seconds": number;
+                "max_buckets": number;
+                "max_series": number;
+                "max_window_seconds": number;
+                "population": string;
+                "property_mode": string;
+                "required_evidence": Array<string>;
+                "required_filters"?: Array<string>;
+              }>;
+              "version": string;
+            };
+            "monitoring_enabled": boolean;
+            "native_parquet": boolean;
+            "preparation_enabled": boolean;
+            "threads": number;
+          };
         };
       };
       "401": {
@@ -72281,11 +72347,18 @@ export interface operations {
             "overlay"?: Array<{
               "active_runtime_ms"?: (number) | null;
               "dataset_id"?: string;
+              "derivation"?: Array<{
+                "algorithm": string;
+                "bucket_seconds"?: number;
+                "operation": string;
+              }>;
               "dimensions"?: Record<string, string>;
               "host"?: string;
               "input_kind"?: string;
               "kind": string;
               "metric_name": string;
+              "metric_version"?: string;
+              "population"?: string;
               "project_id": string;
               "quality": string;
               "received_at"?: string;
@@ -98996,11 +99069,18 @@ export interface operations {
           "points"?: Array<{
             "active_runtime_ms"?: (number) | null;
             "dataset_id"?: string;
+            "derivation"?: Array<{
+              "algorithm"?: string;
+              "bucket_seconds"?: number;
+              "operation"?: string;
+            }>;
             "dimensions"?: Record<string, string>;
             "host"?: string;
             "input_kind"?: string;
             "kind"?: string;
             "metric_name"?: string;
+            "metric_version"?: string;
+            "population"?: string;
             "project_id"?: string;
             "quality"?: string;
             "received_at"?: string;

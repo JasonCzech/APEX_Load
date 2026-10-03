@@ -532,7 +532,7 @@ message MetricAggregate {
   int64 bytes_received = 16;
   double tps = 17;
   TDigestSnapshot duration_digest = 18;
-  string messaging_summary_json = 19; // bounded, validated protocol.MessagingSummary v1
+  string messaging_summary_json = 19; // bounded, validated protocol.MessagingSummary v1/v2
   uint32 messaging_version = 20;
 }
 
@@ -596,6 +596,9 @@ message ServerTelemetry {
   bool consumer_offset_lag_observed = 33;
   optional double acknowledgement_ms = 34;
   string subscription_id = 35;
+  // Optional bounded typed per-operation evidence; unknown/invalid versions are incomplete.
+  string messaging_diagnostics_json = 36;
+  uint32 messaging_diagnostics_version = 37;
 }
 
 message WebSocketDiagnostics {

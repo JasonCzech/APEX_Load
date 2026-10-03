@@ -3,6 +3,7 @@ package analysis
 import (
 	"errors"
 	"math"
+	"slices"
 	"sort"
 	"time"
 )
@@ -14,28 +15,19 @@ func BucketSeries(points []MetricPoint, from, to time.Time, seconds int, aggrega
 	if from.IsZero() || !to.After(from) || to.Sub(from) > 366*24*time.Hour || seconds < 1 || seconds > 86400 || math.Ceil(to.Sub(from).Seconds()/float64(seconds)) > MaxSeriesPoints || len(points) > MaxSeriesPoints {
 		return nil, errors.New("invalid or excessive bucket window")
 	}
+	if err := ValidateScalarAggregationName(aggregation); err != nil {
+		return nil, err
+	}
 	if len(points) == 0 {
 		return []MetricPoint{}, nil
 	}
 	kind := points[0].Kind
-	if kind != KindCounter && kind != KindGauge && kind != KindObservation {
-		return nil, errors.New("bucket aggregation requires raw scalar measurements")
+	if err := ValidateScalarAggregation(kind, aggregation); err != nil {
+		return nil, err
 	}
-	switch aggregation {
-	case "avg", "min", "max", "sum", "count":
-	case "p50", "p95", "p99":
-		if kind != KindObservation {
-			return nil, errors.New("percentiles require raw observations")
-		}
-	case "rate":
-		if kind != KindCounter {
-			return nil, errors.New("rates require counters")
-		}
-	default:
-		return nil, errors.New("unsupported raw-evidence aggregation")
-	}
-	if kind == KindCounter && aggregation != "rate" {
-		return nil, errors.New("counters require rate conversion")
+	lineage, err := ScalarBucketDerivation(points[0], seconds, aggregation)
+	if err != nil {
+		return nil, err
 	}
 	p := append([]MetricPoint(nil), points...)
 	sort.Slice(p, func(i, j int) bool { return p[i].TimestampUTC.Before(p[j].TimestampUTC) })
@@ -92,6 +84,7 @@ func BucketSeries(points []MetricPoint, from, to time.Time, seconds int, aggrega
 	for index := 0; index < n; index++ {
 		point := p[0]
 		point.TimestampUTC = from.Add(time.Duration(index*seconds) * time.Second).UTC()
+		point.Derivation = slices.Clone(lineage)
 		point.Kind = KindGauge
 		point.InputKind = kind
 		point.Value = nil

@@ -50,6 +50,9 @@ type kafkaRecord struct {
 
 // recordMeta is the broker acknowledgement returned by a produce.
 type recordMeta struct {
+	sendAttempted bool
+	// sent distinguishes a successful request publish from a later reply failure.
+	sent              bool
 	AcknowledgementMs *float64
 	Topic             string
 	Partition         int32
@@ -404,8 +407,9 @@ func (c mockClient) Consume(ctx context.Context, topic string, group string, tim
 func (c mockClient) RequestReply(ctx context.Context, reqTopic, replyTopic string, req kafkaRecord, timeout time.Duration) (recordMeta, kafkaRecord, error) {
 	meta, err := c.Produce(ctx, reqTopic, req)
 	if err != nil {
-		return recordMeta{}, kafkaRecord{}, err
+		return recordMeta{sendAttempted: true}, kafkaRecord{}, err
 	}
+	meta.sent = true
 	// Synthesize a correlated reply if nothing is waiting, so request/reply
 	// flows can be exercised end-to-end against the mock broker.
 	if !c.broker.hasMessages(c.topic(replyTopic), "") {
@@ -417,7 +421,7 @@ func (c mockClient) RequestReply(ctx context.Context, reqTopic, replyTopic strin
 			CorrelationID: req.CorrelationID,
 			Timestamp:     time.Now(),
 		}); err != nil {
-			return recordMeta{}, kafkaRecord{}, err
+			return meta, kafkaRecord{}, err
 		}
 	}
 	deadline := time.Now().Add(timeout)
@@ -428,13 +432,13 @@ func (c mockClient) RequestReply(ctx context.Context, reqTopic, replyTopic strin
 		}
 		reply, _, err := c.Consume(ctx, replyTopic, "", remaining)
 		if err != nil {
-			return recordMeta{}, kafkaRecord{}, err
+			return meta, kafkaRecord{}, err
 		}
 		if req.CorrelationID == "" || reply.CorrelationID == req.CorrelationID || reply.Headers["kafka_correlation_id"] == req.CorrelationID {
 			return meta, reply, nil
 		}
 	}
-	return recordMeta{}, kafkaRecord{}, fmt.Errorf("no correlated kafka reply received from %q within %s", replyTopic, timeout)
+	return meta, kafkaRecord{}, fmt.Errorf("no correlated kafka reply received from %q within %s", replyTopic, timeout)
 }
 
 func (c mockClient) Commit(context.Context) error { return nil }

@@ -1037,7 +1037,7 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 	}
 	return &TxMetrics{
 		DurationDigest:     engine.CloneTDigestSnapshot(aggregate.DurationDigest),
-		messagingAggregate: aggregate.MessagingVersion == 1 || aggregate.Messaging != nil,
+		messagingAggregate: aggregate.MessagingVersion == 1 || aggregate.MessagingVersion == 2 || aggregate.Messaging != nil,
 		ServerTelemetry:    apiMessagingSummary(aggregate.Messaging),
 		Name:               aggregate.Name,
 		TPS:                aggregate.TPS,
@@ -1544,7 +1544,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	}
 	out.MessagingVersion = 1
 	for _, v := range values {
-		if v.Count > 0 && v.MessagingVersion != 1 {
+		if v.Count > 0 && (v.MessagingVersion != 1 && v.MessagingVersion != 2) {
 			out.MessagingVersion = 0
 			if out.Messaging != nil {
 				out.Messaging.Incomplete = true
@@ -1552,7 +1552,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		}
 	}
 	if out.Messaging != nil {
-		out.MessagingVersion = 1
+		out.MessagingVersion = out.Messaging.EvidenceVersion()
 	}
 	divisor := float64(out.Count)
 	out.AvgMs = avgMsSum / divisor

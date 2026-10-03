@@ -269,6 +269,7 @@ type BrowserDeviceMetrics struct {
 }
 
 type ServerTelemetry struct {
+	Messaging                 *protocol.MessagingDiagnostics
 	SubscriptionID            string
 	AcknowledgementMs         *float64
 	ConsumerLagObserved       bool
@@ -1419,6 +1420,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 			serverTelemetry = &ServerTelemetry{
 				SubscriptionID:            tx.GetServerTelemetry().GetSubscriptionId(),
 				AcknowledgementMs:         cloneMessagingAck(tx.GetServerTelemetry().AcknowledgementMs),
+				Messaging:                 messagingDiagnosticsFromJSON(tx.GetServerTelemetry().GetMessagingDiagnosticsJson(), tx.GetServerTelemetry().GetMessagingDiagnosticsVersion()),
 				GRPC:                      grpcDiagnosticsFromProto(tx.GetServerTelemetry().GetGrpc()),
 				WebSocket:                 websocketDiagnosticsFromProto(tx.GetServerTelemetry().GetWebsocket()),
 				ServerProcessingMs:        tx.GetServerTelemetry().GetServerProcessingMs(),

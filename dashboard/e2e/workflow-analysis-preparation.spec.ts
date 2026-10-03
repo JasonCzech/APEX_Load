@@ -148,6 +148,11 @@ test('native project panel saves and reopens through the real dashboard API', as
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const request = page.context().request
   const workspace = await createWorkspace(request)
+  const capabilities = await json(await request.get(`/api/v1/analysis/capabilities?project_id=${workspace.projectId}`))
+  expect(capabilities.metric_catalog).toMatchObject({
+    version: 'apexload.metric_catalog.v1',
+    metrics: expect.arrayContaining([expect.objectContaining({ name: 'response_time', unit: 'ms', native_wire_unit: 'ms', aggregations: ['avg', 'min', 'max', 'p50', 'p90', 'p95', 'p99'] })]),
+  })
   const scriptId = await seedScript(request, workspace)
   const id = idOf(await json(await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, name: 'Native panel run', duration: '1s', groups: [{ name: 'requests', script_id: scriptId, vusers: 1 }] } })))
   trackRun(id)

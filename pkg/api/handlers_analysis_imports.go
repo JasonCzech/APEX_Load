@@ -118,9 +118,30 @@ func (s *Server) loadAnalysisImportMetadata(w http.ResponseWriter, r *http.Reque
 	return store, in
 }
 
+// AnalysisCapabilitiesResponse exposes measurement definitions independently
+// of runtime capture and query availability. A catalog entry alone does not
+// advertise a generator, dataset or provider capability.
+type AnalysisCapabilitiesResponse struct {
+	DiagnosticsEnabled bool                   `json:"diagnostics_enabled"`
+	MonitoringEnabled  bool                   `json:"monitoring_enabled"`
+	PreparationEnabled bool                   `json:"preparation_enabled"`
+	NativeParquet      bool                   `json:"native_parquet"`
+	Enabled            bool                   `json:"enabled"`
+	ChunkBytes         int64                  `json:"chunk_bytes"`
+	MaxImportBytes     int64                  `json:"max_import_bytes"`
+	HeavyJobs          int                    `json:"heavy_jobs"`
+	Threads            int                    `json:"threads"`
+	MemoryLimit        string                 `json:"memory_limit"`
+	MetricCatalog      analysis.MetricCatalog `json:"metric_catalog"`
+}
+
 func (s *Server) handleAnalysisCapabilities(w http.ResponseWriter, r *http.Request) {
 	project := r.URL.Query().Get("project_id")
-	writeJSON(w, 200, map[string]any{"diagnostics_enabled": diagnosticsProjectEnabled(project), "monitoring_enabled": runMonitoringEnabled(project), "preparation_enabled": preparationProjectEnabled(project), "native_parquet": analytics.Available(), "enabled": analysisProjectEnabled(project), "chunk_bytes": analysisUploadChunk, "max_import_bytes": analysisImportMaxBytes, "heavy_jobs": 1, "threads": 2, "memory_limit": "2GiB"})
+	writeJSON(w, 200, AnalysisCapabilitiesResponse{
+		DiagnosticsEnabled: diagnosticsProjectEnabled(project), MonitoringEnabled: runMonitoringEnabled(project), PreparationEnabled: preparationProjectEnabled(project),
+		NativeParquet: analytics.Available(), Enabled: analysisProjectEnabled(project), ChunkBytes: analysisUploadChunk, MaxImportBytes: analysisImportMaxBytes,
+		HeavyJobs: 1, Threads: 2, MemoryLimit: "2GiB", MetricCatalog: analysis.Catalog(),
+	})
 }
 
 func (s *Server) handleAnalysisImports(w http.ResponseWriter, r *http.Request) {
