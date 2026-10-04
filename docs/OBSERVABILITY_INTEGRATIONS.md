@@ -170,6 +170,44 @@ second deterministic sampler controlled by
 active parent context, so HTTP propagation remains continuous without exporting
 every action.
 
+### Run-level trace context
+
+A run can opt into correlation headers for operator-approved origins with the
+`trace_context` run setting (Run Setup → Trace context, or `trace_context` on
+`POST /api/v1/tests`): `{"enabled": true, "transaction_marker": true,
+"origins": ["https://shop.example.com"]}`. Origins are `scheme://host[:port]`
+only, at most 32, shared with any AppDynamics run-header origins bound to the
+run.
+
+- `enabled` sends generated `traceparent` headers to the approved origins,
+  even when an imported script persisted `traceparent: false`, and strips
+  generated context on every other hop, including redirects. Each top-level
+  source transaction instance gets its own trace (actions outside a
+  transaction get one each; nested transactions, `http_sequence` children and
+  concurrent groups share the enclosing trace), and every request gets its own
+  span ID. This works with OTel export off. With export on, a transaction root
+  is exported only when `APEXLOAD_OTEL_ACTION_SAMPLE_RATIO` admits it, linked
+  to the run span rather than parented by it.
+- `transaction_marker` adds `X-Dynatrace-Test: VU=…;SI=APEXLoad;TSN=…;LSN=…;LTN=…`
+  with the VUser number and bounded transaction, script and test names. It
+  never carries parameter values.
+- Script-authored `traceparent` and `X-Dynatrace-Test` headers are never
+  changed or stripped.
+
+Distributed runs that use either option require generators advertising
+`correlation_policy_v2`; older generators fail before any traffic starts. Runs
+without the setting behave as before.
+
+Archive rows record the context each request actually sent: `trace_sent`,
+`trace_source` (`authored`, `propagated` or `generated`), `sent_trace_id` and
+`sent_span_id`. `trace_id` and `span_id` come from that context, so a gateway's
+`X-Request-Id` no longer replaces them, and a fresh HTTP cache hit, which sends
+nothing, archives `trace_sent: false` with no `trace_id`. Rows written before
+this change, or by protocols that do not record it, omit `trace_sent`.
+
+These behaviours are covered by unit and engine tests against local HTTP
+servers; they have not yet been qualified against a live APM tenant.
+
 ### Signal boundary
 
 This implementation exports traces only. Prometheus remains the metrics
