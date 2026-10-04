@@ -35,6 +35,26 @@ func TestRunMonitoringAPIArtifactsAndRetry(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// This fixture tests persisted monitor evidence, with no execution backend.
+	// End its synthetic run before the server's owned shutdown attempts teardown.
+	t.Cleanup(func() {
+		endedAt := time.Now().UTC()
+		record, err := store.GetTest("monitor-run")
+		if err != nil {
+			t.Errorf("load synthetic run for cleanup: %v", err)
+			return
+		}
+		record.Status, record.EndTime = "COMPLETE", &endedAt
+		if err := store.SaveTest(record); err != nil {
+			t.Errorf("complete synthetic run: %v", err)
+			return
+		}
+		server.runner.mu.Lock()
+		if current := server.runner.tests["monitor-run"]; current != nil {
+			current.Status, current.EndedAt = "COMPLETE", &endedAt
+		}
+		server.runner.mu.Unlock()
+	})
 	created := timeslotRequest(t, server, http.MethodPost, "/api/v1/projects/proj-a/monitor-sources", storage.MonitorSource{Name: "runtime", Service: "orders", CollectorID: "monitor-collector", Pack: "go-runtime", IntervalSeconds: 15, Enabled: true})
 	if created.Code != 200 {
 		t.Fatalf("create: %d %s", created.Code, created.Body.String())

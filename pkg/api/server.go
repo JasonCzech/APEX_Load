@@ -2233,6 +2233,9 @@ func (s *Server) shutdown(ctx context.Context) error {
 	if err := s.ShutdownScheduler(ctx); err != nil {
 		shutdownErr = errors.Join(shutdownErr, err)
 	}
+	if s.runner != nil {
+		shutdownErr = errors.Join(shutdownErr, s.runner.waitRuntimeOverrideSecretAttemptReconciliation(ctx))
+	}
 
 	if s.runner != nil && s.runner.thresholdJournal != nil {
 		shutdownErr = errors.Join(shutdownErr, s.runner.thresholdJournal.shutdown(ctx))

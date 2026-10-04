@@ -182,6 +182,10 @@ type runtimeSecretRecoveryState struct {
 	generation uint64
 	stopped    bool
 	active     map[string]struct{}
+	// running/drained account for admitted recovery scans and timer callbacks.
+	// Admission and shutdown share mu; a stopped timer alone cannot join work.
+	running int
+	drained chan struct{}
 }
 
 type TestRunner struct {

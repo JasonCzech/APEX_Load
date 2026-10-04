@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -48,12 +49,37 @@ func (b *approvalSnapshotBlockingBackend) unblock() {
 
 func TestExecutionPlanRunGovernanceGate(t *testing.T) {
 	server, store := newTimeslotServer(t)
+	var targetRequests atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetRequests.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(target.Close)
+	backend := &governanceOwnedBackend{started: make(chan string, 1), done: make(chan struct{})}
+	server.runner.execution = backend
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			t.Errorf("governance server shutdown: %v", err)
+		}
+		if backend.admitted.Load() {
+			select {
+			case <-backend.done:
+			case <-ctx.Done():
+				t.Error("governance backend did not drain")
+			}
+		}
+		if targetRequests.Load() != 0 {
+			t.Error("governance assertion generated target traffic")
+		}
+	})
 	if err := store.SaveProject(&storage.Project{ID: "proj-a", Name: "A", Settings: storage.ProjectSettings{MaxVUsers: 10}, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
 		t.Fatalf("SaveProject: %v", err)
 	}
 	server.runner.StoreScript(&dsl.Script{
 		ID: "s", Name: "S", Protocol: "http", Version: "1.0.0", ProjectID: "proj-a",
-		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Config:  dsl.ScriptConfig{BaseURL: target.URL},
 		Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
 	})
 	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
@@ -113,6 +139,17 @@ func TestExecutionPlanRunGovernanceGate(t *testing.T) {
 	}
 	if createdTest.ExecutionPlanApproval.ID != approved.ID || createdTest.ExecutionPlanApproval.PlanID != plan.ID || createdTest.ExecutionPlanApproval.RequiredRole != RoleProjectAdmin || createdTest.ExecutionPlanApproval.ResolvedBy != "user:admin" || createdTest.ExecutionPlanApproval.PlanContentHash != approved.PlanContentHash {
 		t.Fatalf("approval snapshot = %+v, want approved plan governance", createdTest.ExecutionPlanApproval)
+	}
+	select {
+	case id := <-backend.started:
+		if id != createdTest.ID {
+			t.Fatalf("backend admitted %q, want %q", id, createdTest.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("governance backend was not admitted")
+	}
+	if targetRequests.Load() != 0 {
+		t.Fatal("governance assertion generated target traffic")
 	}
 	// Third run is blocked again — the approval was single-use.
 	res3, err := server.runner.MaterializeAndRunExecutionPlan(plan, "user:alice", "Alice")
@@ -937,4 +974,26 @@ func TestExecutionPlanRouteAccessRequirements(t *testing.T) {
 			}
 		})
 	}
+}
+
+// governanceOwnedBackend proves execution admission without running user code,
+// opening a protocol or generating target traffic. The runner owns its context;
+// fixture cleanup stops and joins it before closing the durable store.
+type governanceOwnedBackend struct {
+	started  chan string
+	done     chan struct{}
+	admitted atomic.Bool
+}
+
+func (b *governanceOwnedBackend) Run(tr *TestRunner, test *ManagedTest) {
+	defer close(b.done)
+	tr.mu.RLock()
+	ctx := test.executionCtx
+	tr.mu.RUnlock()
+	if ctx == nil {
+		return
+	}
+	b.admitted.Store(true)
+	b.started <- test.ID
+	<-ctx.Done()
 }
