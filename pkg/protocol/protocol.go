@@ -701,6 +701,9 @@ type Result struct {
 	// pre-scrub correlation observer. Public replay events, reports, snapshots,
 	// exports, and WebSocket messages must never retain it.
 	CorrelationEvidence *CorrelationEvidence `json:"-"`
+	// TraceContext is the W3C context the request actually carried, kept apart
+	// from CorrelationID; nil when the protocol does not record one.
+	TraceContext *SentTraceContext `json:"trace_context,omitempty"`
 	// Extractions carries the values an action's extractors pulled out of the
 	// response, keyed by the variable they are saved to. An entry whose KEY is
 	// sensitive (scrub.SensitiveName — "session_token" and the like) IS

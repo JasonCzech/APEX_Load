@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"math"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 // finalizeTransactionEventDerivedFields supplies fields that older archive
@@ -15,11 +17,16 @@ func finalizeTransactionEventDerivedFields(item *TransactionEvent, ordinal int64
 	if item == nil {
 		return
 	}
-	if item.TraceID == "" {
-		item.TraceID = traceIDFromCorrelationID(item.CorrelationID)
-	}
-	if item.SpanID == "" {
-		item.SpanID = spanIDFromCorrelationID(item.CorrelationID)
+	// Rows that recorded their sent context already carry authoritative IDs;
+	// deriving from CorrelationID would resurrect a gateway request ID or a
+	// trace that a cache hit never sent.
+	if item.TraceSent == nil {
+		if item.TraceID == "" {
+			item.TraceID = traceIDFromCorrelationID(item.CorrelationID)
+		}
+		if item.SpanID == "" {
+			item.SpanID = spanIDFromCorrelationID(item.CorrelationID)
+		}
 	}
 	item.HasDetail = transactionEventHasDetail(item)
 	if item.EventID != "" {
@@ -55,4 +62,28 @@ func transactionEventHasDetail(item *TransactionEvent) bool {
 		item.ServerTelemetry != nil || len(item.ProtocolEvidence) > 0 ||
 		len(item.NetworkEntries) > 0 || len(item.ConsoleEntries) > 0 ||
 		item.DOMSummary != nil)
+}
+
+// applySentTraceContext records the W3C context a request carried. Archived
+// trace and span IDs come from it whenever it exists; when it never reached a
+// server they stay empty, so the row cannot be looked up as a trace. Without a
+// recorded context the legacy CorrelationID derivation applies.
+func applySentTraceContext(item *TransactionEvent, sent *protocol.SentTraceContext) {
+	if item == nil {
+		return
+	}
+	if sent == nil {
+		item.TraceID = traceIDFromCorrelationID(item.CorrelationID)
+		item.SpanID = spanIDFromCorrelationID(item.CorrelationID)
+		return
+	}
+	wasSent := sent.Sent
+	item.TraceSent = &wasSent
+	item.TraceSource = sent.Source
+	item.SentTraceID = sent.TraceID
+	item.SentSpanID = sent.SpanID
+	item.TraceID, item.SpanID = "", ""
+	if wasSent {
+		item.TraceID, item.SpanID = sent.TraceID, sent.SpanID
+	}
 }

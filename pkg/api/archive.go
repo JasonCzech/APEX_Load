@@ -246,6 +246,10 @@ type TransactionEvent struct {
 	CorrelationID         string                    `json:"correlation_id,omitempty"`
 	TraceID               string                    `json:"trace_id,omitempty"`
 	SpanID                string                    `json:"span_id,omitempty"`
+	TraceSent             *bool                     `json:"trace_sent,omitempty"`
+	TraceSource           string                    `json:"trace_source,omitempty"`
+	SentTraceID           string                    `json:"sent_trace_id,omitempty"`
+	SentSpanID            string                    `json:"sent_span_id,omitempty"`
 	DependencyType        string                    `json:"dependency_type,omitempty"`
 	DependencyTarget      string                    `json:"dependency_target,omitempty"`
 	DurationMs            float64                   `json:"duration_ms"`

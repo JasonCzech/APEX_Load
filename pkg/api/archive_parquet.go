@@ -32,6 +32,10 @@ type parquetTransactionEvent struct {
 	CorrelationID          string  `parquet:"name=correlation_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	TraceID                string  `parquet:"name=trace_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	SpanID                 string  `parquet:"name=span_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TraceSent              string  `parquet:"name=trace_sent, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TraceSource            string  `parquet:"name=trace_source, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	SentTraceID            string  `parquet:"name=sent_trace_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	SentSpanID             string  `parquet:"name=sent_span_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	NetworkProfile         string  `parquet:"name=network_profile, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	SourceTransaction      string  `parquet:"name=source_transaction, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	DependencyType         string  `parquet:"name=dependency_type, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
@@ -267,6 +271,10 @@ func toParquetTransactions(items []TransactionEvent) []parquetTransactionEvent {
 			CorrelationID:          item.CorrelationID,
 			TraceID:                item.TraceID,
 			SpanID:                 item.SpanID,
+			TraceSent:              parquetOptionalBool(item.TraceSent),
+			TraceSource:            item.TraceSource,
+			SentTraceID:            item.SentTraceID,
+			SentSpanID:             item.SentSpanID,
 			NetworkProfile:         item.NetworkProfile,
 			SourceTransaction:      item.SourceTransaction,
 			DependencyType:         item.DependencyType,
@@ -393,4 +401,14 @@ func mustJSON(value any) string {
 		return ""
 	}
 	return string(data)
+}
+
+func parquetOptionalBool(value *bool) string {
+	if value == nil {
+		return ""
+	}
+	if *value {
+		return "true"
+	}
+	return "false"
 }

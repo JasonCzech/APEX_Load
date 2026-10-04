@@ -69,10 +69,10 @@ func TestRootCauseSLAState(t *testing.T) {
 			wantStatus:  "degraded",
 		},
 		{
-			name:        "per-group response-time threshold counts as configured",
-			manifest:    &RunArchiveManifest{Provenance: RunArchiveProvenance{Groups: []TestGroup{{Name: "checkout", TransactionResponseTimeSLAMs: ptr(400.0)}}}, SLAEvaluated: true},
-			wantSignal:  archiveSLAPassed,
-			wantStatus:  "healthy",
+			name:       "per-group response-time threshold counts as configured",
+			manifest:   &RunArchiveManifest{Provenance: RunArchiveProvenance{Groups: []TestGroup{{Name: "checkout", TransactionResponseTimeSLAMs: ptr(400.0)}}}, SLAEvaluated: true},
+			wantSignal: archiveSLAPassed,
+			wantStatus: "healthy",
 		},
 		{
 			name:        "breach wins",

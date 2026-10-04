@@ -603,6 +603,10 @@ func TestHTTP_ExecuteCapturesDependencyAndCorrelationMetadata(t *testing.T) {
 	if result.CorrelationID != "resp-corr-2" {
 		t.Fatalf("CorrelationID = %q, want resp-corr-2", result.CorrelationID)
 	}
+	// The response's request ID must not replace the context that was sent.
+	if result.TraceContext == nil || !result.TraceContext.Sent || result.TraceContext.TraceID == "" {
+		t.Fatalf("TraceContext = %#v, want the sent trace context kept beside the request ID", result.TraceContext)
+	}
 }
 
 func TestHTTP_ExecuteInjectsTraceparentHeaderWhenMissing(t *testing.T) {

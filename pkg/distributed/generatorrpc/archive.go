@@ -94,6 +94,12 @@ type archiveTransactionEvent struct {
 	NetworkProfile        string                    `json:"network_profile,omitempty"`
 	PropertyDimensions    map[string]string         `json:"property_dimensions,omitempty"`
 	CorrelationID         string                    `json:"correlation_id,omitempty"`
+	TraceID               string                    `json:"trace_id,omitempty"`
+	SpanID                string                    `json:"span_id,omitempty"`
+	TraceSent             *bool                     `json:"trace_sent,omitempty"`
+	TraceSource           string                    `json:"trace_source,omitempty"`
+	SentTraceID           string                    `json:"sent_trace_id,omitempty"`
+	SentSpanID            string                    `json:"sent_span_id,omitempty"`
 	DependencyType        string                    `json:"dependency_type,omitempty"`
 	DependencyTarget      string                    `json:"dependency_target,omitempty"`
 	SourceStepID          string                    `json:"source_step_id,omitempty"`
@@ -1046,6 +1052,15 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 		ProtocolEvidence:      result.ProtocolEvidence,
 		Extractions:           boundedArchiveExtractions(result.Extractions),
 		Snapshot:              engine.BoundErrorSnapshot(result.Snapshot, 1<<20),
+	}
+	if sent := result.TraceContext; sent != nil {
+		wasSent := sent.Sent
+		event.TraceSent = &wasSent
+		event.TraceSource = sent.Source
+		event.SentTraceID, event.SentSpanID = sent.TraceID, sent.SpanID
+		if wasSent {
+			event.TraceID, event.SpanID = sent.TraceID, sent.SpanID
+		}
 	}
 	if len(event.Extractions) != len(result.Extractions) {
 		event.ExtractionsIncomplete = true

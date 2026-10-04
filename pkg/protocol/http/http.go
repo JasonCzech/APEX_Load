@@ -409,16 +409,26 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	// synthetic header only when no active span exists.
 	explicitCorrelationID := correlationIDFromHTTPHeader(req.Header)
 	generatedTraceparent := ""
+	traceSource := ""
+	if strings.TrimSpace(req.Header.Get("Traceparent")) != "" {
+		traceSource = protocol.TraceSourceAuthored
+	}
 	if h.traceparentEnabled {
-		if strings.TrimSpace(req.Header.Get("Traceparent")) == "" {
-			injectActiveTraceContext(req.Context(), req.Header)
+		if traceSource == "" && injectActiveTraceContext(req.Context(), req.Header) != "" {
+			traceSource = protocol.TraceSourcePropagated
 		}
 		generatedTraceparent = ensureTraceparentHeader(req.Header, h.traceparentSampled)
+		if traceSource == "" && generatedTraceparent != "" {
+			traceSource = protocol.TraceSourceGenerated
+		}
 	}
 	result.CorrelationID = explicitCorrelationID
 	if result.CorrelationID == "" {
 		result.CorrelationID = generatedTraceparent
 	}
+	// Record the context this request carries, separately from the correlation
+	// ID, which a gateway request ID may later replace.
+	result.TraceContext = protocol.NewSentTraceContext(req.Header.Get("Traceparent"), traceSource, true)
 	var staleCacheEntry *httpCacheEntry
 	cacheHit := false
 	var resp *http.Response
@@ -429,6 +439,10 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			if fresh && !h.cacheCheckNewerVersions {
 				resp = entry.response(req)
 				cacheHit = true
+				// A fresh hit sends nothing, so no server ever saw this context.
+				if result.TraceContext != nil {
+					result.TraceContext.Sent = false
+				}
 			} else {
 				entry.addConditionalHeaders(req)
 				staleCacheEntry = entry

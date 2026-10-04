@@ -302,8 +302,6 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		ActionName:            result.ActionName,
 		BusinessTransaction:   result.BusinessTransaction,
 		CorrelationID:         result.CorrelationID,
-		TraceID:               traceIDFromCorrelationID(result.CorrelationID),
-		SpanID:                spanIDFromCorrelationID(result.CorrelationID),
 		DependencyType:        result.DependencyType,
 		DependencyTarget:      result.DependencyTarget,
 		DurationMs:            durationMillis(result.Duration),
@@ -333,6 +331,7 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		SourceActionName:      result.SourceActionName,
 		SourceProfile:         result.SourceProfile,
 	}
+	applySentTraceContext(&event, result.TraceContext)
 	// Direct recorder callers do not pass through the engine's pre-redaction
 	// binding. Bind them against the same immutable admission provenance here.
 	provenance := w.manifest.InitialProvenance
