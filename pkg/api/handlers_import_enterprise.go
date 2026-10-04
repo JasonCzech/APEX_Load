@@ -18,6 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
+	"github.com/jasonczech/apexload/pkg/protocol/aura"
 )
 
 var enterpriseImportGate = make(chan struct{}, 2)
@@ -158,6 +159,7 @@ func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.C
 	reviewForResponse := salesforceReviewForResponse(review)
 	if importReq.SalesforceNative && review.NativePreview != nil && review.NativePreview.Script != nil {
 		preview := review.NativePreview.Script
+		result.SourceReview = originalImportSourceReview(result.SourceReview)
 		preview.ProjectID = normalizeProjectID(importReq.ProjectID)
 		attachSourceReviewToScript(preview, "salesforce", reviewScript.Name, result.SourceReview)
 		if preview.Metadata != nil && preview.Metadata.Import != nil {
@@ -707,6 +709,24 @@ func (s *Server) newEnterpriseArchiveImportResponse(r *http.Request, result *ent
 	}
 	augmented := draft.augment(r)
 	warnings = augmented.Warnings
+	// Persisting the archive summary creates a separate response-safe review
+	// before augmentation. Refresh that summary from the trusted review after
+	// the last executable transform; the earlier copy has preview-only paths.
+	if finalized := trustedNativeSalesforceReview(result.Script); finalized != nil && finalized.NativePreview.NativePathDomain == salesforce.FinalNativePathDomain {
+		includePreviewScript := summary.SalesforceReview != nil && summary.SalesforceReview.NativePreview != nil && summary.SalesforceReview.NativePreview.Script != nil
+		summary.SalesforceReview = salesforceReviewForResponse(finalized)
+		if includePreviewScript {
+			// The summary retains its existing preview-script contract. The
+			// persisted review keeps Script nil, avoiding a metadata cycle.
+			summary.SalesforceReview.NativePreview.Script = result.Script
+		}
+		for index := range augmented.Sections {
+			if augmented.Sections[index].Key == "salesforce_review" {
+				augmented.Sections[index].Summary = salesforceReviewSummary(summary.SalesforceReview)
+				augmented.Sections[index].Items = salesforceReviewItems(summary.SalesforceReview)
+			}
+		}
+	}
 
 	return s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:                 result,
@@ -1062,7 +1082,7 @@ func buildEnterpriseArchiveImportReviewSections(warnings []string, result *enter
 		severity := "info"
 		if len(summary.SalesforceReview.Blockers) > 0 {
 			severity = "blocker"
-		} else if summary.SalesforceReview.HARMatchCoverage.HARProvided && summary.SalesforceReview.HARMatchCoverage.CoveragePct < 80 {
+		} else if len(summary.SalesforceReview.Warnings) > 0 || (summary.SalesforceReview.HARMatchCoverage.HARProvided && summary.SalesforceReview.HARMatchCoverage.CoveragePct < 80) {
 			severity = "warning"
 		}
 		sections = append(sections, scriptImportReviewSection{
@@ -1179,6 +1199,32 @@ func salesforceReviewItems(review *salesforce.Review) []string {
 	}
 	if review.CorrelationConfidence != "" {
 		items = append(items, "Correlation confidence: "+review.CorrelationConfidence)
+	}
+	if outcomes := review.AuraOutcomes; outcomes != nil {
+		items = append(items, fmt.Sprintf("Aura capture outcomes: %d request action(s), %d response action(s), %d matched; %d complete batch(es), %d incomplete, %d omitted.", outcomes.RequestActions, outcomes.ResponseActions, outcomes.MatchedActions, outcomes.CompleteBatches, outcomes.IncompleteBatches, outcomes.OmittedBatches))
+		if !outcomes.DetailsComplete {
+			items = append(items, fmt.Sprintf("Aura retained detail limits: %d outcome(s), %d captured issue(s), and %d imported request issue(s) omitted; aggregate counts cover full inspected batches.", outcomes.OutcomesOmitted, outcomes.IssuesOmitted, outcomes.RequestIssuesOmitted))
+		}
+		items = append(items, fmt.Sprintf("Aura response evidence: %d batch(es) without a retained response; %d invalid imported request envelope(s).", outcomes.MissingResponses, outcomes.InvalidRequests))
+		states := make([]string, 0, len(outcomes.StateCounts))
+		for state := range outcomes.StateCounts {
+			states = append(states, string(state))
+		}
+		sort.Strings(states)
+		for _, state := range states {
+			items = append(items, fmt.Sprintf("Aura action state %s: %d", state, outcomes.StateCounts[aura.State(state)]))
+		}
+		codes := make([]string, 0, len(outcomes.IssueCounts))
+		for code := range outcomes.IssueCounts {
+			codes = append(codes, string(code))
+		}
+		sort.Strings(codes)
+		for _, code := range codes {
+			items = append(items, fmt.Sprintf("Aura capture issue %s: %d", code, outcomes.IssueCounts[aura.Code(code)]))
+		}
+	}
+	for _, warning := range review.Warnings {
+		items = append(items, "Warning: "+warning)
 	}
 	for _, blocker := range review.Blockers {
 		items = append(items, "Blocker: "+blocker)

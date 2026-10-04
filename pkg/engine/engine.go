@@ -488,7 +488,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 			var vu *VUser
 			redaction := func() *RedactionConfig {
 				if vu != nil {
-					return vu.RedactionConfig
+					return vu.resultPublicationRedactionConfig()
 				}
 				return e.redaction
 			}
@@ -737,7 +737,7 @@ func (e *Engine) runOpenWorkload(
 			var vu *VUser
 			redaction := func() *RedactionConfig {
 				if vu != nil {
-					return vu.RedactionConfig
+					return vu.resultPublicationRedactionConfig()
 				}
 				return e.redaction
 			}

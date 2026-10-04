@@ -2,8 +2,6 @@ package http
 
 import (
 	"bytes"
-	"compress/flate"
-	"compress/zlib"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -20,16 +18,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/andybalholm/brotli"
 	"github.com/jasonczech/apexload/pkg/credential"
+	"github.com/jasonczech/apexload/pkg/internal/contentdecode"
 	"github.com/jasonczech/apexload/pkg/protocol"
-	"github.com/klauspost/compress/zstd"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
 
 func init() {
+	protocol.Register("http/1.1", func() protocol.Protocol { return &HTTP{aliasVersion: VersionHTTP11} })
+	protocol.Register("http/2", func() protocol.Protocol { return &HTTP{aliasVersion: VersionHTTP2} })
 	protocol.Register("http", func() protocol.Protocol {
 		return &HTTP{}
 	})
@@ -42,6 +41,9 @@ type HTTP struct {
 	outcome                replayOutcomePolicy
 	authDelay              time.Duration
 
+	aliasVersion               string
+	policyPools                map[string]*httpPolicyPool
+	connections                *httpConnectionBudget
 	client                     *http.Client
 	oauthClient                *http.Client
 	transport                  *http.Transport
@@ -58,6 +60,7 @@ type HTTP struct {
 	defaultHeaders             map[string]string
 	typedDefaultHeaders        map[string]string
 	defaultHeaderList          protocol.HeaderList
+	runCorrelation             runCorrelationPolicy
 	authType                   string
 	authHeader                 string // pre-computed Authorization header value
 	httpVersion                string // empty = automatic; "1.1"/"2" = exact
@@ -135,10 +138,31 @@ func (h *HTTP) Name() string { return "http" }
 
 func (h *HTTP) ParallelSafe() bool { return true }
 
+// Initialized options are immutable during a group. net/http clients and cookie
+// jars are concurrent-safe; cache, verification, network shaping, and streaming
+// state have their own locks. Resource waves retain request-local observation.
+// Teardown and iteration resets occur only after the engine's join barrier.
+func (h *HTTP) SharedSessionConcurrentSafe() bool { return h != nil && h.client != nil }
+
 func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
+	if h.aliasVersion != "" {
+		if raw, exists := config["http_version"]; !exists || raw == nil || raw == "" {
+			copyConfig := make(map[string]any, len(config)+1)
+			for key, value := range config {
+				copyConfig[key] = value
+			}
+			copyConfig["http_version"] = h.aliasVersion
+			config = copyConfig
+		}
+	}
 	if err := validateHTTPRuntimeConfigBounds(config); err != nil {
 		return err
 	}
+	correlation, err := newRunCorrelationPolicy(config)
+	if err != nil {
+		return err
+	}
+	h.runCorrelation = correlation
 	h.receiveBufferBytes = protocol.ConfigInt(config, "receive_buffer_bytes")
 	h.maxMetaRefresh = protocol.ConfigInt(config, "max_meta_refresh")
 	h.contentCheckErrorLimit = protocol.ConfigInt(config, "content_check_error_limit")
@@ -163,54 +187,8 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 		return err
 	}
 
-	h.transport = newTransport(transportSettings, tlsCfg)
-	if enabled, _ := config["dns_cache"].(bool); enabled {
-		h.transport.DialContext = familyDialContext(cachedDNSDialer(h.transport.DialContext, transportSettings.connectTimeout), transportSettings.ipVersion)
-	}
-	h.httpVersion, err = applyHTTPVersion(h.transport, config)
-	if err != nil {
+	if err := h.initializeHTTPPolicyPools(ctx, config, transportSettings, tlsCfg); err != nil {
 		return err
-	}
-	applyNetworkSimulation(h.transport, config)
-	if err := applyProxy(h.transport, config); err != nil {
-		return err
-	}
-	if len(h.allowedTargetHosts) > 0 {
-		h.transport.Proxy = protocol.NewTargetPolicyProxy(h.transport.Proxy, h.allowedTargetHosts)
-	}
-
-	jar := buildCookieJar(config)
-	h.maxRedirects = parseMaxRedirects(config)
-
-	h.client = &http.Client{
-		Transport: h.transport,
-		Jar:       jar,
-		Timeout:   h.requestTimeout,
-	}
-	applyRedirectPolicy(h.client, h.maxRedirects)
-	h.oauthClient = hardenedOAuthHTTPClient(h.client)
-	if h.oauthClient != nil {
-		h.oauthTransport, _ = h.oauthClient.Transport.(*http.Transport)
-	}
-	if protocol.ConfigString(config, "proxy_mode") == "pac" {
-		source, err := fetchPAC(ctx, protocol.ConfigString(config, "proxy_pac_url"), h.allowedTargetHosts)
-		if err != nil {
-			return err
-		}
-		h.client.Transport = &pacRoundTripper{source: source, allowed: h.allowedTargetHosts, base: h.transport}
-		if h.oauthClient != nil && h.oauthTransport != nil {
-			h.oauthClient.Transport = &pacRoundTripper{source: source, allowed: h.allowedTargetHosts, base: h.oauthTransport}
-		}
-	}
-	if len(h.allowedTargetHosts) > 0 {
-		h.client.Transport = protocol.NewTargetPolicyRoundTripper(h.client.Transport, h.allowedTargetHosts)
-		if h.oauthClient != nil {
-			h.oauthClient.Transport = protocol.NewTargetPolicyRoundTripper(h.oauthClient.Transport, h.allowedTargetHosts)
-		}
-	}
-	h.client.Transport = withoutImplicitUserAgent(h.client.Transport)
-	if h.oauthClient != nil {
-		h.oauthClient.Transport = withoutImplicitUserAgent(h.oauthClient.Transport)
 	}
 
 	h.defaultHeaders = buildDefaultHeaders(config)
@@ -266,7 +244,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 				result.Success = false
 				result.ErrorMessage = errPageDeadline.Error()
 				result.Duration = time.Since(result.StartTime)
-				result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+				result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result)
 			}
 		}()
 	}
@@ -279,14 +257,27 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.StatusCode = http.StatusBadRequest
 		result.ErrorMessage = err.Error()
 		result.Duration = time.Since(result.StartTime)
-		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result)
 		return result, nil
 	}
-	if skip, _ := action.Params["legacy_html_check"].(bool); skip && !h.outcome.legacyChecks {
+	if skip, _ := action.Params["legacy_html_check"].(bool); skip && !h.outcome.legacyChecks && !hasAuraSuccessAssertion(action.Assertions) {
 		result.Success = true
 		result.ProtocolEvidence = map[string]any{"legacy_html_check": "disabled"}
 		return result, nil
 	}
+	policy, policyErr := h.effectiveHTTPVersion(action)
+	if policyErr == nil {
+		policyErr = h.validateHTTPVersionTLS(policy, h.resolveURL(action.Target))
+	}
+	if policyErr != nil {
+		result.StatusCode = http.StatusBadRequest
+		result.ErrorMessage = policyErr.Error()
+		return result, nil
+	}
+	h = h.forHTTPVersion(policy)
+	ctx = context.WithValue(ctx, httpVersionCacheKey{}, policy)
+	result.HTTPVersionPolicy = policy
+	defer func() { result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result) }()
 	defaultHeaders := h.defaultHeaders
 	defaultHeaderList := h.defaultHeaderList
 	if action.ResolvedDefaultHeaders {
@@ -300,7 +291,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.StatusCode = http.StatusBadRequest
 		result.ErrorMessage = err.Error()
 		result.Duration = time.Since(result.StartTime)
-		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result)
 		return result, nil
 	}
 
@@ -368,7 +359,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.Duration = time.Since(result.StartTime)
 		result.ErrorMessage = actionAuthErr.Error()
 		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
-		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result)
 		return result, nil
 	}
 	if actionAuthOverride {
@@ -393,6 +384,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		addRequestHeader(req, header.Name, header.Value)
 	}
 	mergeRequestCookieHeaders(req)
+	if err := h.runCorrelation.apply(req); err != nil {
+		return nil, err
+	}
 	// Authored headers are authoritative over typed auth. Digest normally
 	// starts without Authorization and retries a 401 challenge, but doing so
 	// here would silently replace an authored value on the second request.
@@ -592,6 +586,17 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			}
 		}
 	}
+	if cacheHit {
+		result.HTTPVersionSource = "cache"
+	} else {
+		result.HTTPVersionSource = "wire"
+		switch {
+		case resp.ProtoMajor == 1 && resp.ProtoMinor == 1:
+			result.HTTPVersionNegotiated = VersionHTTP11
+		case resp.ProtoMajor == 2 && resp.ProtoMinor == 0:
+			result.HTTPVersionNegotiated = VersionHTTP2
+		}
+	}
 	if !cacheHit && staleCacheEntry != nil && resp != nil && resp.StatusCode == http.StatusNotModified {
 		h.cache.refresh(req, staleCacheEntry, resp, time.Now())
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
@@ -615,30 +620,85 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	)
 	maxBody := httpMaxBodyBytes(action.Params)
 	isEventStream := shouldReadSSE(resp.Header.Get("Content-Type"), action.Params)
-	if isEventStream {
-		sseResult, err := readSSEResponse(ctx, resp.Body, action.Params, result.StartTime, captureLease)
+	decoderLimit := maxBody
+	if isEventStream && sseMaxBodyBytes(action.Params) < decoderLimit {
+		decoderLimit = sseMaxBodyBytes(action.Params)
+	}
+	encodings := resp.Header.Values("Content-Encoding")
+	if method == http.MethodHead || resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotModified {
+		encodings = nil // These wire responses cannot carry representation bytes.
+	}
+	decoder, decodeErr := contentdecode.NewReader(ctx, resp.Body, encodings, contentdecode.DefaultLimits(decoderLimit))
+	if decodeErr != nil {
+		bodyReadErr = decodeErr
+	} else if isEventStream {
+		sseResult, err := readSSEResponse(ctx, decoder, action.Params, result.StartTime, captureLease)
 		_, writeErr := (&responseCaptureWriter{buffer: buf, lease: captureLease}).Write(sseResult.Body)
-		n = sseResult.BytesRead
 		sseFirstEvent = sseResult.FirstEvent
 		sseEventCount = sseResult.EventCount
 		bodyReadErr = err
 		if bodyReadErr == nil {
 			bodyReadErr = writeErr
 		}
-	} else if maxBody > 0 {
-		// Bound the buffered body so a giant (or pathologically compressible)
-		// response becomes a failed sample instead of OOM-ing the generator.
-		n, bodyReadErr = copyResponse(&responseCaptureWriter{buffer: buf, lease: captureLease}, io.LimitReader(resp.Body, maxBody+1), h.receiveBufferBytes)
-		if bodyReadErr == nil && n > maxBody {
-			buf.Truncate(int(maxBody))
-			n = maxBody
-			bodyReadErr = fmt.Errorf("response body exceeded %d-byte limit", maxBody)
-		}
 	} else {
-		n, bodyReadErr = copyResponse(buf, resp.Body, h.receiveBufferBytes)
+		_, bodyReadErr = copyResponse(&responseCaptureWriter{buffer: buf, lease: captureLease}, decoder, h.receiveBufferBytes)
 	}
 	bodyReadDuration := time.Since(bodyReadStart)
-	resp.Body.Close()
+	contentComplete, contentDecoded := false, false
+	if decoder != nil {
+		n = decoder.EncodedBytes()
+		contentComplete, contentDecoded = decoder.Complete(), decoder.Decoding()
+		_ = decoder.Close()
+	} else {
+		_ = resp.Body.Close()
+	}
+	if bodyReadErr == nil && !isEventStream && !contentComplete {
+		bodyReadErr = &contentdecode.Error{Kind: contentdecode.Truncated}
+	}
+	defer func() {
+		if !contentComplete && isEventStream && bodyReadErr == nil && result.Snapshot != nil && result.Snapshot.ResponseBody != "" && result.Snapshot.ResponseBodyState != "not_captured" && result.ProtocolEvidence["response_content_state"] == "collection_window" {
+			result.Snapshot.ResponseBodyState = "partial"
+		}
+	}()
+	contentState := "complete"
+	if bodyReadErr != nil {
+		contentState = "unavailable"
+	} else if !contentComplete {
+		contentState = "collection_window"
+	}
+	contentBasis := "identity"
+	if contentDecoded {
+		contentBasis = "decoded"
+	}
+	addResponseContentReceipt(result, contentState, contentBasis)
+	if cacheHit {
+		result.ProtocolEvidence["response_content_source"] = "cache"
+	} else {
+		result.ProtocolEvidence["response_content_source"] = "wire"
+	}
+	if bodyReadErr != nil {
+		buf.Reset()
+		result.Duration = time.Since(result.StartTime)
+		result.StatusCode = resp.StatusCode
+		result.BytesReceived = n
+		reused, rCount, rDur := applyTraceTelemetry()
+		result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
+		result.Success = false
+		result.ErrorMessage = fixedResponseReadError(bodyReadErr)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), nil)
+		result.Snapshot.ResponseBodyState = "not_captured"
+		h.unavailableResponseContentEvidence(result, false)
+		return result, nil
+	}
+	responseHeaders := cloneHTTPHeaders(resp.Header)
+	responseView := *resp
+	responseView.Header = resp.Header.Clone()
+	if contentDecoded {
+		responseHeaders = decodedResponseHeaders(responseHeaders)
+		responseView.Header.Del("Content-Encoding")
+		responseView.Header.Del("Content-Length")
+		responseView.ContentLength = -1
+	}
 
 	if delay := h.streaming.responseDelay(resp, action, targetURL, n, bodyReadDuration); !isEventStream && delay > 0 {
 		if err := h.streaming.wait(ctx, delay); err != nil {
@@ -648,8 +708,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			reused, rCount, rDur := applyTraceTelemetry()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
 			result.ErrorMessage = err.Error()
-			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), buf.Bytes())
-			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, buf.Bytes(), false)
+			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, nil)
+			result.Snapshot.ResponseBodyState = "not_captured"
+			h.unavailableResponseContentEvidence(result, false)
 			return result, nil
 		}
 	}
@@ -679,37 +740,28 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if result.CorrelationID == "" {
 		result.CorrelationID = generatedTraceparent
 	}
-	responseHeaders := cloneHTTPHeaders(resp.Header)
-
 	rawResponseBody := buf.Bytes()
-	if h.cache != nil && !cacheHit && bodyReadErr == nil {
-		// "Cache URLs requiring content" restricts storage to content-bearing
-		// (HTML) responses, matching the LR checkbox semantics.
-		if !h.cacheContentURLsOnly || isContentBearingResponse(resp.Header) {
-			h.cache.store(req, resp, rawResponseBody, time.Now())
-		}
-	}
 	respBody := rawResponseBody
-	respBody, responseHeaders, err = decodeHTTPResponseContent(respBody, resp.Header, responseHeaders, maxBody, captureLease)
-	if err != nil {
-		result.Duration = time.Since(result.StartTime)
-		result.Success = false
-		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, buf.Bytes())
-		h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, buf.Bytes(), false)
-		return result, nil
-	}
 	formattedBody, err := applyDataFormattingChain(respBody, h.dataFormattingAutoDetect, h.dataFormattingChain, maxBody)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
 		result.Success = false
 		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
-		h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, respBody, false)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, nil)
+		result.Snapshot.ResponseBodyState = "not_captured"
+		addResponseContentReceipt(result, "unavailable", contentBasis)
+		h.unavailableResponseContentEvidence(result, false)
 		return result, nil
 	}
+	if h.cache != nil && !cacheHit && contentComplete && !isEventStream {
+		// "Cache URLs requiring content" restricts storage to content-bearing
+		// (HTML) responses, matching the LR checkbox semantics.
+		if !h.cacheContentURLsOnly || isContentBearingResponse(resp.Header) {
+			h.cache.store(req, &responseView, rawResponseBody, time.Now())
+		}
+	}
 	respBody = formattedBody
-	if bodyReadErr == nil {
+	if contentComplete {
 		if refreshed, ok := h.followMetaRefresh(ctx, action, req, resp, respBody, result); ok {
 			return refreshed, nil
 		}
@@ -719,13 +771,18 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	// Snapshot the response/transport outcome before extractors, content checks,
 	// and non-status assertions can change the overall action outcome.
-	h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, respBody, result.Success)
+	if contentComplete {
+		h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, respBody, result.Success)
+	} else {
+		h.unavailableResponseContentEvidence(result, result.Success)
+	}
 	extractorWork := newExtractorInputWorkBudget(resp.Header, respBody)
 extractors:
 	for _, ext := range action.Extractors {
 		if err := extractorWork.charge(ext); err != nil {
 			result.Success = false
 			result.Extractions = nil
+			result.ExtractionsIncomplete = true
 			result.ErrorMessage = fmt.Sprintf("extractor %q input rejected: %v", ext.Name, err)
 			break
 		}
@@ -734,6 +791,7 @@ extractors:
 			if errors.Is(err, errExtractorResourceLimit) {
 				result.Success = false
 				result.Extractions = nil
+				result.ExtractionsIncomplete = true
 				result.ErrorMessage = fmt.Sprintf("extractor %q output rejected: %v", ext.Name, err)
 				break
 			}
@@ -787,6 +845,7 @@ extractors:
 		if errors.Is(err, errExtractorResourceLimit) {
 			result.Success = false
 			result.Extractions = nil
+			result.ExtractionsIncomplete = true
 			result.ErrorMessage = fmt.Sprintf("extractor %q output rejected: %v", ext.Name, err)
 			break
 		}
@@ -836,6 +895,7 @@ extractors:
 		result.Duration = time.Since(state.start)
 	}
 	assertionWork := newAssertionInputWorkBudget(resp.Header, respBody)
+	assertionWork.requestBytes = int64(len(requestBody))
 	for index, assertion := range action.Assertions {
 		if assertion.LegacyHTMLCheck && !h.outcome.legacyChecks {
 			continue
@@ -846,10 +906,16 @@ extractors:
 			break
 		}
 		bodyText := ""
-		if assertionNeedsResponseBody(assertion) {
+		if assertionNeedsResponseBody(assertion) && assertion.Type != "aura_actions_success" {
 			bodyText = loadResponseBodyText()
 		}
-		if err := evaluateResponseAssertion(assertion, result, resp.Header, bodyText); err != nil {
+		var assertionErr error
+		if assertion.Type == "aura_actions_success" {
+			assertionErr = evaluateAuraAssertion(result, requestBody, respBody)
+		} else {
+			assertionErr = evaluateResponseAssertion(assertion, result, resp.Header, bodyText)
+		}
+		if err := assertionErr; err != nil {
 			result.Success = false
 			result.ErrorMessage = err.Error()
 			break
@@ -872,7 +938,7 @@ extractors:
 	// page's embedded resources after the main sample. Gated on the transport
 	// outcome (not result.Success, which extractors/assertions may have
 	// flipped) — a real browser fetches resources for any rendered page.
-	observeVerification(ctx, resp.Header, respBody, false, bodyReadErr == nil)
+	observeVerification(ctx, resp.Header, respBody, false, contentComplete)
 	var resourceEvidence *resourceCapture
 	resourceCtx := ctx
 	if action.CaptureResourceDetails {
@@ -885,7 +951,7 @@ extractors:
 	if fetcher == nil && len(explicit) > 0 {
 		fetcher = &resourceFetcher{h: h}
 	}
-	if fetcher != nil && bodyReadErr == nil && resp.StatusCode >= 200 && resp.StatusCode < 400 {
+	if fetcher != nil && contentComplete && resp.StatusCode >= 200 && resp.StatusCode < 400 {
 		finalURL := req.URL
 		if resp.Request != nil && resp.Request.URL != nil {
 			finalURL = resp.Request.URL
@@ -929,6 +995,9 @@ func validateHTTPActionBounds(action *protocol.Action) error {
 	if action == nil {
 		return fmt.Errorf("http action is required")
 	}
+	if err := action.HTTPVersion.Validate(); err != nil {
+		return err
+	}
 	if err := ValidateMethod(ResolveMethod(action.Method, action.Type)); err != nil {
 		return err
 	}
@@ -966,6 +1035,7 @@ func storeHTTPExtraction(result *protocol.Result, extractor protocol.Extractor, 
 	if err := protocol.StoreExtraction(result, key, value); err != nil {
 		result.Success = false
 		result.Extractions = nil
+		result.ExtractionsIncomplete = true
 		result.ErrorMessage = fmt.Sprintf("extractor %q output rejected: %v", extractor.Name, err)
 		return false
 	}
@@ -1025,101 +1095,32 @@ func readAllLimitedWithLease(r io.Reader, maxBytes int64, lease *responseCapture
 }
 
 func decodeHTTPResponseContent(body []byte, headers http.Header, snapshotHeaders map[string]string, maxBytes int64, leases ...*responseCaptureLease) ([]byte, map[string]string, error) {
-	if len(body) == 0 {
-		return body, snapshotHeaders, nil
+	return decodeHTTPResponseContentContext(context.Background(), body, headers, snapshotHeaders, maxBytes, leases...)
+}
+func decodeHTTPResponseContentContext(ctx context.Context, body []byte, headers http.Header, snapshotHeaders map[string]string, maxBytes int64, leases ...*responseCaptureLease) ([]byte, map[string]string, error) {
+	decoded, err := contentdecode.Decode(ctx, body, headers.Values("Content-Encoding"), contentdecode.DefaultLimits(maxBytes))
+	if err != nil {
+		return nil, snapshotHeaders, err
 	}
-	encodings := responseContentEncodings(headers)
-	if len(encodings) == 0 {
-		return body, snapshotHeaders, nil
+	if len(leases) > 0 && !leases[0].reserve(int64(len(decoded))) {
+		return nil, snapshotHeaders, leases[0].exhaustedError()
 	}
-
-	decoded := body
-	decodedAny := false
-	var lease *responseCaptureLease
-	if len(leases) > 0 {
-		lease = leases[0]
-	}
-	for i := len(encodings) - 1; i >= 0; i-- {
-		encoding := encodings[i]
-		if encoding == "identity" {
-			continue
+	for _, encoding := range responseContentEncodings(headers) {
+		if encoding != "identity" {
+			return decoded, decodedResponseHeaders(snapshotHeaders), nil
 		}
-		var err error
-		switch encoding {
-		case "gzip", "x-gzip":
-			decoded, err = decodeGzipBody(decoded, maxBytes, lease)
-		case "deflate":
-			decoded, err = decodeDeflateBody(decoded, maxBytes, lease)
-		case "br":
-			decoded, err = decodeBrotliBody(decoded, maxBytes, lease)
-		case "zstd", "zstandard":
-			decoded, err = decodeZstdBody(decoded, maxBytes, lease)
-		default:
-			return body, snapshotHeaders, fmt.Errorf("unsupported response content encoding %q", encoding)
-		}
-		if err != nil {
-			return body, snapshotHeaders, fmt.Errorf("decode response content encoding %q: %w", encoding, err)
-		}
-		decodedAny = true
-	}
-	if decodedAny {
-		snapshotHeaders = decodedResponseHeaders(snapshotHeaders)
 	}
 	return decoded, snapshotHeaders, nil
 }
 
 func responseContentEncodings(headers http.Header) []string {
-	if len(headers) == 0 {
-		return nil
-	}
-	values := headers.Values("Content-Encoding")
-	encodings := make([]string, 0, len(values))
-	for _, value := range values {
+	var encodings []string
+	for _, value := range headers.Values("Content-Encoding") {
 		for _, part := range strings.Split(value, ",") {
-			encoding := strings.ToLower(strings.TrimSpace(part))
-			if encoding != "" {
-				encodings = append(encodings, encoding)
-			}
+			encodings = append(encodings, strings.ToLower(strings.TrimSpace(part)))
 		}
 	}
 	return encodings
-}
-
-func decodeDeflateBody(body []byte, maxBytes int64, leases ...*responseCaptureLease) ([]byte, error) {
-	var lease *responseCaptureLease
-	if len(leases) > 0 {
-		lease = leases[0]
-	}
-	zlibReader, err := zlib.NewReader(bytes.NewReader(body))
-	if err == nil {
-		defer zlibReader.Close()
-		return readAllLimitedWithLease(zlibReader, maxBytes, lease)
-	}
-
-	flateReader := flate.NewReader(bytes.NewReader(body))
-	defer flateReader.Close()
-	return readAllLimitedWithLease(flateReader, maxBytes, lease)
-}
-
-func decodeBrotliBody(body []byte, maxBytes int64, leases ...*responseCaptureLease) ([]byte, error) {
-	var lease *responseCaptureLease
-	if len(leases) > 0 {
-		lease = leases[0]
-	}
-	return readAllLimitedWithLease(brotli.NewReader(bytes.NewReader(body)), maxBytes, lease)
-}
-
-func decodeZstdBody(body []byte, maxBytes int64, leases ...*responseCaptureLease) ([]byte, error) {
-	var lease *responseCaptureLease
-	if len(leases) > 0 {
-		lease = leases[0]
-	}
-	reader, err := zstd.NewReader(bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
-	return readAllLimitedWithLease(reader, maxBytes, lease)
 }
 
 func decodedResponseHeaders(headers map[string]string) map[string]string {
@@ -1269,7 +1270,9 @@ func (h *HTTP) Teardown(_ context.Context) error {
 			_ = jar.clear()
 		}
 	}
-	if h.transport != nil {
+	if h.connections != nil {
+		h.connections.closeIdle()
+	} else if h.transport != nil {
 		h.transport.CloseIdleConnections()
 	}
 	if h.oauthTransport != nil && h.oauthTransport != h.transport {
@@ -1281,7 +1284,9 @@ func (h *HTTP) Teardown(_ context.Context) error {
 // CloseIdleConnections implements protocol.ConnectionController. It affects
 // only currently-idle pooled connections and leaves active requests alone.
 func (h *HTTP) CloseIdleConnections(_ context.Context) error {
-	if h.transport != nil {
+	if h.connections != nil {
+		h.connections.closeIdle()
+	} else if h.transport != nil {
 		h.transport.CloseIdleConnections()
 	}
 	if h.oauthTransport != nil && h.oauthTransport != h.transport {

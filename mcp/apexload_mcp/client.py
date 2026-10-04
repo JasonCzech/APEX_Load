@@ -158,12 +158,16 @@ class APEXLoadClient:
     def _response_payload(self, response: httpx.Response, path: str) -> JsonMap:
         ok = 200 <= response.status_code < 300
         parsed = self._parse_response_data(response)
-        return {
+        result = {
             "ok": ok,
             "status_code": response.status_code,
             "data": parsed if ok else None,
             "error": None if ok else self._api_error(response, parsed, path),
         }
+
+        if ok and response.headers.get("X-APEXLOAD-Audit-Status") == "unavailable":
+            result["warnings"] = [{"code": "activity_unavailable", "message": "Change saved; activity history could not be recorded."}]
+        return result
 
     def _parse_response_data(self, response: httpx.Response) -> Any:
         content_type = response.headers.get("content-type", "").lower()

@@ -151,10 +151,10 @@ func looksLikeFormWire(payload []byte) bool {
 		bytes.ContainsAny(payload, "\x00\r\n") {
 		return false
 	}
-	segments := bytes.Split(payload, []byte("&"))
-	if len(segments) > DefaultLimits().MaxValues {
+	if bytes.Count(payload, []byte("&"))+1 > DefaultLimits().MaxValues {
 		return false
 	}
+	segments := bytes.Split(payload, []byte("&"))
 	for _, segment := range segments {
 		name, _, found := bytes.Cut(segment, []byte("="))
 		if !found || len(bytes.TrimSpace(name)) == 0 {

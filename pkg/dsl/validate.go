@@ -835,6 +835,15 @@ func validateActionForProtocol(protocol string, index int, action Action) []stri
 
 func validateActionForProtocolAtPath(protocol string, path string, index int, action Action) []string {
 	var issues []string
+	protocol = ProtocolFamily(protocol)
+	if action.HTTPVersion.IsPresent() {
+		if err := action.HTTPVersion.Validate(); err != nil {
+			issues = append(issues, actionLabel(path, action)+": "+err.Error())
+		}
+		if (protocol != "http" && protocol != "soap" && protocol != "java_http") || isEngineActionType(action.Type) || CanonicalActionType(action.Type) == "http_oauth2_token" || strings.EqualFold(action.Type, "http_sequence") {
+			issues = append(issues, actionLabel(path, action)+": http_version is supported only on HTTP request leaves")
+		}
+	}
 	if strings.TrimSpace(action.Name) == "" {
 		issues = append(issues, fmt.Sprintf("%s: missing name", path))
 	}

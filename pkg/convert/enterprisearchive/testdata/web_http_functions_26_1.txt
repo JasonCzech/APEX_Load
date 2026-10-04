@@ -5,8 +5,7 @@
 # support_mode meanings (see function_registry.go):
 #   executable        — translated to an executable DSL action / config mapping
 #   native_noop       — preserved as a runtime-compatibility attribute; a guaranteed
-#                        no-op in APEX Load (no client cache / no auto-resource fetch /
-#                        no concurrent-request primitive), kept out of the executed tally
+#                        no-op in APEX Load (no client cache / no auto-resource fetch), kept out of the executed tally
 #                        only via the review tally helpers
 #   review_only       — preserved in the import-review artifact; has no APEX runtime
 #                        equivalent and is NOT executed (never fabricate a mapping)
@@ -15,6 +14,8 @@
 # web_reg_save_param*, web_add_header, web_set_timeout, ...) are listed here too so the
 # coverage doc and completeness test see the full published library; the rich handler
 # owns their behavior and this row supplies classification metadata.
+# web_concurrent_start/end are executable only for validated, same-scope explicit
+# HTTP groups with at most 256 safe independent requests; all other spans require review.
 web_add_auto_filter,web,native_noop
 web_add_auto_header,web,executable
 web_add_cookie,web,executable
@@ -24,8 +25,8 @@ web_add_header,web,executable
 web_cache_cleanup,web,executable
 web_cleanup_auto_headers,web,executable
 web_cleanup_cookies,web,executable
-web_concurrent_end,web,native_noop
-web_concurrent_start,web,native_noop
+web_concurrent_end,web,executable
+web_concurrent_start,web,executable
 web_convert_date_param,parameter,review_only
 web_convert_from_formatted,parameter,review_only
 web_convert_param,parameter,executable

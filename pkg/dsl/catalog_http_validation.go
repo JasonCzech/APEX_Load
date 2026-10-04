@@ -12,6 +12,11 @@ import (
 func validateHTTPSequenceActionIssues(index int, action Action) []string {
 	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
 	var issues []string
+	mode, _, settingsErr := HTTPSequenceExecutionSettings(action)
+	if settingsErr != nil {
+		issues = append(issues, fmt.Sprintf("%s: %v", label, settingsErr))
+		return issues
+	}
 	requests, ok := action.Params["requests"]
 	if !ok {
 		return []string{fmt.Sprintf("%s: http_sequence requires params.requests", label)}
@@ -51,6 +56,30 @@ func validateHTTPSequenceActionIssues(index int, action Action) []string {
 		}
 	default:
 		issues = append(issues, fmt.Sprintf("%s: http_sequence params.requests must be an array", label))
+	}
+	if mode == HTTPSequenceConcurrent && settingsErr == nil {
+		seen := make(map[string]bool)
+		for requestIndex, value := range httpSequenceRawRequests(requests) {
+			request, ok := httpSequenceRequestMap(value)
+			if !ok {
+				continue
+			}
+			payload, err := json.Marshal(request)
+			var child Action
+			if err != nil || json.Unmarshal(payload, &child) != nil {
+				continue
+			}
+			if err := ValidateHTTPConcurrentChild(child); err != nil {
+				issues = append(issues, fmt.Sprintf("%s.params.requests[%d]: %v", label, requestIndex, err))
+			}
+			for _, extractor := range child.Extractors {
+				if seen[extractor.Name] {
+					issues = append(issues, fmt.Sprintf("%s: concurrent requests require unique extractor names", label))
+					break
+				}
+				seen[extractor.Name] = true
+			}
+		}
 	}
 	return issues
 }
@@ -94,6 +123,15 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 		childDecodeErr = json.Unmarshal(payload, &decodedChild)
 	}
 	knownMalformedField := false
+	if raw, exists := request["http_version"]; exists {
+		var version OptionalHTTPVersion
+		if err := decodeHTTPSequenceChildField(raw, &version); err != nil {
+			knownMalformedField = true
+			issues = append(issues, childLabel+".http_version must be auto, 1.1, or 2")
+		} else if err := version.Validate(); err != nil {
+			issues = append(issues, childLabel+": "+err.Error())
+		}
+	}
 	if raw, ok := request["headers"]; ok && raw != nil {
 		var headers map[string]string
 		if err := decodeHTTPSequenceChildField(raw, &headers); err != nil {
@@ -278,11 +316,12 @@ func validateHTTPAssertionIssues(label string, assertions []Assertion) []string 
 	}
 	for index, assertion := range assertions {
 		if err := httpprotocol.ValidateAssertionDefinition(protocol.Assertion{
-			Type:     assertion.Type,
-			Expected: assertion.Expected,
-			Value:    assertion.Value,
-			Min:      assertion.Min,
-			Max:      assertion.Max,
+			LegacyHTMLCheck: assertion.LegacyHTMLCheck,
+			Type:            assertion.Type,
+			Expected:        assertion.Expected,
+			Value:           assertion.Value,
+			Min:             assertion.Min,
+			Max:             assertion.Max,
 		}); err != nil {
 			issues = append(issues, fmt.Sprintf("%s: assertions[%d]: %v", label, index, err))
 		}

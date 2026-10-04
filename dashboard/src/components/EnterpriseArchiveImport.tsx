@@ -36,6 +36,9 @@ import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import { groupImportFindings, draftImportFindings, reviewSectionFindings, type ImportFinding, type IssueCategory } from './importReviewIssues'
 import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
+import AuraOutcomeReview from './AuraOutcomeReview'
+import SalesforceCorrelationReview from './SalesforceCorrelationReview'
+import AuraParameterLocationDetails from './AuraParameterLocationDetails'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { salesforceApiSurfaceSummary } from './salesforceReviewSummary'
@@ -4913,6 +4916,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               </div>
             )}
 
+            <SalesforceCorrelationReview preview={salesforceReview?.native_preview} sourceReview={sourceReview || undefined} onViewSource={mapping => { setRepairSourceFocus(previous => ({ id: mapping.id, file: mapping.source_file, revision: previous.revision + 1 })); setValidationReviewTab('source') }} />
+            <AuraOutcomeReview report={salesforceReview?.aura_outcomes} sourceReview={sourceReview || undefined} onViewSource={mapping => { setRepairSourceFocus(previous => ({ id: mapping.id, file: mapping.source_file, revision: previous.revision + 1 })); setValidationReviewTab('source') }} />
+
             {salesforceReview && (
               <div className="lr-salesforce-lanes">
                 <div className="lr-salesforce-lane">
@@ -4976,7 +4982,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                   {salesforceReview.parameterizations?.length ? (
                     <ul className="lr-salesforce-blockers">
                       {salesforceReview.parameterizations.slice(0, 4).map((param, index) => (
-                        <li key={index}>{param.param_key} ({param.kind}) → {param.template}</li>
+                        <li key={index}>{param.param_key} ({param.kind}) → {param.template}
+                          {param.decoded_field_path && <AuraParameterLocationDetails location={param} />}
+                        </li>
                       ))}
                     </ul>
                   ) : null}

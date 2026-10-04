@@ -38,6 +38,7 @@ const (
 )
 
 var portableTemplatePattern = regexp.MustCompile(`\{\{[^{}\r\n]{1,256}\}\}`)
+var portableReferenceExpressionPattern = regexp.MustCompile(`^(?:(?:env|data|var|param|file)\.[A-Za-z0-9_.:/@-]+|secret\.` + engine.LogicalSecretNameInputPattern + `)$`)
 
 type projectionContext struct {
 	transactionParams   bool
@@ -125,6 +126,7 @@ func ProjectWithCredentialSource(script, credentialSource *dsl.Script) (*dsl.Scr
 		return nil, fmt.Errorf("decode script credential source: %w", err)
 	}
 	collector := newSecretCollector(p.credentialParameterNames, p.sensitiveSourceColumns)
+	collector.collectOriginalBodyValidity(credentialSource)
 	collector.collect(sourceRaw, projectionContext{}, 0)
 	collector.collectScriptCredentialTargets(credentialSource)
 	importedValues, err := engine.ImportedCredentialValuesForDisclosure(credentialSource)
@@ -140,6 +142,9 @@ func ProjectWithCredentialSource(script, credentialSource *dsl.Script) (*dsl.Scr
 				p.forcedSecrets[trimmed] = struct{}{}
 			}
 		}
+	}
+	if collector.structuredBudget.incomplete {
+		return nil, fmt.Errorf("script disclosure credential collection is incomplete")
 	}
 	p.knownSecrets = collector.sorted()
 	p.configureKnownMatching(len(payload) + len(sourcePayload))
@@ -955,7 +960,9 @@ func uniquePlaceholder(value, domain string, index int) string {
 func bodyTemplateValues(value string) map[string]struct{} {
 	result := make(map[string]struct{})
 	for _, reference := range portableTemplatePattern.FindAllString(value, -1) {
-		result[strings.TrimSpace(reference)] = struct{}{}
+		if isSupportedPortableTemplate(reference) {
+			result[strings.TrimSpace(reference)] = struct{}{}
+		}
 	}
 	if len(result) == 0 {
 		return nil
@@ -1094,6 +1101,9 @@ func isPortableBinding(value string) bool {
 	}
 	remainder := value
 	for _, reference := range references {
+		if !isSupportedPortableTemplate(reference) {
+			return false
+		}
 		remainder = strings.Replace(remainder, reference, "", 1)
 	}
 	switch strings.ToLower(strings.TrimSpace(remainder)) {
@@ -1102,6 +1112,35 @@ func isPortableBinding(value string) bool {
 	default:
 		return false
 	}
+}
+
+// Syntactic double braces are not evidence of a runtime reference. Only
+// supported names/functions may bypass sensitive scalar projection; this does
+// not evaluate a function or resolve a credential while deciding portability.
+func isSupportedPortableTemplate(value string) bool {
+	if len(value) < 5 || !strings.HasPrefix(value, "{{") || !strings.HasSuffix(value, "}}") {
+		return false
+	}
+	expression := strings.TrimSpace(value[2 : len(value)-2])
+	if expression == "run.id" || portableReferenceExpressionPattern.MatchString(expression) {
+		return true
+	}
+	switch strings.TrimSuffix(expression, "()") {
+	case "fn.uuid", "fn.uuid.v4", "fn.timestamp.unix", "fn.timestamp.unix_ms",
+		"fn.timestamp.iso8601", "fn.timestamp.rfc3339", "fake.uuid", "fake.email":
+		return true
+	}
+	if strings.HasPrefix(expression, "fn.random(") && strings.HasSuffix(expression, ")") {
+		first, second, found := strings.Cut(expression[len("fn.random("):len(expression)-1], ",")
+		minimum, firstErr := strconv.Atoi(strings.TrimSpace(first))
+		maximum, secondErr := strconv.Atoi(strings.TrimSpace(second))
+		return found && firstErr == nil && secondErr == nil && minimum <= maximum
+	}
+	if strings.HasPrefix(expression, "fn.random_string(") && strings.HasSuffix(expression, ")") {
+		length, err := strconv.Atoi(strings.TrimSpace(expression[len("fn.random_string(") : len(expression)-1]))
+		return err == nil && length > 0 && length <= dsl.MaxGeneratedParameterBytes
+	}
+	return false
 }
 
 func isURLKey(key string) bool {

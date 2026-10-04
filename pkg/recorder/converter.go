@@ -12,6 +12,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -170,6 +171,20 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		}
 
 		action.Extractors = append(action.Extractors, correlationApplication.extractors[req.Seq]...)
+		capture := requestimport.ReviewHTTPVersionCapture(exportedObservedHTTPVersion(req.RequestHTTPVersion), true, exportedObservedHTTPVersion(req.ResponseHTTPVersion), true, requestimport.ProxyHTTPVersionProvenance(), true, false)
+		requestimport.ApplyHTTPVersionCapture(&action, capture, requestimport.SourceRef{Format: "recording", ItemID: fmt.Sprintf("request-%d", req.Seq), Pointer: "request_http_version"})
+		if capture.Version != "" {
+			action.HTTPVersion, _ = dsl.NewHTTPVersionOverride(capture.Version)
+		}
+		if capture.ReasonCode != "" {
+			result.Warnings = append(result.Warnings, "Captured HTTP version evidence requires review before replay ("+capture.ReasonCode+").")
+		}
+
+		responseCapture := effectiveRecordedResponseContent(req)
+		requestimport.ApplyResponseContentCapture(&action, responseCapture, requestimport.SourceRef{Format: "recording", ItemID: fmt.Sprintf("request-%d", req.Seq), Pointer: "response_content"})
+		if responseCapture.ReasonCode != "" {
+			result.Warnings = append(result.Warnings, "Captured response content requires review before correlation ("+responseCapture.ReasonCode+").")
+		}
 
 		if shouldAssertRecordedStatus(req.StatusCode) {
 			action.Assertions = append(action.Assertions, dsl.Assertion{
@@ -216,6 +231,9 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		}
 	}
 
+	if _, _, err := requestimport.ApplyRuntimeFidelityReview(script, requestimport.RuntimeFidelityOptions{SourceProfile: "recording"}); err != nil {
+		result.Warnings = append(result.Warnings, "Recording HTTP fidelity review could not inspect the script; repair its structure before replay.")
+	}
 	result.Script = script
 	return result
 }
@@ -228,6 +246,7 @@ func convertibleCorrelationRequests(requests []RecordedRequest) []RecordedReques
 		}
 		req.Headers = requestHeadersForBaseline(req)
 		req.ResponseHeaders = responseHeadersForBaseline(req)
+		req.ResponseBody = recordedResponseBodyForBaseline(req)
 		filtered = append(filtered, req)
 	}
 	return filtered
@@ -485,7 +504,7 @@ func SessionBaseline(session *Session) []correlate.Observation {
 			RequestBody:            req.Body,
 			RequestBodyTransformed: req.BodyEncoding != "",
 			RequestHeaders:         requestHeadersForBaseline(req),
-			ResponseBody:           req.ResponseBody,
+			ResponseBody:           recordedResponseBodyForBaseline(req),
 			ResponseHeaders:        responseHeadersForBaseline(req),
 		})
 		actionIdx++
@@ -507,6 +526,10 @@ func requestHeadersForBaseline(req RecordedRequest) map[string]string {
 }
 
 func responseHeadersForBaseline(req RecordedRequest) map[string]string {
+	return requestimport.ResponseContentBaselineHeaders(recordedResponseHeaders(req), effectiveRecordedResponseContent(req))
+}
+
+func recordedResponseHeaders(req RecordedRequest) map[string]string {
 	if len(req.RawResponseHeadersMulti) > 0 {
 		return multiHeadersForBaseline(req.RawResponseHeadersMulti)
 	}
@@ -838,7 +861,7 @@ func detectCorrelationsChecked(requests []RecordedRequest) ([]Correlation, error
 			RequestBody:            req.Body,
 			RequestBodyTransformed: req.BodyEncoding != "",
 			RequestHeaders:         requestHeadersForBaseline(req),
-			ResponseBody:           req.ResponseBody,
+			ResponseBody:           recordedResponseBodyForBaseline(req),
 			ResponseHeaders:        responseHeadersForBaseline(req),
 		})
 	}

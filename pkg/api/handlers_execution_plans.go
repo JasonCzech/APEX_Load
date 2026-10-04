@@ -278,6 +278,9 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 			return nil, executionPlanPersistenceError("check preassigned execution-plan run id", err)
 		}
 	}
+	if err := tr.checkArchivedExecutionPlan(plan); err != nil {
+		return nil, err
+	}
 	runName := strings.TrimSpace(runNameOverride)
 	if runName == "" {
 		runName = strings.TrimSpace(plan.Name)

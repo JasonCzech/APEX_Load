@@ -4,27 +4,26 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"path"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
-	"github.com/jasonczech/apexload/pkg/convert/srcparse"
 	"github.com/jasonczech/apexload/pkg/dsl"
-	"gopkg.in/yaml.v3"
 )
 
 type ImportRequest struct {
 	Name      string `json:"name,omitempty"`
 	ProjectID string `json:"project_id,omitempty"`
 	Content   string `json:"content"`
-	// Files holds additional spec files (keyed by their in-archive path) used to
-	// resolve !include directives, e.g. the entries of an uploaded RAML zip.
+	// RootFile identifies the declaring document for archive-relative references.
+	RootFile string `json:"-"`
+	// Files holds additional spec files keyed by their in-archive path.
 	Files   map[string][]byte `json:"-"`
 	Options ConvertOptions    `json:"options,omitempty"`
 }
@@ -79,7 +78,7 @@ var ramlMethods = map[string]bool{
 }
 
 func Convert(req ImportRequest) (*ConvertResult, error) {
-	doc, err := parseRAMLDocument(req.Content, req.Files)
+	doc, err := loadRAMLDocument(req.Content, req.Files, req.RootFile)
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +90,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	var baseURLWarnings []string
 	if strings.TrimSpace(req.Options.BaseURL) == "" && strings.TrimSpace(authoredBaseURL) != "" {
 		baseURL, baseURLWarnings = bindRAMLBaseURI(authoredBaseURL, doc)
+	}
+	if warnings, ok := doc["__raml_warnings"].([]string); ok {
+		baseURLWarnings = append(baseURLWarnings, warnings...)
 	}
 	name := convertutil.FirstNonEmpty(req.Options.ScriptName, req.Name, stringValue(doc["title"]), "RAML Import")
 	result := &ConvertResult{
@@ -148,20 +150,34 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	resources := sortedResourceKeys(doc)
 	for _, resource := range resources {
 		node, _ := doc[resource].(map[string]any)
-		walkResource(resource, node, result, script, apply, nil)
+		walkResource(resource, node, result, script, apply, nil, doc)
 	}
 	if len(script.Actions) == 0 {
 		return nil, fmt.Errorf("RAML document did not contain HTTP resources or methods")
+	}
+	if !clientIDEnforced {
+		for _, action := range script.Actions {
+			if action.Headers["client_secret"] == "{{secret.RAML_CLIENT_SECRET}}" || strings.Contains(action.Target, "{{secret.RAML_CLIENT_SECRET}}") {
+				result.Summary.Policies = append(result.Summary.Policies, PolicyHint{Policy: "client_id_enforcement", Detail: "Client credentials declared by applied RAML traits or request fields; bind env/secret placeholders before replay."})
+				result.Warnings = append(result.Warnings, "Applied RAML request fields require client credentials; supply RAML_CLIENT_ID and bind RAML_CLIENT_SECRET before replay.")
+				break
+			}
+		}
 	}
 	result.Script = script
 	result.Stats.ConvertedActions = len(script.Actions)
 	result.SecretRequirements, err = ramlGeneratedCredentialRequirements(
 		script,
-		"raml.yaml",
+		convertutil.FirstNonEmpty(req.RootFile, "raml.yaml"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("describe generated RAML credentials: %w", err)
 	}
+	additional, err := ramlAdditionalHeaderRequirements(script, convertutil.FirstNonEmpty(req.RootFile, "raml.yaml"))
+	if err != nil {
+		return nil, err
+	}
+	result.SecretRequirements = append(result.SecretRequirements, additional...)
 	return result, nil
 }
 
@@ -191,12 +207,15 @@ func ramlGeneratedCredentialRequirements(
 	}
 	for index, action := range script.Actions {
 		for name, value := range action.Headers {
-			if strings.EqualFold(strings.TrimSpace(name), "client_secret") && value == reference {
+			if value == reference {
 				targets = append(targets, credentialpolicy.TargetRef{
 					RequestKey: action.Name,
-					Field:      fmt.Sprintf("actions[%d].headers.client_secret", index),
+					Field:      fmt.Sprintf("actions[%d].headers.%s", index, name),
 				})
 			}
+		}
+		if strings.Contains(action.Target, reference) {
+			targets = append(targets, credentialpolicy.TargetRef{RequestKey: action.Name, Field: fmt.Sprintf("actions[%d].target", index)})
 		}
 	}
 	if len(targets) == 0 {
@@ -206,7 +225,7 @@ func ramlGeneratedCredentialRequirements(
 		credentialpolicy.RequirementSpec{
 			Key:      "raml_client_secret",
 			Label:    "RAML client secret",
-			Context:  "OAuth 2.0 token acquisition or Anypoint Client ID Enforcement generated this client-secret placeholder. The RAML document describes the policy but does not contain a credential value.",
+			Context:  "OAuth 2.0 token acquisition or Anypoint Client ID Enforcement generated this client-secret placeholder. This generated binding does not contain a credential value; source credential examples are not used for authentication.",
 			NameHint: "RAML_CLIENT_SECRET",
 			Source: credentialpolicy.SourceRef{
 				Format:  "raml",
@@ -252,6 +271,9 @@ func bindRAMLBaseURI(baseURI string, doc map[string]any) (string, []string) {
 			}
 		}
 		if value != "" {
+			if index := strings.Index(baseURI, token); index > 0 && baseURI[index-1] == '/' {
+				value = strings.TrimLeft(value, "/")
+			}
 			return value
 		}
 		envName := strings.ToUpper(strings.Map(func(r rune) rune {
@@ -266,10 +288,11 @@ func bindRAMLBaseURI(baseURI string, doc map[string]any) (string, []string) {
 	return bound, warnings
 }
 
-func walkResource(resourcePath string, node map[string]any, result *ConvertResult, script *dsl.Script, apply applyOptions, inheritedURIParameters map[string]any) {
+func walkResource(resourcePath string, node map[string]any, result *ConvertResult, script *dsl.Script, apply applyOptions, inheritedURIParameters map[string]any, doc map[string]any) {
 	if node == nil {
 		return
 	}
+	node = effectiveRAMLResource(node, resourcePath, doc)
 	result.Stats.TotalResources++
 	result.Summary.Resources = append(result.Summary.Resources, resourcePath)
 	uriParameters := mergeRAMLURIParameters(inheritedURIParameters, mapValue(node["uriParameters"]))
@@ -279,7 +302,7 @@ func walkResource(resourcePath string, node map[string]any, result *ConvertResul
 		if !ramlMethods[lower] {
 			continue
 		}
-		child, _ := node[key].(map[string]any)
+		child := effectiveRAMLMethod(node, mapValue(node[key]), resourcePath, lower, doc)
 		result.Stats.TotalMethods++
 		action := dsl.Action{
 			Name:   convertutil.FirstNonEmpty(stringValue(child["displayName"]), stringValue(child["description"]), strings.ToUpper(lower)+" "+resourcePath),
@@ -300,7 +323,8 @@ func walkResource(resourcePath string, node map[string]any, result *ConvertResul
 			action.Headers["client_id"] = "{{env.RAML_CLIENT_ID}}"
 			action.Headers["client_secret"] = "{{secret.RAML_CLIENT_SECRET}}"
 		}
-		if body, contentType, ok := ramlMethodBody(child); ok {
+		bindRAMLRequestParameters(&action, child, result)
+		if body, contentType, ok := ramlResolvedMethodBody(child, doc, &action, result); ok {
 			action.Body = body
 			action.Headers["Content-Type"] = contentType
 			result.Stats.RequestBodies++
@@ -312,7 +336,7 @@ func walkResource(resourcePath string, node map[string]any, result *ConvertResul
 			continue
 		}
 		child, _ := node[key].(map[string]any)
-		walkResource(joinRAMLPath(resourcePath, key), child, result, script, apply, uriParameters)
+		walkResource(joinRAMLPath(resourcePath, key), child, result, script, apply, uriParameters, doc)
 	}
 }
 
@@ -476,137 +500,6 @@ func mapValue(value any) map[string]any {
 	return nil
 }
 
-func ramlMethodBody(method map[string]any) (string, string, bool) {
-	bodyNode, _ := method["body"].(map[string]any)
-	if len(bodyNode) == 0 {
-		return "", "", false
-	}
-	contentTypes := sortedMapKeys(bodyNode)
-	for _, contentType := range contentTypes {
-		media, _ := bodyNode[contentType].(map[string]any)
-		if len(media) == 0 {
-			continue
-		}
-		if example, ok := bodyExampleValue(media["example"]); ok {
-			return example, contentType, true
-		}
-		if examples, ok := media["examples"].(map[string]any); ok {
-			for _, key := range sortedMapKeys(examples) {
-				switch value := examples[key].(type) {
-				case string:
-					return value, contentType, true
-				case map[string]any:
-					if text, ok := bodyExampleValue(value["value"]); ok {
-						return text, contentType, true
-					}
-				}
-			}
-		}
-		if contentType == "application/json" {
-			return "{}", contentType, true
-		}
-	}
-	return "", "", false
-}
-
-// parseRAMLDocument parses RAML content into a generic map, resolving any
-// !include directives against the supplied file set (e.g. a zip upload).
-func parseRAMLDocument(content string, files map[string][]byte) (map[string]any, error) {
-	// Reject the mapping ambiguities that let the converter and a reviewer read
-	// the same spec differently. Merge keys stay tolerated: RAML resource types
-	// and traits are anchor-heavy by design.
-	if _, err := srcparse.ValidateYAMLMappingKeys([]byte(content), srcparse.SpecYAMLPolicy(), srcparse.Limits{}); err != nil {
-		return nil, fmt.Errorf("parse RAML: %w", err)
-	}
-	var root yaml.Node
-	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
-		return nil, fmt.Errorf("parse RAML: %w", err)
-	}
-	if err := resolveIncludes(&root, files, 0); err != nil {
-		return nil, err
-	}
-	var doc map[string]any
-	if err := root.Decode(&doc); err != nil {
-		return nil, fmt.Errorf("parse RAML: %w", err)
-	}
-	return doc, nil
-}
-
-// resolveIncludes walks a YAML node tree and replaces !include scalars with the
-// parsed content of the referenced file. Included files may themselves contain
-// !include directives (bounded recursion).
-func resolveIncludes(node *yaml.Node, files map[string][]byte, depth int) error {
-	if node == nil || depth > 20 {
-		return nil
-	}
-	if node.Tag == "!include" {
-		name := strings.TrimSpace(node.Value)
-		content, ok := lookupInclude(files, name)
-		if !ok {
-			return fmt.Errorf("RAML !include %q could not be resolved; upload the referenced files (zip) to import this spec", name)
-		}
-		// Only structured fragments (RAML/YAML/JSON) are parsed as a node tree;
-		// arbitrary text (e.g. an XML/text body example) is kept verbatim as a
-		// string scalar. Parsing arbitrary text as YAML would silently retype,
-		// reorder, requote, or drop it (most text is valid YAML).
-		if !includeIsStructured(name) {
-			node.Kind = yaml.ScalarNode
-			node.Tag = "!!str"
-			node.Value = string(content)
-			return nil
-		}
-		var included yaml.Node
-		if err := yaml.Unmarshal(content, &included); err != nil {
-			node.Kind = yaml.ScalarNode
-			node.Tag = "!!str"
-			node.Value = string(content)
-			return nil
-		}
-		resolved := &included
-		if included.Kind == yaml.DocumentNode && len(included.Content) > 0 {
-			resolved = included.Content[0]
-		}
-		if err := resolveIncludes(resolved, files, depth+1); err != nil {
-			return err
-		}
-		*node = *resolved
-		return nil
-	}
-	for _, child := range node.Content {
-		if err := resolveIncludes(child, files, depth+1); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func lookupInclude(files map[string][]byte, name string) ([]byte, bool) {
-	if len(files) == 0 || name == "" {
-		return nil, false
-	}
-	clean := strings.TrimPrefix(name, "./")
-	if content, ok := files[name]; ok {
-		return content, true
-	}
-	if content, ok := files[clean]; ok {
-		return content, true
-	}
-	// Fall back to a basename match, chosen deterministically (lexicographically
-	// smallest key) so that colliding basenames across directories never resolve
-	// to an arbitrary, run-dependent file.
-	base := path.Base(clean)
-	bestKey := ""
-	for key := range files {
-		if path.Base(key) == base && (bestKey == "" || key < bestKey) {
-			bestKey = key
-		}
-	}
-	if bestKey != "" {
-		return files[bestKey], true
-	}
-	return nil, false
-}
-
 // includeIsStructured reports whether an !include target should be parsed as a
 // structured (RAML/YAML/JSON) fragment rather than kept as raw text.
 func includeIsStructured(name string) bool {
@@ -747,12 +640,18 @@ func (result *ConvertResult) Accounting() convertresult.Accounting {
 	if result == nil {
 		return convertresult.Accounting{}
 	}
-	// RAML publishes no source review, so no converted action is marked
-	// review-only and the bucket is always empty.
+	reviewOnly := 0
+	if result.Script != nil {
+		for _, action := range result.Script.Actions {
+			if action.Metadata["execution_blocker"] != nil {
+				reviewOnly++
+			}
+		}
+	}
 	return convertresult.New(
 		result.Stats.TotalMethods,
 		result.Stats.ConvertedActions,
 		result.Stats.TotalMethods-result.Stats.ConvertedActions,
-		0,
+		reviewOnly,
 	)
 }

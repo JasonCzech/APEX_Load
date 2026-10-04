@@ -140,10 +140,10 @@ func TestMatchHARPinsMatchingSemantics(t *testing.T) {
 				// Classifies as "generic" and comes first in document order, so it
 				// wins the tie-break unless the kind bonus outranks it.
 				{ID: 1, Method: "POST", URL: "https://example.my.salesforce.com/x"},
-				// "aura.token" in the body classifies this entry as "aura", matching
+				// A valid Aura action envelope classifies this entry as "aura", matching
 				// the ref's kind. The ref carries no action body and no descriptor, so
 				// the +10 kind bonus is the only term that separates the two.
-				{ID: 2, Method: "POST", URL: "https://example.my.salesforce.com/x", RequestBody: `{"aura.token":"t"}`},
+				{ID: 2, Method: "POST", URL: "https://example.my.salesforce.com/x", RequestBody: `{"actions":[{"id":"one;a","descriptor":"synthetic"}]}`},
 			},
 			want: map[int]int{0: 2},
 		},

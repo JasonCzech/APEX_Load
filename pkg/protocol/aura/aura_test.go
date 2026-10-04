@@ -1,0 +1,166 @@
+package aura
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"strings"
+	"testing"
+)
+
+const request = `{"actions":[{"id":"1;a","descriptor":"apex://Synthetic/ACTION$one","params":{"value":"private-payload"}},{"id":"2;a","descriptor":"apex://Synthetic/ACTION$two"}]}`
+const response = `{"actions":[{"id":"2;a","state":"SUCCESS","returnValue":"private-result"},{"id":"1;a","state":"SUCCESS"}]}`
+
+func TestValidateCoverageAndStates(t *testing.T) {
+	for _, tc := range []struct {
+		name, request, response string
+		success, complete       bool
+		code                    Code
+		matched                 int
+	}{
+		{"reordered", request, response, true, true, "", 2},
+		{"form request", url.Values{"message": {request}, "aura.token": {"private-token"}}.Encode(), response, true, true, "", 2},
+		{"error", request, strings.Replace(response, `"SUCCESS"`, `"ERROR"`, 1), false, true, NonSuccessState, 2},
+		{"incomplete", request, strings.Replace(response, `"SUCCESS"`, `"INCOMPLETE"`, 1), false, true, NonSuccessState, 2},
+		{"aborted", request, strings.Replace(response, `"SUCCESS"`, `"ABORTED"`, 1), false, true, NonSuccessState, 2},
+		{"unknown state", request, strings.Replace(response, `"SUCCESS"`, `"private-unknown-state"`, 1), false, false, UnknownState, 2},
+		{"missing response", request, `{"actions":[{"id":"1;a","state":"SUCCESS"}]}`, false, false, MissingResponse, 1},
+		{"unexpected response", request, strings.Replace(response, `"2;a"`, `"3;a"`, 1), false, false, MissingResponse, 1},
+		{"duplicate response ID", request, strings.Replace(response, `"2;a"`, `"1;a"`, 1), false, false, DuplicateID, 0},
+		{"duplicate request ID", strings.Replace(request, `"2;a"`, `"1;a"`, 1), response, false, false, DuplicateID, 0},
+		{"missing state", request, `{"actions":[{"id":"1;a"}]}`, false, false, MissingState, 0},
+		{"missing descriptor", `{"actions":[{"id":"1;a"}]}`, response, false, false, MissingDescriptor, 0},
+		{"missing ID", `{"actions":[{"descriptor":"synthetic"}]}`, response, false, false, InvalidID, 0},
+		{"numeric ID", `{"actions":[{"id":1,"descriptor":"synthetic"}]}`, response, false, false, InvalidID, 0},
+		{"empty ID", `{"actions":[{"id":" ","descriptor":"synthetic"}]}`, response, false, false, InvalidID, 0},
+		{"invalid action", `{"actions":[null]}`, response, false, false, InvalidAction, 0},
+		{"empty request actions", `{"actions":[]}`, response, false, false, EmptyActions, 0},
+		{"empty response actions", request, `{"actions":[]}`, false, false, EmptyActions, 0},
+		{"no envelope", request, `[]`, false, false, InvalidEnvelope, 0},
+		{"trailing value", request, response + `{}`, false, false, InvalidJSON, 0},
+		{"malformed", request, `{"actions":[`, false, false, InvalidJSON, 0},
+		{"missing form message", `aura.token=private-token`, response, false, false, MissingMessage, 0},
+		{"bad percent escape", `message=%XX`, response, false, false, InvalidForm, 0},
+		{"duplicate message", `message=` + url.QueryEscape(request) + `&message=` + url.QueryEscape(request), response, false, false, DuplicateMessage, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			report := Validate([]byte(tc.request), []byte(tc.response))
+			if report.Success != tc.success || report.Complete != tc.complete || !report.HasResponse || report.MatchedActions != tc.matched {
+				t.Fatalf("report=%+v", report)
+			}
+			if tc.code != "" && (len(report.Issues) == 0 || report.Issues[0].Code != tc.code) {
+				t.Fatalf("issues=%+v want %s", report.Issues, tc.code)
+			}
+			if (report.Err() == nil) != tc.success {
+				t.Fatalf("Err disagrees with success: %v", report.Err())
+			}
+		})
+	}
+	got := Validate([]byte(request), []byte(response))
+	if len(got.Outcomes) != 2 || got.Outcomes[0].Ordinal != 1 || got.Outcomes[1].Ordinal != 2 {
+		t.Fatalf("outcomes=%+v", got.Outcomes)
+	}
+	mismatch := Validate([]byte(request), []byte(strings.Replace(response, `"2;a"`, `"3;a"`, 1)))
+	if len(mismatch.Issues) != 2 || mismatch.Issues[1].Code != UnexpectedResponse {
+		t.Fatalf("missing and unexpected coverage=%+v", mismatch)
+	}
+}
+
+func TestRequestOnlyAndResponseOnlyCoverage(t *testing.T) {
+	req := ValidateRequest([]byte(request))
+	if !req.Success || !req.Complete || req.HasResponse || req.RequestActions != 2 || req.ResponseActions != 0 || len(req.Outcomes) != 0 {
+		t.Fatalf("request report=%+v", req)
+	}
+	res := InspectResponse([]byte(strings.Replace(response, `"SUCCESS"`, `"ERROR"`, 1)))
+	if res.Success || !res.Complete || !res.HasResponse || res.RequestActions != 0 || res.ResponseActions != 2 || res.MatchedActions != 0 || res.Outcomes[0].State != Error {
+		t.Fatalf("response report=%+v", res)
+	}
+}
+
+func TestDuplicateMembersAndStrictUnicode(t *testing.T) {
+	for _, body := range []string{
+		`{"actions":[],"actions":[]}`,
+		`{"actions":[{"id":"x","id":"y","descriptor":"synthetic"}]}`,
+		`{"actions":[{"id":"x","\u0069d":"y","descriptor":"synthetic"}]}`,
+		`{"actions":[{"id":"x","descriptor":"synthetic","params":{"a":1,"a":2}}]}`,
+	} {
+		report := ValidateRequest([]byte(body))
+		if report.Complete || len(report.Issues) == 0 || report.Issues[0].Code != DuplicateMember {
+			t.Fatalf("duplicate accepted: %+v", report)
+		}
+	}
+	for _, body := range []string{
+		`{"actions":[{"id":"\ud800","descriptor":"synthetic"}]}`,
+		`{"actions":[{"id":"x","descriptor":"\udfff"}]}`,
+		`{"actions":[{"id":"x","descriptor":"synthetic","params":{"\ud800":1}}]}`,
+		`{"actions":[{"id":"x","descriptor":"synthetic","params":{"value":"\ud800x"}}]}`,
+		"{\"actions\":[{\"id\":\"x\",\"descriptor\":\"synthetic\",\"params\":\"\xff\"}]}",
+	} {
+		report := ValidateRequest([]byte(body))
+		if report.Complete || len(report.Issues) == 0 || report.Issues[0].Code != InvalidJSON {
+			t.Fatalf("malformed Unicode accepted: %+v", report)
+		}
+	}
+	valid := `{"actions":[{"id":"\ud83d\ude00\ufffd","descriptor":"synthetic"}]}`
+	res := `{"actions":[{"id":"😀�","state":"\u0053UCCESS"}]}`
+	if report := Validate([]byte(valid), []byte(res)); !report.Success {
+		t.Fatalf("valid Unicode identity failed: %+v", report)
+	}
+	duplicatedState := `{"actions":[{"id":"x","state":"SUCCESS","\u0073tate":"ERROR"}]}`
+	if report := InspectResponse([]byte(duplicatedState)); report.Complete || report.Issues[0].Code != DuplicateMember {
+		t.Fatalf("duplicate state accepted: %+v", report)
+	}
+}
+
+func TestLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		code       Code
+	}{
+		{"bytes", strings.Repeat(" ", MaxEnvelopeBytes+1), ByteLimit},
+		{"depth", `{"actions":[{"id":"x","descriptor":"synthetic","params":` + strings.Repeat("[", MaxDepth) + `0` + strings.Repeat("]", MaxDepth) + `}]}`, DepthLimit},
+		{"tokens", `{"actions":[{"id":"x","descriptor":"synthetic","params":[` + strings.Repeat("0,", MaxTokens) + `0]}]}`, WorkLimit},
+		{"actions", `{"actions":[` + strings.TrimSuffix(strings.Repeat(`{"id":"x","descriptor":"synthetic"},`, MaxActions+1), ",") + `]}`, ActionLimit},
+		{"form fields", `message=` + url.QueryEscape(request) + strings.Repeat("&a=", MaxFormFields), WorkLimit},
+		{"identity bytes", `{"actions":[{"id":"` + strings.Repeat("x", MaxIDBytes+1) + `","descriptor":"synthetic"}]}`, InvalidID},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			report := ValidateRequest([]byte(tc.body))
+			if report.Complete || report.Success || len(report.Issues) == 0 || report.Issues[0].Code != tc.code {
+				t.Fatalf("report=%+v want %s", report, tc.code)
+			}
+		})
+	}
+	var items []string
+	for i := 0; i < MaxActions; i++ {
+		items = append(items, fmt.Sprintf(`{"id":"%d","descriptor":"synthetic"}`, i))
+	}
+	if report := ValidateRequest([]byte(`{"actions":[` + strings.Join(items, ",") + `]}`)); !report.Success || report.RequestActions != MaxActions {
+		t.Fatalf("action boundary rejected: %+v", report)
+	}
+	padded := request + strings.Repeat(" ", MaxEnvelopeBytes-len(request))
+	if report := ValidateRequest([]byte(padded)); !report.Success {
+		t.Fatalf("byte boundary rejected: %+v", report)
+	}
+	form := `message=` + url.QueryEscape(request) + strings.Repeat("&a=", MaxFormFields-1)
+	if report := ValidateRequest([]byte(form)); !report.Success {
+		t.Fatalf("form boundary rejected: %+v", report)
+	}
+}
+
+func TestReportsAndErrorsNeverDiscloseSourceValues(t *testing.T) {
+	req := strings.ReplaceAll(request, "1;a", "secret-identity")
+	res := strings.ReplaceAll(strings.Replace(response, `"SUCCESS"`, `"secret-state"`, 1), "1;a", "secret-identity")
+	for _, report := range []Report{ValidateRequest([]byte(req)), InspectResponse([]byte(res)), Validate([]byte(req), []byte(res))} {
+		encoded, err := json.Marshal(report)
+		if err != nil {
+			t.Fatal(err)
+		}
+		public := string(encoded) + fmt.Sprint(report.Err())
+		for _, secret := range []string{"secret-identity", "secret-state", "private-payload", "private-result", "apex://", "descriptor", "returnValue"} {
+			if strings.Contains(public, secret) {
+				t.Fatalf("report disclosed source value %q", secret)
+			}
+		}
+	}
+}

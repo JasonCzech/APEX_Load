@@ -1682,6 +1682,9 @@ func (s *SQLiteStore) SaveAuditEvent(event *AuditEvent) error {
 }
 
 func (s *SQLiteStore) DeleteAuditEventsBefore(cutoff time.Time) (int64, error) {
+	if _, err := s.db.Exec(`DELETE FROM object_activity_events WHERE created_at < ?`, cutoff.UTC()); err != nil {
+		return 0, err
+	}
 	result, err := s.db.Exec(`DELETE FROM audit_events WHERE created_at < ?`, cutoff.UTC())
 	if err != nil {
 		return 0, err

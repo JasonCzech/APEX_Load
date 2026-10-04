@@ -142,6 +142,7 @@ func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 	// Advertise the native generation mode only when a native script was actually
 	// emitted, so a detected-but-not-rebuilt import is not mislabeled as native.
 	if nativeApplied {
+		result.SourceReview = originalImportSourceReview(result.SourceReview)
 		augmentation.Summary["generation_mode"] = "salesforce_native_http"
 		augmentation.Summary["protocol_scope"] = "salesforce_http_family"
 	}
@@ -153,7 +154,9 @@ func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 	}
 	if review != nil {
 		severity := "info"
-		if !review.Detected {
+		if len(review.Blockers) > 0 {
+			severity = "blocker"
+		} else if !review.Detected || len(review.Warnings) > 0 {
 			severity = "warning"
 		}
 		augmentation.ReviewSections = append(augmentation.ReviewSections, scriptImportReviewSection{

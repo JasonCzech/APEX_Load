@@ -67,6 +67,7 @@ export function ensureDslActionCatalog(): Promise<DslActionCatalog | null> {
 /** Map a script protocol to its catalog family (jms-solace → jms). */
 export function dslProtocolFamily(protocol: string): string {
   const trimmed = protocol.trim()
+  if (trimmed === 'http/1.1' || trimmed === 'http/2') return 'http'
   return trimmed.startsWith('jms-') ? 'jms' : trimmed
 }
 

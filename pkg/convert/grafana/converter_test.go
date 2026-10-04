@@ -484,3 +484,19 @@ func itoa(i int) string {
 	}
 	return string(buf[pos:])
 }
+
+func TestConvertRetainsPanelTransformationStateForQueryAdoption(t *testing.T) {
+	result := mustConvert(t, `{"title":"Transforms","schemaVersion":39,"panels":[{"id":1,"type":"text","title":"Excluded"},{"id":2,"type":"timeseries","title":"Derived CPU","transformations":[{"id":"reduce"}],"targets":[{"expr":"cpu","refId":"A"}]},{"id":3,"type":"timeseries","title":"Raw memory","targets":[{"expr":"memory","refId":"A"}]}]}`)
+	if len(result.Dashboard.Panels) != 2 {
+		t.Fatalf("panels: %+v", result.Dashboard.Panels)
+	}
+	for index, expected := range []bool{true, false} {
+		panel := result.Dashboard.Panels[index]
+		if panel.UnsupportedTransformations == nil || *panel.UnsupportedTransformations != expected {
+			t.Fatalf("panel %d transformation provenance: %+v", panel.PanelID, panel)
+		}
+	}
+	if result.Dashboard.Panels[0].Targets[0].Expr != "cpu" {
+		t.Fatal("transformation provenance changed existing raw dashboard collection")
+	}
+}

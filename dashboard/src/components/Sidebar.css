@@ -726,16 +726,19 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
     flex: 0 0 auto;
     align-items: center;
   }
-  /* CSS narrows the rail before the explicit collapse preference changes.
-     Keep the authenticated identity and sign-out action inside that rail. */
+  /* Responsive rails compact the identity card before the explicit collapse
+     preference changes, retaining readable sign-out and session controls. */
   .sidebar .sidebar-identity {
+    box-sizing: border-box;
     width: 100%;
+    max-width: 100%;
     flex-direction: column;
     gap: 4px;
-    padding: 6px 3px;
+    padding: 4px;
   }
   .sidebar .sidebar-identity-copy {
     width: 100%;
+    max-width: 100%;
     align-items: center;
     text-align: center;
   }
@@ -751,7 +754,12 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
     overflow-wrap: anywhere;
   }
   .sidebar .sidebar-identity-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     min-height: 32px;
+    max-width: 100%;
+    text-align: center;
   }
   .sidebar .dev-view-control {
     width: 36px;

@@ -902,6 +902,10 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListScripts(w http.ResponseWriter, r *http.Request) {
+	archiveState, valid := archiveStateFilter(w, r)
+	if !valid {
+		return
+	}
 	projectID := r.URL.Query().Get("project_id")
 	var folderID *string
 	if r.URL.Query().Has("folder_id") {
@@ -915,6 +919,8 @@ func (s *Server) handleListScripts(w http.ResponseWriter, r *http.Request) {
 	} else {
 		scripts = s.runner.ListScriptsFiltered(projectID, folderID)
 	}
+
+	scripts = filterArchivedScripts(scripts, archiveState)
 
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query != "" {
@@ -1999,7 +2005,7 @@ func (s *Server) writeSLAReport(w http.ResponseWriter, id, status string, cfg *G
 		details = append(details, "Transfer time breached threshold")
 	}
 
-	evaluated := cfg != nil && hasGoalConfig(cfg)
+	evaluated := hasLiveGoalConfig(cfg)
 	if goalConfigOnlyHasTransactionResponseTimeSLA(cfg) {
 		evaluated = false
 	}
@@ -2034,5 +2040,5 @@ func goalConfigOnlyHasTransactionResponseTimeSLA(config *GoalConfig) bool {
 	}
 	copy := cloneGoalConfig(config)
 	copy.TransactionResponseTimeSLAMs = nil
-	return !hasGoalConfig(copy)
+	return !hasLiveGoalConfig(copy)
 }

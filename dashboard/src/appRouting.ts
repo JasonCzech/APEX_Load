@@ -32,6 +32,7 @@ const NAV_PAGES: NavPage[] = [
   'new-test',
   'scripts',
   'results',
+  'activity',
   'monitoring',
   'fleet',
   'schedules',

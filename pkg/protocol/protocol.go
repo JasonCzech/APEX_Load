@@ -75,6 +75,14 @@ type ParallelSafetyProvider interface {
 	ParallelSafe() bool
 }
 
+// SharedSessionConcurrencyProvider admits concurrent immutable requests on one
+// initialized protocol instance. Unlike ParallelSafetyProvider, this retains
+// the parent session; lifecycle changes must happen outside the joined group.
+type SharedSessionConcurrencyProvider interface {
+	SharedSessionConcurrentSafe() bool
+	ValidateSharedSessionAction(*Action) error
+}
+
 // RuntimeCapabilityProvider lets optional sidecar-backed protocols advertise
 // availability, scheduler features, and a protocol-specific VUser ceiling
 // without teaching the distributed service protocol names.
@@ -341,19 +349,20 @@ func (headers HeaderList) ToMap() map[string]string {
 }
 
 type Action struct {
-	Name               string            `json:"name"`
-	Type               string            `json:"type"`
-	Method             string            `json:"method,omitempty"`
-	Target             string            `json:"target"`
-	RedactedTarget     string            `json:"-"`
-	Selector           string            `json:"selector,omitempty"`
-	RedactedSelector   string            `json:"-"`
-	Value              string            `json:"value,omitempty"`
-	RedactedValue      string            `json:"-"`
-	Headers            map[string]string `json:"headers,omitempty"`
-	HeaderList         HeaderList        `json:"header_list,omitempty"`
-	RedactedHeaders    map[string]string `json:"-"`
-	RedactedHeaderList HeaderList        `json:"-"`
+	Name               string              `json:"name"`
+	Type               string              `json:"type"`
+	Method             string              `json:"method,omitempty"`
+	HTTPVersion        OptionalHTTPVersion `json:"http_version,omitzero"`
+	Target             string              `json:"target"`
+	RedactedTarget     string              `json:"-"`
+	Selector           string              `json:"selector,omitempty"`
+	RedactedSelector   string              `json:"-"`
+	Value              string              `json:"value,omitempty"`
+	RedactedValue      string              `json:"-"`
+	Headers            map[string]string   `json:"headers,omitempty"`
+	HeaderList         HeaderList          `json:"header_list,omitempty"`
+	RedactedHeaders    map[string]string   `json:"-"`
+	RedactedHeaderList HeaderList          `json:"-"`
 	// ResolvedDefaultHeaders marks per-VUser default headers interpolated by
 	// the engine for this action. HTTP falls back to its initialized defaults
 	// for direct protocol callers that do not set the marker.
@@ -709,6 +718,9 @@ type Result struct {
 	DOMSummary                 *DOMSummary
 	ClientMetrics              *ClientMetrics
 	ServerTelemetry            *ServerTelemetry
+	HTTPVersionPolicy          string `json:"-"`
+	HTTPVersionNegotiated      string `json:"-"`
+	HTTPVersionSource          string `json:"-"`
 	ProtocolEvidence           map[string]any
 	Snapshot                   *ErrorSnapshot // populated when snapshot_on_error is enabled
 	SourceStepID               string

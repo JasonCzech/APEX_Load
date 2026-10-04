@@ -40,17 +40,27 @@ func (tr *TestRunner) preparationRevision(id string) (string, error) {
 		return "", errors.New("test not found")
 	}
 	project, scenario := test.ProjectID, test.ScenarioID
+	override := cloneMonitorBindings(test.MonitorBindings)
 	snapshot := struct {
-		Script     string
-		Duration   string
-		VUsers     int
-		Assignment *GeneratorAssignmentSettings
-		Bindings   *storage.MonitorBindings
-		Sources    []storage.MonitorSource
-	}{Script: fingerprint.EvidenceSHA256, Duration: test.DurationStr, VUsers: test.TotalVUsers, Assignment: cloneGeneratorAssignmentSettings(test.Assignment)}
+		Goals       *GoalConfig
+		Script      string
+		Duration    string
+		VUsers      int
+		Assignment  *GeneratorAssignmentSettings
+		Bindings    *storage.MonitorBindings
+		Sources     []storage.MonitorSource
+		Connections []int64
+		Override    *storage.MonitorBindings
+	}{Goals: cloneGoalConfig(test.GoalConfig), Script: fingerprint.EvidenceSHA256, Duration: test.DurationStr, VUsers: test.TotalVUsers, Assignment: cloneGeneratorAssignmentSettings(test.Assignment), Override: override}
 	tr.mu.RUnlock()
-	if store, ok := tr.testStore.(storage.RunMonitorStore); ok && scenario != "" {
-		snapshot.Bindings, err = store.GetMonitorBindings(project, scenario)
+	if store, ok := tr.testStore.(storage.RunMonitorStore); ok {
+		if override != nil {
+			snapshot.Bindings = override
+		} else if scenario != "" {
+			snapshot.Bindings, err = store.GetMonitorBindings(project, scenario)
+		} else {
+			snapshot.Bindings = &storage.MonitorBindings{Sources: []storage.MonitorBinding{}}
+		}
 		if err != nil {
 			return "", err
 		}
@@ -62,6 +72,24 @@ func (tr *TestRunner) preparationRevision(id string) (string, error) {
 			for _, binding := range snapshot.Bindings.Sources {
 				if binding.SourceID == source.ID {
 					snapshot.Sources = append(snapshot.Sources, source)
+					if source.Pack == "appdynamics" {
+						if connections, ok := tr.testStore.(storage.AppDynamicsConnectionStore); ok {
+							c, e := connections.GetAppDynamicsConnection(source.ConnectionID)
+							if e != nil {
+								return "", e
+							}
+							snapshot.Connections = append(snapshot.Connections, c.Revision)
+						}
+					}
+					if source.Pack == "prometheus-query" {
+						if connections, ok := tr.testStore.(storage.PrometheusConnectionStore); ok {
+							c, e := connections.GetPrometheusConnection(source.ConnectionID)
+							if e != nil {
+								return "", e
+							}
+							snapshot.Connections = append(snapshot.Connections, c.Revision)
+						}
+					}
 					break
 				}
 			}
@@ -103,7 +131,7 @@ func (s *Server) handlePreparation(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 503, "cannot read preparation")
 			return
 		}
-		writeJSON(w, 200, p)
+		writeJSON(w, 200, safePreparation(p))
 		return
 	}
 	if !s.requireExecutionLeader(w) {
@@ -116,7 +144,7 @@ func (s *Server) handlePreparation(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if p.State == "cancelled" || p.State == "expired" || p.State == "failed" {
-			writeJSON(w, 200, p)
+			writeJSON(w, 200, safePreparation(p))
 			return
 		}
 		next, err := store.TransitionPreparation(p.ID, p.State, "cancelled", p.Revision, p.OwnerFence, nil)
@@ -126,7 +154,7 @@ func (s *Server) handlePreparation(w http.ResponseWriter, r *http.Request) {
 		}
 		s.runner.cancelPreparationExecution(id, p.ID)
 		s.recordAuditEvent(r, "test.preparation.cancel", "success", "test", id, project, nil)
-		writeJSON(w, 200, next)
+		writeJSON(w, 200, safePreparation(next))
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
@@ -224,7 +252,7 @@ func (s *Server) handlePreparation(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.recordAuditEvent(r, "test.preparation.renew", "success", "test", id, project, nil)
-		writeJSON(w, 200, next)
+		writeJSON(w, 200, safePreparation(next))
 		return
 	}
 	now := time.Now().UTC()
@@ -260,7 +288,7 @@ func (s *Server) handlePreparation(w http.ResponseWriter, r *http.Request) {
 		go s.runner.watchPreparation(p.ID, id)
 	}
 	s.recordAuditEvent(r, "test.preparation.create", "started", "test", id, project, map[string]any{"preparation_id": p.ID, "execution_revision": revision})
-	writeJSON(w, 202, p)
+	writeJSON(w, 202, safePreparation(p))
 }
 
 // awaitPreparedStart is placed after immutable staging/reservation but before
@@ -428,29 +456,131 @@ func preparationAllocationMatches(test *ManagedTest, p *storage.Preparation) boo
 }
 
 func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
+	if err := tr.validateRunMonitorCorrelation(id); err != nil {
+		return err
+	}
 	tr.mu.RLock()
 	test := tr.tests[id]
 	if test == nil {
 		tr.mu.RUnlock()
 		return errors.New("test not found")
 	}
-	project, scenario := test.ProjectID, test.ScenarioID
+	record := &storage.TestRecord{ID: id, ProjectID: test.ProjectID, ScenarioID: test.ScenarioID, MonitorBindings: cloneMonitorBindings(test.MonitorBindings)}
+	goals := cloneGoalConfig(test.GoalConfig)
+	readinessContext := test.executionCtx
 	tr.mu.RUnlock()
-	if !runMonitoringEnabled(project) {
+	if readinessContext == nil {
+		readinessContext = context.Background()
+	}
+	bindings, err := tr.resolvedTestMonitorBindings(record)
+	if err != nil {
+		return err
+	}
+	if !runMonitoringEnabled(record.ProjectID) {
+		for _, binding := range bindings.Sources {
+			if binding.Required {
+				return errors.New("required run monitoring is not enabled for this project")
+			}
+		}
+		if goals != nil && len(goals.MonitorRules) > 0 {
+			return errors.New("monitoring rules require run monitoring to be enabled for this project")
+		}
 		return nil
+	}
+	if err := tr.validateMonitorStorageAndSigning(record); err != nil {
+		return err
+	}
+	monitorStore, ok := tr.testStore.(storage.RunMonitorStore)
+	if !ok {
+		return errors.New("monitor readiness storage unavailable")
+	}
+	sources, err := monitorStore.ListMonitorSources(record.ProjectID)
+	if err != nil {
+		return err
+	}
+	if err := tr.validateSelectedMonitorRules(bindings, sources, goals); err != nil {
+		return err
+	}
+	if err := tr.validatePrometheusCollectionBudgets(bindings, sources, goals); err != nil {
+		return err
+	}
+	if err := tr.validateAppDynamicsCollectionBudgets(bindings, sources); err != nil {
+		return err
+	}
+	for _, binding := range bindings.Sources {
+		if !binding.Required {
+			continue
+		}
+		for _, source := range sources {
+			if source.ID != binding.SourceID {
+				continue
+			}
+			if source.Pack == "appdynamics" {
+				connections, ok := tr.testStore.(storage.AppDynamicsConnectionStore)
+				if !ok {
+					return errors.New("AppDynamics connection storage unavailable")
+				}
+				c, err := connections.GetAppDynamicsConnection(source.ConnectionID)
+				if err != nil || c.ProjectID != record.ProjectID || c.ConfigurationStatus() != "ready" {
+					return errors.New("required AppDynamics connection is not verified")
+				}
+				if err := storage.ValidateAppDynamicsSourceConnection(source, c.Snapshot()); err != nil {
+					return err
+				}
+				if source.ExecutorMode != "direct" {
+					inspections, ok := tr.testStore.(storage.AppDynamicsInspectionStore)
+					if !ok {
+						return errors.New("AppDynamics collector enrollment storage unavailable")
+					}
+					key, err := inspections.AppDynamicsCollectorPublicKey(record.ProjectID, source.CollectorID, source.Destination, time.Now().UTC())
+					if err != nil || key != source.CollectorPublicKey {
+						return errors.New("AppDynamics source collector enrollment changed; update the source before preparing")
+					}
+				}
+				if source.AppDynamics == nil || len(source.AppDynamics.Metrics) > 0 && !c.Capabilities.Metrics || source.AppDynamics.Events && !c.Capabilities.Events || source.AppDynamics.Violations && !c.Capabilities.Violations || source.AppDynamics.Snapshots && !c.Capabilities.Snapshots || len(source.AppDynamics.Analytics) > 0 && !c.Capabilities.Analytics {
+					return errors.New("required AppDynamics capability has not been verified")
+				}
+				if _, err := resolveAppDynamicsCredentials(readinessContext, tr.secretResolverForProject(record.ProjectID), c.Snapshot()); err != nil {
+					return err
+				}
+				if tr.appDynamicsPrepare != nil {
+					ctx, cancel := context.WithTimeout(readinessContext, time.Minute)
+					err := tr.appDynamicsPrepare(ctx, source, c.Snapshot())
+					cancel()
+					if err != nil {
+						return err
+					}
+				}
+			} else if source.Pack == "prometheus-query" {
+				if err := tr.validatePreparedPrometheus(readinessContext, source, record.ProjectID, goals); err != nil {
+					return err
+				}
+			} else if source.CredentialRef != "" {
+				single := &fixedMonitorBindingsStore{RunMonitorStore: monitorStore, bindings: &storage.MonitorBindings{Sources: []storage.MonitorBinding{binding}}}
+				if err := validateRequiredMonitorCredentials(context.Background(), single, tr.projectSecretStore, record.ProjectID, "selected"); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	store, ok := tr.testStore.(interface {
 		ValidateRunMonitorReadiness(string, string, string, time.Time) error
 	})
 	if !ok {
-		return errors.New("collector readiness storage unavailable")
+		return errors.New("monitor readiness storage unavailable")
 	}
-	if monitorStore, ok := tr.testStore.(storage.RunMonitorStore); ok {
-		if err := validateRequiredMonitorCredentials(context.Background(), monitorStore, tr.projectSecretStore, project, scenario); err != nil {
-			return err
-		}
-	}
-	return tr.trackDurableWrite(func() error { return store.ValidateRunMonitorReadiness(project, id, scenario, time.Now().UTC()) })
+	return tr.trackDurableWrite(func() error {
+		return store.ValidateRunMonitorReadiness(record.ProjectID, id, record.ScenarioID, time.Now().UTC())
+	})
+}
+
+type fixedMonitorBindingsStore struct {
+	storage.RunMonitorStore
+	bindings *storage.MonitorBindings
+}
+
+func (s *fixedMonitorBindingsStore) GetMonitorBindings(string, string) (*storage.MonitorBindings, error) {
+	return s.bindings, nil
 }
 
 func (tr *TestRunner) cancelPreparationExecution(id, preparation string) {

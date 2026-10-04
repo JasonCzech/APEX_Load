@@ -13,6 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const ciSchemaVersion = 1
@@ -47,13 +50,14 @@ type CIExecution struct {
 }
 
 type CIGoals struct {
-	P95LatencyMs             *float64 `json:"p95_latency_ms,omitempty"`
-	MaxErrorPct              *float64 `json:"max_error_pct,omitempty"`
-	MaxAvgServerProcessingMs *float64 `json:"max_avg_server_processing_ms,omitempty"`
-	MaxAvgTransferMs         *float64 `json:"max_avg_transfer_ms,omitempty"`
-	MaxErrorCount            *int     `json:"max_error_count,omitempty"`
-	RequireSLA               bool     `json:"require_sla"`
-	RequireResults           bool     `json:"require_results"`
+	MonitorRules             []analysis.MonitorRule `json:"monitor_rules,omitempty"`
+	P95LatencyMs             *float64               `json:"p95_latency_ms,omitempty"`
+	MaxErrorPct              *float64               `json:"max_error_pct,omitempty"`
+	MaxAvgServerProcessingMs *float64               `json:"max_avg_server_processing_ms,omitempty"`
+	MaxAvgTransferMs         *float64               `json:"max_avg_transfer_ms,omitempty"`
+	MaxErrorCount            *int                   `json:"max_error_count,omitempty"`
+	RequireSLA               bool                   `json:"require_sla"`
+	RequireResults           bool                   `json:"require_results"`
 }
 
 type CISource struct {
@@ -79,16 +83,17 @@ type CISource struct {
 }
 
 type CIRunRequest struct {
-	ProjectID    string          `json:"project_id"`
-	Name         string          `json:"name,omitempty"`
-	ReleaseID    string          `json:"release_id,omitempty"`
-	ScriptPath   string          `json:"script_path,omitempty"`
-	ScriptID     string          `json:"script_id,omitempty"`
-	Script       json.RawMessage `json:"script,omitempty"`
-	Execution    CIExecution     `json:"execution"`
-	Goals        CIGoals         `json:"goals"`
-	Source       CISource        `json:"source"`
-	PublishCheck bool            `json:"publish_check"`
+	MonitorBindings *[]storage.MonitorBinding `json:"monitor_bindings,omitempty"`
+	ProjectID       string                    `json:"project_id"`
+	Name            string                    `json:"name,omitempty"`
+	ReleaseID       string                    `json:"release_id,omitempty"`
+	ScriptPath      string                    `json:"script_path,omitempty"`
+	ScriptID        string                    `json:"script_id,omitempty"`
+	Script          json.RawMessage           `json:"script,omitempty"`
+	Execution       CIExecution               `json:"execution"`
+	Goals           CIGoals                   `json:"goals"`
+	Source          CISource                  `json:"source"`
+	PublishCheck    bool                      `json:"publish_check"`
 }
 
 type CIMetrics struct {
@@ -101,20 +106,22 @@ type CIMetrics struct {
 // CIRunResponse is returned by both create and status. Fields unavailable at
 // creation are omitted until the controller reaches a terminal state.
 type CIRunResponse struct {
-	SchemaVersion int      `json:"schema_version"`
-	TestID        string   `json:"test_id"`
-	Status        string   `json:"status"`
-	Outcome       string   `json:"outcome,omitempty"`
-	StatusURL     string   `json:"status_url,omitempty"`
-	ReportURL     string   `json:"report_url,omitempty"`
-	CheckURL      string   `json:"check_url,omitempty"`
-	SLAEvaluated  bool     `json:"sla_evaluated"`
-	SLABreached   bool     `json:"sla_breached"`
-	SLADetails    []string `json:"sla_details,omitempty"`
-	Transactions  int64    `json:"transactions"`
-	Errors        int64    `json:"errors"`
-	TPS           float64  `json:"tps"`
-	DurationMS    int64    `json:"duration_ms"`
+	MonitoringStatus   string                       `json:"monitoring_status,omitempty"`
+	MonitorRuleResults []analysis.MonitorRuleResult `json:"monitor_rule_results,omitempty"`
+	SchemaVersion      int                          `json:"schema_version"`
+	TestID             string                       `json:"test_id"`
+	Status             string                       `json:"status"`
+	Outcome            string                       `json:"outcome,omitempty"`
+	StatusURL          string                       `json:"status_url,omitempty"`
+	ReportURL          string                       `json:"report_url,omitempty"`
+	CheckURL           string                       `json:"check_url,omitempty"`
+	SLAEvaluated       bool                         `json:"sla_evaluated"`
+	SLABreached        bool                         `json:"sla_breached"`
+	SLADetails         []string                     `json:"sla_details,omitempty"`
+	Transactions       int64                        `json:"transactions"`
+	Errors             int64                        `json:"errors"`
+	TPS                float64                      `json:"tps"`
+	DurationMS         int64                        `json:"duration_ms"`
 	// Metrics accepts early v1 controller builds that nested the same fields.
 	Metrics CIMetrics `json:"metrics,omitempty"`
 	Error   string    `json:"error,omitempty"`
@@ -231,13 +238,14 @@ func validateCIRunAPIResponse(response *CIRunResponse, expectedTestID string) er
 	}
 	outcome := strings.ToLower(strings.TrimSpace(response.Outcome))
 	switch outcome {
-	case "", "queued", "running", ciOutcomePassed, ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled:
+	case "", "queued", "running", "monitoring_pending", ciOutcomeMonitoringIncomplete, ciOutcomeInconclusive, ciOutcomePassed, ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled:
 	default:
 		return fmt.Errorf("outcome is unsupported")
 	}
 	terminal := status == "COMPLETE" || status == "FAILED" || status == "ABORTED"
 	if terminal {
-		valid := (status == "COMPLETE" && (outcome == ciOutcomePassed || outcome == ciOutcomeSLABreached || outcome == ciOutcomeExecutionError)) ||
+		valid := outcome == "monitoring_pending" ||
+			(status == "COMPLETE" && (outcome == ciOutcomeMonitoringIncomplete || outcome == ciOutcomeInconclusive || outcome == ciOutcomePassed || outcome == ciOutcomeSLABreached || outcome == ciOutcomeExecutionError)) ||
 			(status == "FAILED" && outcome == ciOutcomeExecutionError) ||
 			(status == "ABORTED" && (outcome == ciOutcomeCancelled || outcome == ciOutcomeTimedOut))
 		if !valid {

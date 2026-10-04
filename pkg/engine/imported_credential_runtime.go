@@ -95,8 +95,20 @@ func (vu *VUser) ensureImportedCredentialInspection() {
 	}
 	vu.importedCredentialInspection = inspectImportedCredentialsForRuntime(vu.Script)
 	if err := vu.importedCredentialInspection.err; err != nil {
+		vu.failRuntimeCredentialRedaction(err)
+	}
+}
+
+// Only the owning VUser writes the sticky classification error. Protocol
+// callbacks read the immutable atomic projection, never the mutable error field.
+func (vu *VUser) failRuntimeCredentialRedaction(err error) {
+	if vu == nil || err == nil {
+		return
+	}
+	if vu.runtimeCredentialRedactionErr == nil {
 		vu.runtimeCredentialRedactionErr = err
 	}
+	vu.runtimeRedaction.Store(unavailableRuntimePublicationConfig)
 }
 
 func (vu *VUser) ensureRuntimeCredentialRedactionState() {
@@ -179,8 +191,8 @@ func runtimeCredentialScopesEqual(left, right map[string][]string) bool {
 // Values arrive per named scope and each scope's producer establishes the ORIGIN
 // of what it registers by the scope name it chooses. Platform-managed producers:
 //
-//   - "extraction:<name>" — an extraction whose NAME is sensitive
-//     (scrub.SensitiveName, origin-independent), vuser_resolve.go.
+//   - "extraction:observed" — bounded history of values received under a
+//     sensitive NAME (scrub.SensitiveName, origin-independent), vuser_resolve.go.
 //   - runtimeCredentialActionScope — the composite spellings of a per-action
 //     credential surface that resolves from the project secret store,
 //     resolved_imported_credential_redaction.go.
@@ -230,7 +242,7 @@ func (vu *VUser) publishRuntimeCredentialRedaction(scopes map[string][]string) e
 		}
 	}
 	if err != nil {
-		vu.runtimeCredentialRedactionErr = errors.New("runtime credential redaction capacity exceeded")
+		vu.failRuntimeCredentialRedaction(errors.New("runtime credential redaction capacity exceeded"))
 		return vu.runtimeCredentialRedactionErr
 	}
 

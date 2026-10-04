@@ -404,6 +404,14 @@ function isTimeoutAbort(error: unknown, timedOut: boolean): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+function notifyActivityResponse(response: Response, method?: string): Response {
+  if (response.ok && typeof window !== 'undefined') {
+    if (response.headers?.get('X-APEXLOAD-Audit-Status') === 'unavailable') window.dispatchEvent(new Event('apexload:activity-warning'));
+    if (method && !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())) window.dispatchEvent(new Event('apexload:activity-changed'));
+  }
+  return response;
+}
+
 export function apiFetch(
   pathOrURL: string,
   options?: ApiRequestOptions,
@@ -426,7 +434,7 @@ export function apiFetch(
   });
   return (timeout.deadline
     ? Promise.race([pendingFetch, timeout.deadline])
-    : pendingFetch).catch((error: unknown) => {
+    : pendingFetch).then(response => isDesktopController ? notifyActivityResponse(response, init.method) : response).catch((error: unknown) => {
     if (isTimeoutAbort(error, timeout.timedOut())) {
       throw new Error(`Request timed out after ${timeoutMs}ms`);
     }
@@ -500,7 +508,7 @@ export function apiFetchFromOrigin(
   });
   return (timeout.deadline
     ? Promise.race([pendingFetch, timeout.deadline])
-    : pendingFetch).catch((error: unknown) => {
+    : pendingFetch).then(response => isDesktopController ? notifyActivityResponse(response, init.method) : response).catch((error: unknown) => {
     if (isTimeoutAbort(error, timeout.timedOut())) {
       throw new Error(`Request timed out after ${timeoutMs}ms`);
     }

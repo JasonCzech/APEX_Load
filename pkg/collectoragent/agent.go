@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 	"io"
 	"log/slog"
 	"math"
@@ -27,6 +28,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -58,13 +60,24 @@ type Config struct {
 
 // Agent pushes heartbeats to the controller on an interval.
 type Agent struct {
-	management     *managementScheduler
-	spoolBudget    *collectorSpoolBudget
-	cfg            Config
-	client         *http.Client
-	pendingBatches map[string]*RunSampleBatch
-	nextCollection map[string]time.Time
-	otlpAccepted   map[string]map[string]time.Time
+	management                *managementScheduler
+	spoolBudget               *collectorSpoolBudget
+	prometheusClient          func(prometheus.Config, prometheus.Credentials) (*prometheus.Client, error)
+	stateMu                   sync.Mutex
+	providerBusy              map[string]bool
+	providerSlots             chan struct{}
+	providerWorkers           sync.WaitGroup
+	providerBacklog           map[string][]*RunSampleBatch
+	cfg                       Config
+	client                    *http.Client
+	pendingBatches            map[string]*RunSampleBatch
+	nextCollection            map[string]time.Time
+	otlpAccepted              map[string]map[string]time.Time
+	jobPollAfterKey           string
+	jobScanUnseen             map[string]bool
+	jobScanOffset             int
+	jobScanManagement         map[string]SignedRunJob
+	jobScanManagementOverflow bool
 }
 
 type metricPack struct {
@@ -127,6 +140,11 @@ func New(cfg Config) (*Agent, error) {
 			cloned.solaceApproval = nil
 			cfg.AdapterTargets[i].Management = &cloned
 		}
+		if cfg.AdapterTargets[i].Prometheus != nil {
+			cloned := *cfg.AdapterTargets[i].Prometheus
+			cloned.ApprovedCIDRs = append([]string(nil), cloned.ApprovedCIDRs...)
+			cfg.AdapterTargets[i].Prometheus = &cloned
+		}
 		if cfg.AdapterTargets[i].Cloud != nil {
 			body, _ := json.Marshal(cfg.AdapterTargets[i].Cloud)
 			var cloned CloudQuery
@@ -144,14 +162,14 @@ func New(cfg Config) (*Agent, error) {
 		}
 		seenPacks[pack] = true
 		switch pack {
-		case "ssh-linux", "jmx", "jdbc", "otel-metrics", "cloudwatch", "azure-monitor":
+		case "ssh-linux", "jmx", "jdbc", "otel-metrics", "appdynamics", "cloudwatch", "azure-monitor", "prometheus-query":
 			if len(cfg.ControllerPublicKey) == 0 {
 				return nil, fmt.Errorf("remote adapters require signed run jobs")
 			}
 			if pack == "otel-metrics" && cfg.OTLP == nil {
 				return nil, fmt.Errorf("OTLP receiver not configured")
 			}
-			if (pack == "ssh-linux" || pack == "jmx" || pack == "jdbc") && len(cfg.CredentialPrivateKey) != 32 {
+			if (pack == "ssh-linux" || pack == "jmx" || pack == "jdbc" || pack == "appdynamics") && len(cfg.CredentialPrivateKey) != 32 {
 				return nil, fmt.Errorf("collector encryption private key required")
 			}
 			approved := false
@@ -166,7 +184,7 @@ func New(cfg Config) (*Agent, error) {
 		case "linux-hosts", "go-runtime":
 		case "prometheus":
 			if strings.TrimSpace(cfg.PrometheusURL) == "" {
-				return nil, fmt.Errorf("prometheus pack requires prometheus URL")
+				return nil, fmt.Errorf("prometheus pack requires a scrape URL")
 			}
 		default:
 			if observer := registeredManagementObservers()[pack]; isManagementPack(pack) && observer != nil {
@@ -218,7 +236,7 @@ func New(cfg Config) (*Agent, error) {
 		return nil, err
 	}
 	cfg.ControllerPublicKey = append(ed25519.PublicKey(nil), cfg.ControllerPublicKey...)
-	agent := &Agent{cfg: cfg, client: client, pendingBatches: map[string]*RunSampleBatch{}, nextCollection: map[string]time.Time{}, spoolBudget: newCollectorSpoolBudget()}
+	agent := &Agent{cfg: cfg, client: client, providerSlots: make(chan struct{}, 4), providerBacklog: map[string][]*RunSampleBatch{}, pendingBatches: map[string]*RunSampleBatch{}, nextCollection: map[string]time.Time{}, spoolBudget: newCollectorSpoolBudget()}
 	if len(cfg.ControllerPublicKey) > 0 {
 		instance, err := newCollectorInstanceID()
 		if err != nil {
@@ -286,6 +304,7 @@ func (a *Agent) runWithSolaceStartup(ctx context.Context, startup func(context.C
 	// Registered before management.close: LIFO cleanup first joins every
 	// provider task, then observes the sole exact startup lock cleanup result.
 	defer func() { retErr = errors.Join(retErr, unlockSolace()) }()
+	defer a.providerWorkers.Wait()
 	if err = a.loadSpool(); err != nil {
 		return err
 	}
@@ -323,6 +342,11 @@ func (a *Agent) tick(ctx context.Context) {
 		if err := a.pushHeartbeat(ctx, heartbeat{Health: "healthy"}); err != nil {
 			slog.Warn("collector heartbeat failed", "err", err)
 			return
+		}
+		if slicesContainsAppDynamics(a.cfg.Packs) || a.hasPrometheusQueryTarget() {
+			if err := a.inspectionTick(ctx); err != nil {
+				slog.Debug("provider inspection poll unavailable")
+			}
 		}
 		if err := a.runJobTick(ctx); err != nil {
 			slog.Warn("collector run monitoring degraded", "err", err)

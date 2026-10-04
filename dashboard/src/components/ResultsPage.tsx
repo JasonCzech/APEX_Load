@@ -1,4 +1,5 @@
 import SeriesChartExport from "./SeriesChartExport"
+import ObjectHistory from './ObjectHistory'
 import { testOutcomeStatus } from '../utils/testStatusUtils'
 import BulkActions from './ux/BulkActions'
 import { lifecycleElapsedSeconds, formatElapsedSeconds } from './runReport/executionPresentation'
@@ -1395,6 +1396,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
         </td>
         <td className="cell-name">
           <div>{row.name}</div>
+          {(test || externalImport) && <div onClick={event => event.stopPropagation()}><ObjectHistory projectId={test?.project_id || externalImport?.project_id} resourceType={test ? 'test' : 'external_result_import'} resourceId={(test || externalImport)!.id} activity={test?.activity || externalImport?.activity} /></div>}
           <div className="results-compact-status" aria-hidden="true">{test ? <StatusBadge status={row.status} stoppedByOperator={Boolean(test.stopped_by_subject)} /> : <span className={`script-health-token ${resultSourceStatusTone(row.status)}`}>{row.status}</span>}</div>
           {test?.archive && <ResultHeadline testId={test.id} />}
           <div className="script-table-meta">

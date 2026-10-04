@@ -272,7 +272,7 @@ func newBrowserScript(name string, session *Session, baseURL string) *dsl.Script
 	if session.DeviceProfile != "" {
 		browser.DeviceProfile = session.DeviceProfile
 	}
-	return &dsl.Script{
+	script := &dsl.Script{
 		Name:        name,
 		Version:     "1.0",
 		Protocol:    "browser",
@@ -280,6 +280,8 @@ func newBrowserScript(name string, session *Session, baseURL string) *dsl.Script
 		Config:      dsl.ScriptConfig{BaseURL: baseURL, Browser: browser},
 		CreatedAt:   time.Now(),
 	}
+	AttachRecordingEnvironment(script, session.RecordingEnvironment)
+	return script
 }
 
 func browserEngineForRecordingSession(session *Session) string {

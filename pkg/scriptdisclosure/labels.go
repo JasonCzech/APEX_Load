@@ -25,11 +25,12 @@ func ProjectLabel(label string, credentialSources ...*dsl.Script) string {
 // descriptive action labels does not repeatedly project the entire script.
 func ProjectLabels(labels []string, credentialSources ...*dsl.Script) []string {
 	projectedLabels := append([]string(nil), labels...)
+	budget := newStructuredCollectionBudget()
 	for _, source := range credentialSources {
 		if source == nil {
 			continue
 		}
-		p, err := newLabelProjector(source)
+		p, err := newLabelProjector(source, budget)
 		if err != nil {
 			for index := range projectedLabels {
 				projectedLabels[index] = credential.Redacted
@@ -51,7 +52,7 @@ func ProjectLabels(labels []string, credentialSources ...*dsl.Script) []string {
 	return projectedLabels
 }
 
-func newLabelProjector(credentialSource *dsl.Script) (*projector, error) {
+func newLabelProjector(credentialSource *dsl.Script, budgets ...*structuredCollectionBudget) (*projector, error) {
 	p := &projector{
 		credentialParameterNames: credentialParameterNames(credentialSource),
 		sensitiveSourceColumns:   sensitiveDataSourceColumns(credentialSource),
@@ -67,6 +68,10 @@ func newLabelProjector(credentialSource *dsl.Script) (*projector, error) {
 		return nil, fmt.Errorf("decode script credential source for label projection: %w", err)
 	}
 	collector := newSecretCollector(p.credentialParameterNames, p.sensitiveSourceColumns)
+	if len(budgets) > 0 {
+		collector.structuredBudget = budgets[0]
+	}
+	collector.collectOriginalBodyValidity(credentialSource)
 	collector.collect(sourceRaw, projectionContext{}, 0)
 	collector.collectScriptCredentialTargets(credentialSource)
 	importedValues, err := engine.ImportedCredentialValuesForDisclosure(credentialSource)
@@ -82,6 +87,9 @@ func newLabelProjector(credentialSource *dsl.Script) (*projector, error) {
 				p.forcedSecrets[trimmed] = struct{}{}
 			}
 		}
+	}
+	if collector.structuredBudget.incomplete {
+		return nil, fmt.Errorf("script disclosure credential collection is incomplete")
 	}
 	p.knownSecrets = collector.sorted()
 	return p, nil

@@ -653,12 +653,20 @@ func (s *Server) syncCIGitHubCheck(ctx context.Context, test *ManagedTest, metad
 			applyCITerminalEvidence(&response, evidence, evidenceErr)
 		}
 		response.ResultsPresent = response.Transactions > 0
-		if strings.EqualFold(response.Status, "COMPLETE") && !response.terminalEvidenceVerified {
+		if response.Outcome == "monitoring_pending" {
+			// Keep the existing check open while provider evidence reconciles.
+		} else if strings.EqualFold(response.Status, "COMPLETE") && !response.terminalEvidenceVerified {
 			response.ReportURL = ""
 			response.Error = ciTerminalEvidenceFailureReason
 			response.Outcome = "execution_error"
 		} else {
 			response.Outcome = ciRunOutcome(response.Status, response.SLABreached, response.SLAEvaluated, response.ResultsPresent, metadata, response.Error)
+			if strings.EqualFold(response.Status, "COMPLETE") && response.MonitoringIncomplete && !response.SLABreached {
+				response.Outcome = "monitoring_incomplete"
+				if response.Error == "" {
+					response.Error = "Required monitoring evidence or configured monitoring criteria were incomplete"
+				}
+			}
 		}
 	}
 	store, ok := s.githubEnterpriseStore()
@@ -679,7 +687,7 @@ func (s *Server) syncCIGitHubCheck(ctx context.Context, test *ManagedTest, metad
 	}
 	// The Check is created in progress. Avoiding subsequent nonterminal PATCHes
 	// eliminates a race where an old RUNNING snapshot arrives after completion.
-	if !ciRunTerminal(test.Status) {
+	if !ciRunTerminal(test.Status) || response.Outcome == "monitoring_pending" {
 		return link.CheckRunURL, nil
 	}
 	link, err = store.ClaimGitHubCheckConclusion(link.ID, ciGitHubCheckConclusion(response))
@@ -782,13 +790,23 @@ func ciGitHubCheckSummary(test *ManagedTest, response ciRunResponse, metadata ci
 			lines = append(lines, fmt.Sprintf("| %s | %s | %s | `%s` |", row.metric, row.threshold, row.actual, row.result))
 		}
 	}
+	if len(response.MonitorRuleResults) > 0 {
+		lines = append(lines, "", "Monitoring criteria:")
+		for _, result := range response.MonitorRuleResults {
+			lines = append(lines, "- "+sanitizeCIExternalText(result.Rule.Metric, 128)+": "+sanitizeCIExternalText(result.Status, 32)+"; "+sanitizeCIExternalText(result.Message, 512))
+		}
+	}
 	responseError := strings.TrimSpace(response.Error)
 	if responseError == "" && test != nil {
 		responseError = strings.TrimSpace(test.Error)
 	}
 	responseError = sanitizeCIExternalText(responseError, ciExternalErrorMaxBytes)
 	if responseError != "" {
-		lines = append(lines, "", "Execution error: "+responseError)
+		label := "Execution error: "
+		if response.Outcome == "monitoring_incomplete" {
+			label = "Evidence explanation: "
+		}
+		lines = append(lines, "", label+responseError)
 	}
 	if details := sanitizeCIExternalDetails(response.SLADetails); len(details) > 0 {
 		lines = append(lines, "", "SLA failures:")

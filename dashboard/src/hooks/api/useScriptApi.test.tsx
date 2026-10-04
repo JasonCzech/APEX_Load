@@ -11,6 +11,7 @@ vi.mock('../apiClient', () => ({
 
 import { apiFetch, request } from '../apiClient'
 import { useScriptApi } from './useScriptApi'
+import type { ApplyParameterizationRequest } from '../../types/scriptImports'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -43,6 +44,25 @@ describe('useScriptApi import wrappers', () => {
     vi.useRealTimers()
     vi.restoreAllMocks()
     vi.clearAllMocks()
+  })
+
+  it('preserves exact Aura action routes and encoding metadata in the apply request', async () => {
+    const payload: ApplyParameterizationRequest = {
+      script: { name: 'Aura draft', version: '1', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [] },
+      suggestions: [{ id: 'nested', kind: 'data_param', var_name: 'recordid', replacement: '{{data.records.recordid}}', confidence: 0.7,
+        rule_id: 'aura', rationale: 'Reviewed field', auto_apply: false, high_risk: false,
+        locations: [{ section: 'actions', action_index: 99, field: 'body', replace_text: '',
+          action_path: 'actions[0].control.steps[1].params.requests[2]',
+          aura_route: [{ kind: 'key', key: 'actions' }, { kind: 'index', index: 0 }, { kind: 'json_string' }, { kind: 'key', key: 'recordId' }],
+          decoded_field_path: 'actions[0].params.details::<json>.recordId',
+          encoding_layers: ['url_form', 'json', 'json_string'], payload_shape: 'structural-digest' }] }],
+      selected_ids: ['nested'], confirm_high_risk: false,
+    }
+    await api.applyImportParameterization(payload)
+    const [url, options] = (request as Mock).mock.calls[0]
+    expect(url).toBe('/scripts/import/parameterize/apply')
+    expect(options.method).toBe('POST')
+    expect(JSON.parse(options.body)).toEqual(payload)
   })
 
   it.each(['importEnterpriseArchive', 'validateEnterpriseArchiveImport'] as const)(
@@ -167,6 +187,27 @@ describe('useScriptApi import wrappers', () => {
     const [, options] = (apiFetch as Mock).mock.calls[0]
     expect(Array.from((options.body as FormData).keys()).slice(0, 2)).toEqual(['project_id', 'file'])
     expect((options.body as FormData).get('file')).toBe(file)
+  })
+
+  it.each(['importHAR', 'importSalesforce'] as const)('%s authorizes the project before upload bytes and retains transform options', async method => {
+    const file = new File(['{}'], 'capture.har', { type: 'application/json' })
+    await api[method](file, { project_id: 'project with spaces', name: 'Capture', base_url: 'https://example.test', agentforce_transform: true })
+    const [url, options] = (apiFetch as Mock).mock.calls[0]
+    expect(url).toBe(`/scripts/import/${method === 'importHAR' ? 'har' : 'salesforce'}?project_id=project+with+spaces&agentforce_transform=true`)
+    const body = options.body as FormData
+    expect(Array.from(body.keys())).toEqual(['project_id', 'file', 'name', 'base_url'])
+    expect(body.get('project_id')).toBe('project with spaces')
+    expect(body.get('file')).toBe(file)
+  })
+
+  it('retains HAR native selection alongside project scope and the secondary capture', async () => {
+    const file = new File(['{}'], 'first.har')
+    const second = new File(['{}'], 'second.har')
+    await api.importHAR(file, { project_id: 'project-1', salesforce_native: false, secondary_file: second, include_static_assets: true })
+    const [url, options] = (apiFetch as Mock).mock.calls[0]
+    expect(url).toBe('/scripts/import/har?project_id=project-1&salesforce_native=false')
+    expect(Array.from((options.body as FormData).keys())).toEqual(['project_id', 'file', 'include_static_assets', 'secondary_file'])
+    expect((options.body as FormData).get('secondary_file')).toBe(second)
   })
 
   it('sends OpenAPI project scope before file bytes for streaming authorization', async () => {

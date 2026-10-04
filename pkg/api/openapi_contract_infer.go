@@ -141,6 +141,7 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		applyGenericImportBatchContract(route, &contract)
 		applyEnterpriseArchiveCollectionContract(route, &contract)
 		applyMonitorManagementContract(route, &contract, typeDefinitions)
+		applyObjectActivityContract(route, &contract)
 		contracts[route.Method+" "+route.Path] = contract
 	}
 	return contracts, nil
@@ -170,16 +171,19 @@ func applyGenericImportBatchContract(route discoveredRoute, contract *inferredRo
 // variants; these packages cover the public storage, DSL, execution, recorder,
 // protocol, and converter models that handlers decode or return directly.
 var openAPICrossPackageDirectories = map[string]string{
-	"analysis":       "analysis",
-	"analytics":      "analysis/duckdb",
-	"collectoragent": "collectoragent",
-	"dsl":            "dsl",
-	"engine":         "engine",
-	"k6":             "convert/k6",
-	"protocol":       "protocol",
-	"recorder":       "recorder",
-	"sample":         "convert/sample",
-	"storage":        "storage",
+	"analysis":        "analysis",
+	"analytics":       "analysis/duckdb",
+	"appdynamics":     "appdynamics",
+	"prometheus":      "prometheus",
+	"monitorprovider": "monitorprovider",
+	"collectoragent":  "collectoragent",
+	"dsl":             "dsl",
+	"engine":          "engine",
+	"k6":              "convert/k6",
+	"protocol":        "protocol",
+	"recorder":        "recorder",
+	"sample":          "convert/sample",
+	"storage":         "storage",
 }
 
 func addOpenAPICrossPackageTypeDefinitions(apiDir string, typeDefinitions map[string]ast.Expr) error {
@@ -243,8 +247,33 @@ var explicitRouteContractTypes = map[string]struct {
 	responseTypes       map[int]string
 	responseDescription string
 }{
+	"GET /api/v1/projects/{id}/activity":  {responseTypes: map[int]string{200: "ObjectActivityListResponse"}},
+	"POST /api/v1/scripts/{id}/archive":   {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScript"}},
+	"POST /api/v1/scripts/{id}/restore":   {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScript"}},
+	"POST /api/v1/scenarios/{id}/archive": {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScenario"}},
+	"POST /api/v1/scenarios/{id}/restore": {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScenario"}},
 	"POST /api/v1/auth/ci/github/exchange": {
 		requestType: "githubCIExchangeRequest",
+	},
+	// These handlers use the shared bounded decoder, so the local AST walker
+	// cannot see their request types without an explicit contract.
+	"POST /api/v1/projects/{id}/monitoring/appdynamics-connections": {
+		requestType: "AppDynamicsConnectionRequest",
+	},
+	"PUT /api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}": {
+		requestType: "AppDynamicsConnectionRequest",
+	},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections":                                          {requestType: "PrometheusConnectionRequest", responseTypes: map[int]string{201: "PrometheusConnectionResponse"}},
+	"PUT /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}":                           {requestType: "PrometheusConnectionRequest", responseTypes: map[int]string{200: "PrometheusConnectionResponse"}},
+	"GET /api/v1/projects/{id}/monitoring/prometheus-connections":                                           {responseTypes: map[int]string{200: "[]PrometheusConnectionResponse"}},
+	"GET /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}":                           {responseTypes: map[int]string{200: "PrometheusConnectionResponse"}},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/test":                     {requestType: "PrometheusInspectionRequest", responseTypes: map[int]string{202: "PrometheusOperationResponse"}},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/discover":                 {requestType: "PrometheusInspectionRequest", responseTypes: map[int]string{202: "PrometheusOperationResponse"}},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/preview":                  {requestType: "PrometheusInspectionRequest", responseTypes: map[int]string{202: "PrometheusOperationResponse"}},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/adopt-dashboard":          {requestType: "PrometheusDashboardAdoptionRequest", responseTypes: map[int]string{200: "PrometheusDashboardAdoptionResponse"}},
+	"GET /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/operations/{operation_id}": {responseTypes: map[int]string{200: "PrometheusOperationResponse"}},
+	"POST /api/v1/monitoring/collectors/{id}/inspections/{operation_id}/result": {
+		requestType: "collectoragent.InspectionResult",
 	},
 	// Cluster registry and host allocation. The request types are named so the
 	// published contract documents the credential fields as write-only inputs
@@ -870,6 +899,13 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 			if expressionContainsRequestBody(call) {
 				analysis.rawRequest = true
 			}
+		case "readAnalysisUploadBody":
+			// The upload reader owns the bounded raw-body operation without
+			// receiving the request itself. Attribute only its body argument;
+			// recursive helper inspection cannot trace that argument to r.Body.
+			if len(call.Args) == 3 && expressionContainsRequestBody(call.Args[2]) {
+				analysis.rawRequest = true
+			}
 		case "writeJSON":
 			analysis.jsonResponse = true
 			if len(call.Args) > 1 {
@@ -1225,14 +1261,19 @@ func deprecatedCompatibilityInput(route discoveredRoute, name string) (string, b
 
 func explicitRequestRequiredFields(method, path string, properties map[string]oasSchema) ([]string, bool) {
 	declared := map[string][]string{
-		"POST /api/v1/auth/login":                            {"password", "username"},
-		"POST /api/v1/auth/ci/github/exchange":               {"id_token", "project_id"},
-		"POST /api/v1/correlations/diff":                     {"recording_a", "recording_b"},
-		"POST /api/v1/scenarios":                             {"name", "duration", "groups"},
-		"PUT /api/v1/scenarios/{id}":                         {"name", "duration", "groups"},
-		"POST /api/v1/scenarios/{id}/schedules":              {"name", "cron_expr"},
-		"PUT /api/v1/scenarios/{id}/schedules/{schedule_id}": {"name", "cron_expr"},
-		"POST /api/v1/scenarios/{id}/schedules/preview":      {"cron_expr"},
+		"POST /api/v1/auth/login":                                                                       {"password", "username"},
+		"POST /api/v1/auth/ci/github/exchange":                                                          {"id_token", "project_id"},
+		"POST /api/v1/projects/{id}/monitoring/prometheus-connections":                                  {"name"},
+		"PUT /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}":                   {"name", "revision"},
+		"POST /api/v1/projects/{id}/monitoring/appdynamics-connections":                                 {"name"},
+		"PUT /api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}":                  {"name", "revision"},
+		"POST /api/v1/monitoring/collectors/{id}/inspections/{operation_id}/result":                     {"job"},
+		"POST /api/v1/correlations/diff":                                                                {"recording_a", "recording_b"},
+		"POST /api/v1/scenarios":                                                                        {"name", "duration", "groups"},
+		"PUT /api/v1/scenarios/{id}":                                                                    {"name", "duration", "groups"},
+		"POST /api/v1/scenarios/{id}/schedules":                                                         {"name", "cron_expr"},
+		"PUT /api/v1/scenarios/{id}/schedules/{schedule_id}":                                            {"name", "cron_expr"},
+		"POST /api/v1/scenarios/{id}/schedules/preview":                                                 {"cron_expr"},
 		"POST /api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve":       {"action"},
 		"POST /api/v1/execution-plans/{id}/schedules":                                                   {"cron_expr"},
 		"PUT /api/v1/execution-plans/{id}/schedules/{schedule_id}":                                      {"cron_expr"},
@@ -1422,6 +1463,9 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 	}
 	switch value := expr.(type) {
 	case *ast.Ident:
+		if value.Name == "OptionalHTTPVersion" && (currentPackage == "dsl" || currentPackage == "protocol") {
+			return optionalHTTPVersionOpenAPISchema()
+		}
 		switch value.Name {
 		case "string":
 			return oasSchema{Type: "string"}
@@ -1481,6 +1525,9 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 		return oasSchema{}
 	case *ast.SelectorExpr:
 		if pkg, ok := value.X.(*ast.Ident); ok {
+			if (pkg.Name == "dsl" || pkg.Name == "protocol") && value.Sel.Name == "OptionalHTTPVersion" {
+				return optionalHTTPVersionOpenAPISchema()
+			}
 			if pkg.Name == "time" && value.Sel.Name == "Time" {
 				return oasSchema{Type: "string", Format: "date-time"}
 			}
@@ -1642,6 +1689,16 @@ func protocolRuntimeCapacityOpenAPISchema() oasSchema {
 	}
 }
 
+// OptionalHTTPVersion has private presence state but marshals as a strict JSON
+// string. Advertise its wire contract rather than its implementation struct.
+func optionalHTTPVersionOpenAPISchema() oasSchema {
+	return oasSchema{
+		Type:        "string",
+		Enum:        []string{"auto", "1.1", "2"},
+		Description: "Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.",
+	}
+}
+
 func jsonFieldName(field *ast.Field) (string, bool, bool) {
 	// encoding/json never serializes unexported fields, even when they carry an
 	// explicit tag. Exposing them here advertised process-only implementation
@@ -1667,7 +1724,7 @@ func jsonFieldName(field *ast.Field) (string, bool, bool) {
 				if name != "" {
 					omitEmpty := false
 					for _, option := range strings.Split(jsonTag, ",")[1:] {
-						if option == "omitempty" {
+						if option == "omitempty" || option == "omitzero" {
 							omitEmpty = true
 							break
 						}
@@ -1970,4 +2027,17 @@ func openAPIHTTPStatus(expr ast.Expr) (int, bool) {
 func receiverIsImportUpload(expr ast.Expr, variables map[string]bool) bool {
 	ident, ok := expr.(*ast.Ident)
 	return ok && variables[ident.Name]
+}
+
+func applyObjectActivityContract(route discoveredRoute, contract *inferredRouteContract) {
+	if route.Method == "GET" && (route.Path == "/api/v1/scripts" || route.Path == "/api/v1/scenarios") {
+		contract.QueryParameters = append(contract.QueryParameters, oasParameter{Name: "archive_state", In: "query", Description: "Filter archived objects; defaults to active.", Schema: oasParamSchema{Type: "string", Enum: []string{"active", "archived", "all"}}})
+	}
+	if route.Path != "/api/v1/projects/{id}/activity" {
+		return
+	}
+	contract.QueryParameters = nil
+	for _, name := range []string{"action", "actor_subject", "created_after", "created_before", "limit", "offset", "q", "resource_id", "resource_type"} {
+		contract.QueryParameters = append(contract.QueryParameters, oasParameter{Name: name, In: "query", Description: "Project activity filter or pagination.", Schema: queryParameterSchema(route, name, false)})
+	}
 }

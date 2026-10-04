@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/openapi"
@@ -9,6 +11,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -85,19 +88,82 @@ func parameterizationSuggestionContainsMaskedSecret(suggestion paramize.Suggesti
 // advice; each script re-runs Suggest at apply time.
 func buildMultiScriptParameterization(scripts []*dsl.Script) *paramize.Result {
 	merged := paramize.Result{Suggestions: []paramize.Suggestion{}}
+	auraBudget := paramize.NewAuraInspectionBudget()
+	retainedAuraBytes, retainedAuraCount := 0, 0
+	auraDetailsFull := false
 	for _, script := range scripts {
 		if script == nil {
 			continue
 		}
 		uniquify.DeduplicateActionNames(script)
 		result := paramize.Suggest(script, paramize.Options{
-			EnableDataParams: true,
-			EnableSecrets:    true,
+			EnableDataParams:     true,
+			EnableSecrets:        true,
+			AuraInspectionBudget: auraBudget,
 		})
-		for i := range result.Suggestions {
-			result.Suggestions[i].ScriptName = script.Name
+
+		if result.AuraPayload != nil {
+			if merged.AuraPayload == nil {
+				copy := *result.AuraPayload
+				merged.AuraPayload = &copy
+			} else {
+				dst, src := merged.AuraPayload, result.AuraPayload
+				dst.Complete = dst.Complete && src.Complete
+				dst.RecognizedBodies += src.RecognizedBodies
+				dst.InspectedBodies += src.InspectedBodies
+				dst.RejectedBodies += src.RejectedBodies
+				dst.OmittedBodies += src.OmittedBodies
+				dst.StringFields += src.StringFields
+				dst.UnsupportedNumberFields += src.UnsupportedNumberFields
+				dst.UnsupportedOtherFields += src.UnsupportedOtherFields
+				dst.UnsafePathFields += src.UnsafePathFields
+				dst.CandidateFields += src.CandidateFields
+				dst.RetainedCandidates += src.RetainedCandidates
+				dst.OmittedCandidates += src.OmittedCandidates
+			}
 		}
-		merged.Suggestions = append(merged.Suggestions, result.Suggestions...)
+		for _, warning := range result.Warnings {
+			found := false
+			for _, existing := range merged.Warnings {
+				if warning == existing {
+					found = true
+					break
+				}
+			}
+			if !found {
+				merged.Warnings = append(merged.Warnings, warning)
+			}
+		}
+
+		for i := range result.Suggestions {
+			suggestion := result.Suggestions[i]
+			suggestion.ScriptName = script.Name
+			structured := false
+			for _, location := range suggestion.Locations {
+				if len(location.AuraRoute) > 0 {
+					structured = true
+					break
+				}
+			}
+			if structured {
+				row, marshalErr := json.Marshal(suggestion)
+				if auraDetailsFull || marshalErr != nil || retainedAuraCount >= 2048 || len(row) > (256<<10)-retainedAuraBytes {
+					auraDetailsFull = true
+					if merged.AuraPayload != nil {
+						merged.AuraPayload.RetainedCandidates--
+						merged.AuraPayload.OmittedCandidates++
+						merged.AuraPayload.Complete = false
+					}
+					continue
+				}
+				retainedAuraBytes += len(row)
+				retainedAuraCount++
+			}
+			merged.Suggestions = append(merged.Suggestions, suggestion)
+		}
+	}
+	if auraDetailsFull {
+		merged.Warnings = append(merged.Warnings, "Aura payload review reached its shared multi-script candidate detail limit; candidate counts include omitted advice.")
 	}
 	merged.Summary = paramizeSummary(merged.Suggestions)
 	return &merged
@@ -174,4 +240,94 @@ func postmanCorrelationsToPreApplied(correlations []postman.Correlation) []param
 		})
 	}
 	return preApplied
+}
+
+// Aura browser descriptors cannot change the reviewed structural route. Raw
+// expected values stay server-side and are regenerated from the current draft.
+func matchesTrustedAuraDescriptor(provided, trusted paramize.Suggestion) bool {
+	structured := false
+	for _, location := range trusted.Locations {
+		if len(location.AuraRoute) > 0 {
+			structured = true
+		}
+	}
+	for _, location := range provided.Locations {
+		if len(location.AuraRoute) > 0 || location.ActionPath != "" || location.PayloadShape != "" {
+			structured = true
+		}
+	}
+	if !structured {
+		return true
+	}
+	if provided.Kind != trusted.Kind || provided.VarName != trusted.VarName || provided.Replacement != trusted.Replacement || len(provided.Locations) != len(trusted.Locations) {
+		return false
+	}
+	for i, location := range provided.Locations {
+		expected := trusted.Locations[i]
+		location.SearchText = ""
+		expected.SearchText = ""
+		providedJSON, providedErr := json.Marshal(location)
+		expectedJSON, expectedErr := json.Marshal(expected)
+		if providedErr != nil || expectedErr != nil || !bytes.Equal(providedJSON, expectedJSON) {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneParameterizationLocations(input []paramize.Location) []paramize.Location {
+	output := append([]paramize.Location(nil), input...)
+	for i := range output {
+		output[i].AuraRoute = append([]aurapayload.Segment(nil), input[i].AuraRoute...)
+		output[i].EncodingLayers = append([]string(nil), input[i].EncodingLayers...)
+	}
+	return output
+}
+
+// Credential projection can remove a JSON-as-string boundary outside the
+// selected business route. Re-derive the private full shape from the attested
+// runnable target while retaining the already-validated safe public binding.
+func rebindTrustedAuraParameterization(target *dsl.Script, advice []paramize.Suggestion, selected map[string]bool) ([]paramize.Suggestion, bool) {
+	needsRebind := false
+	for _, s := range advice {
+		if !selected[s.ID] {
+			continue
+		}
+		for _, l := range s.Locations {
+			if len(l.AuraRoute) > 0 {
+				needsRebind = true
+				break
+			}
+		}
+	}
+	if !needsRebind {
+		return advice, true
+	}
+	actual := buildTrustedImportParameterization(target)
+	byID := make(map[string]paramize.Suggestion, len(actual.Suggestions))
+	for _, s := range actual.Suggestions {
+		byID[s.ID] = s
+	}
+	rebound := append([]paramize.Suggestion(nil), advice...)
+	for i, s := range advice {
+		if !selected[s.ID] {
+			continue
+		}
+		structured := false
+		for _, l := range s.Locations {
+			if len(l.AuraRoute) > 0 {
+				structured = true
+				break
+			}
+		}
+		if !structured {
+			continue
+		}
+		exact, exists := byID[s.ID]
+		if !exists || exact.LiteralValue != s.LiteralValue || !matchesTrustedAuraDescriptor(s, exact) {
+			return nil, false
+		}
+		rebound[i] = exact
+	}
+	return rebound, true
 }

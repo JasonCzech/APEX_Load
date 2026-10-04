@@ -277,38 +277,40 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 		}
 	}
 	return &ManagedTest{
-		ID:                    test.ID,
-		RefKey:                test.RefKey,
-		MaterializationKey:    test.MaterializationKey,
-		Name:                  test.Name,
-		Status:                test.Status,
-		ScenarioID:            test.ScenarioID,
-		ScenarioMode:          test.ScenarioMode,
-		ProjectID:             test.ProjectID,
-		Groups:                groups,
-		CapacityAdvisory:      cloneCapacityAdvisory(test.CapacityAdvisory),
-		Assignment:            cloneGeneratorAssignmentSettings(test.Assignment),
-		ResourceBaseline:      test.ResourceBaseline,
-		StartDelay:            test.StartDelay,
-		GoalConfig:            cloneGoalConfig(test.GoalConfig),
-		TrafficProfile:        cloneTrafficProfile(test.TrafficProfile),
-		ELKCapture:            cloneELKCaptureConfig(test.ELKCapture),
-		DynatraceCapture:      cloneDynatraceCaptureConfig(test.DynatraceCapture),
-		TotalVUsers:           test.TotalVUsers,
-		Duration:              test.Duration,
-		DurationStr:           test.DurationStr,
-		CreatedAt:             test.CreatedAt,
-		ScheduledStartAt:      cloneTimePtr(test.ScheduledStartAt),
-		TimeslotID:            cloneStringPtr(test.TimeslotID),
-		PendingSince:          cloneTimePtr(test.PendingSince),
-		StartedAt:             cloneTimePtr(test.StartedAt),
-		PausedAt:              cloneTimePtr(test.PausedAt),
-		CumulativePause:       test.CumulativePause,
-		CapacityWindowStartAt: cloneTimePtr(test.CapacityWindowStartAt),
-		CapacityWindowEndAt:   cloneTimePtr(test.CapacityWindowEndAt),
-		EndedAt:               cloneTimePtr(test.EndedAt),
-		StartAuthorization:    cloneQueuedStartAuthorization(test.StartAuthorization),
-		ExecutionPlanApproval: cloneRunArchiveExecutionPlanApprovalSnapshot(test.ExecutionPlanApproval),
+		ID:                           test.ID,
+		RefKey:                       test.RefKey,
+		MaterializationKey:           test.MaterializationKey,
+		Name:                         test.Name,
+		Status:                       test.Status,
+		shakeoutAdmissionReservation: test.shakeoutAdmissionReservation,
+		ScenarioID:                   test.ScenarioID,
+		ProjectID:                    test.ProjectID,
+		Groups:                       groups,
+		CapacityAdvisory:             cloneCapacityAdvisory(test.CapacityAdvisory),
+		Assignment:                   cloneGeneratorAssignmentSettings(test.Assignment),
+		ResourceBaseline:             test.ResourceBaseline,
+		StartDelay:                   test.StartDelay,
+		GoalConfig:                   cloneGoalConfig(test.GoalConfig),
+		TrafficProfile:               cloneTrafficProfile(test.TrafficProfile),
+		ELKCapture:                   cloneELKCaptureConfig(test.ELKCapture),
+		DynatraceCapture:             cloneDynatraceCaptureConfig(test.DynatraceCapture),
+		MonitorBindings:              cloneMonitorBindings(test.MonitorBindings),
+		TotalVUsers:                  test.TotalVUsers,
+		Duration:                     test.Duration,
+		DurationStr:                  test.DurationStr,
+		CreatedAt:                    test.CreatedAt,
+		ScheduledStartAt:             cloneTimePtr(test.ScheduledStartAt),
+		TimeslotID:                   cloneStringPtr(test.TimeslotID),
+		PendingSince:                 cloneTimePtr(test.PendingSince),
+		StartedAt:                    cloneTimePtr(test.StartedAt),
+		PausedAt:                     cloneTimePtr(test.PausedAt),
+		CumulativePause:              test.CumulativePause,
+		CapacityWindowStartAt:        cloneTimePtr(test.CapacityWindowStartAt),
+		CapacityWindowEndAt:          cloneTimePtr(test.CapacityWindowEndAt),
+		EndedAt:                      cloneTimePtr(test.EndedAt),
+		StartAuthorization:           cloneQueuedStartAuthorization(test.StartAuthorization),
+		ExecutionPlanApproval:        cloneRunArchiveExecutionPlanApprovalSnapshot(test.ExecutionPlanApproval),
+		ScenarioMode:                 test.ScenarioMode,
 	}
 }
 
@@ -581,6 +583,7 @@ func (tr *TestRunner) managedTestBuildSnapshotLocked(req CreateTestRequest) (*Te
 		hub:                     nil,
 		maxTests:                tr.maxTests,
 		settings:                cloneSystemSettings(tr.settings),
+		testStore:               tr.testStore,
 		scriptStore:             tr.scriptStore,
 		dataPoolStore:           tr.dataPoolStore,
 		projectStore:            tr.projectStore,
@@ -1009,6 +1012,7 @@ func (tr *TestRunner) createTestWithIDAndTermAttempt(req CreateTestRequest, broa
 		rollbackErr := tr.rollbackRuntimeOverrideSecretAttempt(test.ProjectID, test.ID, runtimeSecretAttempt, "test_persistence_failed")
 		return nil, errors.Join(persistErr, rollbackErr)
 	}
+	tr.recordTestCreationActivity(test, req.creationActor)
 	if err := tr.completeRuntimeOverrideSecretAttempt(runtimeSecretAttempt); err != nil {
 		// The durable test is the source of truth. Recovery observes it and only
 		// removes the value-free journal; it never compensates committed secrets.
@@ -1253,6 +1257,14 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		scenarioProjectID = normalizeProjectID(scenario.ProjectID)
 		req = createTestRequestFromScenarioRevision(req, scenario, revisionSource)
 	}
+	archiveScripts := []string{tr.resolveRefKeyLocked(req.ScriptID)}
+	for _, group := range req.Groups {
+		archiveScripts = append(archiveScripts, tr.resolveRefKeyLocked(group.ScriptID))
+	}
+	archiveScripts = append(archiveScripts, storage.ExecutionSourceScriptIDs(req.MaterializationKey)...)
+	if err := tr.checkArchivedExecution(req.ScenarioID, archiveScripts); err != nil {
+		return nil, err
+	}
 	// Normalize after scenario/revision inheritance, but before general request
 	// validation, pool lookup, or group compilation. This keeps direct and plan
 	// requests on the same binding contract as scenario authoring and ensures the
@@ -1321,6 +1333,9 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	}
 	if revisionSource != nil && normalizeProjectID(revisionSource.ProjectID) != projectID {
 		return nil, fmt.Errorf("revision source test and referenced test resources must belong to one project")
+	}
+	if err := tr.validateTestMonitorBindings(projectID, requestMonitorBindings(req.MonitorBindings), req.GoalConfig); err != nil {
+		return nil, err
 	}
 	elkCapture, err := tr.resolveELKCaptureForTest(projectID, req.ELKCapture)
 	if err != nil {
@@ -1448,6 +1463,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		RuntimeSettings:              cloneRuntimeSettings(protectedRuntimeSettings),
 		ELKCapture:                   elkCapture,
 		DynatraceCapture:             dynatraceCapture,
+		MonitorBindings:              requestMonitorBindings(req.MonitorBindings),
 		TotalVUsers:                  totalVUsers,
 		Duration:                     dur,
 		DurationStr:                  req.Duration,
@@ -1516,6 +1532,8 @@ var errServiceAccountRuntimeSecretWrite = errors.New("service accounts cannot cr
 var errUnattributedRuntimeSecretWrite = errors.New("runtime credentials cannot create project secrets without durable human actor attribution; update the schedule or rerun the execution plan as an authorized user")
 
 type testCreationActor struct {
+	// InitiatedBy distinguishes automatic activity from the retained authorization actor.
+	InitiatedBy string
 	Type        string
 	Subject     string
 	DisplayName string
@@ -1529,6 +1547,7 @@ func normalizeTestCreationActor(actor testCreationActor) testCreationActor {
 	actor.Type = strings.ToLower(strings.TrimSpace(actor.Type))
 	actor.Subject = strings.TrimSpace(actor.Subject)
 	actor.DisplayName = strings.TrimSpace(actor.DisplayName)
+	actor.InitiatedBy = strings.TrimSpace(actor.InitiatedBy)
 	if actor.Type == "" {
 		actor.Type = "system"
 	}
@@ -1867,6 +1886,10 @@ func createTestRequestFromScenarioRevision(req CreateTestRequest, scenario *Stor
 		}
 		if req.StartDelay == "" {
 			req.StartDelay = revisionSource.StartDelay
+		}
+		if req.MonitorBindings == nil && revisionSource.MonitorBindings != nil {
+			b := append([]storage.MonitorBinding{}, revisionSource.MonitorBindings.Sources...)
+			req.MonitorBindings = &b
 		}
 		if req.GoalConfig == nil {
 			req.GoalConfig = cloneGoalConfig(revisionSource.GoalConfig)

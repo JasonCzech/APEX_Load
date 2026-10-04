@@ -45,6 +45,7 @@ var manuallyDeletedProjectTables = stringSet(
 var retainedAfterProjectDeletionTables = stringSet(
 	"analysis_upload_writers",   // Exact upload owners survive project deletion.
 	"analysis_attempt_journal",  // Exact writer/publication proof survives project deletion.
+	"object_activity_events",    // Safe activity history follows audit retention independently of project deletion.
 	"analysis_cleanup_jobs",     // Physical analytics cleanup must outlive project metadata.
 	"pod_capacity_reservations", // Only generator-confirmed drainage or incarnation fencing releases capacity.
 	"archive_cleanup_jobs", "archive_version_cleanup_jobs", "audit_events", "capacity_instance_intents", "replay_session_leases",

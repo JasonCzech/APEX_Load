@@ -32,8 +32,10 @@ func IsReservedName(name string) bool {
 const namespace = DirectoryName
 const maxChunk int64 = 4 << 20
 const maxEntries = 100000
+const maxInventoryAttempts = 3
 
 var ErrCapacity = errors.New("archive backlog capacity exceeded")
+var errInventoryChanged = errors.New("archive backlog inventory changed during scan")
 
 type Options struct {
 	MaxBytes int64
@@ -296,14 +298,26 @@ func (b *Budget) lock(ctx context.Context) (func(), error) {
 }
 
 // Inventory is bounded, descriptor-relative and fail-closed for links, special
-// files, unknown ledger records and changing entries. Actual data plus every
+// files, unknown ledger records and changing identities. Actual data plus every
 // other reservation is charged; only this joined writer's old chunk is replaced.
 func (b *Budget) usage(ctx context.Context) (int64, error) {
+	return b.usageWithStat(ctx, func(root *os.Root, name string) (os.FileInfo, error) {
+		return root.Lstat(name)
+	})
+}
+
+func (b *Budget) usageWithStat(ctx context.Context, stat func(*os.Root, string) (os.FileInfo, error)) (int64, error) {
 	ledgerIdentity, err := b.ledger.Stat(".")
 	if err != nil {
 		return 0, err
 	}
 	entries := 0
+	inventoryError := func(err error, ledger bool) error {
+		if !ledger && errors.Is(err, os.ErrNotExist) {
+			return errors.Join(errInventoryChanged, err)
+		}
+		return err
+	}
 	var walk func(*os.Root, int, bool) (int64, error)
 	walk = func(root *os.Root, depth int, ledger bool) (int64, error) {
 		if depth > 16 {
@@ -311,7 +325,7 @@ func (b *Budget) usage(ctx context.Context) (int64, error) {
 		}
 		dir, err := root.Open(".")
 		if err != nil {
-			return 0, err
+			return 0, inventoryError(err, ledger)
 		}
 		defer dir.Close()
 		var total int64
@@ -326,9 +340,9 @@ func (b *Budget) usage(ctx context.Context) (int64, error) {
 					return 0, err
 				}
 				name := entry.Name()
-				info, err := root.Lstat(name)
+				info, err := stat(root, name)
 				if err != nil {
-					return 0, err
+					return 0, inventoryError(err, ledger)
 				}
 				isLedger := depth == 0 && info.IsDir() && os.SameFile(info, ledgerIdentity)
 				if depth == 0 && b.excluded[name] && !isLedger {
@@ -341,7 +355,7 @@ func (b *Budget) usage(ctx context.Context) (int64, error) {
 					}
 					child, err := openDir(root, name)
 					if err != nil {
-						return 0, err
+						return 0, inventoryError(err, ledger)
 					}
 					size, err = walk(child, depth+1, isLedger)
 					child.Close()
@@ -395,11 +409,28 @@ func (b *Budget) usage(ctx context.Context) (int64, error) {
 				return total, nil
 			}
 			if readErr != nil {
-				return 0, readErr
+				return 0, inventoryError(readErr, ledger)
 			}
 		}
 	}
-	return walk(b.root, 0, false)
+	for attempt := 0; attempt < maxInventoryAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		if err := b.ledgerUnchanged(); err != nil {
+			return 0, err
+		}
+		used, scanErr := walk(b.root, 0, false)
+		if !errors.Is(scanErr, errInventoryChanged) {
+			return used, scanErr
+		}
+		err = scanErr
+		// A sibling writer may rename its temporary payload after ReadDir.
+		// Rescan the whole tree instead of omitting it, so the destination is
+		// charged exactly once. Entries remain charged to the same work bound
+		// across attempts; ledger errors and unsafe identities are never retried.
+	}
+	return 0, fmt.Errorf("archive backlog inventory retry limit exceeded: %w", err)
 }
 
 func openDir(root *os.Root, name string) (*os.Root, error) {

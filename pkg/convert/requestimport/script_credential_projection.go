@@ -1194,7 +1194,7 @@ func enterpriseSurfaceHeaders(ref dslwalk.SurfaceRef, source credentialpolicy.So
 		// the runtime-fidelity pass can remove and gate the occurrence with
 		// value-free evidence; normalizing or dropping it here would silently
 		// erase source semantics before that review.
-		out = append(out, Header{Name: header.Name, Value: header.Value, Source: source})
+		out = append(out, Header{Name: header.Name, Value: header.Value, Enabled: header.Enabled, Source: source})
 	}
 	names := make([]string, 0, len(legacy))
 	for name := range legacy {
@@ -1219,7 +1219,7 @@ func enterpriseSurfaceHeaders(ref dslwalk.SurfaceRef, source credentialpolicy.So
 func enterpriseSetSurfaceHeaders(ref dslwalk.SurfaceRef, headers HeaderList) {
 	list := make(dsl.HeaderList, 0, len(headers))
 	for _, header := range headers {
-		list = append(list, dsl.HeaderEntry{Name: header.Name, Value: header.Value})
+		list = append(list, dsl.HeaderEntry{Name: header.Name, Value: header.Value, Enabled: header.Enabled})
 	}
 	compatibility := list.ToMap()
 	if ref.Action != nil {
@@ -1252,7 +1252,11 @@ func enterpriseMapHeaderList(value any) dsl.HeaderList {
 			name, _ := entry["name"].(string)
 			headerValue, _ := entry["value"].(string)
 			if strings.TrimSpace(name) != "" {
-				out = append(out, dsl.HeaderEntry{Name: name, Value: headerValue})
+				header := dsl.HeaderEntry{Name: name, Value: headerValue}
+				if enabled, ok := entry["enabled"].(bool); ok {
+					header.Enabled = &enabled
+				}
+				out = append(out, header)
 			}
 		}
 		return out
@@ -1281,6 +1285,9 @@ func enterpriseStringMap(value any) map[string]string {
 func enterpriseHeaderValue(headers HeaderList, name string) string {
 	value := ""
 	for _, header := range headers {
+		if header.Enabled != nil && !*header.Enabled {
+			continue
+		}
 		if strings.EqualFold(strings.TrimSpace(header.Name), strings.TrimSpace(name)) {
 			value = header.Value
 		}

@@ -19,6 +19,7 @@ var runMonitoringAPIRouteCatalog = apiRouteCatalog{Domain: "run-monitoring", Rou
 	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/monitor-series", "handleRunMonitorSeries", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleRunMonitorSeries) }),
 	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/monitor-management", "handleMonitorManagement", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleMonitorManagement) }),
 	newPublicAPIRoute(http.MethodPost, "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/management-polls", "handleManagementPoll", func(s *Server) http.Handler { return http.HandlerFunc(s.handleManagementPoll) }),
+	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/monitor-evidence", "handleRunMonitorEvidence", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleRunMonitorEvidence) }),
 	newPublicAPIRoute(http.MethodGet, "/api/v1/monitoring/collectors/{id}/jobs", "handlePollRunMonitorJobs", func(s *Server) http.Handler { return http.HandlerFunc(s.handlePollRunMonitorJobs) }),
 	newPublicAPIRoute(http.MethodPost, "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/samples", "handleRunMonitorSamples", func(s *Server) http.Handler { return http.HandlerFunc(s.handleRunMonitorSamples) }),
 }}

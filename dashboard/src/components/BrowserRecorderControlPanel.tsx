@@ -26,6 +26,9 @@ import {
   type HttpURLScheme,
 } from '../utils/httpUrlInput'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
+import AuraOutcomeReview from './AuraOutcomeReview'
+import RecordingEnvironmentReview from './RecordingEnvironmentReview'
+import { recordingEnvironmentFingerprint } from './recordingEnvironmentModel'
 import BrowserReplayProgress, { type BrowserReplayProgressProps } from './BrowserReplayProgress'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import ParameterizationReview from './ParameterizationReview'
@@ -334,16 +337,17 @@ export default function BrowserRecorderControlPanel({
     }, 4000)
   }
 
+  const agentReported = !!api.browserRecorderBridge
   const recordingFingerprintRef = useRef('')
   const acceptRecordingSession = useCallback((next: BrowserRecorderSession) => {
-    const fingerprint = JSON.stringify([next.id, next.steps, next.markers, next.start_url, next.device_profile])
+    const fingerprint = JSON.stringify([next.id, next.steps, next.markers, next.start_url, next.device_profile, recordingEnvironmentFingerprint(next.recording_environment, agentReported)])
     if (recordingFingerprintRef.current && recordingFingerprintRef.current !== fingerprint) {
       invalidateVerification()
       previewRequestKeyRef.current = ''
     }
     recordingFingerprintRef.current = fingerprint
     setSession(next)
-  }, [invalidateVerification])
+  }, [invalidateVerification, agentReported])
 
   const refresh = useCallback(async () => {
     const inFlight = refreshInFlightRef.current
@@ -1623,6 +1627,8 @@ export default function BrowserRecorderControlPanel({
         </div>
       </div>
 
+      <RecordingEnvironmentReview environment={session.recording_environment} declaredPreset={session.device_profile} agentReported={!!api.browserRecorderBridge} live showUnavailable />
+
       <div className="brp-actions">
         {controllable && (
           <button className="btn btn-danger" onClick={handleStop} disabled={busy}>
@@ -1962,6 +1968,7 @@ export default function BrowserRecorderControlPanel({
               {importResultScripts(preview).map((script, index) => (
                 <section key={index} className="brp-output-review" aria-label={`Output ${index + 1}: ${script.name}`}>
                   <strong>{script.name} · {script.protocol}</strong>
+                  <RecordingEnvironmentReview script={script} agentReported={!!api.browserRecorderBridge} showUnavailable />
                   <p>{script.init?.length || 0} init · {script.actions?.length || 0} main · {script.teardown?.length || 0} teardown actions</p>
                   <p role="status">{outputReports[index] ? outputReports[index].success ? 'Verification passed for this conversion' : 'Verification incomplete or failed — review evidence' : 'Unverified draft'}</p>
                   <details><summary>Journey and dependencies</summary>
@@ -2052,6 +2059,7 @@ export default function BrowserRecorderControlPanel({
                 {salesforceReview?.har_match_coverage &&
                   ` · ${Math.round(salesforceReview.har_match_coverage.coverage_pct || 0)}% HAR coverage`}
               </div>
+              <AuraOutcomeReview report={salesforceReview?.aura_outcomes} />
               {(salesforceDraft.warnings?.length ?? 0) > 0 && (
                 <div className="brp-warnings">
                   {salesforceDraft.warnings.slice(0, 4).map((warning, idx) => (

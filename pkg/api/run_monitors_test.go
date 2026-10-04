@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,6 +86,27 @@ func TestRunMonitoringAPIArtifactsAndRetry(t *testing.T) {
 	p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: "proj-a", RunID: "monitor-run", ScenarioID: "monitor-scenario", Source: source.ID, Host: "monitor-collector", TimestampUTC: now, MetricName: "goroutines", Unit: "count", Kind: analysis.KindGauge, Quality: analysis.QualityValid, Value: &v}
 	batch := collectoragent.RunSampleBatch{Job: envelopes[0], Points: []analysis.MetricPoint{p}}
 	path := "/api/v1/monitoring/collectors/monitor-collector/jobs/" + jobs[0].ID + "/samples"
+	// Governed providers use their typed ingestion branch. A generic signed host
+	// grant cannot manufacture provider-origin/settled bucket provenance.
+	for _, provider := range []*analysis.ProviderMeasurement{
+		{Name: "appdynamics", MetricID: "forged", Mode: "interval_bucket", BucketStart: now, BucketEnd: now.Add(time.Second), ResolutionSeconds: 1, Statistic: "avg", Settled: true, AggregationEligible: true},
+		{Name: "prometheus", MetricID: "forged", QueryID: "query", DefinitionHash: strings.Repeat("a", 64), BackendProfile: "prometheus", Mode: "evaluation_point", Statistic: "gauge", EvaluationStepSeconds: 15, Settled: true},
+	} {
+		forged := p
+		forged.Provider = provider
+		if err := forged.Validate(); err != nil {
+			t.Fatalf("otherwise valid provider point: %v", err)
+		}
+		refused := collectoragent.RunSampleBatch{Job: envelopes[0], Points: []analysis.MetricPoint{forged}}
+		if reply := collectorRequest(t, server, http.MethodPost, path, "monitor-token", refused); reply.Code != 400 {
+			t.Fatalf("generic collector forged %s origin: %d %s", provider.Name, reply.Code, reply.Body.String())
+		}
+		current, err := store.(storage.RunMonitorStore).GetRunMonitorJob("proj-a", jobs[0].ID)
+		receipts, receiptErr := store.(storage.RunMonitorStore).ListMonitorBatchReceipts("proj-a", "monitor-run", "", -1, 10)
+		if err != nil || receiptErr != nil || current.NextSequence != 0 || len(receipts) != 0 {
+			t.Fatal("refused provider origin advanced durable evidence", current, receipts, err, receiptErr)
+		}
+	}
 	for i := 0; i < 2; i++ {
 		reply := collectorRequest(t, server, http.MethodPost, path, "monitor-token", batch)
 		if reply.Code != 200 {

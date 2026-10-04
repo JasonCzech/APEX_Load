@@ -961,8 +961,8 @@ func TestConvertSession_PreservesAndCorrelatesRepeatedRequestHeaders(t *testing.
 	if len(result.Correlations) != 1 {
 		t.Fatalf("correlations = %#v, want repeated response-header correlation", result.Correlations)
 	}
-	if got := result.Script.Actions[1].Headers["X-Request-ID"]; got != "fixed-client" {
-		t.Fatalf("summary header = %q, want first-value compatibility summary", got)
+	if got := result.Script.Actions[1].Headers["X-Request-ID"]; got != "{{var.corr_x_request_id}}" {
+		t.Fatalf("summary header = %q, want the shared finalizer's last-value compatibility summary", got)
 	}
 	list := result.Script.Actions[1].HeaderList
 	if len(list) != 2 || list[0].Name != "X-Request-ID" || list[0].Value != "fixed-client" || list[1].Value != "{{var.corr_x_request_id}}" {
@@ -1189,8 +1189,11 @@ func TestConvertSession_TransactionMetadata(t *testing.T) {
 	if got := result.Script.Actions[0].Metadata["source_transaction"]; got != "Login" {
 		t.Fatalf("expected source_transaction=Login on first action, got %v", got)
 	}
-	if result.Script.Actions[1].Metadata != nil {
-		t.Fatalf("expected no metadata on action without transaction, got %v", result.Script.Actions[1].Metadata)
+	if result.Script.Actions[1].Metadata["source_transaction"] != nil {
+		t.Fatalf("unexpected transaction on action without transaction, got %v", result.Script.Actions[1].Metadata)
+	}
+	if result.Script.Actions[1].Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatal("legacy recording without observed versions lost its source review gate")
 	}
 }
 

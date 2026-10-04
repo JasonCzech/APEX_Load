@@ -165,21 +165,22 @@ func trimPtr(s *string) string {
 func executionPlanRunEntrySnapshot(entry storage.ExecutionPlanEntry, runName, attribSubject, attribName string, effectiveTimeslot *string, approval *storage.ExecutionPlanApproval, actors ...testCreationActor) storage.ExecutionPlanRunEntry {
 	actor := executionPlanCreationActor(attribSubject, attribName, actors...)
 	return storage.ExecutionPlanRunEntry{
-		Order:            entry.Order,
-		ScenarioID:       entry.ScenarioID,
-		ScenarioName:     entry.ScenarioName,
-		Status:           "pending",
-		FailurePolicy:    entry.FailurePolicy,
-		RuntimeOverrides: append(json.RawMessage(nil), entry.RuntimeOverrides...),
-		DataPools:        append([]storage.ScenarioDataPoolBinding(nil), entry.DataPools...),
-		TimeslotID:       cloneStringPtr(effectiveTimeslot),
-		RunName:          runName,
-		AttribSubject:    strings.TrimSpace(attribSubject),
-		AttribName:       strings.TrimSpace(attribName),
-		ActorType:        actor.Type,
-		ActorSubject:     actor.Subject,
-		ActorDisplayName: actor.DisplayName,
-		ApprovalID:       approvalID(approval),
+		Order:               entry.Order,
+		ScenarioID:          entry.ScenarioID,
+		ScenarioName:        entry.ScenarioName,
+		Status:              "pending",
+		FailurePolicy:       entry.FailurePolicy,
+		RuntimeOverrides:    append(json.RawMessage(nil), entry.RuntimeOverrides...),
+		DataPools:           append([]storage.ScenarioDataPoolBinding(nil), entry.DataPools...),
+		TimeslotID:          cloneStringPtr(effectiveTimeslot),
+		RunName:             runName,
+		AttribSubject:       strings.TrimSpace(attribSubject),
+		AttribName:          strings.TrimSpace(attribName),
+		ActorType:           actor.Type,
+		ActorSubject:        actor.Subject,
+		ActorDisplayName:    actor.DisplayName,
+		ActivityInitiatedBy: actor.InitiatedBy,
+		ApprovalID:          approvalID(approval),
 	}
 }
 
@@ -203,6 +204,7 @@ func executionPlanRunEntryCreationActor(entry storage.ExecutionPlanRunEntry) tes
 			Type:        entry.ActorType,
 			Subject:     entry.ActorSubject,
 			DisplayName: entry.ActorDisplayName,
+			InitiatedBy: entry.ActivityInitiatedBy,
 		})
 	}
 	// A legacy row cannot prove whether its attribution subject was a user or a

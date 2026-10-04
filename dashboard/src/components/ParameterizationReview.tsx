@@ -8,6 +8,9 @@ import {
 } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import AuraParameterLocationDetails from './AuraParameterLocationDetails'
+import AuraParameterizationCoverage from './AuraParameterizationCoverage'
+import { isAuraParameterLocation } from './auraParameterLocationModel'
 import './ParameterizationReview.css'
 
 interface Props {
@@ -53,7 +56,12 @@ function initialSelection(suggestions: ParameterizationSuggestion[]): Record<str
   return initial
 }
 
+function isAuraSuggestion(suggestion: ParameterizationSuggestion): boolean {
+  return suggestion.locations?.some(isAuraParameterLocation) ?? false
+}
+
 function suggestionDisplayValue(suggestion: ParameterizationSuggestion): string {
+  if (isAuraSuggestion(suggestion)) return 'Captured value hidden'
   if (suggestion.kind === 'secret' || suggestion.high_risk) return '••••••'
   return suggestion.sample_value || suggestion.literal_value || 'Detected value'
 }
@@ -66,6 +74,13 @@ function diffDisplayValue(
   const value = side === 'before' ? diff.before : diff.after
   if (!value) return value
   const suggestion = diff.suggestion_id ? suggestionsById.get(diff.suggestion_id) : undefined
+  if ((suggestion && isAuraSuggestion(suggestion)) || (!suggestion && [...suggestionsById.values()].some(isAuraSuggestion))) {
+    if (side === 'before') return 'Captured value hidden'
+    if (diff.kind === 'data_source_added') return 'Data source created'
+    if (diff.kind === 'parameter_added') return 'Parameter binding created'
+    if (diff.kind === 'extractor_added') return 'Correlation extractor added'
+    return suggestion && isAuraSuggestion(suggestion) && diff.kind === 'value_replaced' ? 'Decoded field updated' : 'Change applied'
+  }
   if (!suggestion || (suggestion.kind !== 'secret' && !suggestion.high_risk)) return value
   if (side === 'after' && value.includes('{{')) return value
   return '••••••'
@@ -144,7 +159,7 @@ export default function ParameterizationReview({ parameterization, script, scrip
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [parameterization, reviewIdentity, scriptName])
 
-  if (suggestions.length === 0) return null
+  if (suggestions.length === 0 && !parameterization.aura_payload) return null
 
   const suggestionPageCount = Math.max(1, Math.ceil(suggestions.length / SUGGESTION_PAGE_SIZE))
   const safeSuggestionPage = Math.min(suggestionPage, suggestionPageCount - 1)
@@ -219,17 +234,17 @@ export default function ParameterizationReview({ parameterization, script, scrip
       <div className="paramize-review-header">
         <div>
           <h4>{guided ? 'Parameter suggestions' : 'Parameterization Review'}{scriptName ? ` — ${scriptName}` : ''} ({suggestions.length})</h4>
-          <p>
-            Suggestions to review before running at load. Confirm whether each value is test data, application configuration, or session data.
-            High-confidence suggestions are pre-selected; review each row, then apply the selection.
-          </p>
+          <p>{suggestions.length > 0
+            ? 'Suggestions to review before running at load. Confirm whether each value is test data, application configuration, or session data. High-confidence suggestions are pre-selected; review each row, then apply the selection.'
+            : 'No selectable parameter suggestions were produced. Inspection coverage is shown below.'}</p>
         </div>
-        {!guided && <button className="btn btn-primary" onClick={handleApply} disabled={disabled || applying || selectedIds.length === 0}>
+        {!guided && suggestions.length > 0 && <button className="btn btn-primary" onClick={handleApply} disabled={disabled || applying || selectedIds.length === 0}>
           {applying ? 'Applying...' : `${applied ? 'Reapply' : 'Apply'} Selected (${selectedIds.length})`}
         </button>}
         {applied && <span className="paramize-applied-badge">Applied {diffs.length} change(s)</span>}
       </div>
 
+      {parameterization.aura_payload && <AuraParameterizationCoverage coverage={parameterization.aura_payload} />}
       {error && <div className="paramize-review-error">{error}</div>}
       {blockedReason && <div className="paramize-review-blocked">{blockedReason}</div>}
 
@@ -287,8 +302,15 @@ export default function ParameterizationReview({ parameterization, script, scrip
                   {suggestion.high_risk && <span className="paramize-high-risk">high risk</span>}
                   {suggestion.script_name && <span className="paramize-script-tag">{suggestion.script_name}</span>}
                 </label>
-                <p className="paramize-rationale">{suggestion.rationale}</p>
-                {suggestion.locations && suggestion.locations.length > 0 && (
+                <p className="paramize-rationale">{isAuraSuggestion(suggestion) ? 'Replace the selected decoded field and preserve its encoding.' : suggestion.rationale}</p>
+                {isAuraSuggestion(suggestion) && <div className="paramize-aura-locations">
+                  <p>{suggestion.locations!.length} occurrence(s). Captured payload values are hidden.</p>
+                  <ul>{suggestion.locations!.slice(0, LOCATION_PREVIEW_LIMIT).map((location, index) => <li key={index}>
+                    <AuraParameterLocationDetails location={location} />
+                  </li>)}</ul>
+                  {suggestion.locations!.length > LOCATION_PREVIEW_LIMIT && <p>{suggestion.locations!.length - LOCATION_PREVIEW_LIMIT} more occurrences. All are included when this suggestion is applied.</p>}
+                </div>}
+                {!isAuraSuggestion(suggestion) && suggestion.locations && suggestion.locations.length > 0 && (
                   <p className="paramize-locations">
                     {suggestion.locations.length} occurrence(s): {suggestion.locations.slice(0, LOCATION_PREVIEW_LIMIT).map(l => `${l.action_name || `${l.section}[${l.action_index}]`} (${l.field})`).join(', ')}
                     {suggestion.locations.length > LOCATION_PREVIEW_LIMIT ? `, and ${suggestion.locations.length - LOCATION_PREVIEW_LIMIT} more` : ''}
@@ -302,11 +324,11 @@ export default function ParameterizationReview({ parameterization, script, scrip
 
       {guided && reviewing && <section className="import-review-suggestion-preview" aria-label="Parameter suggestion preview">
         <h4>Review selected parameter changes</h4>
-        <p>{selectedIds.length} selected suggestions. These are proposed replacements; the server validates the changes when applied.</p>
-        <ul>{suggestions.filter(item => selectedIds.includes(item.id)).slice(0, SUGGESTION_PAGE_SIZE).map(item => <li key={item.id}><strong>{item.var_name}</strong>: <code>{suggestionDisplayValue(item)}</code> → <code>{item.replacement}</code>{item.high_risk && ' · High risk: explicitly selected'}</li>)}</ul>
+        <p>{selectedIds.length} selected {selectedIds.length === 1 ? 'suggestion' : 'suggestions'}. These are proposed replacements; the server validates the changes when applied.</p>
+        <ul>{suggestions.filter(item => selectedIds.includes(item.id)).slice(0, SUGGESTION_PAGE_SIZE).map(item => <li key={item.id}><strong>{item.var_name}</strong>: <code>{suggestionDisplayValue(item)}</code> → <code>{item.replacement}</code>{item.high_risk && ' · High risk: explicitly selected'}{isAuraSuggestion(item) && item.locations?.slice(0, LOCATION_PREVIEW_LIMIT).map((location, index) => <AuraParameterLocationDetails key={index} location={location} />)}</li>)}</ul>
         {selectedIds.length > SUGGESTION_PAGE_SIZE && <p>Showing the first {SUGGESTION_PAGE_SIZE}. Use the suggestion pages above to inspect all {selectedIds.length} selected changes.</p>}
       </section>}
-      {guided && <div className="import-review-suggestion-actions">
+      {guided && suggestions.length > 0 && <div className="import-review-suggestion-actions">
         <button type="button" className="btn btn-secondary btn-sm" disabled={disabled || applying || selectedIds.length === 0} onClick={() => { if (reviewing) void handleApply(); else setReviewing(true) }}>{applying ? 'Applying…' : reviewing ? 'Apply reviewed parameter changes' : 'Preview parameter changes'}</button>
         {reviewing && <button type="button" className="btn btn-secondary btn-sm" disabled={applying} onClick={() => setReviewing(false)}>Back to selection</button>}
         <small>Nothing changes until you apply.</small>

@@ -15,12 +15,27 @@ export interface GroupedImportWorkspaceIssue extends ImportWorkspaceIssue {
 
 const severityOrder: Record<IssueDetailSeverity, number> = { blocker: 0, error: 1, warning: 2, info: 3 }
 
+const responseContentSourceReasons = new Set([
+  'response_content_truncated', 'unsupported_response_content_encoding', 'invalid_response_content_encoding',
+  'response_content_decode_limit', 'response_content_decode_canceled', 'malformed_response_content_provenance',
+  'response_content_provenance_unavailable', 'invalid_har_content_storage', 'unsupported_har_content_storage',
+  'har_content_storage_limit',
+])
+
 function diagnosticCode(issue: ImportWorkspaceIssue) {
   return /\b([a-z][a-z0-9]+(?:_[a-z0-9]+){2,})\b/i.exec(issue.description || '')?.[1]?.toLowerCase() || ''
 }
 
 function issuePresentation(issue: ImportWorkspaceIssue): ImportWorkspaceIssue {
   const evidence = `${issue.title} ${issue.description || ''} ${issue.source || ''}`.toLowerCase()
+  if ((evidence.match(/[a-z][a-z0-9]*(?:_[a-z0-9]+)+/g) || []).some(code => responseContentSourceReasons.has(code))) return {
+    ...issue,
+    title: 'Review unavailable response content',
+    targetTab: 'source',
+    actionLabel: 'Inspect source evidence',
+    impact: 'The captured response is incomplete or its decoded content cannot be verified. It cannot supply faithful response correlations.',
+    resolution: 'Inspect the captured source, then provide a complete supported capture or replace the affected behavior and its source gate. A review note cannot clear this execution blocker.',
+  }
   if (evidence.includes('jmeter_unbounded_thread_group')) return { ...issue, title: 'Set a finite JMeter termination rule', targetTab: 'runtime', actionLabel: 'Edit runtime settings' }
   if (evidence.includes('source_order_unavailable') || /headers as a map.*order was synthesized/.test(evidence)) return {
     ...issue,

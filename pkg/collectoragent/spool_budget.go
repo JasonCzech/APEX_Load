@@ -45,7 +45,7 @@ func (b *collectorSpoolBudget) jobsFit(name string, jobs []string, active bool) 
 	for _, id := range jobs {
 		seen[id] = true
 	}
-	return len(seen) <= 32
+	return len(seen) <= maxCollectorSpoolJobs
 }
 func (b *collectorSpoolBudget) reserve(name string, jobs []string) error {
 	b.mu.Lock()

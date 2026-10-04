@@ -65,9 +65,15 @@ func RunScriptShakeoutWithRunIDAndSecretResolver(ctx context.Context, groupName 
 		runProtocolTeardown(proto, func() *RedactionConfig { return redactionConfig })
 		return fmt.Errorf("protocol init: %s", err)
 	}
-	defer runProtocolTeardown(proto, func() *RedactionConfig { return redactionConfig })
+	var vu *VUser
+	defer runProtocolTeardown(proto, func() *RedactionConfig {
+		if vu != nil {
+			return vu.resultPublicationRedactionConfig()
+		}
+		return redactionConfig
+	})
 
-	vu := &VUser{
+	vu = &VUser{
 		ID:                           0,
 		Group:                        groupName,
 		RunID:                        runID,

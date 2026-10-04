@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -86,6 +87,12 @@ type RunArchiveManifest struct {
 	MonitorManagementVersion          uint32                             `json:"monitor_management_version,omitempty"`
 	MonitorManagementSnapshotCount    int64                              `json:"monitor_management_snapshot_count,omitempty"`
 	MonitorManagementRowCount         int64                              `json:"monitor_management_row_count,omitempty"`
+	MonitorDiagnosticsFile            string                             `json:"monitor_diagnostics_file,omitempty"`
+	MonitorDiagnosticsCount           int64                              `json:"monitor_diagnostics_count,omitempty"`
+	FrozenMonitorRules                []analysis.MonitorRule             `json:"frozen_monitor_rules,omitempty"`
+	MonitorRulesFrozen                bool                               `json:"monitor_rules_frozen,omitempty"`
+	MonitoringStatus                  string                             `json:"monitoring_status,omitempty"`
+	MonitorRuleResults                []analysis.MonitorRuleResult       `json:"monitor_rule_results,omitempty"`
 	MonitorCoverage                   []RunMonitorCoverage               `json:"monitor_coverage,omitempty"`
 	Artifacts                         []RunArchiveArtifact               `json:"artifacts,omitempty"`
 	TransactionCount                  int64                              `json:"transaction_count"`
@@ -437,6 +444,8 @@ type RunArchiveIdentityNames struct {
 
 type RunArchiveReport struct {
 	MessagingProgress                 *protocol.MessagingProgressSnapshot    `json:"messaging_progress,omitempty"`
+	MonitorDiagnostics                []RunMonitorDiagnostic                 `json:"monitor_diagnostics,omitempty"`
+	MonitorRuleResults                []analysis.MonitorRuleResult           `json:"monitor_rule_results,omitempty"`
 	StatisticalFindings               []StatisticalFinding                   `json:"statistical_findings,omitempty"`
 	BaselineComparison                *BaselineComparisonSnapshot            `json:"baseline_comparison,omitempty"`
 	IdentityNames                     RunArchiveIdentityNames                `json:"identity_names"`

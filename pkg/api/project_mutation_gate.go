@@ -217,7 +217,7 @@ func (s *Server) projectMutationAdmission(next http.Handler) http.Handler {
 
 func (s *Server) projectMutationCoordinatedAuth(auth func(http.Handler) http.Handler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
-		coordinated := auth(s.projectMutationAdmission(next))
+		coordinated := auth(s.projectMutationAdmission(s.objectActivityMiddleware(next)))
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			coordinated.ServeHTTP(w, withProjectMutationAdmissionRequest(r))
 		})

@@ -1,3 +1,4 @@
+import type { MonitorRule } from './appdynamics'
 export type ScenarioMode = 'vuser_driven' | 'goal_oriented'
 
 export interface TransactionSLARule {
@@ -35,6 +36,7 @@ export interface TransactionResponseTimeSLAResult {
 
 /** Goal-oriented load targets and their live controller status. */
 export interface GoalConfig {
+  monitor_rules?: MonitorRule[]
 	/** Scenario-wide default SLA for each named business transaction. */
 	transaction_response_time_sla_ms?: number
   target_average_tps?: number

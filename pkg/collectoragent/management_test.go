@@ -484,14 +484,14 @@ func TestManagementSpoolRecoveryRetriesWithoutObserverOrOwnerRelabel(t *testing.
 func TestCollectorCombinedSpoolBudgetAndLegacyCompatibility(t *testing.T) {
 	budget := newCollectorSpoolBudget()
 	ids := []string{}
-	for i := 0; i < 32; i++ {
+	for i := 0; i < maxCollectorSpoolJobs; i++ {
 		ids = append(ids, strconv.Itoa(i))
 	}
 	if err := budget.restore("legacy", []byte("{}"), ids); err != nil {
 		t.Fatal(err)
 	}
 	if err := budget.reserve("management-active", []string{"extra"}); err == nil {
-		t.Fatal("combined job33 admitted")
+		t.Fatal("combined job beyond configured bound admitted")
 	}
 	if err := budget.reserve("management-active", ids[:2]); err != nil {
 		t.Fatal("same pending jobs double charged")
@@ -873,7 +873,7 @@ func TestCollectorSpoolCombinedStartupJobsAndCorruption(t *testing.T) {
 	value := 1.0
 	point := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: "p", Source: "s", MetricName: "cpu", Kind: analysis.KindGauge, Value: &value, Quality: analysis.QualityValid, TimestampUTC: time.Now().UTC()}
 	old := map[string]*RunSampleBatch{}
-	for i := 0; i < 32; i++ {
+	for i := 0; i < maxCollectorSpoolJobs; i++ {
 		old["old-"+strconv.Itoa(i)] = &RunSampleBatch{Sequence: 0, Points: []analysis.MetricPoint{point}}
 	}
 	body, _ := json.Marshal(collectorSpool{Version: 2, Pending: old})
@@ -891,7 +891,7 @@ func TestCollectorSpoolCombinedStartupJobsAndCorruption(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err = a.management.loadSpool(); err == nil {
-		t.Fatal("combined durable job33 silently admitted")
+		t.Fatal("combined durable job beyond configured bound silently admitted")
 	}
 	for _, bad := range []string{`{"version":2}`, `{"version":3,"pending":null}`, `{"version":3,"pending":[]}`} {
 		if err = os.WriteFile(a.spoolPath(), []byte(bad), 0600); err != nil {

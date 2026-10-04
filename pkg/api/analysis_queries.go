@@ -152,7 +152,7 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 	}
 	response := map[string]any{"left": left, "right": right, "request": q, "advisory": true, "interpretation": "Correlation is association, not proof of causation."}
 	if q.Mode == "overlay" {
-		if q.Left.Aggregation != q.Right.Aggregation || len(left) > 0 && len(right) > 0 && (left[0].Unit == "" || right[0].Unit == "" || left[0].Unit != right[0].Unit || left[0].Kind != right[0].Kind || left[0].InputKind != right[0].InputKind) {
+		if q.Left.Aggregation != q.Right.Aggregation || len(left) > 0 && len(right) > 0 && !analysis.CompatibleOverlay(left[0], right[0]) {
 			writeError(w, 422, "incompatible units or measurement semantics prevent overlay")
 			return
 		}
@@ -221,7 +221,12 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 		return nil, "", errors.New("run not found in project")
 	}
 	points := []analysis.MetricPoint{}
+	exactPrometheusWindow := false
 	appendPoint := func(p analysis.MetricPoint) error {
+		if p.Provider != nil && p.Provider.Name == "prometheus" && p.Provider.Mode == "query_window" {
+			exactPrometheusWindow = true
+			return nil
+		}
 		if p.TimestampUTC.Before(q.From) || !p.TimestampUTC.Before(q.To) {
 			return nil
 		}
@@ -235,6 +240,33 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 		store, ok := s.store.(storage.RunMonitorStore)
 		if !ok {
 			return nil, "", errors.New("monitor storage unavailable")
+		}
+		job, jobErr := store.GetRunMonitorJob(project, selection.RunID+":"+selection.SourceID)
+		if jobErr == nil && job.Source.CanonicalProvider() {
+			after := ""
+			for n := 0; n < 100; n++ {
+				page, err := loadCanonicalMonitorData(ctx, store, project, selection.RunID, selection.SourceID, "point", after, 999)
+				if err != nil {
+					return nil, "", err
+				}
+				for _, p := range page.Points {
+					if p.MetricName == selection.Metric && matchesAnalysisDimensions(p, selection) {
+						p.RelativeTimeMS = nil
+						if err := appendPoint(p); err != nil {
+							return nil, "", err
+						}
+					}
+				}
+				if !page.HasMore {
+					if len(points) == 0 && exactPrometheusWindow {
+						return nil, "", errors.New("exact-window Prometheus results cannot be rebucketed into intervals; select evaluation timeline evidence")
+					}
+					result, err := analysis.BucketSeries(points, q.From, q.To, q.BucketSeconds, selection.Aggregation)
+					return result, selection.RunID, err
+				}
+				after = page.AfterKey
+			}
+			return nil, "", errors.New("monitor scan exceeds canonical budget")
 		}
 		afterJob, afterSequence := "", int64(-1)
 		for page := 0; ; page++ {

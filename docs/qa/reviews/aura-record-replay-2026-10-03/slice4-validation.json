@@ -1,0 +1,66 @@
+{
+  "slice": 4,
+  "status": "complete",
+  "scope": "bounded correlation observations, exact original-source and native-at-import reference review",
+  "independent_review": {
+    "remaining_actionable_findings": 0,
+    "final_peer_re_reviews": 3,
+    "root_review_and_six_viewport_screenshots": "passed"
+  },
+  "go": {
+    "affected_packages": "passed",
+    "salesforce_full_package_seconds": 6.082,
+    "salesforce_focused_race_runs": 3,
+    "salesforce_focused_race_seconds": 2.672,
+    "api_focused_seconds": 2.623,
+    "api_focused_race_runs": 2,
+    "api_focused_race_seconds": 31.891,
+    "race_order": "shuffled",
+    "full_integrated_suite": "required before series merge"
+  },
+  "dashboard": {
+    "affected_unit_files": 10,
+    "affected_unit_tests": 180,
+    "final_dashboard_and_e2e_typecheck": "passed",
+    "global_lint": "passed",
+    "final_e2e_lint": "passed",
+    "production_build": "passed",
+    "real_browser_profiles": {
+      "dev-admin": {
+        "passed": 23,
+        "optional_skipped": 1
+      },
+      "local-auth": {
+        "passed": 23,
+        "optional_skipped": 1
+      }
+    },
+    "screenshot_kind": "visible desktop/narrow viewport; no claim that the entire nested pane is rendered at once",
+    "visually_reviewed_synthetic_screenshots": 6
+  },
+  "source_evidence": {
+    "discovered_correlations": 510,
+    "consumer_request_references": 8848,
+    "source_linked_producers": 290,
+    "source_linked_consumers": 7171,
+    "constructed_preview_mapped_producers": 290,
+    "constructed_preview_mapped_consumers": 7171,
+    "retained_rows": 149,
+    "retained_consumer_references": 3642,
+    "all_capture_coverage_complete": false,
+    "private_hosts_contacted": 0,
+    "boundary": "offline native-preview construction; final API path chain not executed by the count probe"
+  },
+  "qualification": {
+    "synthetic_import_save_reopen_and_loopback_diagnosis": "tested",
+    "physical_chrome_ipad": "not tested",
+    "live_salesforce_fresh_session": "not tested"
+  },
+  "documentation": {
+    "check_docs": "passed",
+    "active_markdown_files": 103,
+    "qa_generated_freshness": "passed",
+    "dsl_api_generated_freshness": "passed",
+    "diff_check": "passed"
+  }
+}

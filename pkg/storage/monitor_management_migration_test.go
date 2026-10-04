@@ -23,7 +23,7 @@ func removeManagementFoundationSchema(t *testing.T, db *storeDB) {
 			}
 		}
 	}
-	if _, e := db.Exec(`DELETE FROM schema_migrations WHERE version=28`); e != nil {
+	if _, e := db.Exec(`DELETE FROM schema_migrations WHERE version=32`); e != nil {
 		t.Fatal(e)
 	}
 }
@@ -48,7 +48,7 @@ func assertManagementLegacyUpgrade(t *testing.T, s *SQLiteStore, m MonitorSource
 	t.Helper()
 	status, e := s.SchemaStatus()
 	if e != nil || status.AppliedVersion != currentSchemaRelease().Version {
-		t.Fatalf("release28 migration: %#v %v", status, e)
+		t.Fatalf("release32 migration: %#v %v", status, e)
 	}
 	r, e := s.ListMonitorBatchReceipts(m.ProjectID, "monitor-run", "", -1, 10)
 	if e != nil || len(r) != 1 {
@@ -63,8 +63,8 @@ func assertManagementLegacyUpgrade(t *testing.T, s *SQLiteStore, m MonitorSource
 		t.Fatalf("legacy readiness acquired authority: %#v %v", instance, e)
 	}
 }
-func TestSQLiteManagementRelease28UpgradesPopulatedRelease27(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "legacy27.db")
+func TestSQLiteManagementRelease32UpgradesPopulatedRelease31(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy31.db")
 	s, e := NewSQLiteStore(path)
 	if e != nil {
 		t.Fatal(e)

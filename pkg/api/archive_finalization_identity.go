@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -145,5 +146,14 @@ func (tr *TestRunner) commitArchiveFinalization(job *storage.ArchiveFinalization
 		}
 		return false, tr.enqueueArchiveVersionCleanup(job.ProjectID, &job.ArchiveRecord)
 	}
+	name := ""
+	initiatedBy := ""
+	if tr.testStore != nil {
+		if test, err := tr.testStore.GetTest(job.TestID); err == nil && test != nil {
+			name = test.Name
+			initiatedBy = test.CreatedBySubject
+		}
+	}
+	tr.recordBackgroundActivity(&storage.ObjectActivityEvent{ID: "archive:" + job.TestID + ":" + job.IntentToken, Action: "archive", ActorType: "system", ActorSubject: "archive-finalizer", ActorDisplayName: "Automatic result archiving", InitiatedBy: initiatedBy, ProjectID: job.ProjectID, ResourceType: "test", ResourceID: job.TestID, ResourceName: name, Status: "success", CreatedAt: time.Now().UTC()})
 	return true, nil
 }

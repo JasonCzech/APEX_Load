@@ -1,3 +1,5 @@
+import ObjectHistory, { ActivityAttribution } from './ObjectHistory'
+import ObjectArchiveControls from './ObjectArchiveControls'
 import { assignmentSummary } from './libraryAssignmentModel'
 import LibraryPagination from './LibraryPagination'
 import { useLibraryPagination } from './useLibraryPagination'
@@ -39,6 +41,7 @@ export interface ScriptLibraryGitHub {
 }
 
 interface Props {
+  onArchiveChanged?: () => void | Promise<void>
   scripts: StoredScript[]
   folders?: Folder[]
   sortField: ScriptLibrarySortField
@@ -214,6 +217,7 @@ function prioritizeHealthInputs(inputs: AuthoringHealthInput[]) {
 }
 
 export default function ScriptsLibraryTable({
+  onArchiveChanged,
   scripts,
   folders = [],
   sortField,
@@ -430,6 +434,7 @@ export default function ScriptsLibraryTable({
                     >
                       {script.name}
                     </button>
+                    <ActivityAttribution activity={script.activity} />
                     <div className="script-table-meta">
                       <span className="protocol-badge">{script.protocol}</span>
                       <span className="script-health-token">v{script.version || '—'}</span>
@@ -564,11 +569,12 @@ export default function ScriptsLibraryTable({
                       </span>
                     ) : canManageScripts ? (
                       <>
-                        <button className="btn btn-sm btn-ghost" disabled={movingScriptIds.has(scriptId)} onClick={(event) => { event.stopPropagation(); onEdit(scriptId) }}>Edit</button>
+                        <button className="btn btn-sm btn-ghost" disabled={movingScriptIds.has(scriptId)} onClick={(event) => { event.stopPropagation(); onEdit(scriptId) }}>{script.archived_at ? "View" : "Edit"}</button>
+                        <ObjectArchiveControls resourceType="script" resourceId={scriptId} archivedAt={script.archived_at} updatedAt={script.script?.updated_at} canManage={!!canManageScripts} onChanged={onArchiveChanged || (() => undefined)} />
                         <RowActions className="library-more-actions">
-                        {onChangeAssignment && <button className="btn btn-sm btn-ghost" disabled={deletingScriptIds.has(scriptId) || movingScriptIds.has(scriptId)} onClick={() => onChangeAssignment(script)}>Change application/releases…</button>}
-                        {onMove && <button className="btn btn-sm btn-ghost" disabled={deletingScriptIds.has(scriptId) || movingScriptIds.has(scriptId)} onClick={() => onMove(script)}>Move to folder…</button>}
-                        {configureSecretsAvailable && (
+                        {!script.archived_at && onChangeAssignment && <button className="btn btn-sm btn-ghost" disabled={deletingScriptIds.has(scriptId) || movingScriptIds.has(scriptId)} onClick={() => onChangeAssignment(script)}>Change application/releases…</button>}
+                        {!script.archived_at && onMove && <button className="btn btn-sm btn-ghost" disabled={deletingScriptIds.has(scriptId) || movingScriptIds.has(scriptId)} onClick={() => onMove(script)}>Move to folder…</button>}
+                        {!script.archived_at && configureSecretsAvailable && (
                           <button className="btn btn-sm btn-secondary" onClick={(event) => { event.stopPropagation(); onConfigureSecrets?.(script) }}>Configure secrets</button>
                         )}
                         {secretStatusUnknown && secretStatusState === 'error' && onRetrySecretStatus && (
@@ -604,6 +610,7 @@ export default function ScriptsLibraryTable({
                 </tr>
                 {scriptAddressable && expandedScriptId === scriptId && (
                   <tr data-table-detail="true" className="no-hover" id={`script-runs-${scriptId}`}>
+                        <ObjectHistory key={scriptId} projectId={script.project_id} resourceType="script" resourceId={scriptId} activity={script.activity} />
                     <td colSpan={columnCount} style={{ background: 'var(--bg-primary)' }}>
                       <div style={{ padding: '10px 4px' }}>
                         <div className="cell-muted" style={{ marginBottom: 8 }}>

@@ -11,6 +11,8 @@ Each report merges what used to be separate audit, implementation, code review, 
 | File | Date | Status | Purpose |
 | --- | --- | --- | --- |
 | [feature-completion-eh-progress-2026-10-03/README.md](feature-completion-eh-progress-2026-10-03/README.md) | 2026-10-03 | Progress evidence reviewed; strict pause and provider qualification open | Bounded standalone processor generations, exact positions, checkpoint/tail qualification, durable history and authorized API/CLI/dashboard/report parity. |
+| [aura-record-replay-2026-10-03/implementation.md](aura-record-replay-2026-10-03/implementation.md) | 2026-10-03 | Implementation slices in progress | Aura outcomes, React recording/replay, correlation, device identity and HTTP/debugger fidelity; each slice is tested and independently reviewed before commit. |
+| [web-record-replay-roadmap-2026-10-03/roadmap.md](web-record-replay-roadmap-2026-10-03/roadmap.md) | 2026-10-03 | Roadmap delivered; live device/session qualification open | Evidence-backed VuGen/browser priorities for React, Salesforce Aura and Chrome on a physical iPad. |
 | [java-dependency-import-2026-10-01/import-review.md](java-dependency-import-2026-10-01/import-review.md) | 2026-10-01 to 2026-10-02 | Import/save/reopen complete; replay gated | Java VuGen settings, supplemental dependency provenance, stored JAR binding fidelity, independent code review and durable review navigation. |
 | [clm-import-2026-10-01/import-review.md](clm-import-2026-10-01/import-review.md) | 2026-10-01 | Import/save/reopen complete; original replay prerequisites remain | ZIP/USZ collection fidelity, governed Java/Kafka settings, independent code review, and durable native-script navigation. |
 | [truclient-import-2026-10-01/import-review.md](truclient-import-2026-10-01/import-review.md) | 2026-10-01 | Import/save/reopen complete; replay gated | Source settings, browser-profile policy, parameter/data and transaction accounting, with saved authoring-review evidence. |
@@ -26,6 +28,7 @@ Each report merges what used to be separate audit, implementation, code review, 
 
 | File | Date | Purpose |
 | --- | --- | --- |
+| [committed-publication-2026-10-04/README.md](committed-publication-2026-10-04/README.md) | 2026-10-04 | Reviewed composition of completed messaging/native slices with newer main; compatibility, ownership, archive, API and dashboard corrections with actual gate receipts. Full program remains paused. |
 | [AUDITS_2026-09.md](../../archive/qa-reviews/AUDITS_2026-09.md) | 2026-09-06 to 2026-09-20 | Single archive file with one section per completed review: UX consistency, post-test reporting, end-to-end UX, the 2026-09-12 audits (access, Command Center, landing dashboard, Import From Source, New Test, Results and Repository, Scenario Builder, Script and Scenario Library), Dashboard UX reviews, personal/admin settings and execution results design QA, and the Bruno, import consistency and early LoadRunner review records. Captures stay in the sibling folders under `docs/archive/qa-reviews/` |
 
 ## Frontend review captures, 2026-09-06

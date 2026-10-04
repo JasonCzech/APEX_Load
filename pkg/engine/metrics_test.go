@@ -133,23 +133,29 @@ func TestMetricsCollectorStopFlushesTrailingPartialWindow(t *testing.T) {
 	mc.Stop()
 }
 
-func waitForMetricsCollectorSnapshot(t *testing.T, mc *MetricsCollector) MetricsSnapshot {
+// waitForMetricsSnapshot waits for published state rather than assuming that
+// scheduling and resource sampling always finish within a fixed short sleep.
+func waitForMetricsSnapshot(t *testing.T, mc *MetricsCollector, accept func(MetricsSnapshot) bool) MetricsSnapshot {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if snap, ok := mc.LatestSnapshot(); ok {
-			return snap
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	poll := time.NewTicker(5 * time.Millisecond)
+	defer poll.Stop()
+	for {
+		if snapshot, ok := mc.LatestSnapshot(); ok && accept(snapshot) {
+			return snapshot
 		}
-		time.Sleep(5 * time.Millisecond)
+		select {
+		case <-poll.C:
+		case <-deadline.C:
+			t.Fatal("timed out waiting for the expected published metrics snapshot")
+			return MetricsSnapshot{}
+		}
 	}
-	t.Fatal("timed out waiting for a published metrics snapshot")
-	return MetricsSnapshot{}
 }
 
 func TestMetricsCollector_AggregateProducesSnapshot(t *testing.T) {
 	mc := NewMetricsCollector(100)
-	// Queue all samples before aggregation so they belong to one window even
-	// when the test goroutine is delayed by other package work.
 	for i := 0; i < 10; i++ {
 		mc.Record(&protocol.Result{
 			ActionName: "test",
@@ -158,9 +164,14 @@ func TestMetricsCollector_AggregateProducesSnapshot(t *testing.T) {
 		})
 	}
 
+	// Buffer the complete sample window before starting its ticker.
 	mc.Start(50 * time.Millisecond)
 	defer mc.Stop()
-	snap := waitForMetricsCollectorSnapshot(t, mc)
+
+	snap := waitForMetricsSnapshot(t, mc, func(snapshot MetricsSnapshot) bool {
+		action := snapshot.ByAction["test"]
+		return action != nil && action.Count == 10
+	})
 	if snap.Transactions != 0 {
 		t.Errorf("transactions = %d, want 0 for raw action samples", snap.Transactions)
 	}
@@ -179,7 +190,7 @@ func TestMetricsCollector_AggregateProducesIdleSnapshot(t *testing.T) {
 	mc.Start(50 * time.Millisecond)
 	defer mc.Stop()
 
-	snap := waitForMetricsCollectorSnapshot(t, mc)
+	snap := waitForMetricsSnapshot(t, mc, func(MetricsSnapshot) bool { return true })
 	if snap.Transactions != 0 {
 		t.Errorf("transactions = %d, want 0", snap.Transactions)
 	}
@@ -233,17 +244,27 @@ func TestMetricsCollector_EmptyWindowSnapshotEmission(t *testing.T) {
 			defer mc.Stop()
 
 			if !tt.wantSnapshot {
-				// Preserve a multi-tick observation period for the negative idle
-				// case: it must not publish an empty snapshot.
-				time.Sleep(90 * time.Millisecond)
-				if _, ok := mc.LatestSnapshot(); ok {
-					t.Fatal("idle window unexpectedly published a snapshot")
+				// Observe several tick intervals explicitly. No snapshot should
+				// appear anywhere in this truly idle, unchanged window.
+				observation := time.NewTimer(100 * time.Millisecond)
+				defer observation.Stop()
+				poll := time.NewTicker(5 * time.Millisecond)
+				defer poll.Stop()
+				for {
+					if _, ok := mc.LatestSnapshot(); ok {
+						t.Fatal("idle window published an unexpected snapshot")
+					}
+					select {
+					case <-poll.C:
+					case <-observation.C:
+						if _, ok := mc.LatestSnapshot(); ok {
+							t.Fatal("idle window published an unexpected snapshot")
+						}
+						return
+					}
 				}
-				return
 			}
-			// A positive assertion requires completed publication, rather than
-			// assuming resource sampling finishes within a fixed tick count.
-			snap := waitForMetricsCollectorSnapshot(t, mc)
+			snap := waitForMetricsSnapshot(t, mc, func(MetricsSnapshot) bool { return true })
 			if snap.Transactions != 0 || snap.Errors != 0 {
 				t.Errorf("empty-window snapshot tx/err = %d/%d, want 0/0", snap.Transactions, snap.Errors)
 			}
@@ -367,20 +388,19 @@ func TestMetricsCollector_NonEmptyWindowUnaffected(t *testing.T) {
 
 func TestMetricsCollector_ByAction(t *testing.T) {
 	mc := NewMetricsCollector(100)
-	mc.Start(50 * time.Millisecond)
-	defer mc.Stop()
-
 	mc.Record(&protocol.Result{ActionName: "login", Success: true, Duration: 10 * time.Millisecond, BytesSent: 100, BytesReceived: 500})
 	errorAt := time.Date(2026, time.May, 18, 10, 30, 0, 0, time.UTC)
 	mc.Record(&protocol.Result{ActionName: "login", Success: false, Duration: 20 * time.Millisecond, StartTime: errorAt, StatusCode: 503, ErrorMessage: "timeout"})
 	mc.Record(&protocol.Result{ActionName: "checkout", Success: true, Duration: 5 * time.Millisecond})
 
-	time.Sleep(150 * time.Millisecond)
+	// Buffer the complete sample window before starting its ticker.
+	mc.Start(50 * time.Millisecond)
+	defer mc.Stop()
 
-	snap, ok := mc.LatestSnapshot()
-	if !ok {
-		t.Fatal("expected snapshot")
-	}
+	snap := waitForMetricsSnapshot(t, mc, func(snapshot MetricsSnapshot) bool {
+		login, checkout := snapshot.ByAction["login"], snapshot.ByAction["checkout"]
+		return login != nil && login.Count == 2 && checkout != nil && checkout.Count == 1
+	})
 
 	login, ok := snap.ByAction["login"]
 	if !ok {
@@ -407,16 +427,18 @@ func TestMetricsCollector_ByAction(t *testing.T) {
 
 func TestMetricsCollector_ByGroup(t *testing.T) {
 	mc := NewMetricsCollector(100)
-	mc.Start(50 * time.Millisecond)
-	defer mc.Stop()
-
 	mc.RecordTransaction("checkout", 10*time.Millisecond, true, "buyers")
 	mc.RecordTransaction("checkout", 20*time.Millisecond, true, "buyers")
 	mc.RecordTransaction("listing", 5*time.Millisecond, true, "sellers")
 
-	time.Sleep(150 * time.Millisecond)
+	// Buffer the complete sample window before starting its ticker.
+	mc.Start(50 * time.Millisecond)
+	defer mc.Stop()
 
-	snap, _ := mc.LatestSnapshot()
+	snap := waitForMetricsSnapshot(t, mc, func(snapshot MetricsSnapshot) bool {
+		buyers, sellers := snapshot.ByGroup["buyers"], snapshot.ByGroup["sellers"]
+		return buyers != nil && buyers.Transactions == 2 && sellers != nil && sellers.Transactions == 1
+	})
 	buyers, ok := snap.ByGroup["buyers"]
 	if !ok {
 		t.Fatal("missing group 'buyers'")
@@ -590,19 +612,18 @@ func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 
 func TestMetricsCollector_RecordTransaction(t *testing.T) {
 	mc := NewMetricsCollector(100)
+	mc.RecordTransaction("iteration_1", 100*time.Millisecond, true, "group-a")
+
+	// Buffer the complete sample window before starting its ticker.
 	mc.Start(50 * time.Millisecond)
 	defer mc.Stop()
 
-	mc.RecordTransaction("iteration_1", 100*time.Millisecond, true, "group-a")
+	snap := waitForMetricsSnapshot(t, mc, func(snapshot MetricsSnapshot) bool {
+		transaction := snapshot.ByTransaction["iteration_1"]
+		return transaction != nil && transaction.Count == 1
+	})
 
-	time.Sleep(150 * time.Millisecond)
-
-	snap, ok := mc.LatestSnapshot()
-	if !ok {
-		t.Fatal("expected snapshot")
-	}
-
-	_, ok = snap.ByTransaction["iteration_1"]
+	_, ok := snap.ByTransaction["iteration_1"]
 	if !ok {
 		t.Error("expected synthetic transaction in ByTransaction")
 	}

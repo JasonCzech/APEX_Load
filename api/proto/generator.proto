@@ -215,9 +215,12 @@ message WorkAssignment {
   JavaHostSelection java_host = 41;
   // Defer runtime preflight and all target interaction until CommitWork.
   bool prepare_only = 42;
+  // Controller-approved HTTP/SOAP origins for the opt-in X-Apex-Test-Run marker.
+  // Omission keeps run correlation disabled.
+  repeated string run_correlation_origins = 43;
   // Immutable, capability-negotiated lifetime peak and resource intent.
   // The generator recomputes demand; this wire claim never grants a lease.
-  RuntimeResourceClaim runtime_resource_claim = 43;
+  RuntimeResourceClaim runtime_resource_claim = 44;
 }
 
 // Additive process resources, plus a nonadditive per-processor partition ceiling.

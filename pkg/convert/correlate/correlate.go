@@ -56,7 +56,8 @@ type Observation struct {
 	RequestURL  string
 	RequestBody string
 	// RequestBodyTransformed is true when RequestBody is the wire representation
-	// of a differently encoded editable field (currently an HTTP base64 body).
+	// of an encoded or structurally resolved editable field (for example an
+	// HTTP base64 body or contextual Aura template body).
 	// Diagnosis may inspect it, but must not emit offsets that a client could
 	// apply to the encoded DSL body.
 	RequestBodyTransformed bool

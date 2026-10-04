@@ -142,3 +142,91 @@ func TestMonitorSourceRevisionedCRUD(t *testing.T) {
 		t.Errorf("invalid command used the network: calls=%d", calls.Load())
 	}
 }
+
+func TestMonitoringControllerWorkflowParity(t *testing.T) {
+	var calls []string
+	var bodies []map[string]json.RawMessage
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.RequestURI())
+		var body map[string]json.RawMessage
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies = append(bodies, body)
+		w.Write([]byte(`{}`))
+	}))
+	defer api.Close()
+	config := filepath.Join(t.TempDir(), "request.json")
+	for _, tc := range []struct {
+		args  []string
+		body  string
+		route string
+	}{
+		{[]string{"create-source", "--project", "p", "--file", config}, `{"name":"APM","revision":0}`, "POST /api/v1/projects/p/monitor-sources"},
+		{[]string{"update-source", "--project", "p", "--id", "s", "--file", config}, `{"name":"APM","revision":2}`, "PUT /api/v1/projects/p/monitor-sources/s"},
+		{[]string{"delete-source", "--project", "p", "--id", "s", "--revision", "2"}, `{}`, "DELETE /api/v1/projects/p/monitor-sources/s?revision=2"},
+		{[]string{"series", "--id", "run", "--source-id", "s", "--metric", "calls", "--after-key", "cursor", "--limit", "50"}, `{}`, "GET /api/v1/tests/run/monitor-series?after_key=cursor&limit=50&metric=calls&source_id=s"},
+		{[]string{"evidence", "--id", "run", "--source-id", "s", "--kind", "snapshot", "--after-key", "cursor"}, `{}`, "GET /api/v1/tests/run/monitor-evidence?after_key=cursor&kind=snapshot&limit=100&source_id=s"},
+		{[]string{"evidence", "--id", "run", "--source-id", "prom", "--kind", "target", "--after-key", "cursor", "--limit", "50"}, `{}`, "GET /api/v1/tests/run/monitor-evidence?after_key=cursor&kind=target&limit=50&source_id=prom"},
+		{[]string{"evidence", "--id", "run", "--source-id", "prom", "--kind", "alert"}, `{}`, "GET /api/v1/tests/run/monitor-evidence?kind=alert&limit=100&source_id=prom"},
+		{[]string{"series", "--id", "run", "--source-id", "s", "--metric", "calls", "--limit", "999"}, `{}`, "GET /api/v1/tests/run/monitor-series?limit=999&metric=calls&source_id=s"},
+		{[]string{"create-run", "--project", "p", "--file", config}, `{"monitor_bindings":[],"goal_config":{"monitor_rules":[]}}`, "POST /api/v1/tests"},
+	} {
+		if err := os.WriteFile(config, []byte(tc.body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := executeWorkflowCommand(context.Background(), "monitor", append(tc.args, "--api", api.URL), &bytes.Buffer{}); err != nil {
+			t.Fatal(err)
+		}
+		if calls[len(calls)-1] != tc.route {
+			t.Fatalf("route %q want %q", calls[len(calls)-1], tc.route)
+		}
+	}
+	if string(bodies[len(bodies)-1]["monitor_bindings"]) != "[]" {
+		t.Fatal("explicit disable lost its distinction from inherited monitoring")
+	}
+	if err := os.WriteFile(config, []byte(`{"project_id":"other"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before := len(calls)
+	if err := executeWorkflowCommand(context.Background(), "monitor", []string{"create-run", "--project", "p", "--file", config, "--api", api.URL}, &bytes.Buffer{}); err == nil || len(calls) != before {
+		t.Fatal("conflicting project sent to controller")
+	}
+	for _, args := range [][]string{
+		{"series", "--limit", "0"}, {"series", "--limit", "1000"},
+		{"evidence", "--limit", "0"}, {"evidence", "--limit", "101"},
+		{"evidence", "--kind", "unknown"},
+	} {
+		if err := executeWorkflowCommand(context.Background(), "monitor", append(args, "--id", "run", "--api", api.URL), &bytes.Buffer{}); err == nil || len(calls) != before {
+			t.Fatalf("invalid bounded page sent to controller: %v", args)
+		}
+	}
+	var help bytes.Buffer
+	if err := executeWorkflowCommand(context.Background(), "monitor", []string{"evidence", "--help"}, &help); err != nil || !strings.Contains(help.String(), "target or alert") {
+		t.Fatal("Prometheus evidence filters absent from help", help.String(), err)
+	}
+}
+
+func TestMonitorMergedCommandsPreserveDistinctDefaultPageBounds(t *testing.T) {
+	for _, tc := range []struct{ action, wantLimit string }{{"management", "20"}, {"series", "100"}, {"evidence", "100"}} {
+		t.Run(tc.action, func(t *testing.T) {
+			var calls atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.URL.Query().Get("limit") != tc.wantLimit {
+					t.Errorf("limit=%q, want %q", r.URL.Query().Get("limit"), tc.wantLimit)
+				}
+				if r.URL.Query().Get("source_id") != "source" {
+					t.Error("source filter lost")
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			defer server.Close()
+			if err := executeWorkflowCommand(context.Background(), "monitor", []string{tc.action, "--id", "run", "--source-id", "source", "--api", server.URL}, &bytes.Buffer{}); err != nil {
+				t.Fatal(err)
+			}
+			if calls.Load() != 1 {
+				t.Fatalf("calls=%d", calls.Load())
+			}
+		})
+	}
+}

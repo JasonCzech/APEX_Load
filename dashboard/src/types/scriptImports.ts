@@ -67,6 +67,12 @@ export interface ImportRepairSuggestion {
 
 export type ParameterizationKind = 'correlation' | 'data_param' | 'secret'
 
+export interface AuraParameterRoutePart {
+  kind: 'key' | 'index' | 'json_string'
+  key?: string
+  index?: number
+}
+
 export interface ParameterizationLocation {
   section: string
   action_index: number
@@ -74,6 +80,11 @@ export interface ParameterizationLocation {
   field: string
   search_text?: string
   replace_text: string
+  action_path?: string
+  aura_route?: AuraParameterRoutePart[]
+  decoded_field_path?: string
+  encoding_layers?: string[]
+  payload_shape?: string
 }
 
 export interface ParameterizationSuggestion {
@@ -102,9 +113,26 @@ export interface ParameterizationSummary {
   pre_applied_count: number
 }
 
+export interface AuraPayloadCoverage {
+  complete: boolean
+  recognized_bodies: number
+  inspected_bodies: number
+  rejected_bodies: number
+  omitted_bodies: number
+  string_fields: number
+  unsupported_number_fields: number
+  unsupported_other_fields: number
+  unsafe_path_fields: number
+  candidate_fields: number
+  retained_candidates: number
+  omitted_candidates: number
+}
+
 export interface Parameterization {
   suggestions: ParameterizationSuggestion[]
   summary: ParameterizationSummary
+  warnings?: string[]
+  aura_payload?: AuraPayloadCoverage
 }
 
 export interface ParameterizationDiff {
@@ -462,7 +490,50 @@ export interface SalesforceHARMatchCoverage {
   coverage_pct: number
 }
 
+export interface SalesforceNativeRequestReference {
+  har_entry_id: number
+  original_action_path?: string
+  source_mapping_id?: string
+  source_file?: string
+  native_action_path?: string
+}
+
+export interface SalesforceCorrelationCoverage {
+  complete: boolean
+  details_complete: boolean
+  catalog_limited?: boolean
+  discovered_correlations: number
+  import_matched_producer_correlations: number
+  import_unmatched_producer_correlations: number
+  observed_consumer_references: number
+  import_matched_consumer_references: number
+  import_unmatched_consumer_references: number
+  source_review_available: boolean
+  source_linked_producer_correlations: number
+  source_unlinked_producer_correlations: number
+  source_linked_consumer_references: number
+  source_unlinked_consumer_references: number
+  native_mapped_producer_correlations: number
+  native_unmapped_producer_correlations: number
+  native_mapped_consumer_references: number
+  native_unmapped_consumer_references: number
+  pre_applied_correlations: number
+  manual_correlations: number
+  retained_correlations: number
+  omitted_correlations: number
+  retained_consumer_references: number
+  omitted_consumer_references: number
+  correlation_detail_limit: number
+  consumer_reference_detail_limit: number
+  detail_byte_limit: number
+}
+
 export interface SalesforceCorrelationCandidate {
+  pre_applied?: boolean
+  review_action?: string
+  producer_reference?: SalesforceNativeRequestReference
+  consumer_references?: SalesforceNativeRequestReference[]
+  consumer_references_omitted?: number
   name: string
   source: string
   expression: string
@@ -474,11 +545,16 @@ export interface SalesforceCorrelationCandidate {
 }
 
 export interface SalesforceNativePreview {
+  native_path_domain?: string
+  correlation_coverage?: SalesforceCorrelationCoverage
   script?: ScriptDefinition
   correlations?: SalesforceCorrelationCandidate[]
 }
 
 export interface SalesforceParameterizationCandidate {
+  action_path?: string
+  decoded_field_path?: string
+  encoding_layers?: string[]
   name: string
   source: string
   expression: string
@@ -490,7 +566,58 @@ export interface SalesforceParameterizationCandidate {
   template: string
 }
 
+export type AuraActionState = 'SUCCESS' | 'ERROR' | 'INCOMPLETE' | 'ABORTED' | 'UNKNOWN'
+
+export interface AuraBatchAnalysis {
+  success: boolean
+  complete: boolean
+  has_response: boolean
+  request_actions: number
+  response_actions: number
+  matched_actions: number
+  outcomes?: { ordinal: number; state: AuraActionState }[]
+  issues?: { code: string; ordinal?: number }[]
+  outcomes_omitted?: number
+  issues_omitted?: number
+}
+
+export interface AuraOutcomeBatch {
+  action_path?: string
+  action_sequence: number
+  har_entry_id?: number
+  request_valid: boolean
+  request_issues?: { code: string; ordinal?: number }[]
+  request_issues_omitted?: number
+  analysis: AuraBatchAnalysis
+}
+
+export interface AuraOutcomeReport {
+  complete: boolean
+  details_complete?: boolean
+  outcomes_omitted?: number
+  issues_omitted?: number
+  request_issues_omitted?: number
+  outcome_detail_limit?: number
+  issue_detail_limit?: number
+  total_batches: number
+  inspected_batches: number
+  complete_batches: number
+  batch_limit: number
+  analysis_byte_limit: number
+  omitted_batches: number
+  incomplete_batches: number
+  missing_responses: number
+  invalid_requests: number
+  request_actions: number
+  response_actions: number
+  matched_actions: number
+  state_counts?: Partial<Record<AuraActionState, number>>
+  issue_counts?: Record<string, number>
+  batches?: AuraOutcomeBatch[]
+}
+
 export interface SalesforceReview {
+  aura_outcomes?: AuraOutcomeReport
   detected: boolean
   domains?: SalesforceDomainObservation[]
   aura_endpoints?: SalesforceEndpointObservation[]

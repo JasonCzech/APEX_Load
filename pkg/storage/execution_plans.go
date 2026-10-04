@@ -178,16 +178,17 @@ type ExecutionPlanRunEntry struct {
 	// resume a sequential run after a controller restart. They live inside the
 	// existing entries_json column, so adding them requires no SQL migration and
 	// old rows remain readable (their zero values use the safe halt policy).
-	FailurePolicy      string                    `json:"failure_policy,omitempty"`
-	RuntimeOverrides   json.RawMessage           `json:"runtime_overrides,omitempty"`
-	DataPools          []ScenarioDataPoolBinding `json:"data_pools,omitempty"`
-	TimeslotID         *string                   `json:"timeslot_id,omitempty"`
-	RunName            string                    `json:"run_name,omitempty"`
-	AttribSubject      string                    `json:"attrib_subject,omitempty"`
-	AttribName         string                    `json:"attrib_name,omitempty"`
-	ActorType          string                    `json:"actor_type,omitempty"`
-	ActorSubject       string                    `json:"actor_subject,omitempty"`
-	ActorDisplayName   string                    `json:"actor_display_name,omitempty"`
-	ApprovalID         string                    `json:"approval_id,omitempty"`
-	MaterializationKey string                    `json:"materialization_key,omitempty"`
+	FailurePolicy       string                    `json:"failure_policy,omitempty"`
+	RuntimeOverrides    json.RawMessage           `json:"runtime_overrides,omitempty"`
+	DataPools           []ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	TimeslotID          *string                   `json:"timeslot_id,omitempty"`
+	RunName             string                    `json:"run_name,omitempty"`
+	AttribSubject       string                    `json:"attrib_subject,omitempty"`
+	AttribName          string                    `json:"attrib_name,omitempty"`
+	ActorType           string                    `json:"actor_type,omitempty"`
+	ActorSubject        string                    `json:"actor_subject,omitempty"`
+	ActorDisplayName    string                    `json:"actor_display_name,omitempty"`
+	ActivityInitiatedBy string                    `json:"activity_initiated_by,omitempty"`
+	ApprovalID          string                    `json:"approval_id,omitempty"`
+	MaterializationKey  string                    `json:"materialization_key,omitempty"`
 }

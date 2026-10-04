@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
 )
 
 const (
@@ -121,9 +122,46 @@ func collectExecutableSecretNames(value any, path string, root, dedicatedField b
 		if isNonExecutableSecretReviewMap(typed) {
 			return nil
 		}
+		structuredBody := false
 		if body, ok := typed["body"].(string); ok {
 			encoding, _ := typed["body_encoding"].(string)
-			if decoded, encoded, err := dsl.DecodeBodyEncoding(body, encoding, 0); encoded && err == nil {
+			metadata, _ := typed["metadata"].(map[string]any)
+			mode, _ := metadata[dsl.ImportURLFormTemplateValueEncodingMetadataKey].(string)
+			if metadata[dsl.ImportAuraTemplateContractMetadataKey] != nil && strings.TrimSpace(mode) != dsl.ImportAuraJSONTemplateValueEncoding {
+				return &aurapayload.Error{Code: aurapayload.InvalidTemplateContract}
+			}
+			if strings.TrimSpace(mode) == dsl.ImportAuraJSONTemplateValueEncoding {
+				structuredBody = true
+				var referenceErr error
+				remaining := aurapayload.MaxTemplateOccurrences
+				_, _, _, codecErr := aurapayload.ResolveContextualWithWorkAccounting(body, encoding, metadata[dsl.ImportAuraTemplateContractMetadataKey], func(value string, templateContext aurapayload.TemplateContext) (string, string) {
+					if referenceErr == nil {
+						// Apply the selected runtime occurrence cap before the legacy
+						// reference collector allocates match details for this leaf.
+						matches := templatePattern.FindAllStringIndex(value, remaining+1)
+						if len(matches) > remaining {
+							referenceErr = &aurapayload.Error{Code: aurapayload.TokenLimit}
+						} else {
+							remaining -= len(matches)
+							for index, match := range matches {
+								if !templateContext.IsLiteralToken(index) {
+									referenceErr = collectExecutableSecretNames(value[match[0]:match[1]], path+"/body", false, false, seen, dedicated)
+									if referenceErr != nil {
+										break
+									}
+								}
+							}
+						}
+					}
+					return value, value
+				}, aurapayload.MaxWorkBytes)
+				if codecErr != nil {
+					return fmt.Errorf("script structured body is invalid: %w", codecErr)
+				}
+				if referenceErr != nil {
+					return referenceErr
+				}
+			} else if decoded, encoded, err := dsl.DecodeBodyEncoding(body, encoding, 0); encoded && err == nil {
 				// The stored base64 text is not the executable credential
 				// surface. Decode the wire bytes so static secret preflight and
 				// redaction configuration see references before transport.
@@ -134,6 +172,12 @@ func collectExecutableSecretNames(value any, path string, root, dedicatedField b
 		}
 		for key, child := range typed {
 			normalizedKey := strings.ToLower(strings.TrimSpace(key))
+			// The selected codec already visited every executable decoded leaf.
+			// Rescanning the encoded body would miss form references and invent
+			// executable references in fixed JSON member names.
+			if structuredBody && normalizedKey == "body" {
+				continue
+			}
 			if root {
 				if _, skip := nonExecutableRootSecretFields[normalizedKey]; skip {
 					continue

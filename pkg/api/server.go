@@ -25,6 +25,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/importsession"
 	"github.com/jasonczech/apexload/pkg/keywrap"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -76,6 +77,8 @@ type desktopBrowserBootstrap struct {
 const maxDesktopBrowserCapabilities = 32
 
 type Server struct {
+	prometheusClient func(prometheus.Config, prometheus.Credentials) (*prometheus.Client, error)
+
 	httpServer *http.Server
 	hub        *Hub
 	runner     *TestRunner
@@ -224,6 +227,7 @@ type Server struct {
 	scheduleOccurrenceRetentionCancel context.CancelFunc
 	archiveCleanupCancel              context.CancelFunc
 	archiveCleanupDone                chan struct{}
+	appDynamicsCancel                 context.CancelFunc
 	archiveFinalizationCancel         context.CancelFunc
 	archiveFinalizationWake           chan struct{}
 	archiveOrphanWake                 chan struct{}
@@ -622,6 +626,8 @@ func NewServer(cfg ServerConfig) *Server {
 		tracing:                 cfg.TracingStatus,
 	}
 	s.configureReplaySessionReservations()
+	runner.appDynamicsPrepare = s.verifyPreparedAppDynamics
+	runner.prometheusPrepare = s.verifyPreparedPrometheus
 	hub.SetOriginAuthProvider(s.authSettingsForRequest)
 	if leadership != nil {
 		leadership.setOnLoss(func() {
@@ -1103,7 +1109,10 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.registerAPIRouteCatalog(scenarioSchedulingAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(baselineComparisonAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(runMonitoringAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(appDynamicsAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(prometheusAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(analysisAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(objectActivityAPIRouteCatalog, standardRouteMiddleware)
 	s.mux.Handle("GET /api/v1/scenarios/{id}/results", cors(log(auth(http.HandlerFunc(s.handleScenarioResults)))))
 	s.mux.Handle("GET /api/v1/scenarios/{id}/runtime-settings/report", cors(log(auth(http.HandlerFunc(s.handleGetScenarioRuntimeSettingsReport)))))
 	s.mux.Handle("POST /api/v1/scenarios/{id}/runtime/apply-to-groups", cors(log(auth(http.HandlerFunc(s.handleApplyScenarioRuntimeToGroups)))))
@@ -1694,6 +1703,7 @@ func (s *Server) Start() (startErr error) {
 	s.startScheduleOccurrenceRetentionCadence()
 	s.startArchiveCleanupRetry()
 	s.startArchiveFinalizationRetry()
+	s.startAppDynamicsMonitoring()
 	s.startAccessReviewNotifierCadence()
 	s.startCIGitHubCheckReconciliation()
 
@@ -2286,6 +2296,10 @@ func (s *Server) shutdown(ctx context.Context) error {
 			}
 			s.archiveCleanupDone = nil
 		}
+	}
+	if s.appDynamicsCancel != nil {
+		s.appDynamicsCancel()
+		s.appDynamicsCancel = nil
 	}
 	if s.archiveFinalizationCancel != nil {
 		s.archiveFinalizationCancel()

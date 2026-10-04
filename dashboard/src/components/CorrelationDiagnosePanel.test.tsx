@@ -5,8 +5,9 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { CorrelationDiagnosePanel } from './CorrelationDiagnosePanel'
-import type { CorrelationDiagnoseResponse, ScriptReplayActionEvent } from '../types/scripts'
+import type { CorrelationDiagnoseResponse, ScriptActionDefinition, ScriptExtractorDefinition, ScriptReplayActionEvent } from '../types/scripts'
 import { ApiError } from '../hooks/apiClient'
+import { addCorrelationExtractorIfMissing, applyCorrelationRepairToAction, type CorrelationExtractorRepair } from './scriptCorrelationRepair'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -399,6 +400,51 @@ describe('CorrelationDiagnosePanel', () => {
 
     expect(container.textContent).toContain('Extractor added only')
     expect(container.textContent).toContain('mapped editable request span could not be updated')
+    expect(container.textContent).not.toContain('Fix applied')
+  })
+
+  it('reports extractor-only when an Aura template contract blocks automatic body replacement', async () => {
+    let sourceAction: ScriptActionDefinition = { name: 'login', type: 'POST', target: '/login' }
+    const originalRequestAction: ScriptActionDefinition = {
+      name: 'submit', type: 'POST', target: '/submit', body: 'csrf=OLD',
+      metadata: { body_aura_template_contract: { version: 1, form_wire_occurrences: [], literal_occurrences: [] } },
+    }
+    let requestAction = originalRequestAction
+    const onAddExtractor = vi.fn((_index: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => {
+      const previousSource = sourceAction
+      sourceAction = addCorrelationExtractorIfMissing(sourceAction, extractor)
+      const previousRequest = requestAction
+      if (repair) requestAction = applyCorrelationRepairToAction(requestAction, repair)
+      return {
+        extractorAdded: sourceAction !== previousSource,
+        extractorAvailable: true,
+        requestRepaired: requestAction !== previousRequest,
+      }
+    })
+    await act(async () => {
+      root.render(
+        <CorrelationDiagnosePanel
+          scriptId="s1"
+          replaySessionId="replay-1"
+          replayTerminal
+          replayMatchesCurrentScript
+          events={events}
+          recordingStatus={{ exists: true, request_count: 2 }}
+          actionCount={2}
+          diagnoseWithBaseline={vi.fn().mockResolvedValue(diagnoseResponse)}
+          diagnoseWithUpload={vi.fn()}
+          onAddExtractor={onAddExtractor}
+        />,
+      )
+    })
+    const diagnoseButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Diagnose correlations')!
+    await act(async () => { diagnoseButton.click() })
+    const addButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Add as extractor')!
+    await act(async () => { addButton.click() })
+
+    expect(sourceAction.extractors).toEqual([{ name: 'csrf', source: 'body', type: 'jsonpath', expression: '$.t', on_miss: 'fail' }])
+    expect(requestAction).toBe(originalRequestAction)
+    expect(container.textContent).toContain('Extractor added only')
     expect(container.textContent).not.toContain('Fix applied')
   })
 
@@ -1175,4 +1221,38 @@ describe('CorrelationDiagnosePanel', () => {
     expect(container.textContent).toContain('Raw baseline encryption is not configured.')
     expect(container.textContent).toContain('Diagnose from recording (HAR)')
   })
+  it('shows incomplete relationship evidence when diagnosis has no suggestions and clears it for a new replay', async () => {
+    const relationship = { complete: false, producer_count: 0, consumer_count: 0, missing_producers: 0, unavailable_extractors: 0, missing_consumers: 0, state_counts: {}, details_complete: false, details_omitted: 3, detail_limit: 256, relationships: [] }
+    const diagnose = vi.fn().mockResolvedValue({ suggestions: [], blocking: false, counts: { errors: 0, warnings: 0 }, compared_recorded_steps: 2, total_recorded_steps: 2, relationship_coverage: relationship })
+    const props = { scriptId: 's1', replaySessionId: 'replay-1', replayTerminal: true, replayMatchesCurrentScript: true, events, recordingStatus: { exists: true, request_count: 2 }, actionCount: 2, diagnoseWithBaseline: diagnose, diagnoseWithUpload: vi.fn(), onAddExtractor: vi.fn() }
+    await act(async () => { root.render(<CorrelationDiagnosePanel {...props} />) })
+    await act(async () => { [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Diagnose correlations')!.click() })
+    expect(container.textContent).toContain('Correlation relationship evidence is incomplete')
+    expect(container.textContent).toContain('No producer bindings detected')
+    expect(container.textContent).toContain('3 relationship rows not shown')
+    expect(container.textContent).not.toContain('No correlation issues detected')
+    await act(async () => { root.render(<CorrelationDiagnosePanel {...props} replaySessionId="replay-2" />) })
+    expect(container.querySelector('[aria-label="Correlation relationship evidence"]')).toBeNull()
+    expect(container.textContent).not.toContain('3 relationship rows not shown')
+  })
+
+  it.each([
+    { relationships: [{ producer_step_id: 0, consumer_step_id: 1, state: 'unsupported-private-state', producer_observed: true, extractor_available: true, consumer_observed: true }] },
+    { relationships: [null] },
+    { relationships: [{ producer_step_id: 0, consumer_step_id: 1, state: { toString: 1, valueOf: 1 }, producer_observed: true, extractor_available: true, consumer_observed: true }] },
+    { state_counts: { producer_missing: 'private-count' } },
+    { state_counts: { unknown_future_state: 1 } },
+  ])('keeps malformed relationship evidence inconclusive when diagnosis has no suggestions', async malformed => {
+    const relationship = { complete: true, producer_count: 1, consumer_count: 1, missing_producers: 0, unavailable_extractors: 0, missing_consumers: 0, state_counts: {}, details_complete: true, details_omitted: 0, detail_limit: 256, relationships: [], ...malformed }
+    const diagnose = vi.fn().mockResolvedValue({ suggestions: [], blocking: false, compared_recorded_steps: 2, total_recorded_steps: 2, relationship_coverage: relationship })
+    await act(async () => { root.render(<CorrelationDiagnosePanel scriptId="s1" replaySessionId="replay" replayTerminal replayMatchesCurrentScript events={events} recordingStatus={{ exists: true, request_count: 2 }} actionCount={2} diagnoseWithBaseline={diagnose} diagnoseWithUpload={vi.fn()} onAddExtractor={vi.fn()} />) })
+    await act(async () => { [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Diagnose correlations')!.click() })
+    expect(container.textContent).toContain('Relationship inspection incomplete')
+    expect(container.textContent).toContain('Correlation relationship evidence is incomplete')
+    expect(container.textContent).not.toContain('No correlation issues detected')
+    expect(container.innerHTML).not.toContain('unsupported-private-state')
+    expect(container.innerHTML).not.toContain('private-count')
+    expect(container.innerHTML).not.toContain('unknown_future_state')
+  })
+
 })

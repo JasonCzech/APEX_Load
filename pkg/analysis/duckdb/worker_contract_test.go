@@ -213,6 +213,18 @@ func TestWorkerSeriesResultRetainsQueryScopeAndLineage(t *testing.T) {
 			}
 		})
 	}
+
+	// Provider provenance is admitted by the shared model for governed monitors,
+	// but a native v1 scalar worker has no authority to manufacture that origin.
+	forged := point
+	forged.Provider = &analysis.ProviderMeasurement{Name: "appdynamics", MetricID: "published-provider", Mode: "interval_bucket", BucketStart: from, BucketEnd: from.Add(time.Second), ResolutionSeconds: 1, Statistic: "avg"}
+	if err := forged.Validate(); err != nil {
+		t.Fatalf("otherwise valid provider fixture: %v", err)
+	}
+	forgedPoints := []analysis.MetricPoint{forged}
+	if (workerResult{Status: "ok", Points: &forgedPoints}).validate(b, request) == nil {
+		t.Fatal("native scalar worker forged provider provenance")
+	}
 	points = append(points, point)
 	if result.validate(b, request) == nil {
 		t.Fatal("duplicate bucket accepted")

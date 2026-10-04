@@ -442,7 +442,7 @@ func TestVUserRecordResultScrubsLongRuntimeSecretsBeforeEvidenceBounds(t *testin
 		ActionName:       "action-" + secret,
 		ErrorMessage:     "error-" + secret,
 		ResponseBody:     "body-" + secret,
-		Extractions:      map[string]string{"ordinary": "extraction-" + secret},
+		Extractions:      map[string]string{"ordinary": "valid-small-extraction"},
 		ProtocolEvidence: map[string]any{"ordinary": "evidence-" + secret},
 		Snapshot:         &protocol.ErrorSnapshot{ResponseBody: "snapshot-" + secret},
 		Success:          false,

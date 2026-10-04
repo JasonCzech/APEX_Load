@@ -210,6 +210,9 @@ func sourceSequenceChild(action dsl.Action) map[string]any {
 	if action.TimeoutMs > 0 {
 		child["timeout_ms"] = action.TimeoutMs
 	}
+	if action.HTTPVersion.IsPresent() {
+		child["http_version"] = action.HTTPVersion.Value()
+	}
 	if action.MaxRedirects != nil {
 		child["max_redirects"] = *action.MaxRedirects
 	}

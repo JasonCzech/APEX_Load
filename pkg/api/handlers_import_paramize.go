@@ -98,12 +98,21 @@ func (s *Server) handleApplyImportParameterization(w http.ResponseWriter, r *htt
 	}
 	trusted := buildTrustedImportParameterization(safeScript)
 	trustedByID := make(map[string]bool, len(trusted.Suggestions))
+	trustedDescriptors := make(map[string]paramize.Suggestion, len(trusted.Suggestions))
 	for _, suggestion := range trusted.Suggestions {
 		trustedByID[suggestion.ID] = true
+		trustedDescriptors[suggestion.ID] = suggestion
 	}
 	for id := range selected {
 		if !trustedByID[id] {
 			writeError(w, http.StatusConflict, "selected parameterization suggestions are stale or unavailable; refresh the import preview")
+			return
+		}
+	}
+
+	for _, descriptor := range req.Suggestions {
+		if selected[descriptor.ID] && !matchesTrustedAuraDescriptor(descriptor, trustedDescriptors[descriptor.ID]) {
+			writeError(w, http.StatusConflict, "selected Aura parameterization descriptor is stale or invalid; refresh the import preview")
 			return
 		}
 	}
@@ -116,7 +125,16 @@ func (s *Server) handleApplyImportParameterization(w http.ResponseWriter, r *htt
 		}
 		applyTarget = mutationClaim.Script
 	}
-	applied, diffs, err := paramize.ApplySuggestions(applyTarget, trusted.Suggestions, selected)
+	applySuggestions := trusted.Suggestions
+	if mutationClaim != nil {
+		var valid bool
+		applySuggestions, valid = rebindTrustedAuraParameterization(applyTarget, trusted.Suggestions, selected)
+		if !valid {
+			writeError(w, http.StatusConflict, "selected Aura parameterization no longer matches the authoritative import draft; refresh the import preview")
+			return
+		}
+	}
+	applied, diffs, err := paramize.ApplySuggestions(applyTarget, applySuggestions, selected)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "failed to apply parameterization: "+err.Error())
 		return

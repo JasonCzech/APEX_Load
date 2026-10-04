@@ -1,0 +1,26 @@
+.aura-parameter-location-details {
+  margin: 4px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  min-width: 0;
+}
+
+.aura-parameter-location-details p {
+  margin: 2px 0;
+}
+
+.aura-parameter-location-details code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.paramize-aura-locations {
+  margin: 4px 0 0 26px;
+  font-size: 12px;
+}
+
+.paramize-aura-locations ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}

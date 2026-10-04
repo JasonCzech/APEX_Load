@@ -756,6 +756,12 @@ func (s *Server) handleAttestBridgedBrowserRecordingImport(w http.ResponseWriter
 			script.Metadata.Import = &dsl.ImportMetadata{}
 		}
 		script.Metadata.Import.Source = source
+		// Handoff proves review/save policy, not an independently observed browser
+		// launch on this controller. Discard malformed/unknown claim fields.
+		if script.Metadata.Import.Preserved != nil {
+			claim := recbrowser.NormalizeRecordingEnvironment(script.Metadata.Import.Preserved[recbrowser.RecordingEnvironmentKey], recbrowser.RecordingObservationAgent)
+			recbrowser.AttachRecordingEnvironment(script, claim)
+		}
 		if script.Metadata.Import.Preserved != nil {
 			delete(
 				script.Metadata.Import.Preserved,
@@ -980,6 +986,7 @@ func attachRecordingProvenance(script *dsl.Script, artifact *recbrowser.Session,
 	script.Metadata.Import.Preserved["recorded_steps"] = len(artifact.Steps)
 	script.Metadata.Import.Preserved["recorded_markers"] = len(artifact.Markers)
 	script.Metadata.Import.Preserved["har_available"] = len(artifact.HAR) > 0
+	recbrowser.AttachRecordingEnvironment(script, artifact.RecordingEnvironment)
 	if artifact.DeviceProfile != "" {
 		script.Metadata.Import.Preserved["device_profile"] = artifact.DeviceProfile
 	}
@@ -2015,6 +2022,7 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 		Warnings:         result.Warnings,
 	}
 	augmented := draft.augmentWithAgentforceTransform(false)
+	recbrowser.AttachRecordingEnvironment(result.Script, artifact.RecordingEnvironment)
 	return result.Script, augmented.Warnings, augmented.Sections, nil
 }
 

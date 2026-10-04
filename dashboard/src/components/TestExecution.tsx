@@ -2,6 +2,7 @@ import MessagingProgressDiagnostics from './MessagingProgressDiagnostics'
 import MessagingDiagnostics from './MessagingDiagnostics'
 import RunAnnotations from './RunAnnotations'
 import NativeAnalyticsPanel, { NativePanelAuthoring, NativeProjectPanels } from './NativeAnalyticsPanel'
+import ObjectHistory from './ObjectHistory'
 import { OrchestrationReturn } from './OrchestrationReturn'
 import RunOutcomeSummary from './RunOutcomeSummary'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -471,6 +472,7 @@ export default function TestExecution({
     return (
       <div className="execution">
       <OrchestrationReturn testId={testId} />
+      <ObjectHistory key={testId} projectId={test?.project_id} resourceType="test" resourceId={testId} activity={test?.activity} />
         <button className="btn btn-secondary" onClick={() => onOpenCommandCenter ? onOpenCommandCenter(testId) : onBack()}>{onOpenCommandCenter ? 'Back to Command Center' : 'Back'}</button>
         <ErrorDiagnostic error={error} fallback="Unable to load test execution details" className="execution-error-diagnostic" />
       </div>

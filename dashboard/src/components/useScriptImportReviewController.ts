@@ -1,3 +1,4 @@
+import type { SourceReviewMapping } from '../types/scripts'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ScriptDefinition } from '../types/scripts'
 import {
@@ -47,8 +48,8 @@ export function useScriptImportReviewController({
     [importMetadata, script],
   )
   const importedCorrelationFocusTargets = useMemo(
-    () => buildImportedCorrelationFocusTargets(script.actions, importSummary.correlationSuggestions),
-    [importSummary.correlationSuggestions, script.actions],
+    () => buildImportedCorrelationFocusTargets(script.actions, importSummary.correlationSuggestions, sourceReview),
+    [importSummary.correlationSuggestions, script.actions, sourceReview],
   )
   const importedParameterFileMappings = useMemo(
     () => buildImportedParameterFileMappings(script, importSummary),
@@ -97,8 +98,15 @@ export function useScriptImportReviewController({
     })
   }, [onWorkspaceMaximizedChange])
 
+  const focusSourceMapping = useCallback((mapping: SourceReviewMapping) => {
+    const matches = sourceReview?.mappings?.filter(candidate => candidate.id === mapping.id) || []
+    if (matches.length !== 1 || matches[0].source_file !== mapping.source_file || matches[0].target_path !== mapping.target_path) return
+    setSourceMappingFocus(previous => ({ mappingId: mapping.id, requestId: previous.requestId + 1 }))
+  }, [sourceReview])
+
   const focusSourceMappingForAction = useCallback((actionIndex: number) => {
     const mapping = findSourceMappingForAction(sourceReview, script.actions[actionIndex], actionIndex)
+    if (!mapping) return
     setSourceMappingFocus(previous => ({
       mappingId: mapping?.id || '',
       requestId: previous.requestId + 1,
@@ -111,6 +119,7 @@ export function useScriptImportReviewController({
   return {
     draftDiffSummary,
     focusSourceMappingForAction,
+    focusSourceMapping,
     importMetadata,
     importedCorrelationFocusTargets,
     importedDataSourceSummaries,

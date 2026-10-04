@@ -19,5 +19,9 @@
   "HAR host filtering preserves browser actions and disabled WebSocket payloads stay absent",
   "transaction splitting accounts for every output",
   "recording verification promotes a working fallback selector and re-verifies the changed conversion",
-  "parameterization review applies a recorded input and saves it into the selected folder"
+  "parameterization review applies a recorded input and saves it into the selected folder",
+  "controller: ipad_air recording engine receipt survives dual-output save and replay review",
+  "controller: pixel_8 recording engine receipt survives dual-output save and replay review",
+  "agent: ipad_air recording engine receipt survives dual-output save and replay review",
+  "agent: pixel_8 recording engine receipt survives dual-output save and replay review"
 ]

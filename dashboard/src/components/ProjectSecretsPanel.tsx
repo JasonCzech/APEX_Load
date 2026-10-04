@@ -1,3 +1,4 @@
+import { secretConsumerKey } from '../types/secrets'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useApi } from '../hooks/useApi'
@@ -205,9 +206,10 @@ export default function ProjectSecretsPanel({
         const latest = previous[name]
         if (!latest || latest.usage_revision !== current.usage_revision) return previous
         const consumers = [...latest.consumers]
-        const existing = new Set(consumers.map(consumer => consumer.script_id))
+        const existing = new Set(consumers.map(secretConsumerKey))
         next.consumers.forEach(consumer => {
-          if (!existing.has(consumer.script_id)) consumers.push(consumer)
+          const key = secretConsumerKey(consumer)
+          if (!existing.has(key)) { consumers.push(consumer); existing.add(key) }
         })
         return {
           ...previous,
@@ -470,7 +472,7 @@ export default function ProjectSecretsPanel({
                   </span>
                   <span>
                     {usageByName[secret.name]?.consumer_count
-                      ? `${usageByName[secret.name].consumer_count} consuming script${usageByName[secret.name].consumer_count === 1 ? '' : 's'} · ${usageByName[secret.name].reference_count} reference${usageByName[secret.name].reference_count === 1 ? '' : 's'}`
+                      ? `${usageByName[secret.name].consumer_count} consumer${usageByName[secret.name].consumer_count === 1 ? '' : 's'} · ${usageByName[secret.name].reference_count} reference${usageByName[secret.name].reference_count === 1 ? '' : 's'}`
                       : applicationId ? 'No assigned script references' : 'Unused vault entry'}
                   </span>
                   {secret.created_by && <span>Created by {secret.created_by}</span>}
@@ -478,7 +480,7 @@ export default function ProjectSecretsPanel({
                     <details>
                       <summary>Consumers</summary>
                       <ul>{usageByName[secret.name].consumers.map(consumer => (
-                        <li key={consumer.script_id}>{consumer.script_name} · {consumer.reference_count}</li>
+                        <li key={secretConsumerKey(consumer)}>{consumer.script_name}{consumer.resource_type && consumer.resource_type !== 'script' ? ` (${consumer.resource_type.replace(/_/g, ' ')})` : ''} · {consumer.reference_count}</li>
                       ))}</ul>
                       {usageByName[secret.name].has_more && (
                         <button
@@ -513,7 +515,7 @@ export default function ProjectSecretsPanel({
                           checked={rotationAcknowledged}
                           onChange={event => setRotationAcknowledged(event.target.checked)}
                         />
-                        Rotate for all {usageByName[secret.name].consumer_count} consuming scripts
+                        Rotate for all {usageByName[secret.name].consumer_count} consumers
                       </label>
                     )}
                     <button

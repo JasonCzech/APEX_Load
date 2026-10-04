@@ -1,0 +1,301 @@
+{
+  "status": "functional_validation_complete_with_inherited_bundle_budget_failure",
+  "request": "Review all nine slices together, fix findings, repeat to zero findings, commit and push to main",
+  "review_base": "7cfc031c7fc1bf4b71d36bc1ac8e9e9c23bf7d68",
+  "starting_head": "fb2864c4dd6ad7a7847ad541c61c260768f432a4",
+  "scope": "All nine existing Aura/React recording, import, replay, correlation, concurrency, HTTP version/content and debugger slices, plus their combined-review fixes",
+  "review": {
+    "remaining_actionable_findings": 0,
+    "reviewers": [
+      "root",
+      "independent core/runtime reviewer",
+      "independent import/recording/API reviewer",
+      "independent UI/caller reviewer"
+    ],
+    "repair_files": {
+      "dashboard/e2e/workflow-http-concurrent.spec.ts": "2deee4a26e3f6b36d9fe523c4c72b8073ed484cefa06d7d180b6a9400b439285",
+      "dashboard/e2e/workflow-runtime-state.spec.ts": "0d7dbc60e203b82b146479654d2482b09f5fcb1976f0426b770d0e2d26aa8625",
+      "dashboard/src/components/CorrelationDiagnosePanel.test.tsx": "eae4e471c8e22431d6c04f83bbe572b201aa8a9597e56c5c706d231c0428ea8f",
+      "dashboard/src/components/HTTPSequenceExecutionFields.test.tsx": "508dfcc59854a30e5928fa1fcd1020a7c99719f2ada040ca741f3f72e3541559",
+      "dashboard/src/components/ScriptEditor.test.tsx": "156ebcbf380bb2d834bc1707f9487415cddae85dbbeaee159276bc977d149e96",
+      "dashboard/src/components/ScriptEditor.tsx": "dc9cfca1d3e24c7352f1d3a54b377f31d8e00d8a1585427ddfca98752f675085",
+      "dashboard/src/components/debugRuntimeState.test.ts": "1e78274cbaea39a18267c7559e5505b68d936ac0d85dd8c8765413e830394492",
+      "dashboard/src/components/debugRuntimeState.ts": "ecff7ec633ee941f9b4a6cdf31eff20c265e331e71b4e28784591365c0543398",
+      "dashboard/src/components/httpSequenceExecutionModel.test.ts": "a715c78dac93811fbf0467a3268e774ed3b704e4cd083bf83ee0e8e9dd1c84dc",
+      "dashboard/src/components/httpSequenceExecutionModel.ts": "fda9922fb5244b6d1590fdd1765bda83edbf750df67fc3afd1196df718895448",
+      "dashboard/src/components/scriptCorrelationRepair.test.ts": "d4eb32c862df8bc598dd7993780a9314289ef563b5baeabf5182e62167e2c4d3",
+      "dashboard/src/components/scriptCorrelationRepair.ts": "8b6ca75d11d775ea8e0bfeff79cf26f8da15cac30241f3412aaa7706f76f56e7",
+      "pkg/api/aura_contract_correlation_repair_review_test.go": "814718e8d7c82beeb59b5a7e66ca7de53a89c7056de5949ecce215d0cb24dea5",
+      "pkg/api/authoring_aura_contract_repair_review_test.go": "a2b88ebe823e688bb744aa837088bc3ad338a9de01ab1d87b69a79b46a8dae52",
+      "pkg/api/handlers_authoring_correlations.go": "c2c70ae9fbdfa2b524fd9fdec33949678fc992068bbc9e523ccea8b5675f71b5",
+      "pkg/api/import_aura_contract_replay_review_test.go": "c6ceaf3b7d25980b4ed76fd0bb641e7040cd3d9ea5fba1535064ce904239b84d",
+      "pkg/api/import_extractor_registry_review_test.go": "20ac8a992b2eb95ee709d50e36be304284cc1df693cab8b562c5d76ed4445283",
+      "pkg/convert/correlate/correlate.go": "5dab4f3b25e091d3f7a10957ae3c6dbd9d93e00bb9c656f0aed06152439c0b64",
+      "pkg/convert/enterprisearchive/concurrent_aura_contract_test.go": "e71a4224e9ddbcf215e23c8f40a24636442a2a98a2d5b1c44eea8dfe93d3e69b",
+      "pkg/convert/enterprisearchive/concurrent_groups.go": "dd87009c3027e92da7b28ab9d8a5c400517d81acaced7b562cd5fb7fde01b51e",
+      "pkg/convert/paramize/aura_payload.go": "984514021478b306fd494a1c1c9e312db1bf5d020c034746fe44f88599d30967",
+      "pkg/convert/paramize/aura_template_contract_external_test.go": "6b46f2e7040912b76ad00b6a6580d531e55f4e21a30f0c33ed2694045efe52e6",
+      "pkg/convert/paramize/extractor_registry_review_test.go": "d3bcd43b835425d305e9248b69052c1edc955491d650b66bf9da8c8aa059cb78",
+      "pkg/convert/paramize/paramize.go": "0e661b76a2051e36d272dac177ac21c723b7393cdb8160ef5fdce85fcb8dd827",
+      "pkg/dsl/body_encoding.go": "3b279d57204c8e1b8fa03402b76cb12d2d32e82dd99b9626b39f822d7fe62167",
+      "pkg/dsl/http_sequence.go": "5754a17b7d31933661525ad542e648147b50fb379833aa82751e921a99c03ffc",
+      "pkg/dsl/http_sequence_aura_contract_review_test.go": "ec683b0e09851717ca851c8f9cf0961118d1794f7ff435f860f08b5af5a4b3d5",
+      "pkg/dsl/types.go": "b021ab2e2e14a7be2ff07844471c5bc2e361b5dbe1eaac8c99523fd1ba1f22fc",
+      "pkg/engine/aura_parameterized_import_replay_test.go": "1d92a5e68a6a71add3cab34aecbf84dc651334c50a00248e90345c9db9f91d42",
+      "pkg/engine/aura_template_contract_test.go": "09a04dfaeb178b5e45b9b5e12262cb157bf5152c3b098c8616d9ad03b6996e85",
+      "pkg/engine/http_concurrent.go": "0f6152f20286a66d40da9197f4e48bc99063fd192aefc168a6fb9e8653b9cc7e",
+      "pkg/engine/http_concurrent_aura_contract_review_test.go": "8c84607429baa103a4513a1a6fde7a88b38f2405bec93e6f0732a1314db3d79f",
+      "pkg/engine/http_concurrent_evidence.go": "a8b2142ffe973e95457b5c0c9ff59b763fea3c21001c80e55c702eb2afd40ce9",
+      "pkg/engine/http_concurrent_retry_combined_review_test.go": "626e7c5167a1afa8170f2cc2b824438e28b512151c3c9d90029d2c16ab49131a",
+      "pkg/engine/replay.go": "6100d8bc2dbeb83e841555d2ccfeae1d9c6c76e955e4487b3c7539d438a99995",
+      "pkg/engine/secret_references.go": "af3973e82b1a023403ea816dff50f8a2c4cc46ad46120429ddf305727ed6e402",
+      "pkg/engine/vuser_execute.go": "6cd049164ba6d150af936e3ecba97158a4683b875ac4bd392665dcefd55792cd",
+      "pkg/engine/vuser_resolve.go": "175b3f83b7aebaaad539b365879ccfebb67268de440b7f1f1770967b46bca0ab",
+      "pkg/internal/aurapayload/payload.go": "db08b1835d15e585ec262aef7ea73ad09cff9431d937223a9b5f89f9f7657745",
+      "pkg/internal/aurapayload/template_contract.go": "c7dccc6737d78f6dbe0116c81e89f9fe250a86e6632ec24960313b0f1f642068",
+      "pkg/internal/aurapayload/template_contract_test.go": "44bd26bb032e9de174e5225e3f3611e05888e77bd97760e4d9b0470243ca879c",
+      "pkg/internal/aurapayload/template_provenance.go": "1dc85682f7d46e616d49a1b88eda49cd8ddd313c6f893a83da2a1a4629b2e43f",
+      "pkg/internal/aurapayload/template_provenance_test.go": "cc18484460ec025b0f19ffd939930b8a0f170b178a24ad41ee6d7ffe7c1dc687",
+      "pkg/internal/aurapayload/template_visit_test.go": "dea44c803360845069b01fb42244d22fd37af680468f1d40151b17c35bdb80d2",
+      "pkg/internal/bodyencoding/body_encoding.go": "c7c3c8928ae1c1ee385da2c0303247819592a07656437094e3ba6199693ed2c5",
+      "pkg/internal/bodyencoding/body_encoding_test.go": "44b30e0c48f27630e7d98f985df9b3e86780ce71db10fc0da050c5d5ea2b72d4",
+      "pkg/internal/contentdecode/decoder.go": "7db80b721517e2715d9c804d2b0298d1602be2f0b7097e0aa75d08d46a9d6f6d",
+      "pkg/internal/contentdecode/decoder_test.go": "4771ce091d2f3add5604f828702db2b14a15fff534cafd7dd2cf75f24d1db084",
+      "pkg/protocol/http/content_deflate_combined_review_test.go": "87eb5fafaa268490475ad8e857f490f4ec99f8b370da903191fd34d032364618",
+      "pkg/engine/http_concurrent_test.go": "2b79d09729f1607ca7152f1c0bfa6bf1a9c9131d2c3422e6cf434ac4b262363d"
+    },
+    "qualification": "Repeated independent combined source reviews confirmed zero actionable findings across all nine slices and 49 frozen repair inputs, followed by independent review of two test-only deltas (50 final repair files). All production and UI source inputs remain unchanged from the final source review. Full dashboard, dedicated recording and final uncached full Go gates passed.",
+    "frozen_review_checkpoint_diff_sha256": "62c2f7662e61cd2b9c66a23522b5ebd8ff602f8b3571c14e1246445dfe7355cd",
+    "post_checkpoint_reviewed_deltas": [
+      {
+        "file": "pkg/api/import_aura_contract_replay_review_test.go",
+        "checkpoint_sha256": "8b8b2c8435ac9056d1b64e357b1085dbec12e060dd31b95fd231ac0a829db821",
+        "current_sha256": "c6ceaf3b7d25980b4ed76fd0bb641e7040cd3d9ea5fba1535064ce904239b84d",
+        "change": "Test-only sync.Once registration of the stateless loopback HTTP protocol factory for repeated tests",
+        "independent_review": "zero actionable findings"
+      },
+      {
+        "file": "pkg/engine/http_concurrent_test.go",
+        "checkpoint_sha256": "c3cbf54895f9008e2ca03ab06d1f530edbf984aed5a212403297a6cebdc6ec75",
+        "current_sha256": "2b79d09729f1607ca7152f1c0bfa6bf1a9c9131d2c3422e6cf434ac4b262363d",
+        "change": "Test-only queued third request proves worker completion before releasing the held first request, retaining strict completion order and adding symmetric overlap/source/concurrency assertions",
+        "independent_review": "zero actionable findings"
+      }
+    ]
+  },
+  "repairs": [
+    {
+      "id": "aura_existing_template_fidelity",
+      "behavior": "Preserve prior form-wire correlation semantics and percent/JSON-escaped literals during business parameterization, with bounded value-free occurrence contracts and invalid-contract rejection before resolution or traffic"
+    },
+    {
+      "id": "nested_extractor_name_registry",
+      "behavior": "Reserve typed nested extractor names consistently before and after JSON serialization; retain selectable public import suggestions"
+    },
+    {
+      "id": "deflate_header_selection",
+      "behavior": "Require valid RFC1950 FCHECK before selecting zlib; decode valid ambiguous raw deflate without unsafe fallback after zlib checksum failure"
+    },
+    {
+      "id": "run_to_command_acknowledgement",
+      "behavior": "Continue a bound successful debugger command when newer socket evidence arrives before HTTP acknowledgement, retaining all state/privacy/incarnation/sequence fences"
+    },
+    {
+      "id": "http_alias_concurrency_controls",
+      "behavior": "Offer supported concurrency controls for HTTP1.1 and HTTP2 aliases and preserve save/reopen state"
+    },
+    {
+      "id": "discarded_retry_sensitive_values",
+      "behavior": "Retain bounded sensitive classification across discarded concurrent retry attempts, join all sibling classifications before publication, persist classification for subsequent actions, and fail closed on incomplete/capacity failures"
+    },
+    {
+      "id": "contextual_concurrent_dependency_validation",
+      "behavior": "Exclude only attested literal token occurrences from generic dependency scans; retain active sibling-dependency rejection, byte/node/work/token caps and consistent whitespace-normalized policy selection"
+    },
+    {
+      "id": "contextual_correlation_repair",
+      "behavior": "Use manual body-repair advice for structurally resolved Aura requests even when wire bytes match, guard client transactions, and reject guided-authoring body edits atomically before extractor/consumer mutation while retaining URL/header and extractor-only support"
+    },
+    {
+      "id": "concurrent_replay_fixture_completion_witness",
+      "behavior": "Replace a protocol-return barrier with a queued third request that causally proves second-worker completion; retain strict inverted completion and debugger/session checks and add symmetric overlap, source identity and peak-concurrency coverage. Test-only change."
+    }
+  ],
+  "checks": {
+    "focused_go": {
+      "result": "passed",
+      "packages": 9,
+      "log": "/private/tmp/apex-aura-combined-green-go-focused-4.log"
+    },
+    "focused_dashboard": {
+      "result": "passed",
+      "files": 6,
+      "tests": 353,
+      "log": "/private/tmp/apex-aura-combined-green-ui-focused-3.log"
+    },
+    "documentation": {
+      "result": "passed",
+      "log": "/private/tmp/apex-aura-combined-docs-check-final.log"
+    },
+    "repeated_race_shuffle": {
+      "result": "passed_after_test_fixture_correction",
+      "repeats": 3,
+      "core_packages_passed": 8,
+      "api_packages_passed": 1,
+      "core_log": "/private/tmp/apex-aura-combined-race-shuffle-3.log",
+      "api_final_log": "/private/tmp/apex-aura-combined-api-race-shuffle-3-final.log",
+      "qualification": "The initial combined command passed all eight core packages but failed on repeat API protocol registration. Only the fixture was corrected; the API package then passed all three race/shuffle repeats. The initial combined log retains that superseded failure."
+    },
+    "full_go": {
+      "result": "passed_after_test_fixture_correction",
+      "superseded_log": "/private/tmp/apex-aura-combined-go-full-final.log",
+      "superseded_exit_code": 1,
+      "superseded_packages_passed": 122,
+      "superseded_packages_failed": 1,
+      "superseded_failure": "TestConcurrentHTTPReplayUsesSameJoinAndOuterDebuggerBoundary: protocol-return fixture barrier did not prove worker completion; corrected without production changes",
+      "superseded_wall_seconds": 1281.79,
+      "final_log": "/private/tmp/apex-aura-combined-go-full-final-rerun.log",
+      "exit_code": 0,
+      "packages_passed": 123,
+      "packages_without_tests": 6,
+      "wall_seconds": 920.99,
+      "command": "GOMEMLIMIT=6GiB GOMAXPROCS=4 GOFLAGS=-p=1 go test -p=1 -timeout=20m -count=1 -ldflags=-w -gcflags='github.com/jasonczech/apexload/pkg/api=-dwarf=false' ./...",
+      "qualification": "Default vet and assertions retained; only debug information omitted to fit local compiler/linker resources. The superseded failure was corrected only in the test fixture; the entire suite then passed with uncached test results."
+    },
+    "full_dashboard_cycle": {
+      "result": "passed",
+      "exit_code": 0,
+      "typecheck": "passed",
+      "lint": "passed",
+      "unit_files_passed": 481,
+      "unit_tests_passed": 5227,
+      "embedded_build": "passed",
+      "profiles": {
+        "dev-admin": {
+          "tests": 217,
+          "passed": 212,
+          "skipped": 5
+        },
+        "local-auth": {
+          "tests": 137,
+          "passed": 136,
+          "skipped": 1
+        }
+      },
+      "skip_qualification": "Four role-dependent scenarios skipped only in dev-admin ran under local-auth. The optional private-archive acceptance scenario skipped in both profiles. New Run To and HTTP1.1/HTTP2 alias scenarios passed in both profiles.",
+      "log": "/private/tmp/apex-aura-combined-dashboard-final.log",
+      "wall_seconds": 2088.68
+    },
+    "dedicated_recording": {
+      "result": "passed",
+      "profiles": [
+        "dev-admin",
+        "local-auth"
+      ],
+      "scope": [
+        "environment.spec.ts",
+        "recovery.spec.ts"
+      ],
+      "exit_code": 0,
+      "tests_passed": 14,
+      "profiles_passed": {
+        "dev-admin": 7,
+        "local-auth": 7
+      },
+      "skipped": 0,
+      "flaky": 0,
+      "retries": 0,
+      "wall_seconds": 206.0,
+      "browser_duration_seconds": 130.72463,
+      "log": "/private/tmp/apex-aura-combined-recording-final.log",
+      "report": "/private/tmp/apex-aura-combined-recording-final/report.json",
+      "scope_qualification": "Actual desktop Chromium with emulated iPad/Pixel profiles; physical-device qualification remains unverified"
+    },
+    "required_react_aura_record_replay": {
+      "result": "passed",
+      "browser_tests_mode": "require",
+      "tests": [
+        "TestRecordAndReplayReactSPAWithPollingAndDynamicAuraSelectors",
+        "TestRecordAndReplayReactAuraWithSessionCorrelation"
+      ],
+      "log": "/private/tmp/apex-aura-combined-react-aura-required-final.log",
+      "wall_seconds": 15.17,
+      "scope": "Actual desktop Chromium recording and replay; no optional skip"
+    },
+    "bundle_budget": {
+      "result": "inherited_failure",
+      "exit_code": 1,
+      "log": "/private/tmp/apex-aura-combined-final-bundle-check.log",
+      "failed_limits": [
+        "css.asset_gzip.index",
+        "css.asset_raw.index",
+        "css.total_gzip",
+        "css.total_raw",
+        "js.total_gzip",
+        "js.total_raw",
+        "route.scripts-library.gzip",
+        "route.test-execution.gzip"
+      ],
+      "new_failed_limits": 0,
+      "thresholds_changed": false
+    },
+    "completion_witness_race_shuffle": {
+      "result": "passed",
+      "repeats": 20,
+      "tests": 2,
+      "log": "/private/tmp/apex-aura-combined-completion-witness-race-20.log",
+      "wall_seconds": 13.22
+    }
+  },
+  "evidence_scope": "Offline supplied captures and synthetic loopback/desktop Chromium; physical Chrome on iPad and live Salesforce hosts remain unqualified",
+  "cache_cleanup": {
+    "status": "shared_cache_cleanup_deferred",
+    "reason": "The other active task, Identify top roadmap gaps, still has dependent work; repository instructions prohibit clearing shared caches while another active agent needs them.",
+    "go_cache": "/Users/jasonczech/Library/Caches/go-build",
+    "go_build_and_test_cache": "deferred",
+    "shared_frontend_vite_caches": "deferred",
+    "shared_docker_build_cache": "deferred",
+    "disposable_worktree_dependency_symlink": "removed after all dependent tests/builds; actual shared node_modules preserved",
+    "source_dependencies_build_outputs_and_application_data": "preserved",
+    "reclaimed_cache_bytes": 0
+  },
+  "input_integrity": {
+    "post_completion_witness_sha256": "9736e1fde2afb1d1ec0aaa36ba9f4075718b59370c052e90304cf556620bd31f",
+    "only_changed_input": "pkg/engine/http_concurrent_test.go",
+    "qualification": "Initial Git-based snapshots covered 6,303 tracked/nonignored files but omitted 241 ignored embedded assets. All original inputs remain unchanged after the separately reviewed test-only witness correction. The expanded snapshot, taken after the recording rebuild and before final Go completion, hashes all 243 embedded static files for 6,544 total inputs and shows zero final drift; all other go:embed inputs were already hashed. Earlier/final build receipts match all 241 generated filenames and displayed sizes. Recording traces substantiate byte equality for 28 retained CSS bodies; these receipts do not establish a complete prebuild asset-byte manifest.",
+    "after_dashboard_build_before_initial_full_go_sha256": "a177b21b413e34c830154f8fc5523d3f674ba828a88e774dd2711c04a9f32223",
+    "tracked_and_nonignored_files": 6303,
+    "expanded_files_including_ignored_embedded_assets": 6544,
+    "expanded_sha256_before_final_go_completion": "45c22983e6a36097ab483c02991cde4d8cc191e643ab37f99f46568e9ae1629c",
+    "embedded_static_files_hashed": 243,
+    "previously_omitted_ignored_embedded_files": 241,
+    "expanded_final_sha256": "45c22983e6a36097ab483c02991cde4d8cc191e643ab37f99f46568e9ae1629c",
+    "final_drift_files": 0,
+    "expanded_manifest": "All tracked/nonignored files plus explicit recursive pkg/api/static enumeration; excludes only the QA record and disposable node_modules symlink.",
+    "build_receipt_comparison": {
+      "generated_outputs": 241,
+      "filename_differences": 0,
+      "displayed_raw_and_gzip_size_differences": 0,
+      "displayed_size_precision_kb": 0.01,
+      "final_recording_trace_asset_paths": 109,
+      "retained_css_bodies_compared": 28,
+      "retained_css_body_mismatches": 0,
+      "loaded_js_paths_without_retained_body": 81,
+      "main_cycle_pass_traces_available": 0
+    }
+  },
+  "evidence_log_sha256": {
+    "/private/tmp/apex-aura-combined-green-go-focused-4.log": "338eeb0233ac3b9182a8cda7059acb0aa3f0ec6855a7ccc37d3b8d875c8f0092",
+    "/private/tmp/apex-aura-combined-green-ui-focused-3.log": "bb939db15129e2ae2e49cc8a1a89d3bb9d1813b448ce472043830e76c2269e1a",
+    "/private/tmp/apex-aura-combined-race-shuffle-3.log": "56219c3d904cd10329567e01c0e8095ab3e46400649fff94e82b7ad594d03305",
+    "/private/tmp/apex-aura-combined-api-race-shuffle-3-final.log": "e5c173ebed70d4ebade223733be24fb89c5a7cc61d5d7c562bb77fb448d0353a",
+    "/private/tmp/apex-aura-combined-go-full-final.log": "e3c72716c116001c13cf9b56416904c6a97a82505e90f6e18828eaa90a813428",
+    "/private/tmp/apex-aura-combined-go-full-final-rerun.log": "0206857c0ea54b1dad38dc810f397e3d224d7a1b433d3d3e27cccacd58c4b1ea",
+    "/private/tmp/apex-aura-combined-dashboard-final.log": "5cf4b9ec8dad67d3713fc853760a3308e4509dffbf99f99edbff36ba91decc0b",
+    "/private/tmp/apex-aura-combined-recording-final.log": "5be94d81ec96e2091ff317c356a90de41aee1fcb0d1a03987ec887019e646ee9",
+    "/private/tmp/apex-aura-combined-react-aura-required-final.log": "a8d8f6dc5c54b17d32c3c4890b403deef86b0c5519ef0559363fe379e9689be0",
+    "/private/tmp/apex-aura-combined-final-bundle-check.log": "5e48ef16180f1af68ee621a91be5738522a042f9d63845e5de63ae03bf00ac30",
+    "/private/tmp/apex-aura-combined-completion-witness-race-20.log": "1e088d61fa9b4956b1c9de68929dceb5533047b25d545643ddedb98be6f63249",
+    "/private/tmp/apex-aura-combined-docs-check-final.log": "d782130e2da05b67d369fbfec3b64d0bb47a1718fcba6e19e2a3d959d23b1dd2"
+  }
+}

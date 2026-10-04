@@ -567,3 +567,20 @@ describe("dev preview API headers", () => {
     vi.useRealTimers();
   });
 });
+
+describe('activity warnings for saved mutations', () => {
+  afterEach(() => vi.restoreAllMocks())
+  it('announces warnings and refreshes history for multipart API saves', async () => {
+    const warning = vi.fn(); const changed = vi.fn()
+    window.addEventListener('apexload:activity-warning', warning)
+    window.addEventListener('apexload:activity-changed', changed)
+    try {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 201, headers: { 'X-APEXLOAD-Audit-Status': 'unavailable' } }))
+      const response = await apiFetch('/scripts/import', { method: 'POST', body: new FormData() })
+      expect(response.ok).toBe(true); expect(warning).toHaveBeenCalledTimes(1); expect(changed).toHaveBeenCalledTimes(1)
+    } finally {
+      window.removeEventListener('apexload:activity-warning', warning)
+      window.removeEventListener('apexload:activity-changed', changed)
+    }
+  })
+})

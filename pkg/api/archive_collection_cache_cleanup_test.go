@@ -390,3 +390,76 @@ func TestCollectionCacheCleanupRejectsReplacedDiscoveryDirectory(t *testing.T) {
 		t.Fatal("original evidence removed", err)
 	}
 }
+
+type collectionCleanupDetachedDeadline struct {
+	context.Context
+	at time.Time
+}
+
+func (ctx collectionCleanupDetachedDeadline) Deadline() (time.Time, bool) { return ctx.at, true }
+func (ctx collectionCleanupDetachedDeadline) Done() <-chan struct{}       { return nil }
+func (ctx collectionCleanupDetachedDeadline) Err() error                  { return nil }
+
+func TestCollectionCacheCleanupUsesActualCallerDeadlineAtHeldFences(t *testing.T) {
+	for _, namespace := range []string{"source", "capacity"} {
+		t.Run(namespace, func(t *testing.T) {
+			tr, _, run, _, intent := collectionCleanupFixture(t, "a")
+			var release func()
+			var err error
+			if namespace == "source" {
+				release, err = lockArchivePublicationSource(context.Background(), run.ID)
+			} else {
+				release, err = lockArchiveNamespace(context.Background(), "_collection_locks", "capacity.lock")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer release()
+			// The actual deadline expires while Err/Done deliberately remain
+			// unpublished. This also represents timer-publication scheduling lag.
+			ctx := collectionCleanupDetachedDeadline{Context: context.Background(), at: time.Now().Add(25 * time.Millisecond)}
+			if err := tr.retirePublishedCollectionCaches(ctx); !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatal("expired caller deadline became a successful busy-source skip", err)
+			}
+			if _, err := os.Stat(collectionCachedDirectory(resolveArchiveRoot(), intent, "a")); err != nil {
+				t.Fatal("expired cleanup removed held source", err)
+			}
+		})
+	}
+}
+
+func TestCollectionCacheCleanupBusySourceSkipsOnlyWithLiveCaller(t *testing.T) {
+	tr, _, run, _, intent := collectionCleanupFixture(t, "a")
+	release, err := lockArchivePublicationSource(context.Background(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if err := tr.retirePublishedCollectionCaches(context.Background()); err != nil {
+		t.Fatal("cleanup's own bounded busy-source retry became a caller failure", err)
+	}
+	if _, err := os.Stat(collectionCachedDirectory(resolveArchiveRoot(), intent, "a")); err != nil {
+		t.Fatal("busy cleanup removed held source", err)
+	}
+}
+
+func TestCollectionCacheCleanupContextAuthority(t *testing.T) {
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		want error
+	}{
+		{"live", context.Background(), nil},
+		{"future detached deadline", collectionCleanupDetachedDeadline{Context: context.Background(), at: time.Now().Add(time.Minute)}, nil},
+		{"expired detached deadline", collectionCleanupDetachedDeadline{Context: context.Background(), at: time.Now().Add(-time.Second)}, context.DeadlineExceeded},
+		{"cancelled", cancelled, context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := collectionCacheCleanupContextError(tc.ctx); !errors.Is(err, tc.want) {
+				t.Fatalf("cleanup authority = %v, want %v", err, tc.want)
+			}
+		})
+	}
+}

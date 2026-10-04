@@ -12,7 +12,7 @@ At narrow widths, use **Outline**, **Editor**, and **Inspector** to select a pan
 
 **Debug options** shows temporary session overrides and their count. Review logging, think-time handling, start-paused behavior, and seed variables before starting a replay. Reset restores debugger defaults; these options do not modify saved Runtime Settings. **Checks & readiness** remains available while inspecting an item and distinguishes static checks from runtime prerequisites and recorded replay evidence.
 
-Selecting a parameter in Debug shows its current definition and any explicitly captured parameter value for the selected event. A seed or extracted variable with the same unqualified name is not parameter evidence. Missing captures are labeled **Not captured**; values are masked until revealed, and evidence from a different draft is labeled separately.
+Selecting a parameter in Debug keeps its authored definition separate from runtime receipts. **Current paused state** shows whether the engine has prepared or actually resolved the parameter, its update policy, and its last actual-use receipt. Each-occurrence values describe the last resolution; they do not predict the next value or prove request acceptance. A seed or extracted variable with the same unqualified name is not parameter evidence. Historical values require an explicit history selection, and evidence from a different draft is labeled separately.
 
 ## Investigating a run
 
@@ -20,7 +20,11 @@ The transport shows Run, Pause or Continue according to the session state. **Fol
 
 **Problems** separates runtime failures from validation/editor issues. Select a runtime failure to open that exact action and iteration. **Timeline** groups completed executions and supports action search, failure filtering, duration, and evidence navigation. Session lifecycle messages remain available in a disclosure. **Engine logs** includes a **Raw text** view; filtered-out logs are distinguished from uncaptured logs.
 
-**Variables** offers searchable, pinned watches, a changed-at-execution filter, and a choice between latest session values and values after a selected execution. Values are reconstructed only from retained seed/extraction evidence. The existing variable timeline links back to the action that changed a value.
+**Variables** defaults to **Current paused state**. It displays actual VUser bindings, parameter runtime receipts, original source-row numbers, and active execution frames only while the engine holds the reported boundary. Repeated inspection does not consume a parameter reference, allocate a row, advance random selection, or evaluate a template. Empty arrays clear previous bindings; empty values, redacted values, omitted values, and bounded detail are distinguished.
+
+A pause request while an action is executing remains unavailable until the engine reaches a held boundary. Continue, Step, Stop, terminal completion, lost session ownership, and cancellation revoke current values. Completed-run values remain historical. Choose **Retained history** or **Selected execution (after)** explicitly to use searchable, pinned watches and the existing variable timeline; reconstructed seed/extraction history cannot fill missing current values.
+
+**Active runtime frames** links to the exact unchanged authored source when it can be resolved. Original row numbers are 1-based, exclude the header, and retain shard/allocation offsets. Frames identify the current phase, nested control flow, loop iteration and isolated parallel branch; they do not expose private per-frame storage. Concurrent HTTP groups capture only the parent before preparation/dispatch and after all children join. Current values are available only while that hook actually holds a pause; an after-action hold is failure-only.
 
 ## Capture and run profiles
 
@@ -93,6 +97,10 @@ Exports default to JSON and include the current session state. `?format=log`, `?
 ## Operating Notes
 
 Pause and break-on-failure waits are signal-driven: replay goroutines block until resume, step, stop, or terminal cancellation wakes them. Stop is idempotent for existing sessions, so clients can retry a stop request safely.
+
+Full debugger responses include a session incarnation, a decimal-string state revision, and a versioned full runtime-state replacement. Unavailable state has an explicit null snapshot. The client rejects foreign, stale, malformed and conflicting updates and resynchronizes through a trusted session read. Leaf WebSocket updates carry identity, revision and status without repeating binding maps. Revision exhaustion permanently disables current-state evidence for that session.
+
+Runtime projection applies strict redaction before display limits and omits whole values that cannot be safely inspected. It bounds the combined receipt count to 256, frames and rows to 64 each, authored text to 4 KiB per field, and the snapshot to 64 KiB, with separate private inspection/work limits. A classification failure removes all runtime detail for the run, including older retained evidence and exports. These debugger receipts establish local replay behavior; they do not qualify a physical browser or prove Salesforce session fidelity.
 
 ### Source Mapping review
 

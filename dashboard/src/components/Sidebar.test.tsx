@@ -543,7 +543,7 @@ describe('Sidebar', () => {
 
     const labels = Array.from(container.querySelectorAll('.sidebar-nav .nav-label')).map(label => label.textContent)
 
-    expect(labels).toEqual(['New Test', 'Dashboard', 'Command Center', 'Results', 'Monitoring', 'Scripts', 'Scenarios', 'Repository', 'Settings', 'Help & documentation'])
+    expect(labels).toEqual(['New Test', 'Dashboard', 'Command Center', 'Results', 'Monitoring', 'Activity', 'Scripts', 'Scenarios', 'Repository', 'Settings', 'Help & documentation'])
   })
 
   it('uses distinct Dashboard and Command Center sidebar icons', async () => {

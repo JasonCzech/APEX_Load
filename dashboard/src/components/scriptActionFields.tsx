@@ -1,4 +1,5 @@
 import { bodyLanguage } from './actionBodyModel'
+import { HTTPActionVersionFields } from './HTTPActionVersionFields'
 import { ManagedActionChecks, OpenActionBody } from './actionInspectorContext'
 // Per-protocol action field editors and the shared header/extractor/assertion
 // section editors used by the ScriptEditor ActionEditor. Extracted from
@@ -742,6 +743,8 @@ export function JmsActionFields({
 }
 
 export interface HttpActionFieldsProps {
+  protocol: string
+  scriptHTTPVersion?: string
   action: Action
   index: number
   isBrowserScript: boolean
@@ -760,6 +763,8 @@ export interface HttpActionFieldsProps {
 }
 
 export function HttpActionFields({
+  protocol,
+  scriptHTTPVersion,
   action,
   index,
   isBrowserScript,
@@ -794,6 +799,7 @@ export function HttpActionFields({
 
   return (
     <>
+      <HTTPActionVersionFields action={action} index={index} protocol={protocol} scriptVersion={scriptHTTPVersion} onUpdate={onUpdate} />
       {isSoapScript && (
         <SoapActionFields action={action} index={index} onUpdate={onUpdate} />
       )}
@@ -890,7 +896,7 @@ export function HttpActionFields({
         <ProtocolAssertionsSection
           action={action}
           index={index}
-          protocol={isBrowserScript ? 'browser' : isSoapScript ? 'soap' : 'http'}
+          protocol={isBrowserScript ? 'browser' : isSoapScript ? 'soap' : protocol}
           onAddAssertion={onAddAssertion}
           onRemoveAssertion={onRemoveAssertion}
           onUpdateAssertion={onUpdateAssertion}
@@ -1127,6 +1133,10 @@ function assertionOptions(protocol: string): Array<[string, string]> {
       return [['row_count', 'Row Count'], ['rows_affected', 'Rows Affected'], ['scalar_equals', 'Scalar Equals'], ['body_contains', 'Result Contains'], ['body_not_contains', 'Result Excludes'], ['response_time_ms', 'Response Time (ms)']]
     case 'network':
       return [['record_count', 'Record Count'], ['entry_count', 'Entry Count'], ['messages_received', 'Messages Received'], ['body_contains', 'Transcript Contains'], ['body_not_contains', 'Transcript Excludes'], ['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)']]
+    case 'http':
+    case 'http/1.1':
+    case 'http/2':
+      return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['header_contains', 'Header Contains'], ['body_regex_capture_equals', 'Body Regex Capture Equals'], ['aura_actions_success', 'Aura actions succeed']]
     default:
       return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['header_contains', 'Header Contains'], ['body_regex_capture_equals', 'Body Regex Capture Equals']]
   }
@@ -1160,7 +1170,15 @@ export function ProtocolAssertionsSection({ action, index, protocol, onAddAssert
       <div className="sub-header"><h4>Assertions</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddAssertion(index)}>+ Add</button></div>
       {(action.assertions || []).map((assertion, assertionIndex) => (
         <div key={assertionIndex} className="assertion-row">
-          <select aria-label={`Assertion ${assertionIndex + 1} type`} value={assertion.type} onChange={e => onUpdateAssertion(index, assertionIndex, 'type', e.target.value)}>
+          <select aria-label={`Assertion ${assertionIndex + 1} type`} value={assertion.type} onChange={e => {
+            const type = e.target.value
+            onUpdateAssertion(index, assertionIndex, 'type', type)
+            if (type === 'aura_actions_success') {
+              for (const field of ['value', 'expected', 'min', 'max', 'legacy_html_check'] as const) {
+                if (assertion[field] !== undefined) onUpdateAssertion(index, assertionIndex, field, undefined)
+              }
+            }
+          }}>
             {!options.some(([value]) => value === assertion.type) && <option value={assertion.type}>{assertion.type} (preserved)</option>}
             {options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>

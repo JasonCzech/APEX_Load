@@ -7,6 +7,157 @@ test.beforeEach(async ({ page }) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
 })
 
+test('AppDynamics connection drafts, saved checks, and discovery preserve credential privacy', async ({ page }) => {
+  const workspace = await createWorkspace(page.context().request)
+  await page.goto(`/#/settings?setting=appdynamics-capture&${scopeQuery(workspace)}`)
+  await page.reload()
+  const card = page.getByLabel('AppDynamics connections', { exact: true })
+  await card.getByRole('button', { name: 'Add AppDynamics connection' }).click()
+  const form = card.getByLabel('AppDynamics connection editor', { exact: true })
+  await form.getByLabel('Name (required)', { exact: true }).fill('Workflow AppDynamics')
+  await form.getByRole('button', { name: 'Save connection', exact: true }).click()
+  await expect(card).toContainText('Workflow AppDynamics')
+  await card.getByRole('button', { name: 'Edit', exact: true }).click()
+  await form.getByLabel('Controller HTTPS URL', { exact: true }).fill('https://workflow.saas.appdynamics.com')
+  await form.getByLabel('Account name', { exact: true }).fill('workflow')
+  await form.getByLabel('OAuth client ID secret reference', { exact: true }).fill('workflow-appd-client-id')
+  await form.getByLabel('OAuth client secret reference', { exact: true }).fill('workflow-appd-client-secret')
+  await expect(form.getByRole('checkbox', { name: 'Enable connection', exact: true })).toBeDisabled()
+  const updated = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname.includes('/monitoring/appdynamics-connections/'))
+  await form.getByRole('button', { name: 'Save connection', exact: true }).click()
+  const updateResponse = await updated
+  expect(updateResponse.ok()).toBeTruthy()
+  const body = await updateResponse.text()
+  expect(body).not.toContain('workflow-appd-client-id')
+  expect(body).not.toContain('workflow-appd-client-secret')
+  const connection = JSON.parse(body) as { id: string }
+  await card.getByRole('button', { name: 'Edit', exact: true }).click()
+  await expect(form.getByLabel('OAuth client ID secret reference', { exact: true })).toHaveValue('')
+  await form.getByRole('button', { name: 'Discard draft', exact: true }).click()
+  await page.route(`**/api/v1/projects/${workspace.projectId}/monitoring/appdynamics-connections/${connection.id}/test`, route => route.fulfill({ status: 202, json: { id: 'fixture-check', kind: 'test', status: 'pending', created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60000).toISOString() } }))
+  await page.route(`**/api/v1/projects/${workspace.projectId}/monitoring/appdynamics-connections/${connection.id}/operations/fixture-check`, route => route.fulfill({ json: { id: 'fixture-check', kind: 'test', status: 'complete', result: { capabilities: { metrics: true, analytics: false } } } }))
+  await card.getByRole('button', { name: 'Test saved connection', exact: true }).click()
+  await expect(card.getByLabel('AppDynamics operation')).toContainText('metrics: supported')
+  await expect(card.getByLabel('AppDynamics operation')).toContainText('analytics: unavailable')
+  await page.route(`**/api/v1/projects/${workspace.projectId}/monitoring/appdynamics-connections/${connection.id}/applications?*`, route => route.fulfill({ status: 202, json: { id: 'fixture-discovery', kind: 'discover', status: 'pending' } }))
+  await page.route(`**/api/v1/projects/${workspace.projectId}/monitoring/appdynamics-connections/${connection.id}/operations/fixture-discovery`, route => route.fulfill({ json: { id: 'fixture-discovery', kind: 'discover', status: 'complete', result: { entities: [{ id: '123', name: 'Checkout', type: 'application' }] } } }))
+  await card.getByRole('button', { name: 'Discover entities', exact: true }).click()
+  await card.getByLabel('AppDynamics discovery').getByRole('button', { name: 'Discover', exact: true }).click()
+  await expect(card.getByLabel('AppDynamics operation')).toContainText('Checkout')
+  await expect(card.getByLabel('AppDynamics operation')).toContainText('123')
+  await card.getByRole('button', { name: 'Delete', exact: true }).click()
+  await card.getByRole('button', { name: 'Keep connection', exact: true }).click()
+  await expect(card).toContainText('Workflow AppDynamics')
+  await card.getByRole('button', { name: 'Delete', exact: true }).click()
+  await card.getByRole('button', { name: 'Confirm delete', exact: true }).click()
+  await expect(card).toContainText('No AppDynamics connections are configured')
+})
+
+test('AppDynamics source editing preserves typed selections for direct and collector collection', async ({ page }) => {
+  const workspace = await createWorkspace(page.context().request)
+  const sourcePath = `/api/v1/projects/${workspace.projectId}/monitor-sources`
+  let sources: Record<string, unknown>[] = []
+  await page.route('**/api/v1/analysis/capabilities?*', async route => {
+    const response = await route.fetch()
+    await route.fulfill({ json: { ...await response.json(), monitoring_enabled: true } })
+  })
+  await page.route(`**${sourcePath}*`, async route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: sources })
+    const source = route.request().postDataJSON() as Record<string, unknown>
+    sources = [{ ...source, id: 'workflow-appd-source', revision: 1 }]
+    return route.fulfill({ json: sources[0] })
+  })
+  await page.route(`**/api/v1/monitoring/collectors?*`, route => route.fulfill({ json: { collectors: [{ id: 'workflow-collector', name: 'Private AppDynamics collector', health: 'healthy' }] } }))
+  await page.route(`**/api/v1/projects/${workspace.projectId}/monitoring/appdynamics-connections`, route => route.fulfill({ json: { connections: [{ id: 'workflow-appd', name: 'Verified AppDynamics', enabled: true, revision: 1, verified_revision: 1, collection_mode: 'direct', config: { endpoint: 'https://workflow.saas.appdynamics.com', account_name: 'workflow', auth_type: 'oauth' } }, { id: 'workflow-appd-private', name: 'Verified private AppDynamics', enabled: true, revision: 1, verified_revision: 1, collection_mode: 'collector', collector_agent_id: 'workflow-collector', config: { endpoint: 'https://workflow.private.appdynamics.com', account_name: 'workflow', auth_type: 'oauth' } }] } }))
+  await page.route(`**/api/v1/projects/${workspace.projectId}/monitoring/appdynamics-connections/workflow-appd/metrics?*`, route => route.fulfill({ status: 202, json: { id: 'fixture-presets', status: 'pending' } }))
+  await page.route(`**/api/v1/projects/${workspace.projectId}/monitoring/appdynamics-connections/workflow-appd/operations/fixture-presets`, route => route.fulfill({ json: { id: 'fixture-presets', status: 'complete', result: { entities: [{ id: '9', name: 'Average Response Time (ms)', type: 'leaf', path: 'Overall Application Performance|Average Response Time (ms)' }] } } }))
+  await page.goto(`/#/monitoring?${scopeQuery(workspace)}`)
+  await page.reload()
+  await page.getByRole('tab', { name: 'Telemetry', exact: true }).click()
+  const sourceForm = page.getByRole('region', { name: 'Run monitor sources', exact: true })
+  await sourceForm.getByRole('combobox', { name: 'Pack', exact: true }).selectOption('appdynamics')
+  await sourceForm.getByLabel('Name', { exact: true }).fill('Checkout APM')
+  await sourceForm.getByRole('combobox', { name: 'AppDynamics connection', exact: true }).selectOption('workflow-appd')
+  await expect(sourceForm.getByRole('combobox', { name: 'Collector', exact: true })).toBeDisabled()
+  await sourceForm.getByLabel('Application IDs (comma separated)', { exact: true }).fill('123')
+  await sourceForm.getByRole('button', { name: 'Discover available preset metrics', exact: true }).click()
+  await sourceForm.getByRole('button', { name: 'Add Average Response Time (ms)', exact: true }).click()
+  await expect(sourceForm.getByLabel('Metric 1 name', { exact: true })).toHaveValue('response_time')
+  await expect(sourceForm.getByLabel('Metric 1 path', { exact: true })).toHaveValue('Overall Application Performance|Average Response Time (ms)')
+  await expect(sourceForm.getByLabel('Metric 1 unit', { exact: true })).toHaveValue('ms')
+  await sourceForm.getByRole('combobox', { name: 'Metric 1 source statistic', exact: true }).selectOption('average')
+  await sourceForm.getByRole('button', { name: 'Add Analytics query', exact: true }).click()
+  await sourceForm.getByLabel('Analytics 1 name', { exact: true }).fill('checkout_count')
+  await sourceForm.getByLabel('Analytics 1 application ID field (alternative)', { exact: true }).fill('applicationId')
+  await sourceForm.getByLabel('Analytics 1 read query', { exact: true }).fill('SELECT COUNT(*) AS value FROM transactions')
+  const saved = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === sourcePath)
+  await sourceForm.getByRole('button', { name: 'Save monitor source', exact: true }).click()
+  const directPayload = (await saved).postDataJSON()
+  expect(directPayload).toMatchObject({ executor_mode: 'direct', connection_id: 'workflow-appd', interval_seconds: 60, appdynamics: { applications: ['123'], metrics: [{ application_id: '123', name: 'response_time', unit: 'ms', statistic: 'average' }], analytics: [{ application_id: '123', name: 'checkout_count', kind: 'transaction', statistic: 'value' }] } })
+  await sourceForm.getByRole('button', { name: 'Edit Checkout APM', exact: true }).click()
+  await sourceForm.getByRole('combobox', { name: 'AppDynamics connection', exact: true }).selectOption('workflow-appd-private')
+  await expect(sourceForm.getByRole('combobox', { name: 'Collection location', exact: true })).toHaveValue('collector')
+  await expect(sourceForm.getByRole('combobox', { name: 'Collector', exact: true })).toHaveValue('workflow-collector')
+  const updated = page.waitForRequest(request => request.method() === 'PUT' && new URL(request.url()).pathname === `${sourcePath}/workflow-appd-source`)
+  await sourceForm.getByRole('button', { name: 'Save monitor source', exact: true }).click()
+  expect((await updated).postDataJSON()).toMatchObject({ executor_mode: 'collector', collector_id: 'workflow-collector', appdynamics: { metrics: [{ name: 'response_time' }], analytics: [{ application_id: '123' }] } })
+})
+
+test('AppDynamics live and archived evidence preserve delayed state, units and correlation', async ({ page }) => {
+  test.setTimeout(120000)
+  const request = page.context().request
+  await page.addInitScript(() => localStorage.setItem('apexload.featureFlags.runReport', 'true'))
+  const run = await startLiveRun(request, process.env.APEXLOAD_E2E_BASE_URL, { label: 'appd-evidence', duration: '2m' })
+  const start = new Date(Math.floor(Date.now() / 60000) * 60000).toISOString()
+  const bucket = (offset: number, value: number) => {
+    const timestamp = new Date(Date.parse(start) + offset * 60000).toISOString()
+    return { source: 'apm', run_id: run.testId, metric_name: 'response_time', unit: 'ms', kind: 'gauge', quality: 'valid', value, dimensions: { node: '5' }, timestamp_utc: timestamp, provider: { name: 'appdynamics', metric_id: '9', entity_ids: { application: '123', node: '5' }, bucket_start: timestamp, bucket_end: new Date(Date.parse(timestamp) + 60000).toISOString(), resolution_seconds: 60, statistic: 'value', settled: true, aggregation_eligible: true } }
+  }
+  const secondNode = bucket(0, 10)
+  const points = [bucket(0, 0), bucket(3, 25), { ...secondNode, dimensions: { node: '6' }, provider: { ...secondNode.provider, metric_id: '10', entity_ids: { application: '123', node: '6' } } }]
+  const selection = { applications: ['123'], metrics: [{ application_id: '123', name: 'response_time', path: 'Overall Application Performance|Average Response Time (ms)', unit: 'ms', statistic: 'value' }], events: true, violations: true, snapshots: true, analytics: [], settle_seconds: 120 }
+  const evidence = { id: 'snapshot-7', kind: 'snapshot', timestamp_utc: start, summary: 'Checkout snapshot', severity: 'ERROR', application_id: '123', entity_ids: { tier: '5' }, deep_link: 'https://controller.example.com/controller/#/snapshot/7', properties: { correlation: 'run_header', requestguid: 'appd-request-guid' } }
+  try {
+    await page.route('**/api/v1/analysis/capabilities?*', route => route.fulfill({ json: { monitoring_enabled: true, diagnostics_enabled: false } }))
+    await page.route(`**/api/v1/tests/${run.testId}/monitors`, route => route.fulfill({ json: [{ id: `${run.testId}:apm`, source: { id: 'apm', name: 'Checkout APM', pack: 'appdynamics', appdynamics: selection }, state: 'reconciling', next_sequence: 2, drain_deadline: new Date(Date.now() + 300000).toISOString(), coverage: { metrics: { status: 'partial', message: 'Waiting for delayed buckets' } }, topology: [{ id: '5', type: 'node', name: 'Checkout node', entity_ids: { application: '123' } }] }] }))
+    await page.route(`**/api/v1/tests/${run.testId}/monitor-evidence?*`, route => route.fulfill({ json: { evidence: [evidence], has_more: false, after_key: 'snapshot-7' } }))
+    await page.route(`**/api/v1/tests/${run.testId}/monitor-series?*`, route => route.fulfill({ json: { points, has_more: false, after_key: 'bucket-3' } }))
+    await page.goto(`/#/test/${run.testId}?tab=overview`)
+    const monitor = page.getByRole('region', { name: 'Run monitor evidence', exact: true })
+    await expect(monitor).toContainText('Load finished; collecting delayed AppDynamics data')
+    await expect(monitor).toContainText('Final collection deadline:')
+    await expect(monitor.getByRole('link', { name: 'Open in AppDynamics' })).toHaveAttribute('href', evidence.deep_link)
+    await expect(monitor).toContainText('Request GUID: appd-request-guid')
+    await monitor.getByRole('combobox', { name: 'Monitor source', exact: true }).selectOption('apm')
+    await monitor.getByLabel('Metric name', { exact: true }).fill('response_time')
+    await monitor.getByRole('button', { name: 'Refresh monitor overlay', exact: true }).click()
+    await expect(monitor).toContainText('2 valid / 2 observed samples')
+    await expect(monitor.getByRole('combobox', { name: 'Observed monitor series' })).toContainText('Checkout node (5)')
+    await monitor.getByRole('combobox', { name: 'Observed monitor series' }).selectOption({ index: 1 })
+    await expect(monitor).toContainText('1 valid / 1 observed samples')
+    await monitor.getByRole('combobox', { name: 'Load metric overlay', exact: true }).selectOption('tps')
+    await expect(monitor.getByRole('combobox', { name: 'Load metric overlay', exact: true })).toHaveValue('tps')
+    expect((await request.post(`/api/v1/tests/${run.testId}/stop`)).ok()).toBeTruthy()
+    await expect.poll(async () => Boolean((await (await request.get(`/api/v1/tests/${run.testId}`)).json()).archive), { timeout: 60000 }).toBe(true)
+    await page.route(`**/api/v1/tests/${run.testId}/archive/report*`, async route => {
+      const response = await route.fetch(); const report = await response.json()
+      report.manifest.monitoring_status = 'incomplete'
+      report.manifest.monitor_evidence_file = 'monitor_evidence.v1.jsonl'
+      report.manifest.monitor_coverage = [{ job_id: `${run.testId}:apm`, source_id: 'apm', source_revision: 2, binding_revision: 1, required: true, state: 'incomplete', executor_mode: 'direct', appdynamics: selection, provider_coverage: { metrics: { status: 'partial', truncated: true } } }]
+      report.monitor_diagnostics = [{ source_id: 'apm', diagnostic: evidence }]
+      await route.fulfill({ response, json: report })
+    })
+    await page.route(`**/api/v1/tests/${run.testId}/archive/files/monitor_evidence.v1.jsonl`, route => route.fulfill({ contentType: 'application/x-ndjson', body: points.map(point => JSON.stringify(point)).join('\n') + '\n' }))
+    await page.goto(`/#/report/${run.testId}?section=evidence`)
+    const archive = page.getByRole('region', { name: 'Archived AppDynamics evidence', exact: true }).first()
+    await expect(archive).toContainText('Monitoring: incomplete')
+    await expect(archive).toContainText('metrics: partial · truncated')
+    await archive.getByRole('button', { name: 'Load archived metric timeline' }).click()
+    await expect(archive.getByRole('combobox', { name: 'Archived monitor series' })).toContainText('response_time (ms)')
+    await expect(archive.getByRole('combobox', { name: 'Load metric overlay' })).toBeVisible()
+  } finally { await abortLiveRun(request, run) }
+})
+
 test('Confluence connection setup follows saved project connection workflow', async ({ page }) => {
   const workspace = await createWorkspace(page.context().request)
   await page.goto(`/#/settings?setting=confluence&${scopeQuery(workspace)}`)

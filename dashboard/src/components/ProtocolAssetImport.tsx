@@ -12,6 +12,9 @@ import { type BrowserReplayReport, type BrowserReplayStartResponse, type ReplayR
 import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixEntry, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type SecretBindingSelection, type SharedValues, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import AuraOutcomeReview from './AuraOutcomeReview'
+import SalesforceCorrelationReview from './SalesforceCorrelationReview'
+import AuraParameterLocationDetails from './AuraParameterLocationDetails'
 import ImportCoverageButton from './ImportCoverageButton'
 import ImportDropzone from './ImportDropzone'
 import BrowserReplayProgress from './BrowserReplayProgress'
@@ -20,6 +23,7 @@ import { type PreparedSecretBindings, type SecretBindingReviewHandle } from './S
 import ScriptImportReview from './ScriptImportReview'
 import SelectorCandidatesReview, { type SelectorCandidate } from './SelectorCandidatesReview'
 import SourceMappingReview from './SourceMappingReview'
+import type { ImportSourceIssueFocus } from './ImportSourceIssueFocus'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { useImportReviewGeneration } from './importReviewGeneration'
 import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
@@ -146,6 +150,7 @@ const copy = {
 } satisfies Record<ImportKind, Record<string, string>>
 
 const IMPORT_FILE_MAX_BYTES = 50 * 1024 * 1024
+const HAR_FILE_MAX_BYTES = 100 * 1024 * 1024
 const POSTMAN_ENVIRONMENT_ACCEPT = '.postman_environment.json,.json,application/json'
 
 function formatBytes(bytes: number): string {
@@ -169,8 +174,9 @@ function fileMatchesAccept(file: File, accept: string): boolean {
 }
 
 function validateImportFile(kind: ImportKind, file: File): string | null {
-  if (file.size > IMPORT_FILE_MAX_BYTES) {
-    return `${file.name} is ${formatBytes(file.size)}; imports are limited to ${formatBytes(IMPORT_FILE_MAX_BYTES)}.`
+  const maxBytes = kind === 'har' ? HAR_FILE_MAX_BYTES : IMPORT_FILE_MAX_BYTES
+  if (file.size > maxBytes) {
+    return `${file.name} is ${formatBytes(file.size)}; imports are limited to ${formatBytes(maxBytes)}.`
   }
   if (!fileMatchesAccept(file, copy[kind].accept)) {
     const extensions = acceptTokens(copy[kind].accept).filter(token => token.startsWith('.')).join(', ')
@@ -830,6 +836,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   }, [])
   const [, setConversionScope] = useState(0)
   const [secondaryHARFile, setSecondaryHARFile] = useState<File | null>(null)
+  const [auraSourceFocus, setAuraSourceFocus] = useState<ImportSourceIssueFocus | null>(null)
   const [name, setName] = useState('')
   const [baseURL, setBaseURL] = useState('')
   const [soapVersion, setSoapVersion] = useState('1.1')
@@ -1240,6 +1247,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   )
   const harSummary: HARImportSummary | undefined = kind === 'har' ? (result as HARImportResult | null | undefined)?.summary : undefined
   const salesforceReview = kind === 'har' ? salesforceReviewForImport(result, reviewedScript) : null
+  useEffect(() => { setAuraSourceFocus(null) }, [reviewScope])
   const mulesoftReview = preservedReviewForImport<MulesoftReview>(reviewedScript, 'mulesoft_review')
   const agentforceReview = preservedReviewForImport<AgentforceReview>(reviewedScript, 'agentforce_review')
   const agentforceTransformChanges = (reviewedScript?.metadata?.import?.preserved?.agentforce_transform as AgentforceTransformChange[] | undefined) ?? []
@@ -2430,6 +2438,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 : handleSave}
             onEdit={onEdit && !savedResult && !asyncAPISelectedScriptSaved && generatedScripts.length === 1 ? handleEditReviewedScript : undefined}
             editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
+            sourceFocusRequest={auraSourceFocus}
             previewAside={kind === 'recorder-export'
               ? <SelectorCandidatesReview script={reviewedScript} onPromoteCandidate={handlePromoteRecorderCandidate} />
               : sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
@@ -2702,6 +2711,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                     </button>
                   </div>
                 )}
+                <SalesforceCorrelationReview preview={salesforceReview.native_preview} sourceReview={sourceReview || undefined} onViewSource={mapping => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title: 'Captured correlation request', source: mapping.id, description: 'Inspect the exact original source mapping for this captured request.' }))} />
+                <AuraOutcomeReview report={salesforceReview.aura_outcomes} sourceReview={sourceReview || undefined} onViewSource={mapping => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title: 'Captured Aura request', source: mapping.id, description: 'Inspect the existing source mapping for this captured request.' }))} />
                 <ImportEvidenceFacts facts={[
                   { label: 'traffic match', value: salesforceReview.detected ? 'Detected' : 'Needs review' },
                   { label: 'HAR coverage', value: `${Math.round(salesforceReview.har_match_coverage?.coverage_pct || 0)}%` },
@@ -2745,8 +2756,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                     <p className="sample-import-subtitle">Aura parameterization candidates</p>
                     <ul className="sample-import-findings">
                       {salesforceReview.parameterizations!.slice(0, 6).map(param => (
-                        <li key={`${param.param_key}-${param.expression}`}>
-                          <strong>{param.param_key}</strong> ({param.kind}){param.sample_value ? ` e.g. ${param.sample_value}` : ''} → <code>{param.template}</code>
+                        <li key={param.name}>
+                          <strong>{param.param_key}</strong> ({param.kind}) → <code>{param.template}</code>
+                          {param.decoded_field_path && <AuraParameterLocationDetails location={param} />}
                         </li>
                       ))}
                     </ul>

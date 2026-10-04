@@ -21,6 +21,7 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 	if strings.TrimSpace(script.ID) == "" {
 		return errors.New("script id is required")
 	}
+	script.ArchivedAt = nil
 	script.ProjectID = normalizeProjectID(strings.TrimSpace(script.ProjectID))
 	encoded, err := marshalScriptForStorage(script)
 	if err != nil {
@@ -37,6 +38,9 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := ensureObjectActiveTx(tx, "script", script.ID); err != nil {
+		return err
+	}
 	if err := validateScriptFolderProjectTx(tx, script.ProjectID, script.FolderID); err != nil {
 		return err
 	}
@@ -90,6 +94,7 @@ func (s *SQLiteStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
 	if strings.TrimSpace(script.ID) == "" {
 		return false, errors.New("script id is required")
 	}
+	script.ArchivedAt = nil
 	script.ProjectID = normalizeProjectID(strings.TrimSpace(script.ProjectID))
 	encoded, err := marshalScriptForStorage(script)
 	if err != nil {
@@ -176,6 +181,7 @@ func (s *SQLiteStore) updateScriptIfUnchanged(
 	if strings.TrimSpace(script.ID) == "" || expectedUpdatedAt.IsZero() {
 		return false, errors.New("script id and expected updated_at are required")
 	}
+	script.ArchivedAt = nil
 	script.ProjectID = normalizeProjectID(strings.TrimSpace(script.ProjectID))
 	if rulesetID != "" && expectedRulesetProjectID != script.ProjectID {
 		return false, errors.New("correlation ruleset belongs to another project")
@@ -219,6 +225,9 @@ func (s *SQLiteStore) updateScriptIfUnchanged(
 			!currentRulesetUpdatedAt.Equal(expectedRulesetUpdatedAt) {
 			return false, nil
 		}
+	}
+	if err := ensureObjectActiveTx(tx, "script", script.ID); err != nil {
+		return false, err
 	}
 	var currentUpdatedAt time.Time
 	var currentUpdatedRaw, currentProjectID string
@@ -473,14 +482,14 @@ func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 	var script dsl.Script
 	var metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
 
-	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at
+	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='script' AND a.resource_id=scripts.id AND ` + archiveIncarnationMatch(s.db.dialect, "a.incarnation", "scripts.created_at") + `)
 			  FROM scripts WHERE id = ?`
 	err := s.db.QueryRow(query, id).Scan(
 		&script.ID, &script.RefKey, &script.Name, &script.Protocol, &script.Version,
 		&script.ProjectID, &script.FolderID,
 		&script.GeneratedBy, &script.GeneratedFrom,
 		&metadataJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
-		&script.CreatedAt, &script.UpdatedAt)
+		&script.CreatedAt, &script.UpdatedAt, &script.ArchivedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -495,7 +504,7 @@ func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 
 func (s *SQLiteStore) ListScripts(projectID string, folderID *string) ([]*dsl.Script, error) {
 	args := []any{}
-	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at FROM scripts`
+	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='script' AND a.resource_id=scripts.id AND ` + archiveIncarnationMatch(s.db.dialect, "a.incarnation", "scripts.created_at") + `) FROM scripts`
 	var filters []string
 	if projectID != "" {
 		filters = append(filters, `project_id = ?`)
@@ -528,7 +537,7 @@ func (s *SQLiteStore) ListScripts(projectID string, folderID *string) ([]*dsl.Sc
 			&script.ProjectID, &script.FolderID,
 			&script.GeneratedBy, &script.GeneratedFrom,
 			&metadataJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
-			&script.CreatedAt, &script.UpdatedAt)
+			&script.CreatedAt, &script.UpdatedAt, &script.ArchivedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -646,6 +655,9 @@ func (s *SQLiteStore) MoveScript(id string, folderID *string) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := ensureObjectActiveTx(tx, "script", id); err != nil {
+		return err
+	}
 	var projectID string
 	if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM scripts WHERE id = ?`, id).Scan(&projectID); err != nil {
 		return err

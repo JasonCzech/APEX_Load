@@ -23,6 +23,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/salesforce"
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -1025,12 +1027,12 @@ func salesforceHARImportJSON(t *testing.T) []byte {
           "method": "POST",
           "url": "https://attone--perfhyper2.sandbox.lightning.force.com/aura",
           "headers": [{"name":"content-type","value":"application/x-www-form-urlencoded"}],
-          "postData": {"text": "aura.token=tok%2B%2F%3D%3D&message=%7B%22actions%22%3A%5B%7B%22descriptor%22%3A%22apex%3A%2F%2FAccountController%2FACTION%24get%22%7D%5D%7D"}
+          "postData": {"text": "aura.token=tok%2B%2F%3D%3D&message=%7B%22actions%22%3A%5B%7B%22id%22%3A%221%3Ba%22%2C%22descriptor%22%3A%22apex%3A%2F%2FAccountController%2FACTION%24get%22%7D%5D%7D"}
         },
         "response": {
           "status": 200,
           "headers": [],
-          "content": {"text": "{\"actions\":[{\"state\":\"SUCCESS\"}]}"}
+          "content": {"text": "{\"actions\":[{\"id\":\"1;a\",\"state\":\"SUCCESS\"}]}"}
         }
       }
     ]
@@ -1677,11 +1679,13 @@ Action()
 			GeneratedBy string `json:"generated_by"`
 			Metadata    struct {
 				Import struct {
-					Source string `json:"source"`
+					Source    string         `json:"source"`
+					Preserved map[string]any `json:"preserved"`
 				} `json:"import"`
 			} `json:"metadata"`
 		} `json:"script"`
 		Summary struct {
+			SourceReview     *sourceview.Review `json:"source_review"`
 			SalesforceReview struct {
 				Detected         bool `json:"detected"`
 				HARMatchCoverage struct {
@@ -1689,7 +1693,8 @@ Action()
 					ImportedRequests int `json:"imported_requests"`
 				} `json:"har_match_coverage"`
 				NativePreview struct {
-					Script *dsl.Script `json:"script"`
+					Script           *dsl.Script `json:"script"`
+					NativePathDomain string      `json:"native_path_domain"`
 				} `json:"native_preview"`
 			} `json:"salesforce_review"`
 		} `json:"summary"`
@@ -1714,6 +1719,17 @@ Action()
 	}
 	if result.Script.Metadata.Import.Source != "salesforce" {
 		t.Fatalf("import source = %q, want salesforce", result.Script.Metadata.Import.Source)
+	}
+	if result.Summary.SourceReview == nil || result.Summary.SourceReview.TargetDomain != sourceview.OriginalImportTargetDomain {
+		t.Fatal("native archive summary presented original mappings as current native destinations")
+	}
+	persistedReview := sourceReviewValue(result.Script.Metadata.Import.Preserved["source_review"])
+	if persistedReview == nil || persistedReview.TargetDomain != sourceview.OriginalImportTargetDomain || result.Summary.SalesforceReview.NativePreview.NativePathDomain != salesforce.FinalNativePathDomain {
+		domain := "missing"
+		if persistedReview != nil {
+			domain = persistedReview.TargetDomain
+		}
+		t.Fatalf("native archive domains: persisted=%q summary_native=%q", domain, result.Summary.SalesforceReview.NativePreview.NativePathDomain)
 	}
 	if !reviewSectionsContain(result.ReviewSections, "salesforce_review") {
 		t.Fatalf("review sections = %#v, want salesforce_review", result.ReviewSections)

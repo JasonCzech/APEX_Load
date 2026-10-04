@@ -26,6 +26,7 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <span data-testid="import-launcher">{model.authoringState.importLauncher || 'none'}</span>
       <span data-testid="import-mode">{model.authoringState.importMode || 'none'}</span>
       <span data-testid="editing-id">{model.authoringState.editingId || 'none'}</span>
+      <span data-testid="editing-creator">{model.authoringState.editingActivity?.creator?.actor_display_name || 'Unknown'}</span>
       <span data-testid="editing-name">{model.authoringState.editingScript?.name || 'none'}</span>
       <span data-testid="draft-name">{model.authoringState.draftScript?.name || 'none'}</span>
       <span data-testid="draft-protocol">{model.authoringState.draftScript?.protocol || 'none'}</span>
@@ -83,6 +84,13 @@ describe('useScriptsAuthoringState', () => {
     })
     container.remove()
     vi.clearAllMocks()
+  })
+
+  it('preserves attribution returned with the script detail view', async () => {
+    const api = { getScript: vi.fn().mockResolvedValue({ script: { name: 'Checkout' }, activity: { creator: { actor_display_name: 'Alice' } } }) }
+    await act(async () => { root.render(<AuthoringStateHarness api={api} />) })
+    await click('load-edit')
+    expect(readTestId('editing-creator')).toBe('Alice')
   })
 
   it('keeps recording open when pairing changes the composite API object', async () => {

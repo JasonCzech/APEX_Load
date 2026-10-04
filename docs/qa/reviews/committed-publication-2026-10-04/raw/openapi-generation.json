@@ -1,0 +1,47 @@
+{
+  "command": [
+    "/Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/bin/go",
+    "generate",
+    "./pkg/api"
+  ],
+  "cwd": "/private/tmp/apexload-committed-main-push-2026-10-04",
+  "environment": {
+    "GOTOOLCHAIN": "local",
+    "GOCACHE": "/private/tmp/apexload-committed-publish-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "CGO_ENABLED": "1",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "exit_code": 0,
+  "wall_seconds": 36.93536114692688,
+  "child_max_rss_bytes": 1439285248,
+  "inputs_before": {
+    "pkg/api/openapi_contract_infer.go": "72ebacee351a1bfcfba9e89579e4d3c9e8e0bc46f0da76a519ee1ec80aff3b81",
+    "pkg/api/openapi_analysis_upload_test.go": "c61e749d7f2538c25d20d07610d615d7084f538149c3dfedbc8810ce6f3eb910",
+    "pkg/api/handlers_analysis_imports.go": "20e59f3c7a3dc49e964cf179f9a40ba1fad9ecdb24413fb88acd79005c33ed48",
+    "pkg/api/analysis_upload_physical_owner.go": "216eba6204e99523344bb8714964c9e7163eeb6fa9ec6d2180a94fb26748480e",
+    "pkg/api/openapi_gen.go": "5911ed64bdb8625f786635a9ff6cca5a593e3be56c04bc71cd0b97e68c79df6a",
+    "go.mod": "05c38d4d914dd463eadcff718550f394425eeb85721dbcab2c0fc8c8d59b2d1b",
+    "go.sum": "f24fca42c52f47ee68239f16130fc02743aed90c7ba2815b3197b665db15c2c8"
+  },
+  "inputs_after": {
+    "pkg/api/openapi_contract_infer.go": "72ebacee351a1bfcfba9e89579e4d3c9e8e0bc46f0da76a519ee1ec80aff3b81",
+    "pkg/api/openapi_analysis_upload_test.go": "c61e749d7f2538c25d20d07610d615d7084f538149c3dfedbc8810ce6f3eb910",
+    "pkg/api/handlers_analysis_imports.go": "20e59f3c7a3dc49e964cf179f9a40ba1fad9ecdb24413fb88acd79005c33ed48",
+    "pkg/api/analysis_upload_physical_owner.go": "216eba6204e99523344bb8714964c9e7163eeb6fa9ec6d2180a94fb26748480e",
+    "pkg/api/openapi_gen.go": "5911ed64bdb8625f786635a9ff6cca5a593e3be56c04bc71cd0b97e68c79df6a",
+    "go.mod": "05c38d4d914dd463eadcff718550f394425eeb85721dbcab2c0fc8c8d59b2d1b",
+    "go.sum": "f24fca42c52f47ee68239f16130fc02743aed90c7ba2815b3197b665db15c2c8"
+  },
+  "outputs": {
+    "docs/swagger.yaml": "93bd7f295e30817f601db068b437e463c62b65c13f38aa989451be1a80546490",
+    "docs/api-endpoint-catalog.json": "cc4df4f9a026b213e7c6e29ff6123132a3509ea024aa9e493d241f3106984e4b",
+    "pkg/api/apidocs/swagger.yaml": "93bd7f295e30817f601db068b437e463c62b65c13f38aa989451be1a80546490",
+    "pkg/api/apidocs/api-endpoint-catalog.json": "cc4df4f9a026b213e7c6e29ff6123132a3509ea024aa9e493d241f3106984e4b",
+    "dashboard/src/types/generated/openapi.ts": "1b9208a2f347799d5dced166553af97a2a32e4ce84245cbcf5942d2a331f91c4"
+  },
+  "log_sha256": "fd343376a624d0fe1d7429363a13a2f9db5f25daa2e2de536b20e336639d5b46",
+  "no_test_execution": true
+}

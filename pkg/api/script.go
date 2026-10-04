@@ -535,6 +535,7 @@ func (tr *TestRunner) StoreGitHubScriptImportDurable(
 		createdAt = now
 	}
 	stored := &StoredScript{
+		ArchivedAt:      canonicalScript.ArchivedAt,
 		ID:              canonicalScript.ID,
 		RefKey:          canonicalScript.RefKey,
 		Name:            canonicalScript.Name,
@@ -1106,6 +1107,9 @@ func (tr *TestRunner) GetScript(id string) (*StoredScript, bool) {
 		return nil, false
 	}
 	snapshot := cloneStoredScriptForReadLocked(s)
+	if snapshot != nil && snapshot.Script != nil {
+		snapshot.ArchivedAt = snapshot.Script.ArchivedAt
+	}
 	tr.mu.RUnlock()
 	if !ok {
 		return nil, false
@@ -1171,7 +1175,8 @@ func (tr *TestRunner) getScriptDurableIncludingPending(id string) (*StoredScript
 		stored := &StoredScript{
 			ID: script.ID, RefKey: script.RefKey, Name: script.Name, Protocol: script.Protocol,
 			Version: script.Version, ProjectID: script.ProjectID, FolderID: cloneStringPtr(script.FolderID),
-			CreatedAt: createdAt, AuthoringHealth: buildStoredScriptAuthoringHealth(script), Script: cloneScriptDefinition(script),
+			ArchivedAt: cloneTimePtr(script.ArchivedAt),
+			CreatedAt:  createdAt, AuthoringHealth: buildStoredScriptAuthoringHealth(script), Script: cloneScriptDefinition(script),
 		}
 		if previous := tr.scripts[id]; previous != nil {
 			tr.removeRefKeyLocked(previous.RefKey)

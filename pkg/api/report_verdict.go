@@ -88,12 +88,15 @@ func deriveReportVerdict(report *RunArchiveReport) ReportVerdict {
 		}
 		return ReportVerdict{Status: reportVerdictFail, Failed: true, Explanation: explanation}
 	}
+	if report.Manifest != nil && monitoringAcceptanceIncomplete(report.Manifest) {
+		return ReportVerdict{Status: reportVerdictConditional, Conditional: true, Explanation: "Required monitoring evidence or configured monitoring criteria were incomplete."}
+	}
 
 	_, latencyConfigured, _, errorConfigured := reportGoalThresholds(report)
 	configured := latencyConfigured || errorConfigured || panelConfigured
 	evaluated := rollup.Evaluated > 0 || panelEvaluated
 	if report.Manifest != nil {
-		configured = configured || hasReportAcceptanceCriteria(report.Manifest.Provenance.GoalConfig) || len(report.Manifest.TransactionRuleResults) > 0 || (report.Manifest.Provenance.GoalConfig == nil && report.Manifest.SLAEvaluated)
+		configured = configured || len(monitorRulesFromManifest(report.Manifest)) > 0 || hasReportAcceptanceCriteria(report.Manifest.Provenance.GoalConfig) || len(report.Manifest.TransactionRuleResults) > 0 || (report.Manifest.Provenance.GoalConfig == nil && report.Manifest.SLAEvaluated)
 		evaluated = evaluated || report.Manifest.SLAEvaluated
 	}
 	if !configured {

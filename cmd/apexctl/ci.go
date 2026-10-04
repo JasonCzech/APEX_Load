@@ -25,24 +25,28 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/scrub"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const (
-	maxCIScriptBytes            = 4 << 20
-	maxCIVariablesFileBytes     = 3 << 20
-	maxCIVariableEntries        = 128
-	maxCIVariableKeyBytes       = 128
-	maxCIVariableValueBytes     = 16 << 10
-	maxCIRunRequestBytes        = 4 << 20
-	ciOutcomePassed             = "passed"
-	ciOutcomeSLABreached        = "sla_breached"
-	ciOutcomeExecutionError     = "execution_error"
-	ciOutcomeConfigurationError = "configuration_error"
-	ciOutcomeTimedOut           = "timed_out"
-	ciOutcomeCancelled          = "cancelled"
+	maxCIScriptBytes              = 4 << 20
+	maxCIVariablesFileBytes       = 3 << 20
+	maxCIVariableEntries          = 128
+	maxCIVariableKeyBytes         = 128
+	maxCIVariableValueBytes       = 16 << 10
+	maxCIRunRequestBytes          = 4 << 20
+	ciOutcomePassed               = "passed"
+	ciOutcomeSLABreached          = "sla_breached"
+	ciOutcomeExecutionError       = "execution_error"
+	ciOutcomeConfigurationError   = "configuration_error"
+	ciOutcomeTimedOut             = "timed_out"
+	ciOutcomeCancelled            = "cancelled"
+	ciOutcomeInconclusive         = "inconclusive"
+	ciOutcomeMonitoringIncomplete = "monitoring_incomplete"
 )
 
 var (
@@ -105,6 +109,8 @@ type ciArgs struct {
 	duration                 time.Duration
 	rampUp                   time.Duration
 	baseURL                  string
+	monitorBindingsFile      string
+	monitorRulesFile         string
 	variablesFile            string
 	p95LatencyMs             *float64
 	maxErrorPct              *float64
@@ -204,6 +210,8 @@ func parseCIArgs(arguments []string) (ciArgs, error) {
 	fs.Var(durationValue{value: &args.duration}, "duration", "test duration")
 	fs.Var(durationValue{value: &args.rampUp}, "ramp-up", "ramp-up duration")
 	fs.StringVar(&args.baseURL, "base-url", "", "policy-controlled base URL override")
+	fs.StringVar(&args.monitorBindingsFile, "monitor-bindings-file", "", "controller monitoring bindings JSON array (empty disables capture)")
+	fs.StringVar(&args.monitorRulesFile, "monitor-rules-file", "", "terminal monitoring rules JSON array")
 	fs.StringVar(&args.variablesFile, "variables-file", "", "non-secret JSON variables")
 	fs.Var(optionalFloat{value: &args.p95LatencyMs}, "p95-latency-ms", "maximum P95 latency")
 	fs.Var(optionalFloat{value: &args.maxErrorPct}, "max-error-pct", "maximum error percentage")
@@ -258,6 +266,9 @@ func validateCIArgs(args ciArgs) error {
 		return err
 	}
 	if args.executionMode == "local" {
+		if args.monitorBindingsFile != "" || args.monitorRulesFile != "" {
+			return fmt.Errorf("monitoring configuration requires controller mode")
+		}
 		if args.scriptID != "" {
 			return fmt.Errorf("--script-id is only valid in controller mode")
 		}
@@ -405,20 +416,22 @@ func validateControllerURL(raw string) error {
 }
 
 type CIResult struct {
-	SchemaVersion int      `json:"schema_version"`
-	Outcome       string   `json:"outcome"`
-	TestID        string   `json:"test_id,omitempty"`
-	Status        string   `json:"status"`
-	SLAEvaluated  bool     `json:"sla_evaluated"`
-	SLABreached   bool     `json:"sla_breached"`
-	SLADetails    []string `json:"sla_details,omitempty"`
-	Transactions  int64    `json:"transactions"`
-	Errors        int64    `json:"errors"`
-	TPS           float64  `json:"tps"`
-	DurationMS    int64    `json:"duration_ms"`
-	ReportURL     string   `json:"report_url,omitempty"`
-	CheckURL      string   `json:"check_url,omitempty"`
-	Message       string   `json:"message,omitempty"`
+	MonitoringStatus   string                       `json:"monitoring_status,omitempty"`
+	MonitorRuleResults []analysis.MonitorRuleResult `json:"monitor_rule_results,omitempty"`
+	SchemaVersion      int                          `json:"schema_version"`
+	Outcome            string                       `json:"outcome"`
+	TestID             string                       `json:"test_id,omitempty"`
+	Status             string                       `json:"status"`
+	SLAEvaluated       bool                         `json:"sla_evaluated"`
+	SLABreached        bool                         `json:"sla_breached"`
+	SLADetails         []string                     `json:"sla_details,omitempty"`
+	Transactions       int64                        `json:"transactions"`
+	Errors             int64                        `json:"errors"`
+	TPS                float64                      `json:"tps"`
+	DurationMS         int64                        `json:"duration_ms"`
+	ReportURL          string                       `json:"report_url,omitempty"`
+	CheckURL           string                       `json:"check_url,omitempty"`
+	Message            string                       `json:"message,omitempty"`
 }
 
 func ciCmd() {
@@ -599,11 +612,16 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 			return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID"}, fmt.Errorf("script must be a JSON object")
 		}
 	}
+	bindings, monitorRules, err := loadCIMonitorConfiguration(ctx, args.monitorBindingsFile, args.monitorRulesFile)
+	if err != nil {
+		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID"}, err
+	}
 	request := CIRunRequest{
-		ProjectID: args.projectID, Name: args.testName, ReleaseID: args.releaseID,
+		MonitorBindings: bindings, ProjectID: args.projectID, Name: args.testName, ReleaseID: args.releaseID,
 		ScriptPath: args.scriptPath, ScriptID: args.scriptID,
 		Execution: CIExecution{VUsers: args.vusers, Duration: args.duration.String(), RampUp: args.rampUp.String(), BaseURL: args.baseURL, Variables: variables},
 		Goals: CIGoals{
+			MonitorRules: monitorRules,
 			P95LatencyMs: args.p95LatencyMs, MaxErrorPct: args.maxErrorPct,
 			MaxAvgServerProcessingMs: args.maxAvgServerProcessingMs,
 			MaxAvgTransferMs:         args.maxAvgTransferMs, MaxErrorCount: args.maxErrorCount,
@@ -1556,12 +1574,13 @@ func deriveCIIdempotencyKey(request CIRunRequest) string {
 		scriptIdentity = request.ScriptPath + ":" + hex.EncodeToString(hash[:])
 	}
 	requestIdentity, _ := json.Marshal(struct {
-		Name      string      `json:"name"`
-		ReleaseID string      `json:"release_id"`
-		Execution CIExecution `json:"execution"`
-		Goals     CIGoals     `json:"goals"`
+		Name            string                    `json:"name"`
+		ReleaseID       string                    `json:"release_id"`
+		Execution       CIExecution               `json:"execution"`
+		Goals           CIGoals                   `json:"goals"`
+		MonitorBindings *[]storage.MonitorBinding `json:"monitor_bindings,omitempty"`
 	}{
-		Name: request.Name, ReleaseID: request.ReleaseID, Execution: request.Execution, Goals: request.Goals,
+		Name: request.Name, ReleaseID: request.ReleaseID, Execution: request.Execution, Goals: request.Goals, MonitorBindings: request.MonitorBindings,
 	})
 	raw := strings.Join([]string{
 		request.Source.ServerURL, request.Source.RepositoryID, request.Source.Repository,
@@ -1584,7 +1603,7 @@ func ciResultFromResponse(response *CIRunResponse) CIResult {
 		transactions, errorsCount, tps, durationMS = response.Metrics.Transactions, response.Metrics.Errors, response.Metrics.TPS, response.Metrics.DurationMS
 	}
 	return CIResult{
-		SchemaVersion: ciSchemaVersion, Outcome: response.Outcome, TestID: response.TestID, Status: response.Status,
+		MonitoringStatus: response.MonitoringStatus, MonitorRuleResults: append([]analysis.MonitorRuleResult(nil), response.MonitorRuleResults...), SchemaVersion: ciSchemaVersion, Outcome: response.Outcome, TestID: response.TestID, Status: response.Status,
 		SLAEvaluated: response.SLAEvaluated, SLABreached: response.SLABreached, SLADetails: append([]string(nil), response.SLADetails...),
 		Transactions: transactions, Errors: errorsCount, TPS: tps,
 		DurationMS: durationMS, ReportURL: response.ReportURL, CheckURL: response.CheckURL, Message: response.Error,
@@ -1595,7 +1614,10 @@ func isTerminalCIResponse(response *CIRunResponse) bool {
 	if response == nil {
 		return false
 	}
-	if containsCIString([]string{ciOutcomePassed, ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled}, response.Outcome) {
+	if response.Outcome == "monitoring_pending" {
+		return false
+	}
+	if containsCIString([]string{ciOutcomePassed, ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled, ciOutcomeInconclusive, ciOutcomeMonitoringIncomplete}, response.Outcome) {
 		return true
 	}
 	switch strings.ToUpper(response.Status) {
@@ -1610,7 +1632,7 @@ func classifyCIResult(result *CIResult) {
 	if result == nil {
 		return
 	}
-	if containsCIString([]string{ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled}, result.Outcome) {
+	if containsCIString([]string{ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled, ciOutcomeInconclusive, ciOutcomeMonitoringIncomplete}, result.Outcome) {
 		return
 	}
 	if result.SLABreached {

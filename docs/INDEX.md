@@ -16,6 +16,7 @@ kept for planning or audit context only.
 | [BASELINE_COMPARISON.md](BASELINE_COMPARISON.md) | Current | Pinned baseline selection, matched-load evidence, advisory policies and saved comparison exports |
 | [ADMIN_USER_GUIDE.md](ADMIN_USER_GUIDE.md) | Current | Administrator tasks, library assignments, and project secrets |
 | [API_USER_GUIDE.md](API_USER_GUIDE.md) | Current | API orientation, authentication, workflows, and automation |
+| [OBJECT_ACTIVITY.md](OBJECT_ACTIVITY.md) | Current | Project object history, disclosure-safe activity and archive workflows |
 | [HELP_DSL_OPERATOR_GUIDE.md](HELP_DSL_OPERATOR_GUIDE.md) | Current | DSL execution, examples, and migration guidance for LoadRunner and JMeter operators |
 | [recording-agent.md](recording-agent.md) | Current | Local browser Recording Agent |
 | [deployments/README.md](../deployments/README.md) | Current | Deployment chooser |
@@ -30,6 +31,9 @@ kept for planning or audit context only.
 | [CLUSTERS_AND_CLOUD.md](CLUSTERS_AND_CLOUD.md) | Kubernetes connections and restart controls, plus Azure/AWS PaaS compute |
 | [ENTERPRISE_PLATFORM_RUNBOOK.md](ENTERPRISE_PLATFORM_RUNBOOK.md) | Enterprise platform architecture, data platform operations, and database migration |
 | [OBSERVABILITY_INTEGRATIONS.md](OBSERVABILITY_INTEGRATIONS.md) | Prometheus, OpenTelemetry, Power BI, Dynatrace, and Elastic integrations |
+| [APPDYNAMICS.md](APPDYNAMICS.md) | Classic Controller connection setup, governed collection, run evidence, and troubleshooting |
+| [PROMETHEUS_MONITORING.md](PROMETHEUS_MONITORING.md) | Project target-system Prometheus connections, typed queries, collection, evidence, archives, acceptance and operating guidance |
+| [PROMETHEUS_MONITORING_SPEC.md](PROMETHEUS_MONITORING_SPEC.md) | Target-system monitoring baseline audit, contracts, implementation sequence, limits and qualification matrix |
 | [ENTERPRISE_FLEET_AND_CAPACITY.md](ENTERPRISE_FLEET_AND_CAPACITY.md) | Generator fleet inventory, autoscaling, capacity reservations, and run supervision |
 
 ## Engineering and product references
@@ -40,6 +44,8 @@ kept for planning or audit context only.
 | [DEVELOPMENT.md](../DEVELOPMENT.md) | Developer setup, package guide, and testing policy |
 | [TROUBLESHOOTING.md](../TROUBLESHOOTING.md) | Developer and operational troubleshooting |
 | [SCRIPT_LIFECYCLE.md](SCRIPT_LIFECYCLE.md) | Script source-to-run lifecycle |
+| [OBJECT_ACTIVITY.md](OBJECT_ACTIVITY.md) | Object history, dependency evidence, archive admission, and restoration |
+| [APPDYNAMICS_SPEC.md](APPDYNAMICS_SPEC.md) | AppDynamics integration contracts, lifecycle, limits, and fixture qualification |
 | [SCRIPT_DEBUGGER_GUIDE.md](SCRIPT_DEBUGGER_GUIDE.md) | Script replay debugger workflow, routes, and imported runtime-setting/capture diagnostics |
 | [EVENT_HUBS_HOWTO.md](EVENT_HUBS_HOWTO.md) | Native Event Hubs deployment defaults, observer isolation and terminal lag gates |
 | [PROTOCOL_SUPPORT.md](PROTOCOL_SUPPORT.md) | Web/API, browser, messaging, Java Vuser, and SAP GUI support boundaries |

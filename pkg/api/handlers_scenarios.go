@@ -55,16 +55,20 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListScenarios(w http.ResponseWriter, r *http.Request) {
+	archiveState, valid := archiveStateFilter(w, r)
+	if !valid {
+		return
+	}
 	projectID := r.URL.Query().Get("project_id")
 	if projectID != "" {
-		scenarios := s.runner.ListScenariosFiltered(projectID)
+		scenarios := filterArchivedScenarios(s.runner.ListScenariosFiltered(projectID), archiveState)
 		if !s.scenarioLibraryAssignments(w, scenarios) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"scenarios": maskStoredScenarios(scenarios), "count": len(scenarios)})
 		return
 	}
-	scenarios := s.runner.ListScenarios()
+	scenarios := filterArchivedScenarios(s.runner.ListScenarios(), archiveState)
 	if !s.scenarioLibraryAssignments(w, scenarios) {
 		return
 	}

@@ -12,8 +12,8 @@ Evaluation of the complete published OpenText/Micro Focus VuGen 26.1 **Web (HTTP
 
 | Disposition | Count | Meaning |
 |---|---|---|
-| `executable` | 44 | Translated to an executable DSL action or config mapping. |
-| `native_noop` | 8 | Preserved as a runtime-compatibility attribute; a guaranteed no-op in APEX Load (no client cache / no auto-resource fetch / no concurrent-request primitive). |
+| `executable` | 46 | Translated to an executable DSL action or config mapping. |
+| `native_noop` | 6 | Preserved as a runtime-compatibility attribute; a guaranteed no-op in APEX Load (no client cache / no auto-resource fetch). |
 | `review_only` | 29 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
 
 Every published function resolves to one of the dispositions above — none falls through to a `custom_call` review stub. This is enforced by `TestWebHTTPFunctionRegistryResolvesEveryPublishedFunction`.
@@ -29,8 +29,8 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_cache_cleanup` | web | `executable` | source_runtime action | Executable positional clear of the simulated HTTP response cache. |
 | `web_cleanup_auto_headers` | web | `executable` | Request headers | Clears all persistent auto headers. |
 | `web_cleanup_cookies` | web | `executable` | cookie_clear action | Executable positional cookie clear. |
-| `web_concurrent_end` | web | `native_noop` | Block marker (preserved) | Closes the concurrent group. |
-| `web_concurrent_start` | web | `native_noop` | Block marker (preserved) | Inner requests replayed sequentially; warned. |
+| `web_concurrent_end` | web | `executable` | Concurrent http_sequence boundary | Closes a validated explicit source group; unsupported spans remain execution-gated review cases. |
+| `web_concurrent_start` | web | `executable` | Concurrent http_sequence boundary | Only matched same-scope groups of 1–256 independent HTTP requests; barriers, conflicts, waits and malformed boundaries require review. |
 | `web_convert_date_param` | parameter | `review_only` | Import review | Date conversion is preserved for review; no APEX runtime equivalent yet. |
 | `web_convert_from_formatted` | parameter | `review_only` | Import review | Formatted-string parse is preserved for review; no APEX runtime equivalent yet. |
 | `web_convert_param` | parameter | `executable` | source_parameter action | Encoding/format conversion. |

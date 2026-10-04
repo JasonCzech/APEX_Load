@@ -101,3 +101,14 @@ def test_json_text_contract_from_client_response():
     encoded = json.dumps({"ok": True, "status_code": 200, "data": {"a": 1}, "error": None}, separators=(",", ":"), sort_keys=True)
 
     assert encoded == '{"data":{"a":1},"error":null,"ok":true,"status_code":200}'
+
+@pytest.mark.asyncio
+async def test_successful_mutation_preserves_activity_warning():
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"id": "saved"}, headers={"X-APEXLOAD-Audit-Status": "unavailable"})
+
+    client = APEXLoadClient(APEXLoadClientConfig(base_url="http://storm.test/api/v1"), transport=httpx.MockTransport(handler))
+    payload = await client.request("POST", "/scripts/saved/archive")
+    assert payload["ok"] is True
+    assert payload["data"]["id"] == "saved"
+    assert payload["warnings"][0]["code"] == "activity_unavailable"

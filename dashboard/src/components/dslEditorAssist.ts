@@ -11,7 +11,7 @@
 
 import { autocompletion, type Completion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete'
 import { jsonParseLinter } from '@codemirror/lang-json'
-import { syntaxTree } from '@codemirror/language'
+import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
 import { linter, type Diagnostic } from '@codemirror/lint'
 import type { EditorState, Extension } from '@codemirror/state'
 import { hoverTooltip, type Tooltip } from '@codemirror/view'
@@ -90,7 +90,13 @@ function objectPropertyValue(state: EditorState, objectNode: SyntaxNode, key: st
  * the envelope when present.
  */
 function scriptRootNode(state: EditorState): SyntaxNode | null {
-  const root = syntaxTree(state).topNode.firstChild
+  if (state.doc.length > APEX_DSL_SEMANTIC_MAX_DOC_CHARS) return null
+  // The state's immutable tree can remain partial after its parse context has
+  // advanced. Admit only the completed tree returned for this exact document,
+  // within a bounded synchronous assist budget; never resolve recovery ranges
+  // from the older state snapshot while background parsing catches up.
+  const tree = ensureSyntaxTree(state, state.doc.length, 50)
+  const root = tree?.topNode.firstChild
   if (!root || root.name !== 'Object') return null
   const wrapped = objectPropertyValue(state, root, 'script')
   if (wrapped?.name === 'Object') return wrapped
@@ -137,7 +143,7 @@ export function locateJsonPath(state: EditorState, path: string): { from: number
       node = objectPropertyValue(state, node, segment)
     }
   }
-  if (!node) return null
+  if (!node || node.name === '⚠' || node.to <= node.from) return null
   return { from: node.from, to: node.to }
 }
 
@@ -353,6 +359,7 @@ export interface TemplateReferenceInfo {
   status: 'known' | 'unknown' | 'info'
   /** The concrete value this reference resolved to in the latest debug run, when known. */
   runtimeValue?: string
+  runtimeQualification?: string
 }
 
 /**
@@ -364,6 +371,7 @@ export function describeTemplateReference(
   expr: string,
   model: ScriptReferenceModel,
   runtimeValues?: Record<string, string> | null,
+  runtimeQualification?: string,
 ): TemplateReferenceInfo {
   const trimmed = expr.trim()
   const dot = trimmed.indexOf('.')
@@ -372,8 +380,10 @@ export function describeTemplateReference(
   const info = describeBase(namespace, rest, trimmed, model)
   // Secrets are masked; never surface a concrete value for them.
   if (runtimeValues && namespace !== 'secret' && ['var', 'param', 'env', 'data'].includes(namespace)) {
-    if (Object.prototype.hasOwnProperty.call(runtimeValues, rest)) {
-      info.runtimeValue = runtimeValues[rest]
+    const key = Object.prototype.hasOwnProperty.call(runtimeValues, trimmed) ? trimmed : namespace === 'var' ? rest : null
+    if (key !== null && Object.prototype.hasOwnProperty.call(runtimeValues, key)) {
+      info.runtimeValue = runtimeValues[key]
+      info.runtimeQualification = runtimeQualification
       if (info.status === 'info') info.status = 'known'
     }
   }
@@ -447,11 +457,11 @@ function truncateValue(value: string, max = 160): string {
   return value.length > max ? `${value.slice(0, max)}…` : value
 }
 
-function makeTemplateReferenceHover(getRuntimeValues: RuntimeValueSource): Extension {
+function makeTemplateReferenceHover(getRuntimeValues: RuntimeValueSource, getQualification: () => string): Extension {
   return hoverTooltip((view, pos): Tooltip | null => {
     const token = templateTokenAt(view.state, pos)
     if (!token) return null
-    const info = describeTemplateReference(token.expr, readScriptReferenceModel(view.state), getRuntimeValues())
+    const info = describeTemplateReference(token.expr, readScriptReferenceModel(view.state), getRuntimeValues(), getQualification())
     return {
       pos: token.from,
       end: token.to,
@@ -471,6 +481,9 @@ function makeTemplateReferenceHover(getRuntimeValues: RuntimeValueSource): Exten
           resolved.className = 'apex-template-hover-resolved'
           resolved.textContent = `= ${truncateValue(info.runtimeValue) || '(empty)'}`
           dom.append(resolved)
+          const qualifier = document.createElement('div')
+          qualifier.textContent = info.runtimeQualification || 'Retained runtime evidence'
+          dom.append(qualifier)
         }
         return { dom }
       },
@@ -522,6 +535,7 @@ export function diagnosticsFromIssues(state: EditorState, issues: string[], seve
 export function buildDslAssistExtensions(
   validateDraft: (script: unknown) => Promise<DslValidationOutcome>,
   getRuntimeValues: RuntimeValueSource = () => null,
+  getRuntimeQualification: () => string = () => 'Retained runtime evidence',
 ): Extension[] {
   const validationLinter = linter(
     async view => {
@@ -551,7 +565,7 @@ export function buildDslAssistExtensions(
   )
   return [
     autocompletion({ override: [dslCompletionSource] }),
-    makeTemplateReferenceHover(getRuntimeValues),
+    makeTemplateReferenceHover(getRuntimeValues, getRuntimeQualification),
     linter(jsonParseLinter()),
     validationLinter,
   ]

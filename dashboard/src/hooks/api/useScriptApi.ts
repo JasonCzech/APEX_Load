@@ -78,6 +78,7 @@ type ScriptListResponse = {
 }
 
 type ScriptListOptions = {
+  archiveState?: "active" | "archived" | "all"
   limit?: number
   offset?: number
   search?: string
@@ -358,6 +359,7 @@ function buildScriptQuery(projectId?: string, folderId?: string | null, options?
   if (options?.limit !== undefined) query.set('limit', String(options.limit))
   if (options?.offset !== undefined) query.set('offset', String(options.offset))
   if (options?.search?.trim()) query.set('q', options.search.trim())
+  if (options?.archiveState) query.set("archive_state", options.archiveState)
   const suffix = query.toString()
   return suffix ? `?${suffix}` : ''
 }
@@ -1082,9 +1084,9 @@ export function useScriptApi() {
       agentforce_transform?: boolean
     }): Promise<HARImportResult> => {
       const formData = new FormData()
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_static_assets) formData.append('include_static_assets', 'true')
       if (options?.secondary_file) formData.append('secondary_file', options.secondary_file)
@@ -1093,6 +1095,7 @@ export function useScriptApi() {
       if (typeof options?.redact_sensitive === 'boolean') formData.append('redact_sensitive', options.redact_sensitive ? 'true' : 'false')
 
       const query = new URLSearchParams()
+      if (options?.project_id) query.set('project_id', options.project_id)
       if (options?.salesforce_native === false) query.set('salesforce_native', 'false')
       if (options?.agentforce_transform) query.set('agentforce_transform', 'true')
       const suffix = query.toString()
@@ -1108,12 +1111,16 @@ export function useScriptApi() {
   const importSalesforce = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; project_id?: string; agentforce_transform?: boolean }): Promise<SalesforceImportResult> => {
       const formData = new FormData()
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
-      const res = await apiFetch(`/scripts/import/salesforce${options?.agentforce_transform ? '?agentforce_transform=true' : ''}`, { method: 'POST', body: formData })
+      const query = new URLSearchParams()
+      if (options?.project_id) query.set('project_id', options.project_id)
+      if (options?.agentforce_transform) query.set('agentforce_transform', 'true')
+      const suffix = query.toString()
+      const res = await apiFetch(`/scripts/import/salesforce${suffix ? `?${suffix}` : ''}`, { method: 'POST', body: formData })
       if (!res.ok) {
         throw new Error(await errorMessageFromResponse(res))
       }
@@ -1463,7 +1470,7 @@ export function useScriptApi() {
     [],
   )
 
-  const listScenarios = useCallback((projectId?: string) => request<ScenarioListResponse>(`/scenarios${buildScenarioQuery(projectId)}`), [])
+  const listScenarios = useCallback((projectId?: string, archiveState?: "active" | "archived" | "all") => request<ScenarioListResponse>(`/scenarios${buildScenarioQuery(projectId)}${archiveState ? `${projectId ? "&" : "?"}archive_state=${archiveState}` : ""}`), [])
 
   const createScenario = useCallback(
     (data: ScenarioUpsertRequest) => request<StoredScenario>('/scenarios', { method: 'POST', body: JSON.stringify(data) }),

@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile, truncate, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test, expect, login, mutation, json } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
@@ -204,4 +207,39 @@ test('JMeter review uses the shared six tabs and retains project scope during up
   await expect(tabs.getByRole('tab', { name: 'Source Mapping', exact: true })).toBeVisible()
   expect(await reference.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('jmeter-narrow-review.png'), fullPage: true })
+})
+
+
+test('HAR picker accepts captures above 50 MiB and rejects files above 100 MiB', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const workspace = await createWorkspace(page.context().request)
+  await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Find a source format' }).fill('HAR Traffic')
+  await page.getByRole('button', { name: /^HAR HAR Traffic/ }).click()
+  const controls = page.getByRole('group', { name: 'Script import controls' })
+  const inputs = controls.locator('input[type=file]')
+  const directory = await mkdtemp(join(tmpdir(), 'apex-har-picker-'))
+  try {
+    const capture = join(directory, 'large-synthetic.har')
+    const oversized = join(directory, 'oversized-synthetic.har')
+    const bytes = Buffer.alloc(51 * 1024 * 1024, 0x20)
+    bytes.write('{"log":{"entries":[]}}')
+    await writeFile(capture, bytes)
+    await writeFile(oversized, '{}')
+    await truncate(oversized, 100 * 1024 * 1024 + 1)
+    await inputs.nth(0).setInputFiles(capture)
+    await expect(page.getByRole('group', { name: 'Selected file large-synthetic.har', exact: true })).toBeVisible()
+    await expect(controls.getByRole('button', { name: 'Inspect & review', exact: true })).toBeEnabled()
+    await expect(page.locator('.sample-import-error')).toHaveCount(0)
+    await inputs.nth(1).setInputFiles(capture)
+    await expect(page.getByRole('group', { name: 'Selected file large-synthetic.har', exact: true })).toHaveCount(2)
+    await inputs.nth(1).setInputFiles(oversized)
+    await expect(page.locator('.sample-import-error[role=alert]')).toContainText('imports are limited to 100.0 MB')
+    await inputs.nth(0).setInputFiles(oversized)
+    await expect(page.locator('.sample-import-error[role=alert]')).toContainText('imports are limited to 100.0 MB')
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 })

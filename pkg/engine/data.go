@@ -339,9 +339,26 @@ func openFileDataSourceReader(src dsl.DataSource, assets map[string][]byte) (io.
 //   - unique: each VUser gets a distinct row (wraps if more VUsers than rows)
 //   - pop: globally consume rows in order and stop returning rows after exhaustion
 func (dp *DataProvider) GetRow(sourceName string, vuserID int) map[string]string {
+	row, _ := dp.getRowAllocated(sourceName, vuserID)
+	return row
+}
+
+func (dp *DataProvider) getRowAllocated(sourceName string, vuserID int) (map[string]string, dataRowReceipt) {
+	receipt := dataRowReceipt{state: "unavailable", selection: "unavailable"}
+	if dp == nil {
+		return nil, receipt
+	}
 	ds, ok := dp.sources[sourceName]
-	if !ok || len(ds.rows) == 0 {
-		return nil
+	if !ok {
+		return nil, receipt
+	}
+	receipt.state = "exhausted"
+	receipt.selection = runtimeRowSelection(ds.strategy)
+	if receipt.selection == "unavailable" {
+		receipt.selection = "fixed"
+	}
+	if len(ds.rows) == 0 {
+		return nil, receipt
 	}
 
 	var rowIdx int
@@ -354,7 +371,7 @@ func (dp *DataProvider) GetRow(sourceName string, vuserID int) map[string]string
 	case "random":
 		eligible := dp.shardedRowCount(len(ds.rows))
 		if eligible == 0 {
-			return nil
+			return nil, receipt
 		}
 		rowIdx = dp.shardedRowIndex(len(ds.rows), int64(dp.randIntn(eligible)), false)
 
@@ -364,7 +381,7 @@ func (dp *DataProvider) GetRow(sourceName string, vuserID int) map[string]string
 		// the full source: doing so can make two shards select the same row.
 		eligible := dp.shardedRowCount(len(ds.rows))
 		if eligible == 0 {
-			return nil
+			return nil, receipt
 		}
 		if vuserID < 0 {
 			vuserID = 0
@@ -376,7 +393,7 @@ func (dp *DataProvider) GetRow(sourceName string, vuserID int) map[string]string
 		defer ds.mu.Unlock()
 		idx := ds.seqIdx.Load()
 		if idx >= int64(dp.shardedRowCount(len(ds.rows))) {
-			return nil
+			return nil, receipt
 		}
 		rowIdx = dp.shardedRowIndex(len(ds.rows), idx, false)
 		ds.seqIdx.Add(1)
@@ -385,7 +402,7 @@ func (dp *DataProvider) GetRow(sourceName string, vuserID int) map[string]string
 		rowIdx = 0
 	}
 	if rowIdx < 0 || rowIdx >= len(ds.rows) {
-		return nil
+		return nil, receipt
 	}
 
 	row := ds.rows[rowIdx]
@@ -396,7 +413,8 @@ func (dp *DataProvider) GetRow(sourceName string, vuserID int) map[string]string
 		}
 	}
 
-	return result
+	receipt.ordinal, receipt.state = rowIdx+1, "selected"
+	return result, receipt
 }
 
 func (dp *DataProvider) shardedRowCount(total int) int {

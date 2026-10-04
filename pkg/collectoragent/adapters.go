@@ -3,6 +3,7 @@ package collectoragent
 import (
 	"context"
 	"crypto/ecdh"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -16,21 +17,28 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 )
 
 // AdapterTarget is a local operator approval. A signed job cannot add a remote
 // identity, executable, driver, command, query, or credential destination.
 type AdapterTarget struct {
-	Management      *ManagementTarget `json:"management,omitempty"`
-	Cloud           *CloudQuery       `json:"cloud,omitempty"`
-	Pack            string            `json:"pack"`
-	Destination     string            `json:"destination"`
-	HostKey         string            `json:"host_key,omitempty"`
-	JavaExecutable  string            `json:"java_executable,omitempty"`
-	HelperClassPath string            `json:"helper_class_path,omitempty"`
-	QueryPack       string            `json:"query_pack,omitempty"`
-	TLSCAFile       string            `json:"tls_ca_file,omitempty"`
-	JVMTrustStore   string            `json:"jvm_trust_store,omitempty"`
+	Management      *ManagementTarget  `json:"management,omitempty"`
+	Prometheus      *prometheus.Config `json:"prometheus,omitempty"`
+	Cloud           *CloudQuery        `json:"cloud,omitempty"`
+	ApprovedCIDRs   []string           `json:"approved_cidrs,omitempty"`
+	CAPEM           string             `json:"ca_pem,omitempty"`
+	EventsEndpoint  string             `json:"events_endpoint,omitempty"`
+	Applications    []string           `json:"applications,omitempty"`
+	Pack            string             `json:"pack"`
+	Destination     string             `json:"destination"`
+	HostKey         string             `json:"host_key,omitempty"`
+	JavaExecutable  string             `json:"java_executable,omitempty"`
+	HelperClassPath string             `json:"helper_class_path,omitempty"`
+	QueryPack       string             `json:"query_pack,omitempty"`
+	TLSCAFile       string             `json:"tls_ca_file,omitempty"`
+	JVMTrustStore   string             `json:"jvm_trust_store,omitempty"`
 }
 
 func LoadAdapterTargets(path string) ([]AdapterTarget, error) {
@@ -121,7 +129,7 @@ func (a *Agent) approvedDestinations() []string {
 			}
 		}
 		destination := target.Destination
-		if target.Pack == "ssh-linux" || target.Pack == "jmx" || target.Pack == "jdbc" || target.Management != nil && target.Management.Identity.CredentialRef != "" {
+		if target.Prometheus != nil || target.Pack == "ssh-linux" || target.Pack == "jmx" || target.Pack == "jdbc" || target.Pack == "appdynamics" || target.Management != nil && target.Management.Identity.CredentialRef != "" {
 			if key, err := ecdh.X25519().NewPrivateKey(a.cfg.CredentialPrivateKey); err == nil {
 				destination += "#" + base64.StdEncoding.EncodeToString(key.PublicKey().Bytes())
 			}
@@ -139,6 +147,9 @@ func validateAdapterTargets(cfg Config) error {
 	seen := map[string]bool{}
 	for _, target := range cfg.AdapterTargets {
 		if target.Management != nil || isManagementPack(target.Pack) {
+			if target.Prometheus != nil || target.Cloud != nil || len(target.Applications) != 0 || target.EventsEndpoint != "" {
+				return errors.New("management target cannot include provider query configuration")
+			}
 			endpoint, err := url.Parse(target.Destination)
 			if err != nil || endpoint.Scheme != "management" || !managementAlias(endpoint.Hostname()) || endpoint.Host != endpoint.Hostname() || endpoint.Port() != "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.ForceQuery || strings.Contains(target.Destination, "#") || endpoint.Fragment != "" || endpoint.Path != "" || endpoint.Opaque != "" || !managementLabel(target.Destination, 2048) {
 				return errors.New("management destination must be a public alias")
@@ -158,9 +169,24 @@ func validateAdapterTargets(cfg Config) error {
 			}
 			continue
 		}
-		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[target.Pack]
+		if target.Pack == "prometheus-query" {
+			if target.Prometheus == nil || target.Prometheus.Endpoint != target.Destination || target.Prometheus.Validate() != nil || len(cfg.ControllerPublicKey) != ed25519.PublicKeySize {
+				return errors.New("Prometheus query target requires valid local configuration and signing key")
+			}
+			if prometheusNeedsSealing(*target.Prometheus) {
+				if len(cfg.CredentialPrivateKey) != 32 {
+					return errors.New("secured Prometheus query target requires enrolled encryption key")
+				}
+			}
+			if seen[target.Pack+"\x00"+target.Destination] {
+				return errors.New("duplicate adapter destination")
+			}
+			seen[target.Pack+"\x00"+target.Destination] = true
+			continue
+		}
+		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "appdynamics": "https", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[target.Pack]
 		endpoint, err := url.Parse(target.Destination)
-		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && endpoint.Path != "" {
+		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && endpoint.Path != "" && !(target.Pack == "appdynamics" && endpoint.Path == "/") {
 			return errors.New("invalid approved monitor destination")
 		}
 		if seen[target.Pack+"\x00"+target.Destination] {
@@ -168,6 +194,14 @@ func validateAdapterTargets(cfg Config) error {
 		}
 		seen[target.Pack+"\x00"+target.Destination] = true
 		switch target.Pack {
+		case "appdynamics":
+			cfg := appdynamics.Config{Endpoint: target.Destination, AccountName: "validation", ApprovedCIDRs: target.ApprovedCIDRs, CAPEM: target.CAPEM, EventsEndpoint: target.EventsEndpoint}
+			if err := cfg.Validate(); err != nil {
+				return err
+			}
+			if len(target.Applications) > 32 {
+				return errors.New("application approval exceeds bound")
+			}
 		case "cloudwatch", "azure-monitor":
 			if endpoint.Port() != "" {
 				return errors.New("cloud destination is an alias, not an endpoint")

@@ -51,10 +51,14 @@ var schemaReleases = []schemaRelease{
 	{Version: 24, Name: "native-interval-evidence", Fingerprint: "6c0d32e793c1de36cc7089696093f731d5ac200e1823f84c90933c96673c43f5"},
 	{Version: 25, Name: "run-timeline-annotations", Fingerprint: "f4dcd23df64db606ba53343accd751975904ae7eb338eb657342fe72369fb9d2"},
 	{Version: 26, Name: "retained-drop-counter-availability", Fingerprint: "364669cc553fcaa50eb2af5453de91428115c016fa47232c647175808c335dca"},
-	{Version: 27, Name: "durable-messaging-progress-history", Fingerprint: "7fbd77d1e116e4349e96ca211376035d847db90d8137c640e7d8f82cb2912f32"},
-	{Version: 28, Name: "durable-messaging-management-polls", Fingerprint: "8302b2875bbd64d91edac96ab4c39b6adf66bbfb288f60fbef5428718a1d4911"},
-	{Version: 29, Name: "isolated-native-analysis-attempts", Fingerprint: "348e5bff6128c23431046d91f301e65f219eaa542faead33fc42d1508c4587df"},
-	{Version: 30, Name: "durable-analysis-upload-physical-writers", Fingerprint: "c15a763742c712fb827cd1c9579ba708b4a77e2c59ab20807d3ed4d2c8959aa9"},
+	{Version: 27, Name: "object-activity-and-archives", Fingerprint: "10e70e6ffc7829b2d9e594c854903b1db57d4807b1c2878cea751e0eeb37d1d2"},
+	{Version: 28, Name: "archive-restoration-schedule-boundary", Fingerprint: "ba1ac64df70d019c92b5aaae2e4d6ed14f927d8fa4b30d9083a1f533e71981ed"},
+	{Version: 29, Name: "appdynamics-durable-run-monitoring", Fingerprint: "ba1618a00f60ea7b120e07b375d67d8fd7c6368d1a9e8a18ef25c09f9b4c0186"},
+	{Version: 30, Name: "prometheus-governed-run-monitoring", Fingerprint: "c1393b724be106974e1c3e9765668d426dbd6720dc6df89096b7a32ce0d0124f"},
+	{Version: 31, Name: "durable-messaging-progress-history", Fingerprint: "7fbd77d1e116e4349e96ca211376035d847db90d8137c640e7d8f82cb2912f32"},
+	{Version: 32, Name: "durable-messaging-management-polls", Fingerprint: "8302b2875bbd64d91edac96ab4c39b6adf66bbfb288f60fbef5428718a1d4911"},
+	{Version: 33, Name: "isolated-native-analysis-attempts", Fingerprint: "348e5bff6128c23431046d91f301e65f219eaa542faead33fc42d1508c4587df"},
+	{Version: 34, Name: "durable-analysis-upload-physical-writers", Fingerprint: "52971cd3c20e72aefeb2c719f02e125a3689f107a50981c4da14d01a8e34783b"},
 }
 
 type SchemaMigrationRecord struct {
@@ -126,6 +130,7 @@ func schemaConvergenceFingerprint() string {
 		"default-domain-project-application",
 		"postgres-foreign-keys",
 		"timescaledb",
+		"object-activity-legacy-backfill",
 	} {
 		write("phase", phase, "")
 	}

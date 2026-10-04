@@ -31,7 +31,7 @@ var (
 // dataParamSuggestions proposes binding literal business values (ids, emails,
 // SKUs, ...) to a generated data source. claimed lists values already owned by
 // the correlation or secret passes, which take precedence.
-func dataParamSuggestions(script *dsl.Script, names *nameRegistry, claimed map[string]bool) ([]Suggestion, error) {
+func dataParamSuggestions(script *dsl.Script, names *nameRegistry, claimed map[string]bool, skipBodies map[string]bool) ([]Suggestion, error) {
 	collector := newDataParamCollector(names, claimed)
 	budget := &suggestionRegexBudget{}
 	var scanErr error
@@ -43,9 +43,11 @@ func dataParamSuggestions(script *dsl.Script, names *nameRegistry, claimed map[s
 		if scanErr != nil {
 			return
 		}
-		scanErr = collectBodyParams(collector, budget, section, index, action)
-		if scanErr != nil {
-			return
+		if !skipBodies[fmt.Sprintf("%s[%d]", section, index)] {
+			scanErr = collectBodyParams(collector, budget, section, index, action)
+			if scanErr != nil {
+				return
+			}
 		}
 		collectFillParams(collector, section, index, action)
 		collectUploadParams(collector, section, index, action)

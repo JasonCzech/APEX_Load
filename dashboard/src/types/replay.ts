@@ -1,6 +1,6 @@
 import type { ClientMetrics } from './metrics'
 import type { RedactionRule } from './runtimeSettings'
-import type { BrowserConfig, ReplayPreflight, ScriptDefinition } from './scripts'
+import type { BrowserConfig, HTTPActionVersion, ReplayPreflight, ScriptDefinition } from './scripts'
 
 /** Transport and view contracts for browser replay and script debugging. */
 export interface BrowserReplayConsoleEntry {
@@ -56,6 +56,12 @@ export interface ReplayArtifactManifest {
 }
 
 export interface ProtocolEvidence {
+  response_content_state?: 'complete' | 'collection_window' | 'unavailable'
+  response_content_basis?: 'decoded' | 'identity'
+  response_content_source?: 'wire' | 'cache'
+  http_version_policy?: HTTPActionVersion
+  http_version_negotiated?: '1.1' | '2'
+  http_version_source?: 'wire' | 'cache'
   protocol?: string
   operation?: string
   target?: string
@@ -101,7 +107,7 @@ export interface ReplayDiagnosisSummary {
 export interface BrowserReplaySnapshot {
   resources?: import('./scripts').ScriptResourceSnapshot[]
   omitted_resources?: number
-  response_body_state?: 'captured' | 'empty' | 'redacted' | 'not_captured' | 'expired'
+  response_body_state?: 'captured' | 'partial' | 'empty' | 'redacted' | 'not_captured' | 'expired'
   request_method?: string
   request_url?: string
   request_headers?: Record<string, string>
@@ -163,12 +169,16 @@ export interface BrowserReplayEvent {
   parent_action_name?: string
   request_index?: number
   request_count?: number
+  leaf_ordinal?: number
   step_path?: string[]
   iteration?: number
   iteration_path?: number[]
 }
 
 export interface BrowserReplayReport {
+  runtime_evidence_unavailable?: boolean
+  dropped_event_count?: number
+  truncated_event_evidence_count?: number
   stopped?: boolean
   replay_session_id?: string
   script_hash?: string
@@ -188,6 +198,8 @@ export interface BrowserReplayReport {
 }
 
 export interface BrowserReplaySession {
+  runtime_evidence_unavailable?: boolean
+  dropped_event_count?: number
   id: string
   mode?: string
   script_id?: string
@@ -275,6 +287,7 @@ export interface ScriptDebugAction {
   parent_action_name?: string
   request_index?: number
   request_count?: number
+  leaf_ordinal?: number
   step_path?: string[]
   iteration?: number
   iteration_path?: number[]
@@ -294,7 +307,38 @@ export interface ConditionEvidence {
 // Step modes accepted by POST /script-debug/sessions/{id}/step.
 export type ScriptDebugStepMode = 'into' | 'over' | 'loop_end'
 
+export type DebugRuntimeUnavailableReason = 'boundary_held' | 'not_paused' | 'pause_pending' | 'snapshot_unavailable' | 'context_canceled' | 'integrity_fence_lost' | 'runtime_evidence_unavailable' | 'session_terminal' | 'session_retired' | 'revision_exhausted'
+
+export interface ReplayRuntimeSnapshot {
+  state: 'complete' | 'bounded' | 'unavailable'
+  boundary: 'before_action' | 'after_action'
+  location: ScriptDebugAction
+  variables: Array<{ name: string; value_state: 'assigned' | 'redacted' | 'omitted'; value?: string }>
+  parameters: Array<{ name: string; state: 'not_evaluated' | 'prepared' | 'observed' | 'exhausted' | 'unavailable'; update_policy: 'once' | 'each_iteration' | 'each_occurrence' | 'unavailable'; value_state: 'observed' | 'assigned' | 'redacted' | 'omitted'; value?: string; observed_event_id?: string }>
+  rows: Array<{ kind: 'datasource' | 'parameter' | 'foreach'; source: string; name: string; row_ordinal?: number; selection: 'sequential' | 'random' | 'unique' | 'pop' | 'same_line' | 'foreach' | 'fixed' | 'unavailable'; state: 'selected' | 'exhausted' | 'unavailable'; observed_event_id?: string }>
+  frames: Array<{ kind: 'phase' | 'http_sequence' | 'control_if' | 'control_switch' | 'control_loop' | 'foreach' | 'parallel' | 'parallel_branch'; phase: 'init' | 'action' | 'teardown'; action_index: number; step_path?: string[]; iteration_path?: number[]; branch_index?: number }>
+  omissions: { variables: number; parameters: number; rows: number; frames: number; values: number }
+  runtime_evidence_unavailable?: boolean
+  unavailable_reason?: 'publication_unavailable' | 'work_limit'
+}
+
+export interface ScriptDebugRuntimeState {
+  version: 1
+  kind: 'full'
+  session_id: string
+  session_incarnation: string
+  state_revision: string
+  state: 'paused' | 'unavailable'
+  reason: DebugRuntimeUnavailableReason
+  snapshot: ReplayRuntimeSnapshot | null
+}
+
 export interface ScriptDebugSession {
+  session_incarnation?: string
+  state_revision?: string
+  runtime_state?: ScriptDebugRuntimeState
+  runtime_evidence_unavailable?: boolean
+  dropped_event_count?: number
   id: string
   mode?: string
   script_id?: string

@@ -34,14 +34,15 @@ type ReplayOptions struct {
 }
 
 type ReplayProgressEvent struct {
-	Type       string
-	EventID    string
-	SessionID  string
-	Timestamp  time.Time
-	EventIndex int
-	Action     *ReplayDebugAction
-	Event      *ReplayActionEvent
-	Report     *ReplayReport
+	RuntimeEvidenceUnavailable bool `json:"runtime_evidence_unavailable,omitempty"`
+	Type                       string
+	EventID                    string
+	SessionID                  string
+	Timestamp                  time.Time
+	EventIndex                 int
+	Action                     *ReplayDebugAction
+	Event                      *ReplayActionEvent
+	Report                     *ReplayReport
 	// Condition is set only on ReplayProgressCondition events: it carries the
 	// evaluated operands and branch outcome of a control_if/control_loop
 	// predicate so the debugger can show *why* a branch was taken. Action
@@ -135,6 +136,7 @@ const (
 )
 
 type ReplayReport struct {
+	RuntimeEvidenceUnavailable  bool                      `json:"runtime_evidence_unavailable,omitempty"`
 	Stopped                     bool                      `json:"stopped,omitempty"`
 	ReplaySessionID             string                    `json:"replay_session_id,omitempty"`
 	ScriptHash                  string                    `json:"script_hash,omitempty"`
@@ -355,7 +357,13 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		runProtocolTeardown(proto, func() *RedactionConfig { return redactionConfig })
 		return nil, fmt.Errorf("protocol init: %s", err)
 	}
-	defer runProtocolTeardown(proto, func() *RedactionConfig { return redactionConfig })
+	var vu *VUser
+	defer runProtocolTeardown(proto, func() *RedactionConfig {
+		if vu != nil {
+			return vu.resultPublicationRedactionConfig()
+		}
+		return redactionConfig
+	})
 
 	dataProvider, err := NewDataProvider(script.DataSources)
 	if err != nil {
@@ -394,7 +402,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		Report:     cloneReplayReport(report),
 	})
 
-	vu := &VUser{
+	vu = &VUser{
 		ParameterAllocation:          &ParameterAllocation{Population: 1, Offset: 0, Iterations: 1},
 		ID:                           0,
 		Group:                        groupName,
@@ -407,6 +415,9 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		RedactionConfig:              redactionConfig,
 		importedCredentialInspection: importedCredentials,
 		SnapshotStore:                NewSnapshotStore(128),
+	}
+	if replayRuntimeEnabled(opts.DebugController) {
+		vu.replayRuntime = &replayRuntimeState{rows: make(map[string]ReplayRuntimeRow)}
 	}
 	defer vu.closeErrorLogs()
 	// Deterministic replay: seed random data selection and random template builtins
@@ -430,6 +441,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		return nil, fmt.Errorf("prepare replay credential redaction: %s", err)
 	}
 
+	onProgress := vu.guardedReplayProgress(report, opts.OnProgress)
 	continueOnError := script.Config.ErrorHandling.ContinueOnErrorEnabled()
 	globalThinkCfg := protocol.ThinkTimeConfig{
 		Type:       script.Config.ThinkTime.Type,
@@ -444,7 +456,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		Ignore:     script.Config.ThinkTime.Ignore,
 	}
 
-	shouldContinue := runReplayPhase(ctx, vu, script.Init, "init", false, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
+	shouldContinue := runReplayPhase(ctx, vu, script.Init, "init", false, opts.IgnoreThinkTime, globalThinkCfg, report, onProgress, opts.DebugController)
 	if shouldContinue {
 		if controller, ok := vu.Proto.(protocol.IterationController); ok {
 			if err := controller.BeginIteration(ctx); err != nil {
@@ -454,14 +466,14 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 			}
 		}
 		if shouldContinue {
-			shouldContinue = runReplayPhase(ctx, vu, script.Actions, "action", continueOnError, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
+			shouldContinue = runReplayPhase(ctx, vu, script.Actions, "action", continueOnError, opts.IgnoreThinkTime, globalThinkCfg, report, onProgress, opts.DebugController)
 		}
 	}
 	teardownCtx, teardownCancel := teardownContext()
-	runReplayPhase(teardownCtx, vu, script.Teardown, "teardown", true, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
+	runReplayPhase(teardownCtx, vu, script.Teardown, "teardown", true, opts.IgnoreThinkTime, globalThinkCfg, report, onProgress, opts.DebugController)
 	teardownCancel()
 	finalizedSourceTransactions := vu.finalizeOpenSourceTransactions("source transaction ended without a matching end marker during replay")
-	appendReplaySourceTransactionFinalizations(report, finalizedSourceTransactions, vu.RedactionConfig, opts.OnProgress)
+	appendReplaySourceTransactionFinalizations(report, finalizedSourceTransactions, vu.RedactionConfig, onProgress)
 
 	report.CompletedAt = time.Now()
 	if err := vu.refreshImportedCredentialRuntimeValues(); err != nil {
@@ -470,16 +482,20 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 			report.Error = "runtime credential redaction failed"
 		}
 	}
-	report.FinalVariables = scrubReplayFinalVariables(vu.Variables, vu.RedactionConfig)
-	setReplayReportSnapshots(report)
-	report.RepairSuggestions = collectReplayRepairSuggestions(report.Events)
+	report.FinalVariables = vu.replayFinalVariables()
+	if vu.runtimeCredentialRedactionErr != nil {
+		OmitUnavailableReplayReport(report)
+	} else {
+		setReplayReportSnapshots(report)
+		report.RepairSuggestions = collectReplayRepairSuggestions(report.Events)
+	}
 	if report.ArtifactManifest != nil {
 		report.ArtifactManifest.CreatedAt = report.CompletedAt
 	}
 	if !shouldContinue && report.Error == "" && !report.Success {
 		report.Error = "replay stopped after action failure"
 	}
-	publishReplayProgress(opts.OnProgress, ReplayProgressEvent{
+	publishReplayProgress(onProgress, ReplayProgressEvent{
 		EventID:    replaySessionEventID(replaySessionID, "completed"),
 		SessionID:  replaySessionID,
 		Type:       ReplayProgressComplete,
@@ -589,7 +605,9 @@ type replayUnit struct {
 	requestIndex              *int     // leaf ordinal within an http_sequence container; nil otherwise
 	requestCount              int      // sibling count within an http_sequence container; 0 otherwise
 	leafOrdinal               int      // 0-based execution order of this leaf within its top-level action
-	synthErr                  error    // when set, emit a failed event instead of executing (e.g. parse error)
+	prepared                  *preparedHTTPChild
+	skipDebugBoundary         bool
+	synthErr                  error // when set, emit a failed event instead of executing (e.g. parse error)
 }
 
 func runReplayPhase(
@@ -604,6 +622,7 @@ func runReplayPhase(
 	onProgress func(ReplayProgressEvent),
 	debugController ReplayDebugController,
 ) bool {
+	defer vu.pushReplayRuntimeFrame(ReplayRuntimeFrame{Kind: "phase", Phase: phase, ActionIndex: -1})()
 	for actionIndex, action := range actions {
 		leafOrdinal := 0
 		flow, abort := expandReplayAction(ctx, vu, action, phase, actionIndex, 0, nil, nil, &leafOrdinal, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
@@ -710,9 +729,25 @@ func expandReplayAction(
 		return replayContinue, false
 	}
 
+	if kind := replayContainerKind(action); kind != "" {
+		if kind == "control_parallel" {
+			kind = "parallel"
+		}
+		if kind == "control_loop" && action.Control != nil && action.Control.ForEach != nil {
+			kind = "foreach"
+		}
+		defer vu.pushReplayRuntimeFrame(ReplayRuntimeFrame{Kind: kind, Phase: phase, ActionIndex: actionIndex, StepPath: stepPath, IterationPath: iterationPath})()
+	}
 	switch replayContainerKind(action) {
 	case "http_sequence":
+		mode, _, modeErr := dsl.HTTPSequenceExecutionSettings(action)
+		if modeErr == nil && mode == dsl.HTTPSequenceConcurrent {
+			return runReplayConcurrentHTTP(ctx, vu, action, phase, actionIndex, stepPath, iterationPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+		}
 		children, err := httpSequenceChildActions(action)
+		if modeErr != nil {
+			err = modeErr
+		}
 		if err != nil {
 			unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, parentName: action.Name, parentBusinessTransaction: true, stepPath: stepPath, iterationPath: iterationPath, synthErr: err}
 			_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
@@ -765,7 +800,7 @@ func expandReplayAction(
 			branch = "then"
 		}
 		evidence.Branch = branch
-		publishConditionEvidence(onProgress, report, action, phase, actionIndex, stepPath, iterationPath, evidence)
+		publishConditionEvidence(vu, onProgress, report, action, phase, actionIndex, stepPath, iterationPath, evidence)
 		for stepIndex, child := range body {
 			childPath := appendStepPath(stepPath, fmt.Sprintf("%s[%d]", branch, stepIndex))
 			flow, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, iterationPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
@@ -796,7 +831,7 @@ func expandReplayAction(
 		for caseIndex, switchCase := range action.Control.Cases {
 			ok, evidence := vu.evalConditionEvidence(switchCase.Condition)
 			evidence.Branch = fmt.Sprintf("case[%d]", caseIndex)
-			publishConditionEvidence(onProgress, report, action, phase, actionIndex, stepPath, iterationPath, evidence)
+			publishConditionEvidence(vu, onProgress, report, action, phase, actionIndex, stepPath, iterationPath, evidence)
 			if ok {
 				body = switchCase.Steps
 				branch = evidence.Branch
@@ -830,6 +865,10 @@ func expandReplayAction(
 		if parentVariables == nil {
 			parentVariables = make(map[string]string)
 		}
+		var parentRuntimeRows map[string]ReplayRuntimeRow
+		if vu.replayRuntime != nil {
+			parentRuntimeRows = cloneReplayRuntimeRows(vu.replayRuntime.rows)
+		}
 		parentExtracted := cloneIntMap(vu.extractedVariables)
 		parentExtractedBytes := vu.extractedVariableBytes
 		parentRestored := false
@@ -838,6 +877,9 @@ func expandReplayAction(
 				return
 			}
 			vu.Variables = parentVariables
+			if vu.replayRuntime != nil {
+				vu.replayRuntime.rows = parentRuntimeRows
+			}
 			vu.extractedVariables = parentExtracted
 			vu.extractedVariableBytes = parentExtractedBytes
 			parentRestored = true
@@ -852,28 +894,39 @@ func expandReplayAction(
 		merged := make([]branchExtractions, 0, len(action.Control.Branches))
 		success := true
 		for branchIndex, branch := range action.Control.Branches {
+			if vu.replayRuntime != nil {
+				vu.replayRuntime.rows = cloneReplayRuntimeRows(parentRuntimeRows)
+			}
 			vu.Variables = cloneStringMap(parentVariables)
 			if vu.Variables == nil {
 				vu.Variables = make(map[string]string)
 			}
 			vu.extractedVariables = make(map[string]int)
 			vu.extractedVariableBytes = 0
-			for stepIndex, child := range branch.Steps {
-				childPath := appendStepPath(stepPath, fmt.Sprintf("branches[%d].steps[%d]", branchIndex, stepIndex))
-				flow, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, iterationPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
-				if abort {
-					return replayStop, true
-				}
-				if flow == replayStop {
-					success = false
-					if !continueOnError {
+			branchAborted := func() bool {
+				index := branchIndex
+				defer vu.pushReplayRuntimeFrame(ReplayRuntimeFrame{Kind: "parallel_branch", Phase: phase, ActionIndex: actionIndex, StepPath: stepPath, IterationPath: iterationPath, BranchIndex: &index})()
+				for stepIndex, child := range branch.Steps {
+					childPath := appendStepPath(stepPath, fmt.Sprintf("branches[%d].steps[%d]", branchIndex, stepIndex))
+					flow, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, iterationPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+					if abort {
+						return true
+					}
+					if flow == replayStop {
+						success = false
+						if !continueOnError {
+							break
+						}
+					}
+					if flow == replayBreak || flow == replayContinue || flow == replayExitIteration {
+						success = false
 						break
 					}
 				}
-				if flow == replayBreak || flow == replayContinue || flow == replayExitIteration {
-					success = false
-					break
-				}
+				return false
+			}()
+			if branchAborted {
+				return replayStop, true
 			}
 			values := make(map[string]string, len(vu.extractedVariables))
 			for key := range vu.extractedVariables {
@@ -920,6 +973,7 @@ func expandReplayAction(
 		// loop-level signal (next/break/continue) or replayStop when a child failed
 		// under !continueOnError. abort halts the whole replay.
 		runPass := func(childIterPath []int) (replayFlow, bool) {
+			defer vu.enterReplayRuntimeIteration(childIterPath)()
 			for stepIndex, child := range loop.Steps {
 				childPath := appendStepPath(stepPath, fmt.Sprintf("loop[%d]", stepIndex))
 				flow, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, childIterPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
@@ -945,16 +999,17 @@ func expandReplayAction(
 			defer restoreRows()
 			defer restoreLoopIndex()
 			for pass := 0; pass < rows.Len() && pass < maxPasses; pass++ {
-				row := rows.Row(pass)
+				row, receipt := rows.rowWithReceipt(pass)
 				if ctx.Err() != nil {
 					return replayStop, true
 				}
 				vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
 				vu.bindForEachRow(loop.ForEach.Var, row)
+				vu.recordReplayRuntimeRow("foreach", strings.TrimSpace(loop.ForEach.Source), strings.TrimSpace(loop.ForEach.Var), receipt)
 				childIterPath := append(append([]int(nil), iterationPath...), pass+1)
 				if loop.ForEach.Condition != nil {
 					condOK, evidence := vu.evalConditionEvidence(loop.ForEach.Condition)
-					publishConditionEvidence(onProgress, report, action, phase, actionIndex, stepPath, childIterPath, evidence)
+					publishConditionEvidence(vu, onProgress, report, action, phase, actionIndex, stepPath, childIterPath, evidence)
 					if !condOK {
 						break
 					}
@@ -1001,7 +1056,7 @@ func expandReplayAction(
 				// pass 0 instead of being skipped.
 				if !(loop.DoWhile && pass == 0) {
 					condOK, evidence := vu.evalConditionEvidence(loop.Condition)
-					publishConditionEvidence(onProgress, report, action, phase, actionIndex, stepPath, append(append([]int(nil), iterationPath...), pass+1), evidence)
+					publishConditionEvidence(vu, onProgress, report, action, phase, actionIndex, stepPath, append(append([]int(nil), iterationPath...), pass+1), evidence)
 					if !condOK {
 						break
 					}
@@ -1039,6 +1094,7 @@ func expandReplayAction(
 // (via the carried debug action) by phase/action_index/step_path so the debugger
 // can show why a branch was taken or a loop pass ran.
 func publishConditionEvidence(
+	vu *VUser,
 	onProgress func(ReplayProgressEvent),
 	report *ReplayReport,
 	action dsl.Action,
@@ -1060,6 +1116,15 @@ func publishConditionEvidence(
 		IterationPath: append([]int(nil), iterationPath...),
 	}
 	ev := evidence
+	scrubReplayDebugAction(dbg, vu.resultPublicationRedactionConfig())
+	if vu.resultPublicationUnavailable() {
+		omitUnredactableReplayDebugAction(dbg)
+		ev.Expr, ev.Left, ev.Right, ev.Op = "", "", "", ""
+	} else {
+		ev.Expr = scrubSensitiveTextWithConfig(ev.Expr, vu.resultPublicationRedactionConfig())
+		ev.Left = scrubSensitiveTextWithConfig(ev.Left, vu.resultPublicationRedactionConfig())
+		ev.Right = scrubSensitiveTextWithConfig(ev.Right, vu.resultPublicationRedactionConfig())
+	}
 	publishReplayProgress(onProgress, ReplayProgressEvent{
 		Type:       ReplayProgressCondition,
 		SessionID:  report.ReplaySessionID,
@@ -1095,13 +1160,22 @@ func runReplayUnit(
 	debugAction := replayDebugActionFor(unit.action, unit.phase, unit.actionIndex, eventIndex)
 	debugAction.EventID = eventID
 	applyReplayUnitIdentityDebug(&debugAction, unit)
-	scrubReplayDebugAction(&debugAction, vu.RedactionConfig)
+	runtimeLocation := *cloneReplayDebugAction(debugAction)
+	defer vu.enterReplayRuntimeEvent(eventID)()
+	scrubReplayDebugAction(&debugAction, vu.resultPublicationRedactionConfig())
+	if vu.runtimeCredentialRedactionErr != nil {
+		omitUnredactableReplayDebugAction(&debugAction)
+	}
+	if vu.resultPublicationUnavailable() {
+		debugAction.Target, debugAction.Selector, debugAction.SourceStepID = "", "", ""
+		debugAction.ActionName = "Concurrent request"
+	}
 
-	if debugController != nil {
-		if err := debugController.BeforeAction(ctx, debugAction); err != nil {
+	if debugController != nil && !unit.skipDebugBoundary {
+		if err := vu.replayBeforeBoundary(ctx, debugController, debugAction, runtimeLocation); err != nil {
 			report.Success = false
 			if report.Error == "" {
-				report.Error = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
+				report.Error = vu.replayPublicationError(err)
 			}
 			return ReplayActionEvent{}, false, true
 		}
@@ -1129,19 +1203,27 @@ func runReplayUnit(
 			StartedAt:    now,
 			CompletedAt:  now,
 			Success:      false,
-			ErrorMessage: scrubSensitiveTextWithConfig(unit.synthErr.Error(), vu.RedactionConfig),
+			ErrorMessage: scrubSensitiveTextWithConfig(unit.synthErr.Error(), vu.resultPublicationRedactionConfig()),
 		}
 		applyReplaySourceMetadata(&event, unit.action.Metadata)
 		attachReplayDiagnosis(&event)
+	} else if unit.prepared != nil {
+		child := unit.prepared
+		_, capture := debugController.(ReplayDebugControllerCorrelationObserver)
+		event, shouldContinue = finishReplayProtocolAction(ctx, vu, unit.action, child.action, child.result, child.err, child.started, child.completed, unit.phase, unit.actionIndex, eventIndex, eventID, continueOnError, true, globalThinkCfg, report, capture, nil)
 	} else {
 		_, captureCorrelationEvidence := debugController.(ReplayDebugControllerCorrelationObserver)
 		event, shouldContinue = runReplayAction(ctx, vu, unit.action, unit.phase, unit.actionIndex, eventIndex, eventID, continueOnError, ignoreThinkTime, globalThinkCfg, report, captureCorrelationEvidence)
 	}
 	applyReplayUnitIdentityEvent(&event, unit)
+	if vu.runtimeCredentialRedactionErr != nil {
+		omitUnredactableReplayActionEvent(&event)
+		omitUnredactableReplayDebugAction(&debugAction)
+	}
 	if observer, ok := debugController.(ReplayDebugControllerCorrelationObserver); ok {
 		observer.ObserveCorrelationEvidence(ctx, debugAction, &event)
 	}
-	scrubReplayActionEvent(&event, vu.RedactionConfig)
+	scrubReplayActionEvent(&event, vu.resultPublicationRedactionConfig())
 	event = appendReplayReportEvent(report, event)
 
 	actionProgressType := ReplayProgressActionCompleted
@@ -1165,13 +1247,13 @@ func runReplayUnit(
 		EventIndex: event.EventIndex,
 		Event:      cloneReplayActionEvent(event),
 	})
-	if after, ok := debugController.(ReplayDebugControllerAfter); ok {
-		if err := after.AfterAction(ctx, debugAction, &event); err != nil {
+	if debugController != nil && !unit.skipDebugBoundary {
+		if err := vu.replayAfterBoundary(ctx, debugController, debugAction, runtimeLocation, &event); err != nil {
 			report.Success = false
 			if report.Error == "" {
-				report.Error = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
+				report.Error = vu.replayPublicationError(err)
 			}
-			scrubReplayActionEvent(&event, vu.RedactionConfig)
+			scrubReplayActionEvent(&event, vu.resultPublicationRedactionConfig())
 			return event, shouldContinue, true
 		}
 	}
@@ -1342,7 +1424,10 @@ func runReplayAction(
 	})
 	vu.acceptWebSocketCallback(action, result, err)
 	completedAt := time.Now()
+	return finishReplayProtocolAction(ctx, vu, action, resolved, result, err, start, completedAt, phase, actionIndex, eventIndex, eventID, continueOnError, ignoreThinkTime, globalThinkCfg, report, captureCorrelationEvidence, streamedChildFailure)
+}
 
+func finishReplayProtocolAction(ctx context.Context, vu *VUser, action dsl.Action, resolved *protocol.Action, result *protocol.Result, err error, start, completedAt time.Time, phase string, actionIndex, eventIndex int, eventID string, continueOnError, ignoreThinkTime bool, globalThinkCfg protocol.ThinkTimeConfig, report *ReplayReport, captureCorrelationEvidence bool, streamedChildFailure *protocol.Result) (ReplayActionEvent, bool) {
 	event := ReplayActionEvent{
 		EventID:     eventID,
 		ActionIndex: actionIndex,
@@ -1351,23 +1436,28 @@ func runReplayAction(
 		ActionName:  action.Name,
 		ActionType:  action.Type,
 		Method:      resolved.Method,
-		Target:      scrubReplayTarget(resolved, vu.RedactionConfig),
-		Selector:    scrubReplaySelector(resolved, vu.RedactionConfig),
-		Value:       scrubReplayValue(resolved, vu.RedactionConfig),
-		Headers:     scrubReplayHeaders(resolved, vu.RedactionConfig),
-		Body:        scrubReplayBody(resolved, vu.RedactionConfig),
+		Target:      scrubReplayTarget(resolved, vu.resultPublicationRedactionConfig()),
+		Selector:    scrubReplaySelector(resolved, vu.resultPublicationRedactionConfig()),
+		Value:       scrubReplayValue(resolved, vu.resultPublicationRedactionConfig()),
+		Headers:     scrubReplayHeaders(resolved, vu.resultPublicationRedactionConfig()),
+		Body:        scrubReplayBody(resolved, vu.resultPublicationRedactionConfig()),
 		StartedAt:   start,
 		CompletedAt: completedAt,
 		DurationMs:  float64(completedAt.Sub(start).Microseconds()) / 1000,
 	}
 	applyReplaySourceMetadata(&event, action.Metadata)
+	if vu.resultPublicationUnavailable() {
+		event.Target, event.Selector, event.Value, event.Body, event.Headers = "", "", "", "", nil
+		event.ActionName = "Concurrent request"
+		event.SourceStepID, event.SourceAction, event.SourceActionName, event.SourceProfile = "", "", "", ""
+	}
 
 	if err != nil {
 		vu.noteSourceTransactionResult(action, false)
 		event.CorrelationEvidence = replayCorrelationEvidence(resolved, result, action, captureCorrelationEvidence)
 		discardCorrelationEvidence(result)
 		event.Success = false
-		event.ErrorMessage = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
+		event.ErrorMessage = vu.replayPublicationError(err)
 		if event.ErrorMessage == "" {
 			event.ErrorMessage = fmt.Sprintf("%s %q failed", phase, action.Name)
 		}
@@ -1405,11 +1495,15 @@ func runReplayAction(
 	event.CorrelationEvidence = replayCorrelationEvidence(resolved, result, action, captureCorrelationEvidence)
 	discardCorrelationEvidence(result)
 	logCfg := vu.Script.Config.Log
+	logAction, logName := resolved, action.Name
+	if vu.resultPublicationUnavailable() {
+		logAction, logName = nil, "Concurrent request"
+	}
 	logger := vu.makeLogger(logCfg)
 	if !result.Success {
-		logger.Error("replay action failed", actionLogAttrs(action.Name, resolved, result, logCfg, true, vu.RedactionConfig)...)
+		logger.Error("replay action failed", actionLogAttrs(logName, logAction, result, logCfg, true, vu.resultPublicationRedactionConfig())...)
 	} else if logCfg.OnErrorOnly || logCfg.Level == "extended" {
-		logger.Info("replay action ok", actionLogAttrs(action.Name, resolved, result, logCfg, false, vu.RedactionConfig)...)
+		logger.Info("replay action ok", actionLogAttrs(logName, logAction, result, logCfg, false, vu.resultPublicationRedactionConfig())...)
 	}
 	retainedSnapshotCount := len(vu.SnapshotStore.Snapshots())
 	vu.recordResult(result, vu.Script.Config.ErrorHandling, vu.Script.Config.Log)
@@ -1892,6 +1986,10 @@ func replayCorrelationEvidence(action *protocol.Action, result *protocol.Result,
 			}
 		}
 	}
+	// Structural Aura bodies have contextual template semantics even when an
+	// all-literal replay is byte-identical to the draft. Raw repair offsets do
+	// not attest those semantics or maintain occurrence contracts.
+	requestBodyTransformed = requestBodyTransformed || actionBodyTemplateValueEncoding(authored.Metadata) == dsl.ImportAuraJSONTemplateValueEncoding
 	if !correlationEvidenceFitsCaptureLimit(requestURL, requestBody, requestBodyBytes, requestHeaders, action, useActionHeaders, authored, responseBody, responseHeaders) {
 		return protocol.UnavailableCorrelationEvidence(protocol.CorrelationEvidenceTooLargeReason)
 	}
@@ -2136,6 +2234,10 @@ func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 	if event == nil {
 		return
 	}
+	if config != nil && config.runtimePublicationUnavailable {
+		omitUnredactableReplayActionEvent(event)
+		return
+	}
 	// Transaction names are authored identity labels, not protocol evidence, and
 	// must remain visible exactly as configured. Ordinary actions and
 	// non-transaction parents retain the full scrubber.
@@ -2190,6 +2292,10 @@ func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 
 func scrubReplayDebugAction(action *ReplayDebugAction, config *RedactionConfig) {
 	if action == nil {
+		return
+	}
+	if config != nil && config.runtimePublicationUnavailable {
+		omitUnredactableReplayDebugAction(action)
 		return
 	}
 	if replayActionHasTransactionIdentity(action.ActionType) {
@@ -2290,4 +2396,124 @@ func publishReplayProgress(callback func(ReplayProgressEvent), event ReplayProgr
 		return
 	}
 	callback(event)
+}
+
+// A failed classification cannot provide a complete matcher. Preserve only
+// fixed/numeric replay identity and outcome evidence, including engine-only
+// actions that may continue without executing network traffic.
+// OmitUnavailableReplayDebugAction removes authored/detail text while retaining
+// bounded structural phase, path, ordinal and action-type identity.
+func OmitUnavailableReplayDebugAction(action *ReplayDebugAction) {
+	omitUnredactableReplayDebugAction(action)
+}
+
+func omitUnredactableReplayDebugAction(action *ReplayDebugAction) {
+	if action == nil {
+		return
+	}
+	action.ActionName = "Action evidence unavailable"
+	action.Target, action.Selector, action.SourceStepID = "", "", ""
+	action.ParentActionName = ""
+	action.EventID = truncateReplayScalar(action.EventID, maxReplayIdentityBytes)
+	action.Phase = truncateReplayScalar(action.Phase, maxReplayIdentityBytes)
+	action.ActionType = truncateReplayScalar(action.ActionType, maxReplayIdentityBytes)
+	action.Method = truncateReplayScalar(action.Method, maxReplayIdentityBytes)
+	action.StepPath = append([]string(nil), action.StepPath[:min(len(action.StepPath), maxReplayPathDepth)]...)
+	for i := range action.StepPath {
+		action.StepPath[i] = truncateReplayScalar(action.StepPath[i], maxReplayIdentityBytes)
+	}
+	action.IterationPath = append([]int(nil), action.IterationPath[:min(len(action.IterationPath), maxReplayPathDepth)]...)
+}
+
+func omitUnredactableReplayActionEvent(event *ReplayActionEvent) {
+	if event == nil {
+		return
+	}
+	// Event/phase/path identifiers are structural, independent of authored data.
+	event.ActionName = "Action evidence unavailable"
+	if event.ErrorMessage != "" {
+		event.ErrorMessage = "replay error detail unavailable"
+	}
+	event.Target, event.Selector, event.Value, event.Body = "", "", "", ""
+	event.Headers, event.Extractions = nil, nil
+	event.PageURL, event.PageTitle, event.HTML, event.Screenshot = "", "", "", ""
+	event.Console, event.Network, event.DOMSummary, event.Snapshot, event.ClientMetrics = nil, nil, nil, nil, nil
+	event.ProtocolEvidence, event.Diagnosis, event.RepairSuggestions = nil, nil, nil
+	event.SourceStepID, event.SourceAction, event.SourceActionName, event.SourceTransaction, event.SourceProfile, event.ParentActionName = "", "", "", "", "", ""
+	event.ResponseBodyState = "not_retained"
+	event.CorrelationEvidence = nil
+	event.StepPath = append([]string(nil), event.StepPath[:min(len(event.StepPath), maxReplayPathDepth)]...)
+	event.IterationPath = append([]int(nil), event.IterationPath[:min(len(event.IterationPath), maxReplayPathDepth)]...)
+	boundReplayEventScalarFields(event)
+}
+
+func (vu *VUser) replayFinalVariables() map[string]string {
+	if vu.runtimeCredentialRedactionErr != nil {
+		return nil
+	}
+	return scrubReplayFinalVariables(vu.Variables, vu.RedactionConfig)
+}
+
+func (vu *VUser) replayPublicationError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if vu.resultPublicationUnavailable() {
+		return "replay error detail unavailable"
+	}
+	return scrubSensitiveTextWithConfig(err.Error(), vu.resultPublicationRedactionConfig())
+}
+
+// OmitUnavailableReplayReport is an idempotent, bounded terminal projection.
+// An incomplete classification cannot safely repair prior truncated details;
+// omit them while retaining event IDs, ordinals, times and numeric outcomes.
+func OmitUnavailableReplayReport(report *ReplayReport) {
+	if report == nil {
+		return
+	}
+	report.RuntimeEvidenceUnavailable, report.Success = true, false
+	report.Error = "runtime credential redaction failed"
+	report.Group = "replay"
+	report.RuntimeProfile = ReplayRuntimeProfile{}
+	report.FinalVariables, report.ArtifactManifest, report.DiagnosisSummary, report.RepairSuggestions, report.Snapshots = nil, nil, nil, nil, nil
+	report.manifestSnapshots, report.retainedSnapshotClones, report.messageDetailBudget = nil, nil, nil
+	if len(report.Events) > MaxRetainedReplayEvents {
+		report.DroppedEventCount += len(report.Events) - MaxRetainedReplayEvents
+		report.Events = append([]ReplayActionEvent(nil), report.Events[:MaxRetainedReplayEvents]...)
+	}
+	report.eventJSONBytes = make([]int, len(report.Events))
+	report.retainedEventJSONBytes, report.consumedEvidenceBytes = 0, 0
+	for i := range report.Events {
+		omitUnredactableReplayActionEvent(&report.Events[i])
+		report.Events[i].CorrelationEvidence = nil
+		size := ReplayActionEventRetentionBytes(report.Events[i])
+		report.eventJSONBytes[i] = size
+		report.retainedEventJSONBytes += size
+	}
+	for report.retainedEventJSONBytes > MaxRetainedReplayEventBytes {
+		report.dropOldestRetainedEvent()
+	}
+}
+
+func (vu *VUser) guardedReplayProgress(report *ReplayReport, callback func(ReplayProgressEvent)) func(ReplayProgressEvent) {
+	return func(event ReplayProgressEvent) {
+		if vu.runtimeCredentialRedactionErr != nil {
+			if !report.RuntimeEvidenceUnavailable {
+				OmitUnavailableReplayReport(report)
+			}
+			report.FinalVariables, report.ArtifactManifest, report.DiagnosisSummary, report.RepairSuggestions, report.Snapshots = nil, nil, nil, nil, nil
+			event.RuntimeEvidenceUnavailable = true
+			if event.Report != nil {
+				OmitUnavailableReplayReport(event.Report)
+			}
+			omitUnredactableReplayDebugAction(event.Action)
+			omitUnredactableReplayActionEvent(event.Event)
+			if event.Condition != nil {
+				event.Condition.Expr, event.Condition.Left, event.Condition.Right, event.Condition.Op = "", "", "", ""
+			}
+		}
+		if callback != nil {
+			callback(event)
+		}
+	}
 }

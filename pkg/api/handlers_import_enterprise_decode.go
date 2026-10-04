@@ -166,6 +166,7 @@ func sourceReviewValue(value any) *enterprisearchive.SourceReview {
 		return &clone
 	case map[string]any:
 		review := &enterprisearchive.SourceReview{
+			TargetDomain:       stringValue(typed["target_domain"]),
 			SourceFiles:        sourceReviewFilesValue(typed["source_files"]),
 			Mappings:           sourceReviewMappingsValue(typed["mappings"]),
 			TotalSourceFiles:   intValue(typed["total_source_files"]),

@@ -342,7 +342,7 @@ func TestAnalysisUploadSchemaMigrationRecreatesJournalAndPreservesPriorLedgerIde
 	if _, err = first.db.Exec(`DROP TABLE analysis_upload_writers`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = first.db.Exec(`DELETE FROM schema_migrations WHERE version=30`); err != nil {
+	if _, err = first.db.Exec(`DELETE FROM schema_migrations WHERE version=34`); err != nil {
 		t.Fatal(err)
 	}
 	if err = first.Close(); err != nil {
@@ -354,11 +354,11 @@ func TestAnalysisUploadSchemaMigrationRecreatesJournalAndPreservesPriorLedgerIde
 	}
 	defer upgraded.Close()
 	var prior string
-	if err = upgraded.db.QueryRow(`SELECT fingerprint FROM schema_migrations WHERE version=29`).Scan(&prior); err != nil || prior != "348e5bff6128c23431046d91f301e65f219eaa542faead33fc42d1508c4587df" {
+	if err = upgraded.db.QueryRow(`SELECT fingerprint FROM schema_migrations WHERE version=33`).Scan(&prior); err != nil || prior != "348e5bff6128c23431046d91f301e65f219eaa542faead33fc42d1508c4587df" {
 		t.Fatal("prior migration identity changed", prior, err)
 	}
 	var current string
-	if err = upgraded.db.QueryRow(`SELECT fingerprint FROM schema_migrations WHERE version=30`).Scan(&current); err != nil || current != schemaConvergenceFingerprint() {
+	if err = upgraded.db.QueryRow(`SELECT fingerprint FROM schema_migrations WHERE version=34`).Scan(&current); err != nil || current != schemaConvergenceFingerprint() {
 		t.Fatal("upload migration did not converge", current, err)
 	}
 	in := uploadWriterFixture(t, upgraded)

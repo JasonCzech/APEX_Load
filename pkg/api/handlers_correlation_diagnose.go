@@ -37,12 +37,13 @@ type correlationDiagnoseRequest struct {
 }
 
 type correlationDiagnoseResponse struct {
-	Suggestions           []correlate.RepairSuggestion `json:"suggestions"`
-	Blocking              bool                         `json:"blocking"`
-	Counts                correlationDiagnoseCounts    `json:"counts"`
-	ComparedRecordedSteps int                          `json:"compared_recorded_steps"`
-	TotalRecordedSteps    int                          `json:"total_recorded_steps"`
-	Truncated             bool                         `json:"truncated,omitempty"`
+	Suggestions           []correlate.RepairSuggestion   `json:"suggestions"`
+	Blocking              bool                           `json:"blocking"`
+	Counts                correlationDiagnoseCounts      `json:"counts"`
+	ComparedRecordedSteps int                            `json:"compared_recorded_steps"`
+	TotalRecordedSteps    int                            `json:"total_recorded_steps"`
+	Truncated             bool                           `json:"truncated,omitempty"`
+	RelationshipCoverage  correlate.RelationshipCoverage `json:"relationship_coverage"`
 }
 
 type correlationDiagnoseCounts struct {
@@ -91,7 +92,7 @@ func (s *Server) handleDiagnoseCorrelations(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusRequestEntityTooLarge, "correlation diagnosis exceeds observation or evidence limits")
 		return
 	}
-	suggestions, err := correlate.DiagnoseReplayChecked(recorded, replay)
+	diagnosis, err := correlate.DiagnoseReplayReviewChecked(recorded, replay)
 	if err != nil {
 		if errors.Is(err, correlate.ErrCorrelationWorkLimit) {
 			writeError(w, http.StatusUnprocessableEntity, "correlation diagnosis exceeded deterministic work limits")
@@ -100,7 +101,7 @@ func (s *Server) handleDiagnoseCorrelations(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "correlation diagnosis failed")
 		return
 	}
-	suggestions = scrubRepairSuggestions(suggestions)
+	suggestions := scrubRepairSuggestions(diagnosis.Suggestions)
 	comparedRecordedSteps := matchedCorrelationObservationCount(recorded, replay)
 
 	counts := correlationDiagnoseCounts{}
@@ -120,6 +121,7 @@ func (s *Server) handleDiagnoseCorrelations(w http.ResponseWriter, r *http.Reque
 		ComparedRecordedSteps: comparedRecordedSteps,
 		TotalRecordedSteps:    len(req.Recorded),
 		Truncated:             comparedRecordedSteps < len(req.Recorded),
+		RelationshipCoverage:  diagnosis.RelationshipCoverage,
 	})
 }
 

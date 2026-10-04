@@ -14,6 +14,54 @@ func point(at time.Time, value float64) MetricPoint {
 	}
 }
 
+func TestProviderCatalogPathBounds(t *testing.T) {
+	for _, length := range []int{2048, 4096, 4097} {
+		p := rulePoint(time.Now().UTC().Truncate(time.Minute), 10, 1, 10)
+		p.Provider.CatalogPath = strings.Repeat("x", length)
+		if valid := p.Validate() == nil; valid != (length <= 4096) {
+			t.Fatalf("path length %d: valid=%v", length, valid)
+		}
+	}
+}
+
+func TestProviderResolutionDistinguishesQueryWindowsFromSourceBuckets(t *testing.T) {
+	start := time.Now().UTC().Truncate(time.Second)
+	for _, tc := range []struct {
+		name        string
+		seconds     int
+		queryWindow bool
+		valid       bool
+	}{
+		{"one-day source bucket", 86400, false, true},
+		{"multi-day query aggregate", 26 * 3600, true, true},
+		{"multi-day source bucket", 26 * 3600, false, false},
+		{"zero query duration", 0, true, false},
+		{"maximum integer query duration", math.MaxInt, true, int64(math.MaxInt) <= math.MaxInt64/int64(time.Second)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := rulePoint(start, 10, 1, 10)
+			p.Provider.QueryWindow = tc.queryWindow
+			p.Provider.ResolutionSeconds = tc.seconds
+			// Keep the overflow fixture's end valid so validation must reject
+			// the resolution rather than evaluating an overflowing duration.
+			p.Provider.BucketEnd = start.Add(time.Hour)
+			if tc.seconds > 0 && int64(tc.seconds) <= math.MaxInt64/int64(time.Second) {
+				p.Provider.BucketEnd = start.Add(time.Duration(tc.seconds) * time.Second)
+			}
+			if valid := p.Validate() == nil; valid != tc.valid {
+				t.Fatalf("valid=%v, want=%v", valid, tc.valid)
+			}
+		})
+	}
+	p := rulePoint(start, 10, 1, 10)
+	p.Provider.QueryWindow = true
+	p.Provider.ResolutionSeconds = 26 * 3600
+	p.Provider.BucketEnd = start.Add(26*time.Hour + time.Second)
+	if p.Validate() == nil {
+		t.Fatal("query aggregate duration differs from its interval")
+	}
+}
+
 func TestMetricPointValidate(t *testing.T) {
 	now := time.Now().UTC()
 	cases := []struct {
@@ -188,5 +236,47 @@ func TestNormalizeRunClockRejectsDurationOverflow(t *testing.T) {
 	start := time.Date(2, 1, 1, 0, 0, 0, 0, time.UTC)
 	if _, err := NormalizeRunClock(point(start.AddDate(500, 0, 0), 1), start); err == nil {
 		t.Fatal("saturated run clock accepted")
+	}
+}
+
+func TestSameMetricCombinesNativeLineageAndProviderProvenance(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	base := point(start, 1)
+	base.Unit = "ms"
+	base.Population = PopulationAction
+	base.MetricVersion = "v1"
+	base.InputKind = KindGauge
+	base.Derivation = []DerivationStep{{Operation: "avg", Algorithm: "scalar_bucket.v1", BucketSeconds: 60}}
+	base.Provider = &ProviderMeasurement{Name: "prometheus", QueryID: "latency", DefinitionHash: strings.Repeat("a", 64), BackendProfile: "prometheus", Mode: "analysis_bucket", AnalysisStatistic: "avg", EvaluationStepSeconds: 15, ResolutionSeconds: 60}
+	for _, tc := range []struct {
+		name string
+		edit func(*MetricPoint)
+	}{
+		{"population", func(p *MetricPoint) { p.Population = PopulationMessage }},
+		{"metric version", func(p *MetricPoint) { p.MetricVersion = "v2" }},
+		{"derivation", func(p *MetricPoint) {
+			p.Derivation = []DerivationStep{{Operation: "p95", Algorithm: "linear_quantile.v1", BucketSeconds: 60}}
+		}},
+		{"provider query", func(p *MetricPoint) { metadata := *p.Provider; metadata.QueryID = "another"; p.Provider = &metadata }},
+		{"provider definition", func(p *MetricPoint) {
+			metadata := *p.Provider
+			metadata.DefinitionHash = strings.Repeat("b", 64)
+			p.Provider = &metadata
+		}},
+		{"provider absent", func(p *MetricPoint) { p.Provider = nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := base
+			tc.edit(&candidate)
+			if sameMetric(base, candidate) || sameMetric(candidate, base) {
+				t.Fatal("native lineage or provider provenance became interchangeable")
+			}
+		})
+	}
+	baseline := base
+	baseline.RunID = "baseline"
+	baseline.DatasetID = "baseline-dataset"
+	if !sameMetric(base, baseline) || sameSeries(base, baseline) {
+		t.Fatal("compatible baseline identity lost run and dataset ownership distinctions")
 	}
 }

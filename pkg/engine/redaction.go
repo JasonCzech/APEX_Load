@@ -61,6 +61,9 @@ type RedactionConfig struct {
 	runtimeSecretRawBytes  int
 	runtimePatternBytes    int
 	runtimeMatcherComplete bool
+	// runtimePublicationUnavailable is an immutable publication-only sentinel.
+	// It carries no values and cannot replace the exact execution matcher.
+	runtimePublicationUnavailable bool
 	// runtimeScriptSourcedValues is the subset of runtimeSecretValues on THIS
 	// layer whose origin is the script itself — literals an import retained,
 	// credentials the operator authored, and values a script-sourced template
@@ -79,6 +82,8 @@ type RedactionConfig struct {
 	// potentially large imported matcher after every cookie or extraction update.
 	runtimeParent *RedactionConfig
 }
+
+var unavailableRuntimePublicationConfig = &RedactionConfig{runtimePublicationUnavailable: true}
 
 var sensitiveSnapshotHeaderNames = map[string]struct{}{
 	"authorization":        {},
@@ -192,7 +197,7 @@ func (c *RedactionConfig) ScrubText(value string) string {
 // the comparison stays O(1) per layer.
 func (c *RedactionConfig) HasRuntimeSecretMaterial() bool {
 	for depth := 0; c != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
-		if len(c.runtimeSecretValues) > len(c.runtimeScriptSourcedValues) {
+		if c.runtimePublicationUnavailable || len(c.runtimeSecretValues) > len(c.runtimeScriptSourcedValues) {
 			return true
 		}
 		c = c.runtimeParent
@@ -1119,6 +1124,12 @@ func scrubSensitiveError(err error, config *RedactionConfig) error {
 }
 
 func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string {
+	if value == "" {
+		return ""
+	}
+	if config != nil && config.runtimePublicationUnavailable {
+		return "runtime evidence detail unavailable"
+	}
 	if strings.TrimSpace(value) == "" {
 		return value
 	}

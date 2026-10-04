@@ -1,0 +1,15 @@
+.aura-outcome-review { min-width: 0; margin: 16px 0; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); }
+.aura-outcome-review h4 { margin: 0 0 10px; font-size: 16px; text-transform: none; letter-spacing: normal; }
+.aura-outcome-review p { max-width: 85ch; color: var(--text-secondary); line-height: 1.5; overflow-wrap: anywhere; }
+.aura-outcome-review .aura-outcome-status { color: var(--text-primary); font-weight: 600; }
+.aura-outcome-limits { padding: 12px; margin: 12px 0; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); }
+.aura-outcome-limits p { margin: 6px 0 0; }
+.aura-outcome-review summary { padding: 12px 0; cursor: pointer; font-weight: 600; }
+.aura-outcome-filter { display: flex; gap: 8px; align-items: center; padding: 10px 0; }
+.aura-outcome-batch { border-top: 1px solid var(--border); padding: 14px 0; }
+.aura-outcome-batch-heading { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between; }
+.aura-outcome-batch p { margin: 8px 0; }
+.aura-outcome-actions { display: flex; flex-wrap: wrap; gap: 8px 24px; padding-left: 20px; }
+.aura-outcome-pagination { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.aura-outcome-pagination span { margin-right: auto; color: var(--text-secondary); }
+@media (max-width: 760px) { .aura-outcome-review { padding: 12px; } }

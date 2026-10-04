@@ -1,6 +1,23 @@
 # Observability Integrations
 
-Configuration and operating guidance for Prometheus, OpenTelemetry, Dynatrace, Power BI, Elastic, and Confluence integrations.
+Configuration and operating guidance for Prometheus, OpenTelemetry, Dynatrace, AppDynamics, Power BI, Elastic, and Confluence integrations.
+
+## AppDynamics test monitoring
+
+Classic AppDynamics SaaS and on-premises Controllers can be configured as project connections and attached to tests through revisioned monitor sources. A source selects direct controller collection or an assigned collector, application/entity scope, metric paths, events, health-rule violations, bounded snapshot summaries, and optional licensed Analytics queries. Credentials use project-secret references; values and reference names are excluded from public connection and job projections.
+
+Configure **Settings → Integrations → AppDynamics test capture**, test the saved connection, discover applications and metric paths, then add an AppDynamics source in **Monitoring → Telemetry → Run monitor sources**. Save reusable scenario bindings or override them for one run in Run Setup. Collection continues through pauses and drains delayed source data after load ends. Terminal performance criteria require settled, compatible measurements with sufficient coverage.
+
+See [AppDynamics setup and operation](APPDYNAMICS.md) and [implementation specification](APPDYNAMICS_SPEC.md) for transport policy, authentication, selection, evidence semantics, rollout, and acceptance criteria. The generated [OpenAPI specification](swagger.yaml) is the authority for route contracts.
+
+
+## Prometheus target-system test monitoring
+
+Project administrators configure **Settings → Integrations → Prometheus test monitoring**, verify the saved revision at its selected direct or collector location, and create `prometheus-query` sources in **Monitoring → Telemetry**. Typed PromQL queries retain approved labels, units, semantics, query identity, optional freshness companions and scoped target/alert summaries. Tests and scenarios select sources explicitly; preparation freezes revisions and acceptance rules without SUT traffic.
+
+Live timelines, five-minute maximum delayed-data reconciliation, canonical archives, analysis and terminal criteria use the common durable provider pipeline. Missing required evidence remains Inconclusive and cannot pass CI. Existing APEX platform graphs, `/metrics`, imported dashboard behavior and the legacy collector `prometheus` pack remain separate. Explicit dashboard adoption resolves a reviewed disabled source draft without copying credentials or thresholds.
+
+See [setup and operation](PROMETHEUS_MONITORING.md) and [specification/qualification matrix](PROMETHEUS_MONITORING_SPEC.md). Real backend qualification follows fixture verification; no server version or Azure identity mode is certified solely by fixtures.
 
 ## Confluence Cloud result publishing
 
@@ -15,7 +32,7 @@ Automatic publishing is off by default. A project administrator can enable it on
 
 APEX Load exposes controller metrics at `GET /metrics`. When `APEXLOAD_METRICS_ADDR` is set, `/metrics` is served only on that dedicated listener. When `APEXLOAD_METRICS_TOKEN` is set, scrapes must include `Authorization: Bearer <token>`.
 
-The workstation collector agent has separate source-specific packs. `linux-hosts` reads Linux `/proc` host metrics, `go-runtime` reads the agent process, and `prometheus` scrapes an explicitly configured `-prometheus-url` (or `APEXLOAD_COLLECTOR_PROMETHEUS_URL`). The collector must be registered with each selected pack in its allow-list. The initial Prometheus pack accepts text exposition 0.0.4 with up to 512 finite, unlabeled numeric samples from a 1 MiB response. It preserves declared metric kinds and explicit millisecond timestamps; undeclared kinds remain unknown. Labeled and non-finite samples are counted as skipped and degrade the heartbeat. Duplicate samples and unsupported formats fail the scrape. Scrapes have a 10-second deadline and do not follow redirects; the URL cannot contain credentials, query parameters, or a fragment. An unavailable source degrades the heartbeat and is not reported under another pack name. The collector metrics API also returns a bounded `metric_points` projection with collector identity, source timestamps, and current freshness. `metric_points_coverage` counts returned, omitted, invalid, and source-skipped samples. These live snapshots are not yet bound to a run or stored in its archive.
+The workstation collector agent has separate source-specific packs. `linux-hosts` reads Linux `/proc` host metrics, `go-runtime` reads the agent process, and `prometheus` scrapes an explicitly configured `-prometheus-url` (or `APEXLOAD_COLLECTOR_PROMETHEUS_URL`). The collector must be registered with each selected pack in its allow-list. The initial Prometheus pack accepts text exposition 0.0.4 with up to 512 finite, unlabeled numeric samples from a 1 MiB response. It preserves declared metric kinds and explicit millisecond timestamps; undeclared kinds remain unknown. Labeled and non-finite samples are counted as skipped and degrade the heartbeat. Duplicate samples and unsupported formats fail the scrape. Scrapes have a 10-second deadline and do not follow redirects; the URL cannot contain credentials, query parameters, or a fragment. An unavailable source degrades the heartbeat and is not reported under another pack name. The collector metrics API also returns a bounded `metric_points` projection with collector identity, source timestamps, and current freshness. `metric_points_coverage` counts returned, omitted, invalid, and source-skipped samples. Collector heartbeat snapshots are separate from test evidence. When a legacy scrape source is explicitly selected through run-monitor bindings, accepted typed point batches can be retained in the run archive; use `prometheus-query` for the project-governed labelled PromQL workflow.
 
 The controller is scrape-only. Remote write is configured on the external Prometheus server; see `deployments/k8s/monitoring/prometheus-remote-write-example.yaml`.
 

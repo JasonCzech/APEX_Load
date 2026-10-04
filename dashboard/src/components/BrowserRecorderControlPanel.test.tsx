@@ -331,6 +331,44 @@ describe('BrowserRecorderControlPanel', () => {
     })
   }
 
+  it('shows live agent-reported environment and retains browser and HTTP receipts in scoped output reviews', async () => {
+    const environment = { version: 1, observation_source: 'local_recorder', engine: 'chromium', device_profile: 'ipad_air', profile_browser_family: 'webkit', emulated: true, applied_context: { mobile: true, has_touch: true }, physical_device_qualification: 'unverified' }
+    apiMock.browserRecorderBridge = { agent_url: 'http://127.0.0.1:8123', token: 'not-rendered' }
+    apiMock.getBrowserRecording.mockResolvedValue({ session: { ...stoppedSession, recording_environment: environment } })
+    const metadata = { import: { preserved: { recording_environment: { ...environment, observation_source: 'agent_reported' } } } }
+    apiMock.previewBrowserRecordingConversion.mockResolvedValue({ scripts: [{ name: 'Browser', protocol: 'browser', config: { browser: { engine: 'webkit' } }, actions: [], metadata }, { name: 'HTTP', protocol: 'http', config: {}, actions: [], metadata }], warnings: [], stats: {} })
+    await renderPanel()
+    expect(container.querySelector('[aria-label="Recording environment"]')!.textContent).toContain('Recording agent reported')
+    await clickButton('Preview Conversion')
+    const browser = container.querySelector('[aria-label="Output 1: Browser"]')!
+    const http = container.querySelector('[aria-label="Output 2: HTTP"]')!
+    expect(browser.querySelector('[aria-label="Recording environment"]')!.textContent).toContain('differs')
+    expect(http.querySelector('[aria-label="Recording environment"]')!.textContent).toContain('Not applicable (HTTP output)')
+    expect(container.textContent).not.toContain('not-rendered')
+  })
+
+  it('invalidates current conversion verification when an in-flight refresh returns changed receipt observations', async () => {
+    vi.useFakeTimers()
+    try {
+      const environment = { version: 1, observation_source: 'local_recorder', engine: 'chromium', emulated: false, physical_device_qualification: 'unverified' }
+      let finishRefresh!: (value: unknown) => void
+      apiMock.getBrowserRecording.mockResolvedValueOnce({ session: { ...recordingSession, recording_environment: environment } }).mockImplementationOnce(() => new Promise(resolve => { finishRefresh = resolve }))
+      apiMock.stopBrowserRecording.mockResolvedValue({ session: { ...stoppedSession, recording_environment: environment } })
+      await renderPanel()
+      await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
+      expect(finishRefresh).toBeDefined()
+      await clickButton('Stop Recording')
+      await clickButton('Preview Conversion')
+      await clickButton('Verify output 1')
+      await clickButton('Complete Replay')
+      expect(container.textContent).toContain('Verification passed for this conversion')
+      await act(async () => { finishRefresh({ session: { ...stoppedSession, recording_environment: { ...environment, engine: 'firefox' } } }); await Promise.resolve() })
+      expect(container.textContent).not.toContain('Verification passed for this conversion')
+      expect(container.textContent).toContain('Previous recording verification')
+      expect(container.textContent).toContain('Conversion changed')
+    } finally { vi.useRealTimers() }
+  })
+
   it('renders the live session with step feed, counts, and masked indicator', async () => {
     await renderPanel()
 

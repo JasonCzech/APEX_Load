@@ -167,7 +167,13 @@ func TestGenericAuthAPIRoutesResolveServiceAccountScope(t *testing.T) {
 			t.Errorf("%s %s resolved empty service-account scope", route.Method, route.Path)
 			continue
 		}
-		if _, err := normalizeServiceAccountScopes([]string{scope}); err != nil {
+		// Activity is a composite admission requirement: either existing read
+		// scope permits entry, and the handler restricts rows to that scope.
+		scopes := []string{scope}
+		if scope == "object-activity:read" {
+			scopes = []string{"read", "results:read"}
+		}
+		if _, err := normalizeServiceAccountScopes(scopes); err != nil {
 			t.Errorf("%s %s resolved unsupported service-account scope %q: %v", route.Method, route.Path, scope, err)
 		}
 	}

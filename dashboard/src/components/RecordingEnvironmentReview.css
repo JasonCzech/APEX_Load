@@ -1,0 +1,9 @@
+.recording-environment-review { min-width: 0; max-width: 100%; margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; }
+.recording-environment-review h4 { margin: 0 0 8px; }
+.recording-environment-review p { margin: 8px 0; }
+.recording-environment-review dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; margin: 12px 0; }
+.recording-environment-review dl > div { min-width: 0; }
+.recording-environment-review dt { color: var(--text-secondary); font-size: 12px; }
+.recording-environment-review dd { margin: 4px 0 0; font-weight: 600; }
+.recording-environment-warning { color: var(--warning, var(--text-primary)); }
+.rec-browser-emulation-note { color: var(--text-secondary); font-size: 13px; }

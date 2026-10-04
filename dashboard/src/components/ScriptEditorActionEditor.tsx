@@ -10,6 +10,7 @@ import { appendActionStep, moveActionStep, removeActionStep, updateActionStepFie
 import { dslActionTypesForProtocol, dslActionUsesSelector, dslActionUsesValue } from './dslActionCatalog'
 import { ProtocolExtractorsSection, ProtocolAssertionsSection, BrowserActionFields, DatabaseActionFields, GrpcActionFields, HttpActionFields, JmsActionFields, NetworkActionFields, WebSocketActionFields } from './scriptActionFields'
 import { type AuthoringIssue } from './scriptAuthoringAssist'
+import { httpSequenceExecutionSettings, setHTTPSequenceExecutionMode, setHTTPSequenceMaxConcurrency, type HTTPSequenceExecutionMode } from './httpSequenceExecutionModel'
 
 type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
@@ -22,7 +23,7 @@ function isHTTPRuntimeAction(action: Action): boolean {
   return HTTP_RUNTIME_ACTION_TYPES.has(action.type)
 }
 
-export function ActionEditor({ inspector = false, initialSection = 'request', onOpenBody, action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, isBrowserScript, isJmsScript, isSoapScript, issues }: {
+export function ActionEditor({ inspector = false, initialSection = 'request', onOpenBody, action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, scriptHTTPVersion, isBrowserScript, isJmsScript, isSoapScript, issues }: {
   inspector?: boolean
   initialSection?: string
   onOpenBody?: () => void
@@ -44,6 +45,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
   onBeginParameterEdit: (draft: ActionEditorParameterDraft) => void
   methodColor: (m: string) => string
   protocol: string
+  scriptHTTPVersion?: string
   isBrowserScript: boolean
   isJmsScript: boolean
   isSoapScript: boolean
@@ -187,6 +189,8 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
             />
           ) : (
             <HttpActionFields
+              protocol={protocol}
+              scriptHTTPVersion={scriptHTTPVersion}
               action={action}
               index={index}
               isBrowserScript={isBrowserScript}
@@ -278,6 +282,8 @@ interface HTTPSequenceFieldsProps {
 }
 
 function HTTPSequenceFields({ action, index, onUpdate }: HTTPSequenceFieldsProps) {
+  const protocol = useContext(ActionProtocolContext)
+  const execution = httpSequenceExecutionSettings(action, protocol)
   const requests = httpSequenceRequests(action)
   const sourceTransaction = asString(action.metadata?.source_transaction) || asString(action.metadata?.source_transaction)
   const subtransactions = requests
@@ -313,6 +319,36 @@ function HTTPSequenceFields({ action, index, onUpdate }: HTTPSequenceFieldsProps
           {extractorCount > 0 && <span className="metric-badge">{extractorCount} ext</span>}
           {assertionCount > 0 && <span className="metric-badge">{assertionCount} check</span>}
         </div>
+        {execution && <section aria-label="HTTP sequence execution" className="http-sequence-execution">
+          <div className="form-grid">
+            <label><span>Sequence execution mode</span>
+              <select aria-label="Sequence execution mode" disabled={execution.paramsInvalid} value={execution.mode === null || execution.paramsInvalid ? 'unsupported' : execution.defaultMode ? 'default' : execution.mode} onChange={event => {
+                const mode = event.target.value === 'default' ? undefined : event.target.value as HTTPSequenceExecutionMode
+                const updated = setHTTPSequenceExecutionMode(action, protocol, mode)
+                if (updated !== action) onUpdate(index, 'params', updated.params)
+              }}>
+                {(execution.mode === null || execution.paramsInvalid) && <option value="unsupported">Unsupported authored settings</option>}
+                <option value="default">Sequential (default)</option>
+                <option value="sequential">Sequential</option>
+                <option value="concurrent">Concurrent</option>
+              </select>
+            </label>
+            <label><span>Maximum concurrent requests</span>
+              <input aria-label="Maximum concurrent requests" type="number" min={1} max={16} step={1} disabled={execution.paramsInvalid} value={execution.limitInput} placeholder={execution.limitValid ? 'Automatic' : 'Invalid authored limit'} onChange={event => {
+                const updated = setHTTPSequenceMaxConcurrency(action, protocol, event.target.value === '' ? undefined : Number(event.target.value))
+                if (updated !== action) onUpdate(index, 'params', updated.params)
+              }} />
+              <small>Concurrent mode: 1–16. Blank uses the smaller of 8 and the request count. Retained limits must be valid even in sequential mode.</small>
+            </label>
+          </div>
+          <p role="status">{!execution.valid ? 'Execution settings need review.' : execution.mode === 'concurrent' ? `Concurrent group · up to ${execution.effectiveConcurrency} requests in flight.` : execution.defaultMode ? 'Sequential execution (default).' : 'Sequential execution.'}</p>
+          {(execution.paramsInvalid || execution.mode === null) && <p role="alert">Authored execution settings are malformed or unsupported. Review the sequence JSON; existing values remain unchanged until explicitly edited.</p>}
+          {!execution.limitValid && <p role="alert">Authored concurrency limit is invalid. Use an integer from 1 to 16 or clear the field for automatic concurrency. The saved value has not been clamped.</p>}
+          {execution.mode === 'concurrent' && !execution.concurrentChildrenValid && <p role="alert">Concurrent groups require 1–256 child request objects. Review the request list in the sequence JSON.</p>}
+          {execution.mode === 'concurrent' && <p>Requests share the parent HTTP session. All request values are prepared in source order before dispatch; extracted values become available after the group joins. Sibling requests cannot consume values extracted within this group. Replay debugger pausing and stepping occur at the group boundary. Concurrent groups support at most 256 requests and bounded preparation.</p>}
+          {execution.mode === 'sequential' && <p>Requests run in source order. Each request can use values extracted by earlier requests in the sequence.</p>}
+        </section>}
+        {!execution && <p className="sequence-summary-note">HTTP sequence execution controls are available for HTTP scripts.</p>}
         <p className="sequence-summary-note">
           Expand the sequence in the Author outline to inspect individual requests.
         </p>

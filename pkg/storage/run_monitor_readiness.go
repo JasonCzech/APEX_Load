@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -57,9 +58,18 @@ func validateCollectorRunReadiness(project, collector string, packs, destination
 		return errors.New("invalid collector readiness")
 	}
 	for _, pack := range packs {
-		if pack != "go-runtime" && pack != "linux-hosts" && pack != "prometheus" && pack != "ssh-linux" && pack != "otel-metrics" && pack != "jmx" && pack != "jdbc" && pack != "cloudwatch" && pack != "azure-monitor" {
+		if pack != "go-runtime" && pack != "linux-hosts" && pack != "prometheus" && pack != "ssh-linux" && pack != "otel-metrics" && pack != "jmx" && pack != "jdbc" && pack != "cloudwatch" && pack != "azure-monitor" && pack != "appdynamics" && pack != "appdynamics.v1" && pack != "prometheus-query" && pack != "prometheus-query.v1" && pack != "prometheus-scrape.v2" {
 			return errors.New("unsupported collector pack")
 		}
+	}
+	if containsReadinessPack(packs, "appdynamics.v1") && !containsReadinessPack(packs, "appdynamics") {
+		return errors.New("AppDynamics contract requires pack approval")
+	}
+	if containsReadinessPack(packs, "prometheus-query.v1") && !containsReadinessPack(packs, "prometheus-query") {
+		return errors.New("Prometheus query contract requires pack approval")
+	}
+	if containsReadinessPack(packs, "prometheus-scrape.v2") && !containsReadinessPack(packs, "prometheus") {
+		return errors.New("Prometheus scrape contract requires pack approval")
 	}
 	for _, destination := range destinations {
 		valid := false
@@ -74,6 +84,14 @@ func validateCollectorRunReadiness(project, collector string, packs, destination
 			}
 		}
 		for _, pack := range packs {
+			if pack == "appdynamics" {
+				u, e := url.Parse(raw)
+				valid = valid || (hasKey && e == nil && u.Scheme == "https" && u.Host != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "")
+			}
+			if pack == "prometheus-query" {
+				u, e := url.Parse(raw)
+				valid = valid || (e == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "")
+			}
 			if pack == "prometheus" {
 				source := MonitorSource{ID: "validation", ProjectID: project, Name: "validation", CollectorID: collector, Pack: pack, Destination: destination, IntervalSeconds: 1}
 				valid = valid || source.Validate() == nil
@@ -89,4 +107,13 @@ func validateCollectorRunReadiness(project, collector string, packs, destination
 	}
 
 	return nil
+}
+
+func containsReadinessPack(packs []string, pack string) bool {
+	for _, candidate := range packs {
+		if candidate == pack {
+			return true
+		}
+	}
+	return false
 }

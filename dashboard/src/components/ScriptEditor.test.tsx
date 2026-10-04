@@ -13,6 +13,7 @@ import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { formatSOAPFaultSummary } from './soapFaultUtils'
 import ScriptEditor from './ScriptEditor'
+import { RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
 
 const { downloadTextFileMock } = vi.hoisted(() => ({
   downloadTextFileMock: vi.fn(),
@@ -26,6 +27,8 @@ const { codeMirrorDispatchMock, codeMirrorScrollDoms } = vi.hoisted(() => ({
 const { useWebSocketMock } = vi.hoisted(() => ({
   useWebSocketMock: vi.fn(),
 }))
+
+const { replaySessionIdMock } = vi.hoisted(() => ({ replaySessionIdMock: vi.fn() }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -225,6 +228,7 @@ vi.mock('./scriptEditorUtils', async () => {
   return {
     ...actual,
     downloadTextFile: downloadTextFileMock,
+    createReplaySessionId: replaySessionIdMock,
   }
 })
 
@@ -363,7 +367,14 @@ function AppShellScriptEditorHarness({ initialScript }: { initialScript: ScriptD
   )
 }
 
+function unavailableRuntimeMetadata(id: string, status = 'running', revision = '1') {
+  const terminal = ['completed', 'failed', 'stopped'].includes(status)
+  return { id, session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state_revision: revision,
+    runtime_state: { version: 1, kind: 'full', session_id: id, session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state_revision: revision, state: 'unavailable', reason: terminal ? 'session_terminal' : status === 'paused' ? 'pause_pending' : 'not_paused', snapshot: null } }
+}
+
 function debugSessionResponse(report: {
+  replay_session_id?: string
   group: string
   protocol: string
   started_at: string
@@ -371,6 +382,7 @@ function debugSessionResponse(report: {
   success: boolean
   error?: string
   final_variables?: Record<string, string>
+  runtime_evidence_unavailable?: boolean
   events: unknown[]
 }, overrides: Record<string, unknown> = {}) {
   const terminal = Boolean(report.completed_at)
@@ -379,6 +391,9 @@ function debugSessionResponse(report: {
     debug_session_id: 'debug-session-1',
     session: {
       id: 'debug-session-1',
+      session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      state_revision: terminal ? '2' : '1',
+      runtime_state: { version: 1, kind: 'full', session_id: 'debug-session-1', session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state_revision: terminal ? '2' : '1', state: 'unavailable', reason: terminal ? 'session_terminal' : 'not_paused', snapshot: null },
       group: report.group,
       protocol: report.protocol,
       status: terminal ? (report.success ? 'completed' : 'failed') : 'running',
@@ -392,6 +407,15 @@ function debugSessionResponse(report: {
       ...overrides,
     },
   }
+}
+
+function heldDebugSession(revision = '10', value = 'held-value') {
+  const base = debugSessionResponse({ group: 'held-debug', protocol: 'http', started_at: '2026-10-04T00:00:00Z', success: true, events: [] }).session
+  return { ...base, ...unavailableRuntimeMetadata('debug-session-1', 'paused', revision), status: 'paused',
+    runtime_state: { ...unavailableRuntimeMetadata('debug-session-1', 'paused', revision).runtime_state, state: 'paused', reason: 'boundary_held', snapshot: {
+      state: 'complete', boundary: 'before_action', location: { phase: 'action', action_index: 0, event_index: 0, action_name: 'Get Products', action_type: 'request' },
+      variables: [{ name: 'ordinary', value_state: 'assigned', value }], parameters: [], rows: [], frames: [], omissions: { variables: 0, parameters: 0, rows: 0, frames: 0, values: 0 },
+    } } }
 }
 
 describe('ScriptEditor', () => {
@@ -449,6 +473,8 @@ describe('ScriptEditor', () => {
 
   beforeEach(() => {
     vi.resetAllMocks()
+    let debugRunNumber = 0
+    replaySessionIdMock.mockImplementation(() => `debug-session-${++debugRunNumber}`)
     window.localStorage.clear()
     window.sessionStorage.clear()
     window.location.hash = ''
@@ -568,6 +594,7 @@ describe('ScriptEditor', () => {
     }))
     apiMock.startDraftBrowserReplaySession.mockResolvedValue({
       session: {
+          ...unavailableRuntimeMetadata('browser-replay-1', 'running', '1'),
         id: 'browser-replay-1',
         group: 'Checkout Flow-browser-replay',
         protocol: 'browser',
@@ -579,6 +606,7 @@ describe('ScriptEditor', () => {
     })
     apiMock.startBrowserReplaySession.mockResolvedValue({
       session: {
+          ...unavailableRuntimeMetadata('browser-replay-1', 'running', '1'),
         id: 'browser-replay-1',
         group: 'Checkout Flow-browser-replay',
         protocol: 'browser',
@@ -652,15 +680,23 @@ describe('ScriptEditor', () => {
       },
     })
     apiMock.getScriptRecordingStatus.mockResolvedValue({ exists: false })
-    apiMock.pauseBrowserReplaySession.mockResolvedValue({ session: { status: 'paused' } })
-    apiMock.resumeBrowserReplaySession.mockResolvedValue({ session: { status: 'running' } })
+    apiMock.pauseBrowserReplaySession.mockResolvedValue({ session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'paused', '1'), status: 'paused' } })
+    apiMock.resumeBrowserReplaySession.mockResolvedValue({ session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'running', '1'), status: 'running' } })
     apiMock.stopBrowserReplaySession.mockResolvedValue(undefined)
-    apiMock.pauseScriptDebugSession.mockResolvedValue({ session: { status: 'paused' } })
-    apiMock.resumeScriptDebugSession.mockResolvedValue({ session: { status: 'running' } })
-    apiMock.stepScriptDebugSession.mockResolvedValue({ session: { status: 'paused' } })
-    apiMock.stopScriptDebugSession.mockResolvedValue({ session: { status: 'stopped' } })
-    apiMock.getScriptDebugSession.mockResolvedValue({ session: { id: 'debug-session-1', status: 'running', events: [] } })
-    apiMock.updateScriptDebugBreakpoints.mockResolvedValue({ session: { breakpoints: [] } })
+    apiMock.pauseScriptDebugSession.mockResolvedValue({ session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'paused', '1'), status: 'paused' } })
+    apiMock.resumeScriptDebugSession.mockResolvedValue({ session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'running', '1'), status: 'running' } })
+    apiMock.stepScriptDebugSession.mockResolvedValue({ session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'paused', '1'), status: 'paused' } })
+    apiMock.stopScriptDebugSession.mockResolvedValue({ session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'stopped', '2'), status: 'stopped' } })
+    apiMock.getScriptDebugSession.mockResolvedValue({ session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'running', '1'), id: 'debug-session-1', status: 'running', events: [] } })
+    apiMock.updateScriptDebugBreakpoints.mockResolvedValue({ session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'running', '1'), breakpoints: [] } })
     apiMock.listAuthoringComponents.mockResolvedValue({ components: [], count: 0 })
     apiMock.createAuthoringComponent.mockResolvedValue({ component: { id: 'block-1' } })
     apiMock.deleteAuthoringComponent.mockResolvedValue(undefined)
@@ -1499,6 +1535,51 @@ describe('ScriptEditor', () => {
     expect(nested[0].textContent).toContain('Sub_One')
     expect(nested[1].textContent).toContain('Sub_Two')
     expect(actionNameToggle?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('edits a nested request HTTP policy with script defaults and saves Inherit by removing only that property', async () => {
+    const request = {
+      name: 'Version_Leaf', type: 'POST', method: 'POST', target: '/leaf', http_version: '1.1',
+      body_encoding: 'base64', body: 'YQ==', timeout_ms: 1200,
+      header_list: [{ name: 'X-Trace', value: 'keep' }], vendor_extension: { keep: true },
+      metadata: { 'har.request.http_version': 'HTTP/2', 'har.response.http_version': 'HTTP/1.1' },
+    }
+    const sibling = { name: 'Other_Leaf', type: 'GET', target: '/other', http_version: '2' }
+    const sequenceScript = {
+      ...initialScript, protocol: 'http/1.1',
+      config: { ...initialScript.config, http: { ...initialScript.config.http, version: '2' } },
+      actions: [{ name: 'Version_Group', type: 'http_sequence', target: '/group', params: { requests: [request, sibling], future_option: true }, metadata: { keep: 'parent' } }],
+    } as ScriptDefinition
+    await act(async () => { root.render(<ScriptEditor initialScript={sequenceScript} projectId="project-1" />) })
+    const expand = Array.from(container.querySelectorAll<HTMLButtonElement>('.action-name-toggle')).find(button => button.textContent?.trim() === 'Version_Group')!
+    await act(async () => { expand.click() })
+    const leaf = Array.from(container.querySelectorAll<HTMLElement>('.action-item-nested')).find(row => row.textContent?.includes('Version_Leaf'))!
+    await act(async () => { leaf.click() })
+    const region = container.querySelector('[aria-label="Request HTTP version policy"]')!
+    const version = region.querySelector<HTMLSelectElement>('select')!
+    expect(version.value).toBe('1.1')
+    expect(version.options[0].textContent).toContain('HTTP/2 required')
+    expect(region.textContent).toContain('Captured request HTTP versionHTTP/2')
+    expect(region.textContent).toContain('Captured response HTTP versionHTTP/1.1')
+    await act(async () => { version.value = 'auto'; version.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(JSON.parse(container.querySelector<HTMLTextAreaElement>('.script-code-pane textarea')!.value).http_version).toBe('auto')
+    await act(async () => { version.value = 'inherit'; version.dispatchEvent(new Event('change', { bubbles: true })) })
+    const selected = JSON.parse(container.querySelector<HTMLTextAreaElement>('.script-code-pane textarea')!.value)
+    expect(selected).not.toHaveProperty('http_version')
+    expect(selected.vendor_extension).toEqual({ keep: true })
+    expect(region.textContent).toContain('Authored policy: Inherit script setting (HTTP/2 required')
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click(); await Promise.resolve() })
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    const payload = apiMock.createScript.mock.calls[0][0] as ScriptDefinition
+    const savedRequests = payload.actions[0].params!.requests as typeof request[]
+    expect(savedRequests[0]).toEqual(Object.fromEntries(Object.entries(request).filter(([key]) => key !== 'http_version')))
+    expect(savedRequests[0]).not.toHaveProperty('http_version')
+    expect(savedRequests[1]).toEqual(sibling)
+    expect(payload.actions[0].params!.future_option).toBe(true)
+    expect(payload.actions[0].metadata).toEqual({ keep: 'parent' })
+    expect(payload.protocol).toBe('http/1.1')
+    expect(payload.config.http!.version).toBe('2')
+    expect(request.http_version).toBe('1.1')
   })
 
   it('shows selected parent action JSON by default with a full-script override', async () => {
@@ -3132,9 +3213,11 @@ describe('ScriptEditor', () => {
   })
 
   it('generates a Web2 HTTP draft preview from browser replay network evidence', async () => {
+    replaySessionIdMock.mockReturnValueOnce('browser-replay-1')
     apiMock.startDraftScriptDebugSession.mockResolvedValueOnce({
       replay_session_id: 'browser-replay-1',
       session: {
+          ...unavailableRuntimeMetadata('browser-replay-1', 'completed', '3'),
         id: 'browser-replay-1',
         group: 'Checkout Web2-browser-replay',
         protocol: 'browser',
@@ -5475,6 +5558,7 @@ describe('ScriptEditor', () => {
       .mockRejectedValueOnce(new ApiError('not found', 404))
       .mockImplementationOnce(async (sessionId: string) => ({
         session: {
+          ...unavailableRuntimeMetadata(sessionId, 'running', '1'),
           id: sessionId,
           group: 'Checkout Flow-debug',
           protocol: 'http',
@@ -5549,6 +5633,7 @@ describe('ScriptEditor', () => {
       replay_session_id: 'debug-session-1',
       debug_session_id: 'debug-session-1',
       session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'running', '1'),
         id: 'debug-session-1',
         group: terminalReport.group,
         protocol: terminalReport.protocol,
@@ -5560,6 +5645,7 @@ describe('ScriptEditor', () => {
     })
     apiMock.getScriptDebugSession.mockResolvedValueOnce({
       session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'completed', '3'),
         id: 'debug-session-1',
         group: terminalReport.group,
         protocol: terminalReport.protocol,
@@ -5614,11 +5700,321 @@ describe('ScriptEditor', () => {
     )
   })
 
+  it.each([{ follow: true, privacy: false }, { follow: false, privacy: false }, { follow: true, privacy: true }])('selects terminal GET evidence without overriding operator selection or privacy (follow=$follow, privacy=$privacy)', async ({ follow, privacy }) => {
+    let resolveGet!: (value: unknown) => void
+    const resource = (path: string) => ({ request_url: path, response_status: 200, response_body_state: 'captured', response_body: 'diagnostic evidence' })
+    const firstEvent = { event_id: 'first', phase: 'action', action_index: 0, action_name: 'First evidence', action_type: 'GET',
+      target: '/first', success: true, started_at: '2026-10-04T00:00:00Z', completed_at: '2026-10-04T00:00:01Z', duration_ms: 1,
+      snapshot: { resources: [resource('/first-resource')] } }
+    const failedEvent = { ...firstEvent, event_id: 'failed', action_index: 1, action_name: 'Failed evidence', target: '/failed', success: false,
+      snapshot: { resources: [resource('/failed-resource')] } }
+    const terminalReport = { replay_session_id: 'debug-session-1', group: 'Recovered resource evidence', protocol: 'http',
+      started_at: firstEvent.started_at, completed_at: '2026-10-04T00:00:03Z', success: false,
+      events: [firstEvent, failedEvent, { ...firstEvent, event_id: 'cleanup', phase: 'teardown', action_name: 'Cleanup', snapshot: undefined }] }
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({ session: {
+      ...unavailableRuntimeMetadata('debug-session-1', 'running', '1'), id: 'debug-session-1', status: 'running',
+      group: terminalReport.group, protocol: 'http', started_at: firstEvent.started_at,
+      current_event_index: 0, events: [firstEvent], report: { ...terminalReport, completed_at: '', success: true, events: [firstEvent] },
+    } })
+    apiMock.getScriptDebugSession.mockReturnValueOnce(new Promise(resolve => { resolveGet = resolve }))
+    const script: ScriptDefinition = { ...initialScript, actions: [
+      { name: 'First evidence', type: 'GET', target: '/first' }, { name: 'Failed evidence', type: 'GET', target: '/failed' },
+    ], teardown: [{ name: 'Cleanup', type: 'GET', target: '/cleanup' }] }
+    apiMock.getScript.mockResolvedValueOnce({ script })
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    expect(apiMock.getScriptDebugSession).toHaveBeenCalledWith('debug-session-1')
+    if (!follow) {
+      const firstRow = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-action-row-main')).find(button => button.textContent?.includes('First evidence'))!
+      await act(async () => firstRow.click())
+      expect(findInputByLabelText(container, 'Follow execution')?.checked).toBe(false)
+      expect(container.querySelector('[aria-label="Captured resources"]')?.textContent).toContain('/first-resource')
+    }
+    await act(async () => {
+      resolveGet({ session: { ...unavailableRuntimeMetadata('debug-session-1', 'failed', '3'), id: 'debug-session-1',
+        group: terminalReport.group, protocol: 'http', status: 'failed', started_at: terminalReport.started_at,
+        completed_at: terminalReport.completed_at, current_event_index: 2, events: [], runtime_evidence_unavailable: privacy,
+        report: { ...terminalReport, runtime_evidence_unavailable: privacy } } })
+      await Promise.resolve()
+    })
+    await flushReact()
+    const resources = container.querySelector('[aria-label="Captured resources"]')
+    if (privacy) {
+      expect(resources).toBeNull()
+      expect(container.textContent).not.toContain('/failed-resource')
+      expect(container.textContent).not.toContain('diagnostic evidence')
+    } else {
+      expect(resources?.textContent).toContain(follow ? '/failed-resource' : '/first-resource')
+      expect(resources?.textContent).not.toContain(follow ? '/first-resource' : '/failed-resource')
+    }
+    expect(findInputByLabelText(container, 'Follow execution')?.checked).toBe(follow)
+    expect(findDebuggerRunButton(container)?.disabled).toBe(false)
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent === 'Variables')!.click())
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain(privacy ? RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE : 'Current state unavailable: the session has ended.')
+  })
+
+  it('binds a deferred trusted start despite matching early full and leaf WebSocket broadcasts', async () => {
+    let resolveStart!: (value: unknown) => void
+    apiMock.startScriptDebugSession.mockReturnValueOnce(new Promise(resolve => { resolveStart = resolve }))
+    apiMock.getScriptDebugSession.mockReturnValue(new Promise(() => {}))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    const socket = () => (useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage: (message: unknown) => void }).onMessage
+    await act(async () => {
+      socket()({ type: 'script_debug_paused', debug_session_id: 'debug-session-1', session: heldDebugSession('10', 'untrusted-early-value') })
+      socket()({ type: 'script_debug_action_started', debug_session_id: 'debug-session-1', session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state_revision: '9', status: 'running' })
+    })
+    expect(container.textContent).not.toContain('untrusted-early-value')
+    await act(async () => { resolveStart({ session: heldDebugSession() }); await Promise.resolve() })
+    await flushReact()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent === 'Live Variables')!.click())
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain('held-value')
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain('untrusted-early-value')
+    expect(apiMock.getScriptDebugSession).toHaveBeenCalledWith('debug-session-1')
+  })
+
+  it('keeps malformed trusted starts reachable for a full GET that binds the requested public ID', async () => {
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({ session: { id: 'debug-session-1', status: 'paused' } })
+    apiMock.getScriptDebugSession.mockResolvedValueOnce({ session: heldDebugSession('11', 'get-authorized-value') })
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent === 'Live Variables')!.click())
+    expect(apiMock.getScriptDebugSession).toHaveBeenCalledWith('debug-session-1')
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain('get-authorized-value')
+  })
+
+  it('clears current values on a leaf update and rejects an in-flight pre-update full GET', async () => {
+    let resolveOldGet!: (value: unknown) => void
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({ session: heldDebugSession('9007199254740993') })
+    apiMock.getScriptDebugSession.mockReturnValueOnce(new Promise(resolve => { resolveOldGet = resolve })).mockResolvedValue({ session: heldDebugSession('9007199254740994', 'fresh-resynchronized-value') })
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent === 'Live Variables')!.click())
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain('held-value')
+    const socket = () => (useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage: (message: unknown) => void }).onMessage
+    await act(async () => socket()({ type: 'script_debug_action_started', debug_session_id: 'debug-session-1', session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state_revision: '9007199254740994', status: 'running' }))
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain('held-value')
+    await act(async () => { resolveOldGet({ session: heldDebugSession('9007199254740994', 'stale-get-value') }); await Promise.resolve() })
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain('stale-get-value')
+    await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 1250)) })
+    await flushReact()
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain('fresh-resynchronized-value')
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain('stale-get-value')
+  })
+
+  it.each([false, true])('continues Run To after its socket acknowledgement without replacing newer breakpoints (newer=%s)', async newer => {
+    let resolveUpdate!: (value: unknown) => void
+    const script = { ...initialScript, actions: [...initialScript.actions, { name: 'Run To target', type: 'GET', target: '/target' }] }
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({ session: heldDebugSession('10') })
+    apiMock.getScriptDebugSession.mockReturnValue(new Promise(() => {}))
+    apiMock.updateScriptDebugBreakpoints.mockReturnValueOnce(new Promise(resolve => { resolveUpdate = resolve }))
+    apiMock.resumeScriptDebugSession.mockReturnValueOnce(new Promise(() => {}))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Action 2') && button.textContent?.includes('Run To target'))!.click())
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Run to selected action')!.click())
+    expect(apiMock.updateScriptDebugBreakpoints).toHaveBeenCalledTimes(1)
+    const requested = apiMock.updateScriptDebugBreakpoints.mock.calls[0][1]
+    const acknowledgement = { ...heldDebugSession('11', 'acknowledgement-value'), breakpoints: requested }
+    const latestBreakpoints = newer ? [{ phase: 'action', action_index: 0, disabled: true }, ...requested] : requested
+    const latest = { ...heldDebugSession(newer ? '12' : '11', 'latest-held-value'), breakpoints: latestBreakpoints }
+    const socket = () => (useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage: (message: unknown) => void }).onMessage
+    await act(async () => socket()({ type: 'script_debug_breakpoints_updated', debug_session_id: 'debug-session-1', session: latest }))
+    expect(apiMock.resumeScriptDebugSession).not.toHaveBeenCalled()
+    expect(container.querySelector('.debugger-statusbar')?.textContent).toContain(`${latestBreakpoints.length} breakpoint`)
+    await act(async () => { resolveUpdate({ session: acknowledgement }); await Promise.resolve() })
+    expect(apiMock.resumeScriptDebugSession).toHaveBeenCalledWith('debug-session-1')
+    expect(container.querySelector('.debugger-statusbar')?.textContent).toContain(`${latestBreakpoints.length} breakpoint`)
+    expect(container.textContent).not.toContain('acknowledgement-value')
+  })
+
+  it.each(['terminal', 'foreign', 'rejected', 'incomplete', 'context reset', 'superseded command', 'session expiry'])('does not continue a delayed Run To after %s', async gate => {
+    let resolveUpdate!: (value: unknown) => void, rejectUpdate!: (cause: unknown) => void
+    const script = { ...initialScript, actions: [...initialScript.actions, { name: 'Run To target', type: 'GET', target: '/target' }] }
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({ session: heldDebugSession('10') })
+    if (gate === 'session expiry') apiMock.getScriptDebugSession.mockResolvedValue({ session: heldDebugSession('10') })
+    else apiMock.getScriptDebugSession.mockReturnValue(new Promise(() => {}))
+    apiMock.updateScriptDebugBreakpoints.mockReturnValueOnce(new Promise((resolve, reject) => { resolveUpdate = resolve; rejectUpdate = reject }))
+    apiMock.resumeScriptDebugSession.mockReturnValue(new Promise(() => {}))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Action 2') && button.textContent?.includes('Run To target'))!.click())
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Run to selected action')!.click())
+    const requested = apiMock.updateScriptDebugBreakpoints.mock.calls[0][1]
+    const acknowledgement = { ...heldDebugSession('11', 'acknowledgement-value'), breakpoints: requested }
+    const socket = () => (useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage: (message: unknown) => void }).onMessage
+    await act(async () => socket()({ type: 'script_debug_breakpoints_updated', debug_session_id: 'debug-session-1', session: acknowledgement }))
+    let expectedResumes = 0
+    if (gate === 'terminal') {
+      const ended = { ...heldDebugSession('12'), status: 'completed', completed_at: '2026-10-04T00:00:02Z', runtime_state: { ...heldDebugSession('12').runtime_state, state: 'unavailable', reason: 'session_terminal', snapshot: null } }
+      await act(async () => socket()({ type: 'script_debug_completed', debug_session_id: 'debug-session-1', session: ended }))
+    } else if (gate === 'session expiry') {
+      apiMock.getScriptDebugSession.mockRejectedValue(new ApiError('Session not found', 404))
+      await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 1250)) })
+      await flushReact()
+      expect(container.textContent).toContain('Debugger session expired')
+    } else if (gate === 'context reset') {
+      await act(async () => root.render(<ScriptEditor scriptId="script-2" initialScript={script} projectId="project-2" />))
+    } else if (gate === 'superseded command') {
+      expect(findButtonByTitle(container, 'Continue')).toBeDefined()
+      await act(async () => findButtonByTitle(container, 'Continue')!.click())
+      expectedResumes = 1
+    }
+    await act(async () => {
+      if (gate === 'rejected') rejectUpdate(new ApiError('Breakpoint command rejected', 409))
+      else if (gate === 'foreign') resolveUpdate({ session: { ...acknowledgement, id: 'foreign-session' } })
+      else if (gate === 'incomplete') resolveUpdate({})
+      else resolveUpdate({ session: acknowledgement })
+      await Promise.resolve()
+    })
+    expect(apiMock.resumeScriptDebugSession).toHaveBeenCalledTimes(expectedResumes)
+  })
+
+  it('continues an acknowledged Run To while keeping runtime privacy suppression sticky', async () => {
+    let resolveUpdate!: (value: unknown) => void
+    const script = { ...initialScript, actions: [...initialScript.actions, { name: 'Run To target', type: 'GET', target: '/target' }] }
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({ session: heldDebugSession('10') })
+    apiMock.getScriptDebugSession.mockReturnValue(new Promise(() => {}))
+    apiMock.updateScriptDebugBreakpoints.mockReturnValueOnce(new Promise(resolve => { resolveUpdate = resolve }))
+    apiMock.resumeScriptDebugSession.mockReturnValueOnce(new Promise(() => {}))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Action 2') && button.textContent?.includes('Run To target'))!.click())
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Run to selected action')!.click())
+    const requested = apiMock.updateScriptDebugBreakpoints.mock.calls[0][1]
+    const acknowledgement = { ...heldDebugSession('11', 'stale-unmasked-value'), breakpoints: requested }
+    const socket = () => (useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage: (message: unknown) => void }).onMessage
+    await act(async () => socket()({ type: 'script_debug_breakpoints_updated', debug_session_id: 'debug-session-1', session: { ...heldDebugSession('12', 'private-value'), breakpoints: requested, runtime_evidence_unavailable: true } }))
+    await act(async () => { resolveUpdate({ session: acknowledgement }); await Promise.resolve() })
+    expect(apiMock.resumeScriptDebugSession).toHaveBeenCalledWith('debug-session-1')
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent === 'Live Variables')!.click())
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    expect(container.textContent).not.toContain('private-value')
+    expect(container.textContent).not.toContain('stale-unmasked-value')
+  })
+
+  it('keeps an explicitly inspected runtime frame source distinct from an older retained event', async () => {
+    const event = { phase: 'action', action_index: 0, action_name: 'Earlier request', action_type: 'request', target: '/earlier', success: true, started_at: '2026-10-04T00:00:00Z', completed_at: '2026-10-04T00:00:01Z', duration_ms: 1 }
+    const script = { ...initialScript, actions: [initialScript.actions[0], { type: 'http_sequence', name: 'Current sequence', target: '', params: { requests: [{ type: 'request', name: 'Current child', method: 'GET', target: '/child' }] } }] } as ScriptDefinition
+    const held = heldDebugSession()
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({ session: { ...held, current_event_index: 0, events: [event], report: { ...held.report, events: [event] }, runtime_state: { ...held.runtime_state, snapshot: { ...held.runtime_state.snapshot, location: { ...held.runtime_state.snapshot.location, action_index: 1, step_path: ['requests[0]'] }, frames: [{ kind: 'phase', phase: 'action', action_index: -1 }, { kind: 'http_sequence', phase: 'action', action_index: 1 }] } } } })
+    apiMock.getScriptDebugSession.mockReturnValue(new Promise(() => {}))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent === 'Live Variables')!.click())
+    const frame = container.querySelector<HTMLButtonElement>('[aria-label="Inspect runtime frame 2 source"]')
+    expect(frame).not.toBeNull()
+    expect(container.querySelector('[aria-label="Inspect runtime frame 1 source"]')).toBeNull()
+    await act(async () => frame!.click())
+    const source = container.querySelector('[aria-label="Source"]')
+    expect(source?.querySelector('.script-code-title > span')?.textContent).toBe('actions[1]')
+    expect(container.querySelector('.center-tab.active')?.textContent || container.querySelector('.center-tab-panel.active')?.textContent).toContain('Source')
+  })
+
+  it('latches a same-incarnation privacy failure from a stale in-flight GET and hides current/history/download detail', async () => {
+    let resolveGet!: (value: unknown) => void
+    const retained = { phase: 'action', action_index: 0, action_name: 'Captured', action_type: 'request', target: '/captured', success: true, started_at: '2026-10-04T00:00:00Z', completed_at: '2026-10-04T00:00:01Z', duration_ms: 1, body: 'retained-private-body', extractions: { ordinary: 'retained-private-value' } }
+    const held = heldDebugSession('10', 'old-held-private-value')
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({ session: { ...held, events: [retained], report: { ...held.report, events: [retained] } } })
+    apiMock.getScriptDebugSession.mockReturnValueOnce(new Promise(resolve => { resolveGet = resolve }))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    const socket = () => (useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage: (message: unknown) => void }).onMessage
+    await act(async () => socket()({ type: 'script_debug_paused', debug_session_id: 'debug-session-1', session: heldDebugSession('11', 'new-held-private-value') }))
+    await act(async () => { resolveGet({ session: { ...held, runtime_evidence_unavailable: true } }); await Promise.resolve() })
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent === 'Live Variables')!.click())
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    for (const value of ['old-held-private-value', 'new-held-private-value', 'retained-private-body', 'retained-private-value']) expect(container.textContent).not.toContain(value)
+    await act(async () => findButtonByTitle(container, 'Download Debug JSON')!.click())
+    const exported = downloadTextFileMock.mock.calls[downloadTextFileMock.mock.calls.length - 1][0] as string
+    expect(JSON.parse(exported).session.runtime_state).toMatchObject({ state_revision: '11', state: 'unavailable', reason: 'runtime_evidence_unavailable', snapshot: null })
+    for (const value of ['old-held-private-value', 'new-held-private-value', 'retained-private-body', 'retained-private-value']) expect(exported).not.toContain(value)
+  })
+
+  it('keeps delta-only runtime unavailability sticky across stale session snapshots and clears it for a new run', async () => {
+    const retainedReport = {
+      group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', success: true,
+      events: [{ phase: 'action', action_index: 0, action_name: 'Read products', action_type: 'GET', target: '/api/products', success: true,
+        started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z', duration_ms: 1, body: 'retained-runtime-value', snapshot: { response_body: 'retained-runtime-value', screenshot_base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0nQAAAAASUVORK5CYII=' }, protocol_evidence: { detail: 'retained-runtime-value' }, extractions: { ordinary: 'retained-runtime-value' } }],
+    }
+    apiMock.startScriptDebugSession.mockResolvedValueOnce(debugSessionResponse(retainedReport))
+    apiMock.getScriptDebugSession.mockReturnValue(new Promise(() => {}))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    const socket = () => (useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage: (message: unknown) => void }).onMessage
+    await act(async () => socket()({ type: 'script_debug_event', debug_session_id: 'debug-session-1', session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state_revision: '1', event_index: 0, event: retainedReport.events[0] }))
+    const fullSize = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'View full size')
+    expect(fullSize).toBeDefined()
+    await act(async () => fullSize!.click())
+    expect(container.querySelector('[aria-label="Replay Screenshot"]')).not.toBeNull()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent === 'Live Variables')!.click())
+    await act(async () => { const select = container.querySelector('[aria-label="Variable watches"] select') as HTMLSelectElement; select.value = 'retained'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain('retained-runtime-value')
+    await act(async () => socket()({ type: 'script_debug_condition', debug_session_id: 'foreign-session', runtime_evidence_unavailable: true }))
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    await act(async () => socket()({ type: 'script_debug_condition', debug_session_id: 'debug-session-1', session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state_revision: '0', runtime_evidence_unavailable: true }))
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    expect(container.querySelector('[aria-label="Replay Screenshot"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain('retained-runtime-value')
+    const terminal = { ...retainedReport, replay_session_id: 'stale-embedded-report', completed_at: '2026-05-14T20:00:02Z', final_variables: { ordinary: 'stale-final-value' }, runtime_evidence_unavailable: false }
+    await act(async () => socket()({ type: 'script_debug_completed', debug_session_id: 'debug-session-1', report: terminal,
+      session: { ...debugSessionResponse(terminal).session, id: 'stale-embedded-session', runtime_evidence_unavailable: false, logs: [{ message: 'retained-runtime-value' }], raw_output: ['retained-runtime-value'], condition_evidence: { 'action#0#': { left: 'retained-runtime-value', result: true } } } }))
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain('stale-final-value')
+    expect(container.querySelector('.replay-variable-timeline')).toBeNull()
+    await act(async () => socket()({ type: 'script_debug_completed', debug_session_id: 'debug-session-1', session: { ...debugSessionResponse({ ...terminal, replay_session_id: 'debug-session-1' }).session, ...unavailableRuntimeMetadata('debug-session-1', 'completed', '3') } }))
+    // A stale terminal DTO must not restore detail through history or downloads.
+    expect(container.textContent).not.toContain('retained-runtime-value')
+    expect(container.textContent).not.toContain('stale-final-value')
+    await act(async () => findButtonByTitle(container, 'Download Debug JSON')!.click())
+    const exported = JSON.parse(downloadTextFileMock.mock.calls[downloadTextFileMock.mock.calls.length - 1][0])
+    expect(exported.report.runtime_evidence_unavailable).toBe(true)
+    expect(exported.session.runtime_evidence_unavailable).toBe(true)
+    expect(exported.report.events[0]).toMatchObject({ phase: 'action', action_index: 0, success: true, duration_ms: 1 })
+    expect(JSON.stringify(exported)).not.toContain('retained-runtime-value')
+    expect(JSON.stringify(exported)).not.toContain('stale-final-value')
+    replaySessionIdMock.mockReturnValueOnce('debug-session-2')
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({ ...debugSessionResponse(terminal), replay_session_id: 'debug-session-2', debug_session_id: 'debug-session-2', session: { ...debugSessionResponse({ ...terminal, replay_session_id: 'debug-session-2' }).session, ...unavailableRuntimeMetadata('debug-session-2', 'completed', '3') } })
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain('stale-final-value')
+    await act(async () => { const select = container.querySelector('[aria-label="Variable watches"] select') as HTMLSelectElement; select.value = 'retained'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain('stale-final-value')
+  })
+
+  it.each(['session', 'report'] as const)('hides retained variables when terminal polling marks %s evidence unavailable', async source => {
+    const running = { group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', success: true, events: [] }
+    const terminal = { ...running, completed_at: '2026-05-14T20:00:02Z', final_variables: { ordinary: 'terminal-retained-value' },
+      runtime_evidence_unavailable: source === 'report' }
+    apiMock.startScriptDebugSession.mockResolvedValueOnce(debugSessionResponse(running))
+    apiMock.getScriptDebugSession.mockResolvedValueOnce(debugSessionResponse(terminal, { runtime_evidence_unavailable: source === 'session' }))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent === 'Variables')!.click())
+    const watches = container.querySelector('[aria-label="Variable watches"]')
+    expect(watches?.textContent).toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    expect(watches?.textContent).not.toContain('terminal-retained-value')
+    expect(watches?.querySelector('table')).toBeNull()
+    expect(watches?.querySelector('details')).toBeNull()
+  })
+
   it('keeps tracking an acknowledged stop until the final WebSocket event arrives', async () => {
     apiMock.startScriptDebugSession.mockResolvedValueOnce({
       replay_session_id: 'debug-session-1',
       debug_session_id: 'debug-session-1',
       session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'running', '1'),
         id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http', status: 'running',
         started_at: '2026-05-14T20:00:00Z', current_event_index: -1, events: [],
       },
@@ -5642,6 +6038,7 @@ describe('ScriptEditor', () => {
         replay_session_id: 'debug-session-1',
         debug_session_id: 'debug-session-1',
         session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'stopped', '2'),
           id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http', status: 'stopped',
           started_at: '2026-05-14T20:00:00Z', current_event_index: -1, events: [],
           report: {
@@ -5669,6 +6066,7 @@ describe('ScriptEditor', () => {
         debug_session_id: 'debug-session-1',
         report: finalReport,
         session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'stopped', (finalReport.completed_at) ? '3' : '2'),
           id: 'debug-session-1', group: finalReport.group, protocol: finalReport.protocol, status: 'stopped',
           started_at: finalReport.started_at, completed_at: finalReport.completed_at,
           current_event_index: -1, events: [], report: finalReport,
@@ -5689,6 +6087,7 @@ describe('ScriptEditor', () => {
       replay_session_id: 'debug-session-1',
       debug_session_id: 'debug-session-1',
       session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'running', '1'),
         id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http', status: 'running',
         started_at: '2026-05-14T20:00:00Z', current_event_index: -1, events: [],
       },
@@ -5696,6 +6095,7 @@ describe('ScriptEditor', () => {
     apiMock.getScriptDebugSession
       .mockResolvedValueOnce({
         session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'stopped', '2'),
           id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http', status: 'stopped',
           started_at: '2026-05-14T20:00:00Z', current_event_index: -1, events: [],
           report: {
@@ -5707,6 +6107,7 @@ describe('ScriptEditor', () => {
       })
       .mockResolvedValue({
         session: {
+          ...unavailableRuntimeMetadata('debug-session-1', 'stopped', '3'),
           id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http', status: 'stopped',
           started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:02Z',
           current_event_index: -1, events: [],
@@ -5740,7 +6141,7 @@ describe('ScriptEditor', () => {
     expect(findDebuggerRunButton(container)?.disabled).toBe(false)
   })
 
-  it('keeps a terminal WebSocket result when a stale running start response resolves later', async () => {
+  it('reconciles terminal evidence by trusted GET after an early unbound WebSocket and stale running start response', async () => {
     let resolveStart: ((value: unknown) => void) | undefined
     apiMock.startScriptDebugSession.mockReturnValueOnce(new Promise(resolve => {
       resolveStart = resolve
@@ -5784,6 +6185,7 @@ describe('ScriptEditor', () => {
         duration_ms: 1000,
       }],
     }
+    apiMock.getScriptDebugSession.mockResolvedValue({ session: { ...debugSessionResponse(terminalReport).session, ...unavailableRuntimeMetadata(requestedSessionId, 'failed', '3') } })
     await act(async () => {
       socketOptions?.onMessage?.({
         type: 'script_debug_failed',
@@ -5791,6 +6193,7 @@ describe('ScriptEditor', () => {
         debug_session_id: requestedSessionId,
         report: terminalReport,
         session: {
+          ...unavailableRuntimeMetadata(requestedSessionId, 'failed', (terminalReport.completed_at) ? '3' : '2'),
           id: requestedSessionId,
           group: terminalReport.group,
           protocol: terminalReport.protocol,
@@ -5809,6 +6212,7 @@ describe('ScriptEditor', () => {
         replay_session_id: requestedSessionId,
         debug_session_id: requestedSessionId,
         session: {
+          ...unavailableRuntimeMetadata(requestedSessionId, 'running', '1'),
           id: requestedSessionId,
           group: terminalReport.group,
           protocol: terminalReport.protocol,
@@ -5833,6 +6237,7 @@ describe('ScriptEditor', () => {
     apiMock.startScriptDebugSession.mockRejectedValueOnce(createError())
     apiMock.getScriptDebugSession.mockImplementationOnce(async (sessionId: string) => ({
       session: {
+          ...unavailableRuntimeMetadata(sessionId, 'running', '1'),
         id: sessionId,
         group: 'Checkout Flow-debug',
         protocol: 'http',
@@ -5876,6 +6281,7 @@ describe('ScriptEditor', () => {
         debug_session_id: requestedSessionId,
         report: terminalReport,
         session: {
+          ...unavailableRuntimeMetadata(requestedSessionId, 'completed', (terminalReport.completed_at) ? '3' : '2'),
           id: requestedSessionId,
           group: terminalReport.group,
           protocol: terminalReport.protocol,
@@ -5916,7 +6322,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).not.toContain('Confirming replay start')
   })
 
-  it('keeps a terminal WebSocket result when the start request later fails ambiguously', async () => {
+  it('reconciles terminal evidence by trusted GET after an early unbound WebSocket and ambiguous start failure', async () => {
     let rejectStart: ((reason: unknown) => void) | undefined
     apiMock.startScriptDebugSession.mockReturnValueOnce(new Promise((_resolve, reject) => {
       rejectStart = reject
@@ -5936,11 +6342,13 @@ describe('ScriptEditor', () => {
       started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z',
       success: true, events: [],
     }
+    apiMock.getScriptDebugSession.mockResolvedValue({ session: { ...debugSessionResponse(terminalReport).session, ...unavailableRuntimeMetadata(requestedSessionId, 'failed', '3') } })
     await act(async () => {
       socketOptions?.onMessage?.({
         type: 'script_debug_completed', replay_session_id: requestedSessionId, debug_session_id: requestedSessionId,
         report: terminalReport,
         session: {
+          ...unavailableRuntimeMetadata(requestedSessionId, 'completed', (terminalReport.completed_at) ? '3' : '2'),
           id: requestedSessionId, group: terminalReport.group, protocol: terminalReport.protocol, status: 'completed',
           started_at: terminalReport.started_at, completed_at: terminalReport.completed_at,
           current_event_index: -1, events: [], report: terminalReport,
@@ -7681,10 +8089,12 @@ describe('ScriptEditor', () => {
   })
 
   it('renders replay start warnings returned by the browser replay API', async () => {
+    replaySessionIdMock.mockReturnValueOnce('browser-replay-1')
     apiMock.startDraftScriptDebugSession.mockResolvedValueOnce({
       replay_session_id: 'browser-replay-1',
       warnings: ['WebKit controller host is missing the Playwright browser cache warmup.'],
       session: {
+          ...unavailableRuntimeMetadata('browser-replay-1', 'running', '1'),
         id: 'browser-replay-1',
         group: 'Checkout Flow-browser-replay',
         protocol: 'browser',
@@ -7738,6 +8148,7 @@ describe('ScriptEditor', () => {
   })
 
   it('renders replay preflight, pinned failure diagnosis, and variable timeline', async () => {
+    replaySessionIdMock.mockReturnValueOnce('diagnostic-replay-1')
     apiMock.startDraftScriptDebugSession.mockResolvedValueOnce({
       replay_session_id: 'diagnostic-replay-1',
       debug_session_id: 'diagnostic-replay-1',
@@ -7753,6 +8164,7 @@ describe('ScriptEditor', () => {
         ],
       },
       session: {
+          ...unavailableRuntimeMetadata('diagnostic-replay-1', 'failed', '3'),
         id: 'diagnostic-replay-1',
         mode: 'replay',
         group: 'Checkout Flow-debug',
@@ -7909,9 +8321,11 @@ describe('ScriptEditor', () => {
   })
 
   it('exports the current browser replay session as JSON', async () => {
+    replaySessionIdMock.mockReturnValueOnce('browser-replay-1')
     apiMock.startDraftScriptDebugSession.mockResolvedValueOnce({
       replay_session_id: 'browser-replay-1',
       session: {
+          ...unavailableRuntimeMetadata('browser-replay-1', 'running', '1'),
         id: 'browser-replay-1',
         group: 'Checkout Flow-browser-replay',
         protocol: 'browser',
@@ -7922,6 +8336,7 @@ describe('ScriptEditor', () => {
     })
     apiMock.getScriptDebugSession.mockResolvedValueOnce({
       session: {
+          ...unavailableRuntimeMetadata('browser-replay-1', 'running', '1'),
         id: 'browser-replay-1',
         group: 'Checkout Flow-browser-replay',
         protocol: 'browser',

@@ -163,6 +163,9 @@ func (s *SQLiteStore) CommitBrunoImport(commit *BrunoImportCommit) (*BrunoImport
 }
 
 func upsertBrunoImportScriptTx(tx *storeTx, script *dsl.Script, encoded storedScriptJSON, expectedUpdatedAt *time.Time) (bool, error) {
+	if err := ensureObjectActiveTx(tx, "script", script.ID); err != nil {
+		return false, err
+	}
 	var currentCreatedAt, currentUpdatedAt time.Time
 	var currentUpdatedRaw, currentProjectID string
 	err := tx.QueryRow(`SELECT created_at, updated_at, CAST(updated_at AS TEXT), COALESCE(project_id, '') FROM scripts WHERE id = ?`, script.ID).
@@ -376,6 +379,9 @@ func (s *SQLiteStore) ActivateImportSourceRevision(scriptID string, projectID st
 		return nil, ErrBrunoRevisionNotFound
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureObjectActiveTx(tx, "script", scriptID); err != nil {
 		return nil, err
 	}
 	var currentScript dsl.Script

@@ -1,0 +1,102 @@
+[
+  {
+    "advice_warnings": 2,
+    "available": true,
+    "capture": "WLS",
+    "converted": true,
+    "nested_candidates": 0,
+    "parameterization_coverage": {
+      "complete": false,
+      "recognized_bodies": 114,
+      "inspected_bodies": 113,
+      "rejected_bodies": 1,
+      "omitted_bodies": 0,
+      "string_fields": 24,
+      "unsupported_number_fields": 0,
+      "unsupported_other_fields": 0,
+      "unsafe_path_fields": 101,
+      "candidate_fields": 23,
+      "retained_candidates": 23,
+      "omitted_candidates": 0
+    },
+    "reviewed": true,
+    "salesforce_candidates": 1,
+    "salesforce_nested_candidates": 0,
+    "work_bytes": 4798795
+  },
+  {
+    "advice_warnings": 2,
+    "available": true,
+    "capture": "CM",
+    "converted": true,
+    "nested_candidates": 0,
+    "parameterization_coverage": {
+      "complete": false,
+      "recognized_bodies": 172,
+      "inspected_bodies": 170,
+      "rejected_bodies": 2,
+      "omitted_bodies": 0,
+      "string_fields": 47,
+      "unsupported_number_fields": 0,
+      "unsupported_other_fields": 0,
+      "unsafe_path_fields": 154,
+      "candidate_fields": 46,
+      "retained_candidates": 46,
+      "omitted_candidates": 0
+    },
+    "reviewed": true,
+    "salesforce_candidates": 37,
+    "salesforce_nested_candidates": 0,
+    "work_bytes": 5012558
+  },
+  {
+    "advice_warnings": 4,
+    "available": true,
+    "capture": "Desktop",
+    "converted": true,
+    "nested_candidates": 0,
+    "parameterization_coverage": {
+      "complete": false,
+      "recognized_bodies": 83,
+      "inspected_bodies": 82,
+      "rejected_bodies": 1,
+      "omitted_bodies": 10,
+      "string_fields": 12,
+      "unsupported_number_fields": 0,
+      "unsupported_other_fields": 0,
+      "unsafe_path_fields": 110,
+      "candidate_fields": 11,
+      "retained_candidates": 11,
+      "omitted_candidates": 0
+    },
+    "reviewed": true,
+    "salesforce_candidates": 4,
+    "salesforce_nested_candidates": 0,
+    "work_bytes": 12079956
+  },
+  {
+    "advice_warnings": 3,
+    "available": true,
+    "capture": "Login",
+    "converted": true,
+    "nested_candidates": 0,
+    "parameterization_coverage": {
+      "complete": false,
+      "recognized_bodies": 40,
+      "inspected_bodies": 40,
+      "rejected_bodies": 0,
+      "omitted_bodies": 6,
+      "string_fields": 6,
+      "unsupported_number_fields": 0,
+      "unsupported_other_fields": 0,
+      "unsafe_path_fields": 7,
+      "candidate_fields": 6,
+      "retained_candidates": 6,
+      "omitted_candidates": 0
+    },
+    "reviewed": true,
+    "salesforce_candidates": 0,
+    "salesforce_nested_candidates": 0,
+    "work_bytes": 5745606
+  }
+]

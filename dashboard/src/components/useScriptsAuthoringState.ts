@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { type AuthoringComponent, type StoredScenario, type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
+import type { ObjectActivitySummary } from '../types/objectActivity'
 import { useApi } from '../hooks/useApi'
 import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createJavaHttpDraft, createJmsDraft, createKafkaDraft, createNetworkDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -25,6 +26,7 @@ export interface AuthoringState {
   subView: ScriptsAuthoringSubView
   editingId: string | null
   editingScript: ScriptDefinition | null
+  editingActivity?: ObjectActivitySummary
   draftScript: ScriptDefinition | null
   draftInitiallyDirty: boolean
   draftEditorFocus: DraftEditorFocus | null
@@ -371,6 +373,7 @@ export function useScriptsAuthoringState({
         subView: 'edit',
         editingId: id,
         editingScript: res.script ?? null,
+        editingActivity: res.activity,
         draftScript: null,
         draftInitiallyDirty: false,
         draftEditorFocus: null,
@@ -408,6 +411,7 @@ export function useScriptsAuthoringState({
       subView: 'edit',
       editingId: savedScript.id,
       editingScript: savedScript.script,
+      editingActivity: savedScript.activity,
       draftScript: null,
       draftInitiallyDirty: false,
       draftEditorFocus: null,

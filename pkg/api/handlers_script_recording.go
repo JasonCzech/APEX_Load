@@ -257,16 +257,14 @@ func (s *Server) handleDiagnoseScriptReplay(w http.ResponseWriter, r *http.Reque
 		replay, err = s.scriptDebug.CorrelationObservations(replaySessionID, stored.ProjectID, id, actionGraphDigest)
 		if err != nil {
 			switch {
-			case errors.Is(err, errScriptDebugCorrelationSessionNotFound):
-				writeError(w, http.StatusNotFound, "replay session not found")
-			case errors.Is(err, errScriptDebugCorrelationScriptMismatch):
-				writeError(w, http.StatusConflict, "replay session does not belong to this script")
+			case errors.Is(err, errScriptDebugCorrelationSessionNotFound), errors.Is(err, errScriptDebugCorrelationScriptMismatch):
+				writeError(w, http.StatusNotFound, "Trusted replay evidence unavailable")
 			case errors.Is(err, errScriptDebugCorrelationGraphMismatch):
 				writeError(w, http.StatusConflict, "script action graph changed after this replay started; save the current script, capture a new recording, and replay it again")
 			case errors.Is(err, errScriptDebugCorrelationSessionActive):
 				writeError(w, http.StatusConflict, "replay session has not completed")
 			default:
-				writeError(w, http.StatusConflict, "raw replay correlation evidence is unavailable")
+				writeError(w, http.StatusNotFound, "Trusted replay evidence unavailable")
 			}
 			return
 		}
@@ -286,7 +284,7 @@ func (s *Server) handleDiagnoseScriptReplay(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	suggestions, diagnosisErr := correlate.DiagnoseReplayChecked(
+	diagnosis, diagnosisErr := correlate.DiagnoseReplayReviewChecked(
 		baseline,
 		replay,
 	)
@@ -298,8 +296,11 @@ func (s *Server) handleDiagnoseScriptReplay(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "correlation diagnosis failed")
 		return
 	}
-	suggestions = scrubRepairSuggestions(suggestions)
+	suggestions := scrubRepairSuggestions(diagnosis.Suggestions)
 	comparedRecordedSteps := matchedCorrelationObservationCount(baseline, replay)
+	if recordedWasTruncated {
+		diagnosis.RelationshipCoverage.Complete = false
+	}
 
 	counts := correlationDiagnoseCounts{}
 	for _, suggestion := range suggestions {
@@ -318,6 +319,7 @@ func (s *Server) handleDiagnoseScriptReplay(w http.ResponseWriter, r *http.Reque
 		ComparedRecordedSteps: comparedRecordedSteps,
 		TotalRecordedSteps:    totalRecordedSteps,
 		Truncated:             recordedWasTruncated || comparedRecordedSteps < len(baseline),
+		RelationshipCoverage:  diagnosis.RelationshipCoverage,
 	})
 }
 

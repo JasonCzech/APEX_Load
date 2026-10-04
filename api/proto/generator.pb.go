@@ -830,9 +830,12 @@ type WorkAssignment struct {
 	PrepareOnly bool `protobuf:"varint,42,opt,name=prepare_only,json=prepareOnly,proto3" json:"prepare_only,omitempty"`
 	// Immutable, capability-negotiated lifetime peak and resource intent.
 	// The generator recomputes demand; this wire claim never grants a lease.
-	RuntimeResourceClaim *RuntimeResourceClaim `protobuf:"bytes,43,opt,name=runtime_resource_claim,json=runtimeResourceClaim,proto3" json:"runtime_resource_claim,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Controller-approved HTTP/SOAP origins for the opt-in X-Apex-Test-Run marker.
+	// Omission keeps run correlation disabled.
+	RunCorrelationOrigins []string              `protobuf:"bytes,43,rep,name=run_correlation_origins,json=runCorrelationOrigins,proto3" json:"run_correlation_origins,omitempty"`
+	RuntimeResourceClaim  *RuntimeResourceClaim `protobuf:"bytes,44,opt,name=runtime_resource_claim,json=runtimeResourceClaim,proto3" json:"runtime_resource_claim,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *WorkAssignment) Reset() {
@@ -1157,6 +1160,13 @@ func (x *WorkAssignment) GetPrepareOnly() bool {
 		return x.PrepareOnly
 	}
 	return false
+}
+
+func (x *WorkAssignment) GetRunCorrelationOrigins() []string {
+	if x != nil {
+		return x.RunCorrelationOrigins
+	}
+	return nil
 }
 
 func (x *WorkAssignment) GetRuntimeResourceClaim() *RuntimeResourceClaim {
@@ -6632,7 +6642,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0fsource_group_id\x18\x02 \x01(\tR\rsourceGroupId\x12\x1f\n" +
 	"\vscript_hash\x18\x03 \x01(\tR\n" +
 	"scriptHash\x12\x16\n" +
-	"\x06vusers\x18\x04 \x01(\x05R\x06vusers\"\xd1\x12\n" +
+	"\x06vusers\x18\x04 \x01(\x05R\x06vusers\"\x89\x13\n" +
 	"\x0eWorkAssignment\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x1d\n" +
 	"\n" +
@@ -6682,8 +6692,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0eadoption_grace\x18' \x01(\v2\x19.google.protobuf.DurationR\radoptionGrace\x122\n" +
 	"\x15archive_source_target\x18( \x01(\tR\x13archiveSourceTarget\x12;\n" +
 	"\tjava_host\x18) \x01(\v2\x1e.apexload.v1.JavaHostSelectionR\bjavaHost\x12!\n" +
-	"\fprepare_only\x18* \x01(\bR\vprepareOnly\x12W\n" +
-	"\x16runtime_resource_claim\x18+ \x01(\v2!.apexload.v1.RuntimeResourceClaimR\x14runtimeResourceClaim\x1a>\n" +
+	"\fprepare_only\x18* \x01(\bR\vprepareOnly\x126\n" +
+	"\x17run_correlation_origins\x18+ \x03(\tR\x15runCorrelationOrigins\x12W\n" +
+	"\x16runtime_resource_claim\x18, \x01(\v2!.apexload.v1.RuntimeResourceClaimR\x14runtimeResourceClaim\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a?\n" +

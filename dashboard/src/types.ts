@@ -773,6 +773,8 @@ export interface RunContinuityStatus {
 }
 
 export interface TestSummary {
+  monitor_bindings?: { revision?: number; sources: import('./types/appdynamics').MonitorBinding[] }
+  activity?: import("./types/objectActivity").ObjectActivitySummary
   termination_mode?: "duration" | "iterations"
   id: string
   ref_key?: string
@@ -962,6 +964,14 @@ export interface TestNote {
 }
 
 export interface RunArchiveManifest {
+  frozen_monitor_rules?: import('./types/appdynamics').MonitorRule[]
+  monitoring_status?: string
+  monitor_coverage?: import('./types/appdynamics').RunMonitorCoverage[]
+  monitor_evidence_file?: string
+  monitor_evidence_count?: number
+  monitor_diagnostics_file?: string
+  monitor_diagnostics_count?: number
+  monitor_rule_results?: import('./types/appdynamics').MonitorRuleResult[]
   source_coverage?: { mode: string; sources: Array<{ target: string; collected: boolean }> }
   csv_exports?: Array<{ id: string; group: string; file_name: string; status: string; rows: number; error?: string }>
   termination_reason?: string
@@ -1679,6 +1689,8 @@ export interface IntegrationOutcome {
 
 export interface RunArchiveReport {
   messaging_progress?: MessagingProgressSnapshot
+  monitor_diagnostics?: import('./types/appdynamics').RunMonitorDiagnostic[]
+  monitor_rule_results?: import('./types/appdynamics').MonitorRuleResult[]
   outcome?: IntegrationOutcome
   by_unknown?: Record<string, RunArchiveActionStats>
   by_request?: Record<string, RunArchiveActionStats>
@@ -2027,6 +2039,7 @@ export interface ScenarioDraftGroup {
 }
 
 export interface ScenarioDraftRevisionContext {
+  monitorBindings?: import('./types/appdynamics').MonitorBinding[]
   sourceTestId: string
   applicationId?: string
   releaseId?: string
@@ -2665,6 +2678,7 @@ export interface ReleaseSLAGovernanceResponse {
 }
 
 export interface ExternalResultImport {
+  activity?: import('./types/objectActivity').ObjectActivitySummary
   id: string
   provider: 'k6' | 'jmeter' | 'gatling' | string
   name: string
@@ -2914,6 +2928,7 @@ export interface ImportedDashboardTarget {
 }
 
 export interface ImportedDashboardPanelDef {
+  unsupported_transformations?: boolean
   panel_id: number
   title: string
   kind: ImportedDashboardPanelKind

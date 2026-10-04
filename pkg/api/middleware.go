@@ -724,6 +724,7 @@ func applyCORSOriginHeadersWithAuth(w http.ResponseWriter, r *http.Request, allo
 	if !decision.allowed {
 		return decision
 	}
+	w.Header().Set("Access-Control-Expose-Headers", "X-APEXLOAD-Audit-Status")
 	if decision.wildcard {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Del("Access-Control-Allow-Credentials")
@@ -801,7 +802,8 @@ const (
 	recorderImportMaxBodyBytes          int64 = 10 << 20
 	oracleReviewImportMaxBodyBytes      int64 = 10 << 20
 	webAPIImportMaxBodyBytes            int64 = 20 << 20
-	harImportMaxBodyBytes               int64 = 50 << 20
+	harImportMaxBodyBytes               int64 = 100 << 20
+	importAssetMaxBodyBytes             int64 = 50 << 20
 	jmeterImportMaxBodyBytes            int64 = 50 << 20
 	enterpriseArchiveImportMaxBodyBytes int64 = 100 << 20
 	// Commit payloads contain expanded JSON DSL rather than the compact source

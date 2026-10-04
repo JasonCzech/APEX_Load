@@ -1169,6 +1169,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				discoveryFatal = fmt.Errorf("generator %s lacks iteration_termination_v1; no traffic was started", result.target)
 				continue
 			}
+			if len(tr.runMonitorCorrelationOrigins(test.ID)) > 0 && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeatureRunCorrelationV1) {
+				_ = result.client.Close()
+				discoveryFatal = fmt.Errorf("generator %s lacks run_correlation_v1; no traffic was started", result.target)
+				continue
+			}
 			if b.requireRunSupervision && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeatureRunSupervisionV1) {
 				_ = result.client.Close()
 				slog.Warn("distributed generator lacks required run supervision", "target", result.target, "feature", generatorrpc.FeatureRunSupervisionV1)
@@ -1409,6 +1414,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				TestID:                     test.ID,
 				ExecutionGeneration:        executionGeneration,
 				ScenarioID:                 test.ScenarioID,
+				RunCorrelationOrigins:      tr.runMonitorCorrelationOrigins(test.ID),
 				RequireTestExecutionLease:  requireTestExecutionLease,
 				GroupName:                  group.Name,
 				ParameterPopulation:        uint32(allocationByGroup[group.Name].Population),

@@ -77,7 +77,7 @@ func (h *HTTP) followMetaRefresh(ctx context.Context, action *protocol.Action, r
 		result.Success = false
 		result.ErrorMessage = e.Error()
 		result.Duration = time.Since(result.StartTime)
-		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result)
 		return result, true
 	}
 	if err != nil {
@@ -179,7 +179,7 @@ func (h *HTTP) followMetaRefresh(ctx context.Context, action *protocol.Action, r
 	final.DNSTime += result.DNSTime
 	final.ConnectTime += result.ConnectTime
 	final.TLSTime += result.TLSTime
-	final.ProtocolEvidence = protocol.BuildProtocolEvidence(action, final)
+	final.ProtocolEvidence = buildHTTPProtocolEvidence(action, final)
 	return final, true
 }
 
@@ -203,6 +203,8 @@ func (h *HTTP) metaRefreshClient() *HTTP {
 		contentCheckErrorLimit:     h.contentCheckErrorLimit,
 		outcome:                    h.outcome,
 		authDelay:                  h.authDelay,
+		policyPools:                h.policyPools,
+		connections:                h.connections,
 		client:                     h.client,
 		oauthClient:                h.oauthClient,
 		transport:                  h.transport,
@@ -217,6 +219,7 @@ func (h *HTTP) metaRefreshClient() *HTTP {
 		defaultHeaders:             h.defaultHeaders,
 		typedDefaultHeaders:        h.typedDefaultHeaders,
 		defaultHeaderList:          h.defaultHeaderList,
+		runCorrelation:             h.runCorrelation,
 		authType:                   h.authType,
 		authHeader:                 h.authHeader,
 		httpVersion:                h.httpVersion,

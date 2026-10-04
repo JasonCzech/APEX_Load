@@ -64,6 +64,9 @@ func recoveredPanicLogText(value any) string {
 }
 
 func recoveredPanicLogTextWithConfig(value any, config *RedactionConfig) string {
+	if config != nil && config.runtimePublicationUnavailable {
+		return "runtime evidence detail unavailable"
+	}
 	scrubbed := scrubSensitiveTextWithConfig(fmt.Sprintf("%v", value), config)
 	return boundedtext.TruncateUTF8(scrubbed, maxRecoveredPanicLogBytes)
 }

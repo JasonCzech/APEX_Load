@@ -513,6 +513,12 @@ func headerMapIssuesForVersion(headers map[string]string, version string, allowU
 // precedence into deterministic occurrences for runtime validation. Ordered
 // lists shadow their compatibility maps; action headers shadow both default
 // representations case-insensitively.
+// EffectiveAuthoredHeaderList exposes the native default/action precedence for
+// DSL and importer admission, without mutating either header representation.
+func EffectiveAuthoredHeaderList(defaults map[string]string, defaultList protocol.HeaderList, actionHeaders map[string]string, actionList protocol.HeaderList) (protocol.HeaderList, []HeaderListIssue) {
+	return effectiveAuthoredHeaderList(defaults, defaultList, actionHeaders, actionList)
+}
+
 func effectiveAuthoredHeaderList(
 	defaults map[string]string,
 	defaultHeaderList protocol.HeaderList,

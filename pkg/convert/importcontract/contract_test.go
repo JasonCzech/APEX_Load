@@ -62,12 +62,12 @@ func TestBaselineNormalizedContracts(t *testing.T) {
 // converter's complete JSON-visible ConvertResult plus shared validation and
 // accounting. Any update must be reviewed as an intentional importer delta.
 var frozenImportContractHashes = map[string]string{
-	"har":      "418097ed4a2784af2f85a88f180c744db2f7ef5b7a00bfff24c3eb540f28ecfa",
+	"har":      "4b14e330aa2283f3c065df37f74206534d9858071f3801239eb32fe84d1d402a",
 	"jmeter":   "80b9eb2a7b751512db19bcefcee3416afb25480635e4baf4163b42d21d85b3c3",
 	"k6":       "83fa7df58e867e39d7544c6b4c0a5124ede5ae3b4a3ebcfb51de6a7736b69c59",
 	"openapi":  "282ad40974d2d7ecc3dda22a77b490e2a36149cb0584e7dc43722639c8780041",
 	"postman":  "fa2639cd6e22229d0b471fc02dc9a79a29c21ed7a6bb13e23e00b368e17ca38a",
-	"raw_http": "753109927bceb2da9bbd6dcff345c41a7d6ea87f6e0582d780cd896c06ce0e7e",
+	"raw_http": "c8affb82d1c2afe97979a035e55f45eefbce98780452593bb489e6b707ff5749",
 	"wsdl":     "ab668d0db72d276a0c6f7fd526f08c274278225ea025e2e9a4ac574c804b160e",
 }
 
@@ -89,9 +89,13 @@ func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
 			}
 			if importer.name == "raw_http" {
 				requireIntentionalDelta(t, "raw_http_explicit_http11_runtime_mode")
+				requireIntentionalDelta(t, "per_leaf_http_version_policy")
 			}
 			if importer.name == "har" {
 				requireIntentionalDelta(t, "har_request_http_version_fidelity")
+				requireIntentionalDelta(t, "per_leaf_http_version_policy")
+				requireIntentionalDelta(t, "har_capture_version_provenance")
+				requireIntentionalDelta(t, "har_response_content_storage_provenance")
 			}
 			if importer.name == "postman" {
 				requireIntentionalDelta(t, "postman_source_file_provenance")
@@ -584,6 +588,9 @@ var intentionalDeltaAllowlist = map[string]string{
 	"wsdl_incomplete_skeletons_are_blocked":          "WSDL operations with unresolved input, header, or XSD structure now produce valid durable review-gated drafts instead of runnable placeholder envelopes.",
 	"raw_http_explicit_http11_runtime_mode":          "A raw capture containing only HTTP/1.1 requests now selects exact native HTTP/1.1 mode so connection-specific header semantics remain faithful.",
 	"har_request_http_version_fidelity":              "HAR request protocol versions now reach the shared request model and select an exact script-wide native version when every request agrees.",
+	"per_leaf_http_version_policy":                   "Supported request observations select presence-aware exact leaf transport policies, preserving mixed HTTP/1.1 and HTTP/2 captures without changing sibling inheritance.",
+	"har_capture_version_provenance":                 "HAR drafts retain bounded request/response observation states and canonical supported versions; unavailable, malformed, unsupported, or untrusted proxy-leg captures retain durable source review gates.",
+	"har_response_content_storage_provenance":        "HAR content is admitted as already-decoded logical storage, with exact bounded text/binary size provenance and durable gates for malformed explicit recorder envelopes or invalid storage; captured wire headers never trigger a second content decode.",
 	"http_imports_disable_implicit_traceparent":      "HTTP-producing imports without an explicit source choice persist traceparent=false so runtime defaults cannot add an unauthored wire header.",
 	"jmeter_normalized_review_evidence":              "JMeter returns source-qualified structured diagnostics and separate behavior-level review counts, restricts unsupported elements to unrepresentable behavior, and retains normalized evidence in new draft provenance.",
 	"jmeter_stable_source_identity":                  "JMeter provenance retains content-addressed plan and source group identities, stable source mapping IDs, and separate workload and contributor counts for regeneration and scoped compatibility behavior.",

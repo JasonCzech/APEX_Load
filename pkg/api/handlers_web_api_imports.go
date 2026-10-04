@@ -56,6 +56,7 @@ type asyncAPIImportRequest struct {
 }
 
 type ramlImportRequest struct {
+	RootFile  string
 	Data      []byte
 	ProjectID string
 	Name      string
@@ -223,6 +224,7 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 		ProjectID: importReq.ProjectID,
 		Content:   string(importReq.Data),
 		Files:     importReq.Files,
+		RootFile:  importReq.RootFile,
 		Options:   importReq.Opts,
 	})
 	if err != nil {
@@ -1027,6 +1029,7 @@ func readRAMLImportRequest(w http.ResponseWriter, r *http.Request) (*ramlImportR
 		}
 		importReq.Data = mainContent
 		importReq.Files = files
+		importReq.RootFile = mainName
 		// Replace a zip-derived/empty script name with the main RAML entry name.
 		// Check the ORIGINAL filename (the stripped Name no longer ends in .zip).
 		if strings.TrimSpace(importReq.Name) == "" || strings.HasSuffix(strings.ToLower(origName), ".zip") {
@@ -1078,6 +1081,10 @@ func pickMainRAML(files map[string][]byte) string {
 	bestDepth := 1 << 30
 	for name := range files {
 		if !strings.HasSuffix(strings.ToLower(name), ".raml") {
+			continue
+		}
+		header := strings.TrimSpace(strings.SplitN(string(files[name]), "\n", 2)[0])
+		if header != "#%RAML 1.0" && header != "#%RAML 0.8" {
 			continue
 		}
 		depth := strings.Count(name, "/")

@@ -96,35 +96,36 @@ type BrowserRecordingStartRequest struct {
 // Steps and Warnings are populated on full snapshots (GET) but omitted from
 // the lightweight summaries embedded in WebSocket broadcasts.
 type BrowserRecordingSession struct {
-	ID                  string                  `json:"id"`
-	Name                string                  `json:"name"`
-	ProjectID           string                  `json:"project_id,omitempty"`
-	Status              string                  `json:"status"`
-	StartURL            string                  `json:"start_url"`
-	CaptureHAR          bool                    `json:"capture_har"`
-	StartedAt           time.Time               `json:"started_at"`
-	StoppedAt           *time.Time              `json:"stopped_at,omitempty"`
-	StopReason          string                  `json:"stop_reason,omitempty"`
-	Error               string                  `json:"error,omitempty"`
-	CurrentURL          string                  `json:"current_url,omitempty"`
-	StepCount           int                     `json:"step_count"`
-	NavigationCount     int                     `json:"navigation_count"`
-	NetworkRequestCount int                     `json:"network_request_count"`
-	WebSocketCount      int                     `json:"websocket_count"`
-	WarningCount        int                     `json:"warning_count"`
-	MarkerCount         int                     `json:"marker_count"`
-	AnnotationCount     int                     `json:"annotation_count"`
-	CapHits             map[string]int64        `json:"cap_hits,omitempty"`
-	OpenTransactions    []string                `json:"open_transactions,omitempty"`
-	Section             string                  `json:"section,omitempty"`
-	DeviceProfile       string                  `json:"device_profile,omitempty"`
-	Picking             bool                    `json:"picking,omitempty"`
-	HARAvailable        bool                    `json:"har_available"`
-	StorageStateReady   bool                    `json:"storage_state_available"`
-	Steps               []recbrowser.Step       `json:"steps,omitempty"`
-	Markers             []recbrowser.Marker     `json:"markers,omitempty"`
-	Annotations         []recbrowser.Annotation `json:"annotations,omitempty"`
-	Warnings            []string                `json:"warnings,omitempty"`
+	ID                   string                           `json:"id"`
+	Name                 string                           `json:"name"`
+	ProjectID            string                           `json:"project_id,omitempty"`
+	Status               string                           `json:"status"`
+	StartURL             string                           `json:"start_url"`
+	CaptureHAR           bool                             `json:"capture_har"`
+	StartedAt            time.Time                        `json:"started_at"`
+	StoppedAt            *time.Time                       `json:"stopped_at,omitempty"`
+	StopReason           string                           `json:"stop_reason,omitempty"`
+	Error                string                           `json:"error,omitempty"`
+	CurrentURL           string                           `json:"current_url,omitempty"`
+	StepCount            int                              `json:"step_count"`
+	NavigationCount      int                              `json:"navigation_count"`
+	NetworkRequestCount  int                              `json:"network_request_count"`
+	WebSocketCount       int                              `json:"websocket_count"`
+	WarningCount         int                              `json:"warning_count"`
+	MarkerCount          int                              `json:"marker_count"`
+	AnnotationCount      int                              `json:"annotation_count"`
+	CapHits              map[string]int64                 `json:"cap_hits,omitempty"`
+	OpenTransactions     []string                         `json:"open_transactions,omitempty"`
+	Section              string                           `json:"section,omitempty"`
+	DeviceProfile        string                           `json:"device_profile,omitempty"`
+	RecordingEnvironment *recbrowser.RecordingEnvironment `json:"recording_environment,omitempty"`
+	Picking              bool                             `json:"picking,omitempty"`
+	HARAvailable         bool                             `json:"har_available"`
+	StorageStateReady    bool                             `json:"storage_state_available"`
+	Steps                []recbrowser.Step                `json:"steps,omitempty"`
+	Markers              []recbrowser.Marker              `json:"markers,omitempty"`
+	Annotations          []recbrowser.Annotation          `json:"annotations,omitempty"`
+	Warnings             []string                         `json:"warnings,omitempty"`
 
 	mu      sync.RWMutex
 	backend browserRecorderBackend
@@ -303,7 +304,15 @@ func (m *BrowserRecordingManager) Start(req BrowserRecordingStartRequest) (*Brow
 	session.backend = backend
 	session.mu.Unlock()
 
-	if err := backend.Start(); err != nil {
+	startErr := backend.Start()
+	// Context observation comes from the backend only after Start has attempted
+	// its actual launch. Requested device settings alone create no receipt.
+	if artifact := backend.Snapshot(); artifact != nil {
+		session.mu.Lock()
+		session.RecordingEnvironment = recbrowser.NormalizeRecordingEnvironment(artifact.RecordingEnvironment, "")
+		session.mu.Unlock()
+	}
+	if err := startErr; err != nil {
 		now := time.Now()
 		session.mu.Lock()
 		session.Status = BrowserRecordingFailed
@@ -959,6 +968,9 @@ func reconcileBrowserRecordingArtifactCountsLocked(session *BrowserRecordingSess
 	session.MarkerCount = len(artifact.Markers)
 	session.AnnotationCount = len(artifact.Annotations)
 	session.CapHits = cloneStringInt64Map(artifact.CapHits)
+	if session.RecordingEnvironment == nil {
+		session.RecordingEnvironment = recbrowser.NormalizeRecordingEnvironment(artifact.RecordingEnvironment, "")
+	}
 	// summaryLocked (List responses and every WS broadcast) reads these off the
 	// struct, so they have to be folded in here too — fullSnapshot alone only
 	// fixes the single-session GET.
@@ -971,7 +983,14 @@ func recoverLateBrowserRecordingArtifact(existing, late *recbrowser.Session) *re
 		return existing
 	}
 	if existing == nil {
+		late = late.Clone()
+		late.RecordingEnvironment = recbrowser.NormalizeRecordingEnvironment(late.RecordingEnvironment, "")
 		return late
+	}
+	late = late.Clone()
+	late.RecordingEnvironment = recbrowser.NormalizeRecordingEnvironment(late.RecordingEnvironment, "")
+	if known := recbrowser.NormalizeRecordingEnvironment(existing.RecordingEnvironment, ""); known != nil {
+		late.RecordingEnvironment = known
 	}
 	if late.StoppedAt.IsZero() {
 		late.StoppedAt = existing.StoppedAt
@@ -1204,17 +1223,24 @@ func (s *BrowserRecordingSession) artifact() *recbrowser.Session {
 	s.mu.RLock()
 	final := s.final
 	backend := s.backend
+	environment := recbrowser.NormalizeRecordingEnvironment(s.RecordingEnvironment, "")
 	if final != nil {
 		final = final.Clone()
 	}
 	s.mu.RUnlock()
+	if final == nil && backend != nil {
+		final = backend.Snapshot()
+		if final != nil {
+			final = final.Clone()
+		}
+	}
 	if final != nil {
-		return final
+		final.RecordingEnvironment = recbrowser.NormalizeRecordingEnvironment(final.RecordingEnvironment, "")
+		if environment != nil {
+			final.RecordingEnvironment = environment
+		}
 	}
-	if backend != nil {
-		return backend.Snapshot()
-	}
-	return nil
+	return final
 }
 
 func (s *BrowserRecordingSession) summary() *BrowserRecordingSession {
@@ -1225,31 +1251,32 @@ func (s *BrowserRecordingSession) summary() *BrowserRecordingSession {
 
 func (s *BrowserRecordingSession) summaryLocked() *BrowserRecordingSession {
 	return &BrowserRecordingSession{
-		ID:                  s.ID,
-		Name:                s.Name,
-		ProjectID:           s.ProjectID,
-		Status:              s.Status,
-		StartURL:            scrub.ValueURL(s.StartURL, scrub.Policy{}),
-		CaptureHAR:          s.CaptureHAR,
-		StartedAt:           s.StartedAt,
-		StoppedAt:           s.StoppedAt,
-		StopReason:          s.StopReason,
-		Error:               s.Error,
-		CurrentURL:          scrub.ValueURL(s.CurrentURL, scrub.Policy{}),
-		StepCount:           s.StepCount,
-		NavigationCount:     s.NavigationCount,
-		NetworkRequestCount: s.NetworkRequestCount,
-		WebSocketCount:      s.WebSocketCount,
-		WarningCount:        s.WarningCount,
-		MarkerCount:         s.MarkerCount,
-		AnnotationCount:     s.AnnotationCount,
-		CapHits:             cloneStringInt64Map(s.CapHits),
-		OpenTransactions:    append([]string(nil), s.OpenTransactions...),
-		Section:             s.Section,
-		DeviceProfile:       s.DeviceProfile,
-		Picking:             s.Picking,
-		HARAvailable:        s.HARAvailable,
-		StorageStateReady:   s.StorageStateReady,
+		ID:                   s.ID,
+		Name:                 s.Name,
+		ProjectID:            s.ProjectID,
+		Status:               s.Status,
+		StartURL:             scrub.ValueURL(s.StartURL, scrub.Policy{}),
+		CaptureHAR:           s.CaptureHAR,
+		StartedAt:            s.StartedAt,
+		StoppedAt:            s.StoppedAt,
+		StopReason:           s.StopReason,
+		Error:                s.Error,
+		CurrentURL:           scrub.ValueURL(s.CurrentURL, scrub.Policy{}),
+		StepCount:            s.StepCount,
+		NavigationCount:      s.NavigationCount,
+		NetworkRequestCount:  s.NetworkRequestCount,
+		WebSocketCount:       s.WebSocketCount,
+		WarningCount:         s.WarningCount,
+		MarkerCount:          s.MarkerCount,
+		AnnotationCount:      s.AnnotationCount,
+		CapHits:              cloneStringInt64Map(s.CapHits),
+		OpenTransactions:     append([]string(nil), s.OpenTransactions...),
+		Section:              s.Section,
+		DeviceProfile:        s.DeviceProfile,
+		RecordingEnvironment: recbrowser.NormalizeRecordingEnvironment(s.RecordingEnvironment, ""),
+		Picking:              s.Picking,
+		HARAvailable:         s.HARAvailable,
+		StorageStateReady:    s.StorageStateReady,
 	}
 }
 
@@ -1279,6 +1306,7 @@ func (s *BrowserRecordingSession) fullSnapshot() *BrowserRecordingSession {
 	if artifact.DeviceProfile != "" {
 		clone.DeviceProfile = artifact.DeviceProfile
 	}
+	clone.RecordingEnvironment = recbrowser.NormalizeRecordingEnvironment(artifact.RecordingEnvironment, "")
 	if len(artifact.NavEvents) > 0 {
 		clone.CurrentURL = artifact.NavEvents[len(artifact.NavEvents)-1].URL
 	}

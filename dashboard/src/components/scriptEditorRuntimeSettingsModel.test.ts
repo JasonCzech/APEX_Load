@@ -61,6 +61,13 @@ function runtimeConfig(): ScriptConfig {
 }
 
 describe('scriptEditorRuntimeSettingsModel', () => {
+  it.each(['http/1.1', 'http/2'])('exposes HTTP settings and emulation for registered alias %s', protocol => {
+    expect(getRuntimeProtocolCapabilities(protocol)).toMatchObject({ http: true, httpTransport: true, browserEmulation: true })
+    expect(runtimeSettingsSectionIsAvailable('http', protocol)).toBe(true)
+    expect(runtimeSettingsSectionIsAvailable('web_runtime', protocol)).toBe(true)
+    expect(runtimeSettingsSectionIsAvailable('browser_emulation', protocol)).toBe(true)
+    expect(httpTransportTabIsAvailable('browser', protocol)).toBe(false)
+  })
   it('derives protocol capabilities and section availability from one registry', () => {
     expect(getRuntimeProtocolCapabilities('browser')).toMatchObject({ browser: true, httpTransport: true, http: false })
     expect(getRuntimeProtocolCapabilities('java_http')).toMatchObject({ javaHttp: true, httpTransport: true })

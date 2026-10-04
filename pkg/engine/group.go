@@ -42,6 +42,9 @@ type GroupConfig struct {
 	// RunID is the managed test identity exposed to {{run.id}} at execution.
 	// Direct/library callers may leave it empty; that template then fails closed.
 	RunID string
+	// RunCorrelationOrigins permits the managed run header only at these origins.
+	// This controller-owned setting is never derived from executable script data.
+	RunCorrelationOrigins []string
 	// ScenarioID is the managed execution identity exposed to protocol
 	// runtimes. Direct/library callers may leave it empty to fall back to the
 	// script artifact ID.
@@ -1828,7 +1831,13 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 	}
 	detachInitAdmission()
 	defer cancelInit()
-	defer runProtocolTeardownWithMessagingProgress(vuProto, progress, func() *RedactionConfig { return group.RedactionConfig })
+	var vu *VUser
+	defer runProtocolTeardownWithMessagingProgress(vuProto, progress, func() *RedactionConfig {
+		if vu != nil {
+			return vu.resultPublicationRedactionConfig()
+		}
+		return group.RedactionConfig
+	})
 	// Protocol adapters are allowed to ignore their Init context. Recheck the
 	// lifecycle boundary before creating any user-phase cleanup obligation.
 	if boundaryCtx.Err() != nil || actionCtx.Err() != nil {
@@ -1839,7 +1848,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 	if phase != "teardown" && mge.gracefulCtx != nil {
 		entitledBoundaryCtx = mge.gracefulCtx
 	}
-	vu := &VUser{
+	vu = &VUser{
 		ID:                           -1,
 		TotalVUsers:                  group.VUsers,
 		ParameterAllocation:          groupParameterAllocation(group, 0),
@@ -2091,7 +2100,7 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 		var vu *VUser
 		redaction := func() *RedactionConfig {
 			if vu != nil {
-				return vu.RedactionConfig
+				return vu.resultPublicationRedactionConfig()
 			}
 			return prepared.group.RedactionConfig
 		}
@@ -2599,7 +2608,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		var vu *VUser
 		redaction := func() *RedactionConfig {
 			if vu != nil {
-				return vu.RedactionConfig
+				return vu.resultPublicationRedactionConfig()
 			}
 			return group.RedactionConfig
 		}

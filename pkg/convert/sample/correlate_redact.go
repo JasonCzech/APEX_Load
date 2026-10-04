@@ -11,6 +11,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -22,7 +23,7 @@ func detectCorrelations(exchanges []exchange) []Correlation {
 	return correlations
 }
 
-func detectCorrelationsChecked(exchanges []exchange) ([]Correlation, error) {
+func sampleCorrelationObservations(exchanges []exchange) []correlate.Observation {
 	observations := make([]correlate.Observation, 0, len(exchanges))
 	for index, ex := range exchanges {
 		observation := correlate.Observation{
@@ -34,14 +35,32 @@ func detectCorrelationsChecked(exchanges []exchange) ([]Correlation, error) {
 		}
 		if ex.Response != nil {
 			observation.ResponseBody = ex.Response.Body
-			observation.ResponseHeaders = correlationObservationHeaders(ex.Response.Headers, ex.Response.HeaderList)
+			observation.ResponseHeaders = requestimport.ResponseContentBaselineHeaders(correlationObservationHeaders(ex.Response.Headers, ex.Response.HeaderList), ex.Response.ContentCapture)
 		}
 		observations = append(observations, observation)
 	}
-	shared, err := correlate.DetectChecked(observations)
+	return observations
+}
+
+func detectCorrelationsChecked(exchanges []exchange) ([]Correlation, error) {
+	shared, err := correlate.DetectChecked(sampleCorrelationObservations(exchanges))
 	if err != nil {
 		return nil, err
 	}
+	return sampleCorrelations(shared), nil
+}
+
+// HAR review can retain bounded discoveries from incomplete analysis. These
+// candidates must never be applied automatically unless analysis completed.
+func detectHARCorrelationsForReview(exchanges []exchange) ([]Correlation, []string, error) {
+	shared, warnings, err := correlate.DetectCheckedWithWarnings(sampleCorrelationObservations(exchanges))
+	if err != nil {
+		return nil, nil, err
+	}
+	return sampleCorrelations(shared), warnings, nil
+}
+
+func sampleCorrelations(shared []correlate.Correlation) []Correlation {
 	correlations := make([]Correlation, 0, len(shared))
 	for _, corr := range shared {
 		if corr.Value == scrub.Redacted || corr.SampleValue == scrub.Redacted {
@@ -59,7 +78,7 @@ func detectCorrelationsChecked(exchanges []exchange) ([]Correlation, error) {
 			UsedInSteps: corr.UsedInIDs,
 		})
 	}
-	return correlations, nil
+	return correlations
 }
 
 // correlationObservationHeaders projects the authoritative ordered HeaderList

@@ -277,9 +277,10 @@ type Session struct {
 	// recording, tied to the nearest step.
 	Annotations []Annotation `json:"annotations,omitempty"`
 	// DeviceProfile is the emulated device preset applied at launch, if any.
-	DeviceProfile string `json:"device_profile,omitempty"`
-	HARPath       string `json:"har_path,omitempty"`
-	HAR           []byte `json:"-"`
+	DeviceProfile        string                `json:"device_profile,omitempty"`
+	RecordingEnvironment *RecordingEnvironment `json:"recording_environment,omitempty"`
+	HARPath              string                `json:"har_path,omitempty"`
+	HAR                  []byte                `json:"-"`
 	// StorageState is the Playwright storage state (cookies/localStorage)
 	// exported at stop, available for login reuse on a later recording.
 	StorageState        []byte           `json:"-"`
@@ -501,6 +502,7 @@ func isBlankPageURL(raw string) bool {
 // as immutable after capture.
 func (s *Session) clone() *Session {
 	clone := *s
+	clone.RecordingEnvironment = s.RecordingEnvironment.Clone()
 	clone.Steps = append([]Step(nil), s.Steps...)
 	for i := range clone.Steps {
 		clone.Steps[i].Values = append([]string(nil), s.Steps[i].Values...)

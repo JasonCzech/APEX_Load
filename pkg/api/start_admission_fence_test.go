@@ -68,6 +68,29 @@ type fixedShakeoutProjectQuotaStore struct {
 	project storage.Project
 }
 
+type shakeoutHandoffProjectQuotaStore struct {
+	fixedShakeoutProjectQuotaStore
+	actionCompleted atomic.Bool
+	unavailable     atomic.Bool
+	paused          chan struct{}
+	release         chan struct{}
+	once            sync.Once
+}
+
+func (s *shakeoutHandoffProjectQuotaStore) GetProject(id string) (*storage.Project, error) {
+	if s.actionCompleted.Load() {
+		pause := false
+		s.once.Do(func() { pause = true; close(s.paused) })
+		if pause {
+			<-s.release
+		}
+		if s.unavailable.Load() {
+			return nil, errors.New("handoff project quota unavailable")
+		}
+	}
+	return s.fixedShakeoutProjectQuotaStore.GetProject(id)
+}
+
 func (s *fixedShakeoutProjectQuotaStore) GetProject(id string) (*storage.Project, error) {
 	if normalizeProjectID(id) != normalizeProjectID(s.project.ID) {
 		return nil, nil
@@ -261,6 +284,137 @@ func TestConcurrentShakeoutStartsReserveProjectVUserQuotaBeforeOneShotActions(t 
 	}
 	if pending != 1 || started != 1 {
 		t.Fatalf("admission outcomes = pending %d started %d, want 1/1", pending, started)
+	}
+}
+
+func TestShakeoutHandoffRetainsAdmissionAndReleasesOnEveryExit(t *testing.T) {
+	for _, outcome := range []string{"initializing", "pending", "error and retry"} {
+		t.Run(outcome, func(t *testing.T) {
+			quota := &shakeoutHandoffProjectQuotaStore{
+				fixedShakeoutProjectQuotaStore: fixedShakeoutProjectQuotaStore{project: storage.Project{
+					ID: storage.DefaultProjectID, Name: "Default", CreatedAt: time.Unix(1, 0).UTC(), UpdatedAt: time.Unix(2, 0).UTC(),
+					Settings: storage.ProjectSettings{MaxConcurrentTests: 2, MaxVUsers: 1},
+				}},
+				paused: make(chan struct{}), release: make(chan struct{}),
+			}
+			var releaseOnce sync.Once
+			release := func() { releaseOnce.Do(func() { close(quota.release) }) }
+			defer release()
+			var executions atomic.Int32
+			protocolName := registerRunnerTestProtocol(t, "shakeout-handoff", func() protocol.Protocol {
+				return &shakeoutActionProtocol{name: "shakeout-handoff", execute: func(context.Context) error {
+					executions.Add(1)
+					quota.actionCompleted.Store(true)
+					return nil
+				}}
+			})
+			backend := &executionBackendSpy{called: make(chan string, 2)}
+			runner := NewTestRunner(2, NewHub(), nil, WithExecutionBackend(backend))
+			runner.projectStore = quota
+			runner.StoreScript(&dsl.Script{
+				ID: "handoff-script", Name: "Handoff", Protocol: protocolName, Version: "1.0.0",
+				Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
+				Actions: []dsl.Action{{Name: "one shot", Type: "request", Target: "/"}},
+			})
+			first, err := runner.CreateTest(CreateTestRequest{Name: "first", ScriptID: "handoff-script", VUsers: 1, Duration: "1m", ScriptShakeout: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := runner.CreateTest(CreateTestRequest{Name: "second", ScriptID: "handoff-script", VUsers: 1, Duration: "1m", ScriptShakeout: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() { done <- runner.StartTest(first.ID) }()
+			select {
+			case <-quota.paused:
+			case <-time.After(5 * time.Second):
+				t.Fatal("start did not reach post-shakeout admission evidence")
+			}
+			runner.mu.RLock()
+			current := runner.tests[first.ID]
+			reserved := current.Status == "QUEUED" && scriptShakeoutPassAllows(current.StartAuthorization.ScriptShakeoutPass) && testReservesRuntimeCapacity(current)
+			runner.mu.RUnlock()
+			if !reserved {
+				t.Fatal("completed shakeout released capacity before final admission")
+			}
+			if outcome == "error and retry" {
+				quota.unavailable.Store(true)
+			} else {
+				if err := runner.StartTest(second.ID); err != nil {
+					t.Fatal("competing start", err)
+				}
+				competing, _ := runner.GetTest(second.ID)
+				if executions.Load() != 1 || competing.Status != "PENDING" || !strings.Contains(competing.PendingReason, "project VUser") {
+					t.Fatal("competing one-shot bypassed the handoff reservation", executions.Load(), competing.Status, competing.PendingReason)
+				}
+			}
+			if outcome == "pending" {
+				runner.mu.Lock()
+				runner.tests["other-load"] = &ManagedTest{ID: "other-load", ProjectID: storage.DefaultProjectID, Status: "RUNNING", TotalVUsers: 1, Duration: time.Minute, CreatedAt: time.Now().UTC()}
+				runner.mu.Unlock()
+			}
+			release()
+			select {
+			case err = <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("handoff did not finish")
+			}
+			runner.mu.RLock()
+			current = runner.tests[first.ID]
+			status, retained := current.Status, current.shakeoutAdmissionReservation != nil
+			runner.mu.RUnlock()
+			if retained {
+				t.Fatal("start exit retained its private admission reservation")
+			}
+			switch outcome {
+			case "initializing":
+				if err != nil || status != "INITIALIZING" {
+					t.Fatal("self reservation blocked final admission", status, err)
+				}
+			case "pending":
+				if err != nil || status != "PENDING" {
+					t.Fatal("changed capacity did not release into pending", status, err)
+				}
+			case "error and retry":
+				if err == nil || status != "QUEUED" {
+					t.Fatal("failed admission did not remain retryable", status, err)
+				}
+				quota.unavailable.Store(false)
+				if err := runner.StartTest(first.ID); err != nil {
+					t.Fatal("retry", err)
+				}
+				if executions.Load() != 1 {
+					t.Fatal("retry repeated completed one-shot actions", executions.Load())
+				}
+			}
+		})
+	}
+}
+
+func TestShakeoutHandoffReservationOwnershipAndCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	reservation := &shakeoutAdmissionReservation{ctx: ctx}
+	test := &ManagedTest{Status: "QUEUED", shakeoutAdmissionReservation: reservation}
+	if !testReservesRuntimeCapacity(test) || !testReservesRuntimeCapacity(cloneManagedTestCapacitySnapshotLocked(test)) {
+		t.Fatal("live handoff was omitted from capacity accounting or its snapshot")
+	}
+	if err := validateExpectedStartRecoveryIdentityLocked(test, StartTestOptions{shakeoutAdmissionReservation: reservation}); err != nil {
+		t.Fatal("owning start lost its handoff", err)
+	}
+	if err := validateExpectedStartRecoveryIdentityLocked(test, StartTestOptions{}); !errors.Is(err, errStartAdmissionEvidenceStale) {
+		t.Fatal("another start claimed the active handoff", err)
+	}
+	for _, status := range []string{"PENDING", "SHAKEOUT_REVIEW", "COMPLETE", "FAILED", "ABORTED"} {
+		test.Status = status
+		if testReservesRuntimeCapacity(test) {
+			t.Fatal("inactive lifecycle retained handoff capacity", status)
+		}
+	}
+	test.Status = "QUEUED"
+	cancel()
+	if testReservesRuntimeCapacity(test) || validateExpectedStartRecoveryIdentityLocked(test, StartTestOptions{}) != nil {
+		t.Fatal("retired execution term retained the old start's handoff")
 	}
 }
 

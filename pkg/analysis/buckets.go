@@ -21,6 +21,12 @@ func BucketSeries(points []MetricPoint, from, to time.Time, seconds int, aggrega
 	if len(points) == 0 {
 		return []MetricPoint{}, nil
 	}
+	if points[0].Provider != nil {
+		if points[0].Provider.Name == "prometheus" {
+			return bucketPrometheusSeries(points, from, to, seconds, aggregation)
+		}
+		return bucketProviderSeries(points, from, to, seconds, aggregation)
+	}
 	kind := points[0].Kind
 	if err := ValidateScalarAggregation(kind, aggregation); err != nil {
 		return nil, err

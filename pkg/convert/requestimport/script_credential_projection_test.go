@@ -11,6 +11,57 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
+func TestProjectScriptCredentialsUsesOnlyActiveBodyMediaType(t *testing.T) {
+	const body = `{"password":"synthetic-body-value"}`
+	disabled := false
+	for _, tc := range []struct {
+		name    string
+		headers dsl.HeaderList
+		active  string
+		gated   bool
+	}{
+		{name: "disabled declaration allows JSON inference", headers: dsl.HeaderList{{Name: "Content-Type", Value: "application/xml", Enabled: &disabled}}},
+		{name: "active JSON precedes disabled XML", headers: dsl.HeaderList{{Name: "Content-Type", Value: "application/json"}, {Name: "content-type", Value: "application/xml", Enabled: &disabled}}, active: "application/json"},
+		{name: "active malformed XML stays gated", headers: dsl.HeaderList{{Name: "Content-Type", Value: "application/xml"}}, active: "application/xml", gated: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			script := validBaseScript()
+			script.GeneratedFrom = "test_import"
+			script.Actions = []dsl.Action{{Name: "request", Type: "POST", Method: "POST", Target: "/submit", HeaderList: tc.headers, Body: body}}
+			for pass := 0; pass < 3; pass++ {
+				projection, err := ProjectScriptCredentials(script, ScriptCredentialProjectionOptions{SourceProfile: "test_import", CandidateKey: "media-type"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				finalized, err := FinalizeScript(script, nil, FinalizeOptions{Findings: projection.Findings, Requirements: projection.Requirements})
+				if err != nil {
+					t.Fatal(err)
+				}
+				leaf := finalized.Script.Actions[0]
+				if leaf.Body != body || leaf.Headers["Content-Type"] != tc.active || (leaf.Metadata["execution_blocker"] != nil) != tc.gated {
+					t.Fatal("disabled media type changed body interpretation or active malformed declaration lost its gate")
+				}
+				if len(leaf.HeaderList) != len(tc.headers) {
+					t.Fatal("source header occurrences were lost")
+				}
+				for index, header := range tc.headers {
+					if header.Enabled != nil && (leaf.HeaderList[index].Enabled == nil || *leaf.HeaderList[index].Enabled != *header.Enabled) {
+						t.Fatal("inactive header state changed during credential projection")
+					}
+				}
+				encoded, err := json.Marshal(finalized.Script)
+				if err != nil {
+					t.Fatal(err)
+				}
+				script = &dsl.Script{}
+				if err := json.Unmarshal(encoded, script); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func TestProjectScriptCredentialsCoversExistingRequestSurfaces(t *testing.T) {
 	t.Parallel()
 	const (

@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 
 import { chunkNameForModule } from './scripts/chunk-strategy.mjs'
+import { parseVitestWorkers } from './scripts/vitest-workers.mjs'
 
 const require = createRequire(import.meta.url)
 const dashboardPackage = require('./package.json') as { version?: string }
@@ -38,6 +39,7 @@ export default defineConfig({
     __APEXLOAD_VITE_BUILD_TIME__: JSON.stringify(resolveBuildTime(process.env.APEXLOAD_VITE_BUILD_TIME || sharedBuildTime)),
   },
   test: {
+    maxWorkers: parseVitestWorkers(process.env.APEXLOAD_VITEST_MAX_WORKERS),
     exclude: [...configDefaults.exclude, 'e2e/**', 'e2e-recording/**/*.spec.ts'],
     setupFiles: ['./src/test/vitestSetup.ts'],
   },

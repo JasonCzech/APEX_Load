@@ -1674,6 +1674,27 @@ func (tr *TestRunner) saveScenarioScheduleForSweepLocked(schedule *storage.Scena
 	return nil
 }
 
+// An archived dependency skips this occurrence permanently. Advance from the
+// current sweep time so restoration never replays missed occurrences.
+func (tr *TestRunner) skipArchivedScheduleOccurrenceLocked(schedule *storage.ScenarioSchedule, occurrence *storage.ScenarioScheduleOccurrence, now time.Time, term executionLeaseTerm) error {
+	if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, term); err != nil {
+		return err
+	}
+	return tr.advanceArchivedScheduleOccurrenceLocked(schedule, occurrence, now, term)
+}
+func (tr *TestRunner) advanceArchivedScheduleOccurrenceLocked(schedule *storage.ScenarioSchedule, occurrence *storage.ScenarioScheduleOccurrence, now time.Time, term executionLeaseTerm) error {
+	next, err := nextScenarioScheduleRun(schedule, now)
+	if err != nil {
+		return err
+	}
+	schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
+	schedule.NextRunAt = next
+	schedule.NextRequiredAction = ""
+	schedule.LastError = ""
+	schedule.UpdatedAt = now
+	return tr.saveScenarioScheduleForSweepLocked(schedule, term)
+}
+
 func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedule, now time.Time, leaseTerms ...executionLeaseTerm) (*ManagedTest, error) {
 	if schedule == nil {
 		return nil, fmt.Errorf("schedule is required")
@@ -1745,6 +1766,18 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 			return nil, err
 		}
 	}
+	scriptIDs := make([]string, 0, len(scenario.Scripts))
+	for _, script := range scenario.Scripts {
+		scriptIDs = append(scriptIDs, script.ScriptID)
+	}
+	if archiveErr := tr.checkArchivedExecution(schedule.ScenarioID, scriptIDs, plannedAt); archiveErr != nil {
+		if !errors.Is(archiveErr, storage.ErrObjectArchived) {
+			return nil, archiveErr
+		}
+		occurrence.Status, occurrence.ReasonCode = "skipped", "object_archived"
+		occurrence.ConflictSummary, occurrence.UpdatedAt = archiveErr.Error(), now
+		return nil, tr.skipArchivedScheduleOccurrenceLocked(schedule, occurrence, now, leaseTerm)
+	}
 	runName := strings.TrimSpace(schedule.RunNameTemplate)
 	if runName == "" {
 		runName = fmt.Sprintf("Scheduled Run %s", now.Format(time.RFC3339))
@@ -1769,6 +1802,13 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	}
 	if err == nil {
 		err = tr.claimTestExecutionFenceWithTerm(test, leaseTerm)
+	}
+	if errors.Is(err, storage.ErrObjectArchived) {
+		occurrence.Status = "skipped"
+		occurrence.ReasonCode = "object_archived"
+		occurrence.ConflictSummary = err.Error()
+		occurrence.UpdatedAt = now
+		return nil, tr.skipArchivedScheduleOccurrenceLocked(schedule, occurrence, now, leaseTerm)
 	}
 	if err != nil {
 		occurrence.Status = "failed"
@@ -1818,6 +1858,13 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	saveTestErr := tr.saveNewManagedTestRecordWithTerm(test, leaseTerm)
 	tr.mu.Lock()
 	if saveTestErr != nil {
+		if errors.Is(saveTestErr, storage.ErrObjectArchived) {
+			occurrence.Status = "skipped"
+			occurrence.ReasonCode = "object_archived"
+			occurrence.ConflictSummary = saveTestErr.Error()
+			occurrence.UpdatedAt = now
+			return nil, tr.skipArchivedScheduleOccurrenceLocked(schedule, occurrence, now, leaseTerm)
+		}
 		occurrence.Status = "failed"
 		occurrence.ReasonCode = "create_persist_failed"
 		occurrence.ConflictSummary = saveTestErr.Error()
@@ -1827,6 +1874,7 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		}
 		return nil, fmt.Errorf("persist scheduled test: %w", saveTestErr)
 	}
+	tr.recordBackgroundActivity(&storage.ObjectActivityEvent{ID: "create:test:" + test.ID + ":" + test.CreatedAt.UTC().Format(time.RFC3339Nano), Action: "create", ActorType: "system", ActorSubject: "scenario-scheduler", ActorDisplayName: "Scenario Scheduler", InitiatedBy: schedule.OwnerSubject, ProjectID: test.ProjectID, ResourceType: "test", ResourceID: test.ID, ResourceName: test.Name, Status: "success", CreatedAt: test.CreatedAt})
 	tr.tests[test.ID] = test
 	tr.indexRefKeyLocked(test.RefKey, test.ID)
 	tr.broadcastEvent("test_created", cloneManagedTestLifecycleEvent(test))
@@ -1840,6 +1888,23 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	}
 	deferredStartRecovery := false
 	if err != nil {
+		if errors.Is(err, storage.ErrObjectArchived) {
+			occurrence.Status = "skipped"
+			occurrence.ReasonCode = "object_archived"
+			occurrence.TestID = test.ID
+			occurrence.ConflictSummary = err.Error()
+			occurrence.UpdatedAt = now
+			if saveErr := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); saveErr != nil {
+				return nil, saveErr
+			}
+			if releaseStartLifecycle != nil {
+				releaseStartLifecycle()
+			}
+			if failErr := tr.failScheduledTestBeforeLaunchLocked(test, now, err.Error()); failErr != nil {
+				return nil, failErr
+			}
+			return nil, tr.advanceArchivedScheduleOccurrenceLocked(schedule, occurrence, now, leaseTerm)
+		}
 		if scenarioScheduleStartRetryableAfterOneShot(test, err) {
 			markScenarioScheduleOccurrenceStartRetrying(occurrence, test, err)
 			occurrence.UpdatedAt = now

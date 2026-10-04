@@ -328,6 +328,21 @@ func applyGuidedCorrelation(script *dsl.Script, req authoringCorrelationPreviewR
 	if err != nil {
 		return nil, err
 	}
+	var usedIndexes []int
+	if shouldReplaceCorrelationSample(req) {
+		sample := strings.TrimSpace(req.SampleValue)
+		replacement := "{{var." + extractor.Name + "}}"
+		usedIndexes = resolveCorrelationUsedActionIndexes(script.Actions, foundIndex, req)
+		// Raw replacement cannot maintain contextual occurrence identities.
+		// Reject the whole repair before adding an extractor or editing another
+		// consumer; otherwise a rejected batch item could still mutate its draft.
+		for _, index := range usedIndexes {
+			action := &script.Actions[index]
+			if _, hasContract := action.Metadata[dsl.ImportAuraTemplateContractMetadataKey]; hasContract && sample != replacement && strings.Contains(action.Body, sample) {
+				return nil, fmt.Errorf("actions[%d].body requires manual structural review before correlation replacement because it has an Aura template occurrence contract", index+1)
+			}
+		}
+	}
 
 	changes := make([]authoringCorrelationDiff, 0, 4)
 	extractorIndex := len(script.Actions[foundIndex].Extractors)
@@ -340,7 +355,7 @@ func applyGuidedCorrelation(script *dsl.Script, req authoringCorrelationPreviewR
 
 	if shouldReplaceCorrelationSample(req) {
 		replacement := "{{var." + extractor.Name + "}}"
-		for _, index := range resolveCorrelationUsedActionIndexes(script.Actions, foundIndex, req) {
+		for _, index := range usedIndexes {
 			changes = append(changes, replaceActionSampleValue(&script.Actions[index], index, strings.TrimSpace(req.SampleValue), replacement)...)
 		}
 	}

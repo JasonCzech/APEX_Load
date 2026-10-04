@@ -36,6 +36,8 @@ var apexctlCommandHandlers = map[string]func(){
 	"prepare":      prepareCmd,
 	"monitor":      monitorCmd,
 	"analysis":     analysisCmd,
+	"appdynamics":  appDynamicsCmd,
+	"prometheus": prometheusCmd,
 }
 
 func main() {
@@ -422,6 +424,8 @@ Commands:
   library   Export or import portable project library bundles
   prepare   Prepare, inspect, renew, cancel, or start a prepared run
   monitor   Configure run-bound monitoring sources and scenario bindings
+  appdynamics Manage AppDynamics connections and asynchronous inspections
+  prometheus  Manage target-system monitoring connections, discovery and previews
   analysis  Import/query datasets, save analysis definitions, and assess baseline regressions
   version   Print version information
   help      Show this help

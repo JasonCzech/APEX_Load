@@ -798,13 +798,15 @@ func TestRecordingPreviewLineageSurvivesServerBindingButRejectsClientGraphEdit(t
 	}
 	session.BaseURL = "https://shop.example.test"
 	session.Requests = append(session.Requests, recorder.RecordedRequest{
-		Seq:          1,
-		Method:       http.MethodPost,
-		URL:          "https://shop.example.test/login",
-		Path:         "/login",
-		Headers:      map[string]string{"Authorization": "Bearer retained-login-token"},
-		Body:         `{"ordinary":"keep"}`,
-		ResponseBody: `{"session":"dynamic"}`,
+		Seq:                 1,
+		Method:              http.MethodPost,
+		URL:                 "https://shop.example.test/login",
+		Path:                "/login",
+		Headers:             map[string]string{"Authorization": "Bearer retained-login-token"},
+		Body:                `{"ordinary":"keep"}`,
+		ResponseBody:        `{"session":"dynamic"}`,
+		RequestHTTPVersion:  "HTTP/1.1",
+		ResponseHTTPVersion: "HTTP/1.1",
 	})
 
 	previewRequest := httptest.NewRequest(
@@ -825,9 +827,10 @@ func TestRecordingPreviewLineageSurvivesServerBindingButRejectsClientGraphEdit(t
 	if err := json.Unmarshal(previewResponse.Body.Bytes(), &preview); err != nil {
 		t.Fatal(err)
 	}
+	assertRecordedCredentialHTTPVersion(t, &preview.Script)
 	if len(preview.Requirements) == 0 ||
 		importDraftAttestationToken(&preview.Script) == "" {
-		t.Fatalf("preview lacks credential lineage: %#v", preview)
+		t.Fatalf("preview lacks credential lineage: requirements=%d attestation_present=%t", len(preview.Requirements), importDraftAttestationToken(&preview.Script) != "")
 	}
 
 	edited := cloneScriptDefinition(&preview.Script)

@@ -11,7 +11,7 @@ import Logo from './Logo'
 import ProjectModal from './ProjectModal'
 import './Sidebar.css'
 
-export type NavPage = 'dashboard' | 'command-center' | 'repository' | 'tests' | 'new-test' | 'scripts' | 'results' | 'monitoring' | 'fleet' | 'schedules' | 'docs' | 'access' | 'settings'
+export type NavPage = 'dashboard' | 'command-center' | 'repository' | 'tests' | 'new-test' | 'scripts' | 'results' | 'activity' | 'monitoring' | 'fleet' | 'schedules' | 'docs' | 'access' | 'settings'
 
 interface Props {
   active: NavPage
@@ -43,6 +43,7 @@ interface Props {
 type NavItem = { id: NavPage; label: string; icon: ReactNode; requiresAccess?: boolean }
 
 const NAV_ITEMS: NavItem[] = [
+  { id: 'activity', label: 'Activity', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9 5H5v16h14V5h-4M9 3h6v4H9zM8 12h8M8 16h6" /></svg> },
   {
     id: 'dashboard',
     label: 'Dashboard',
@@ -168,7 +169,7 @@ const NAV_ITEMS: NavItem[] = [
 ]
 
 const NAV_GROUPS: { label: string; itemIds: NavPage[] }[] = [
-  { label: 'Operate', itemIds: ['dashboard', 'command-center', 'results', 'monitoring'] },
+  { label: 'Operate', itemIds: ['dashboard', 'command-center', 'results', 'monitoring', 'activity'] },
   { label: 'Build', itemIds: ['scripts', 'tests'] },
   { label: 'Administer', itemIds: ['repository', 'access', 'settings'] },
   { label: 'Support', itemIds: ['docs'] },

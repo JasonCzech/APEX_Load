@@ -15,16 +15,19 @@ const defaultDateTimeLayout = "2006-01-02 15:04:05"
 const defaultTimeLayout = "15:04:05"
 
 type ParameterRuntime struct {
-	params         map[string]dsl.Parameter
-	canonicalNames map[string]string
-	order          []string
-	states         map[string]*parameterState
-	provider       *DataProvider
-	vuserID        int
-	allocation     *ParameterAllocation
-	sourceState    *sourceParameterState
-	sourcePlan     string
-	now            func() time.Time
+	runtimeObservation      *replayRuntimeState
+	runtimeObservations     map[string]parameterRuntimeObservation
+	runtimeObservationBytes int
+	params                  map[string]dsl.Parameter
+	canonicalNames          map[string]string
+	order                   []string
+	states                  map[string]*parameterState
+	provider                *DataProvider
+	vuserID                 int
+	allocation              *ParameterAllocation
+	sourceState             *sourceParameterState
+	sourcePlan              string
+	now                     func() time.Time
 }
 
 type parameterState struct {
@@ -39,6 +42,8 @@ type parameterState struct {
 	loaded     bool
 	lastIndex  int
 	hasRowPick bool
+	rowOffset  int
+	rowStride  int
 }
 
 func NewParameterRuntime(parameters []dsl.Parameter, provider *DataProvider, vuserID int) *ParameterRuntime {
@@ -133,7 +138,14 @@ func (pr *ParameterRuntime) ResolveNamed(name string) (string, bool) {
 	}
 	state := pr.states[paramName]
 	if effectiveParameterUpdate(param) == "each_occurrence" {
-		return pr.generate(param, state, nil)
+		value, found := pr.generate(param, state, nil)
+		if found {
+			pr.recordRuntimeObservation(paramName, "observed", value, true)
+		} else {
+			state.hasRowPick = false
+			pr.recordRuntimeObservation(paramName, runtimeObservationState(param.Type), "", true)
+		}
+		return value, found
 	}
 	if !state.hasCached {
 		pr.refresh(paramName)
@@ -141,6 +153,7 @@ func (pr *ParameterRuntime) ResolveNamed(name string) (string, bool) {
 	if !state.hasCached {
 		return "", false
 	}
+	pr.recordRuntimeObservation(paramName, "observed", state.cached, true)
 	return state.cached, true
 }
 
@@ -181,10 +194,12 @@ func (pr *ParameterRuntime) refreshWithStack(name string, visiting map[string]bo
 		state.cached = ""
 		state.hasCached = false
 		state.hasRowPick = false
+		pr.recordRuntimeObservation(name, runtimeObservationState(param.Type), "", true)
 		return
 	}
 	state.cached = value
 	state.hasCached = true
+	pr.recordRuntimeObservation(name, "prepared", value, true)
 }
 
 func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState, visiting map[string]bool) (string, bool) {
@@ -515,7 +530,9 @@ func (pr *ParameterRuntime) valuesForParameter(param dsl.Parameter, state *param
 		return state.values, len(state.values) > 0
 	}
 	if len(param.Values) > 0 {
-		state.values = pr.applyParameterRowAllocation(param.Values, param)
+		var offset int
+		state.values, offset = pr.applyParameterRowAllocationWithOffset(param.Values, param)
+		state.rowOffset, state.rowStride = offset, 1
 		state.loaded = true
 		return state.values, true
 	}
@@ -523,23 +540,36 @@ func (pr *ParameterRuntime) valuesForParameter(param dsl.Parameter, state *param
 		return nil, false
 	}
 	values, ok := pr.provider.GetColumnValues(param.DataSource, param.Column)
+	baseOffset, stride := int(pr.provider.shard.Ordinal), int(pr.provider.shard.Count)
+	if stride == 0 {
+		stride = 1
+	}
 	if pr.allocation != nil && param.Selection == "unique" && (param.AutoAllocate || param.BlockSize > 0) {
 		values, ok = allocationValues(param, pr.provider)
+		baseOffset, stride = 0, 1
 	}
 	if !ok {
 		return nil, false
 	}
-	state.values = pr.applyParameterRowAllocation(values, param)
+	var offset int
+	state.values, offset = pr.applyParameterRowAllocationWithOffset(values, param)
+	state.rowOffset, state.rowStride = baseOffset+offset*stride, stride
 	state.loaded = true
 	return state.values, true
 }
 
 func (pr *ParameterRuntime) applyParameterRowAllocation(values []string, param dsl.Parameter) []string {
+	values, _ = pr.applyParameterRowAllocationWithOffset(values, param)
+	return values
+}
+
+func (pr *ParameterRuntime) applyParameterRowAllocationWithOffset(values []string, param dsl.Parameter) ([]string, int) {
+	offset := 0
 	if len(values) == 0 {
-		return values
+		return values, offset
 	}
 	if param.AutoAllocate && pr.allocation == nil {
-		return nil
+		return nil, offset
 	}
 	start := 0
 	if param.StartRow > 1 {
@@ -549,12 +579,13 @@ func (pr *ParameterRuntime) applyParameterRowAllocation(values []string, param d
 		if param.Selection != "unique" && effectiveOnExhaustion(param) == "wrap" {
 			start = start % len(values)
 		} else {
-			return nil
+			return nil, offset
 		}
 	}
 	values = values[start:]
+	offset += start
 	if len(values) == 0 {
-		return values
+		return values, offset
 	}
 	if param.BlockSize > 0 {
 		vuserID := pr.vuserID
@@ -571,16 +602,16 @@ func (pr *ParameterRuntime) applyParameterRowAllocation(values []string, param d
 			switch effectiveOnExhaustion(param) {
 			case "wrap":
 				if param.Selection == "unique" {
-					return nil
+					return nil, offset
 				}
 				blockStart = safePositiveMulMod(vuserID, param.BlockSize, len(values))
 			case "last":
 				if param.Selection != "unique" {
-					return values[len(values)-1:]
+					return values[len(values)-1:], offset + len(values) - 1
 				}
-				return nil
+				return nil, offset
 			default:
-				return nil
+				return nil, offset
 			}
 		}
 		blockEnd := len(values)
@@ -588,6 +619,7 @@ func (pr *ParameterRuntime) applyParameterRowAllocation(values []string, param d
 			blockEnd = blockStart + param.BlockSize
 		}
 		values = values[blockStart:blockEnd]
+		offset += blockStart
 	}
 	if param.ValueForEachVUser && param.BlockSize == 0 {
 		index := pr.vuserID
@@ -601,12 +633,12 @@ func (pr *ParameterRuntime) applyParameterRowAllocation(values []string, param d
 			case "last":
 				index = len(values) - 1
 			default:
-				return nil
+				return nil, offset
 			}
 		}
-		return values[index : index+1]
+		return values[index : index+1], offset + index
 	}
-	return values
+	return values, offset
 }
 
 func safePositiveMulMod(a, b, modulus int) int {

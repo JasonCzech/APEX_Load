@@ -2,6 +2,7 @@ package requestimport
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -120,11 +121,10 @@ func projectRuntimeFidelity(
 	request Request,
 	headers HeaderList,
 ) (HeaderList, runtimeFidelityProjection, []importreview.Finding) {
-	version := httpprotocol.NormalizeVersion(request.HTTPVersion)
 	sanitized, projection, findings := projectHeaderRuntimeFidelity(request, headers)
 
 	if strings.TrimSpace(request.HTTPVersion) != "" &&
-		!httpprotocol.VersionExecutable(version) {
+		!sourceHTTPVersionExecutable(request.HTTPVersion) {
 		projection.VersionBlocked = true
 		projection.VersionReason = reasonUnsupportedHTTPVersion
 		projection.VersionDetail = "the source HTTP version cannot be selected exactly by the native HTTP runtime"
@@ -144,6 +144,9 @@ func projectHeaderRuntimeFidelity(
 	headers HeaderList,
 ) (HeaderList, runtimeFidelityProjection, []importreview.Finding) {
 	version := httpprotocol.NormalizeVersion(request.HTTPVersion)
+	if version == "auto" {
+		version = ""
+	}
 	sanitized, omissions := sanitizeHeaderOccurrences(headers, version)
 	projection := runtimeFidelityProjection{HeaderOmissions: omissions}
 	findings := make([]importreview.Finding, 0, len(omissions))
@@ -185,11 +188,12 @@ func sanitizeHeaderOccurrences(headers HeaderList, version string) (HeaderList, 
 		wire := make(protocol.HeaderList, len(active))
 		for index := range active {
 			wire[index] = protocol.HeaderEntry{
-				Name:  active[index].header.Name,
-				Value: active[index].header.Value,
+				Name:    active[index].header.Name,
+				Value:   active[index].header.Value,
+				Enabled: active[index].header.Enabled,
 			}
 		}
-		issues := httpprotocol.HeaderListIssuesForVersionWithUnresolvedTemplates(wire, version)
+		issues := structuralHeaderIssues(httpprotocol.HeaderListIssuesForVersionWithUnresolvedTemplates(wire, version), version)
 		if len(issues) == 0 {
 			break
 		}
@@ -337,6 +341,12 @@ func applyRuntimeFidelityMetadata(action *dsl.Action, projection runtimeFidelity
 			refs = append(refs, metadataStringValues(existing["source_refs"])...)
 			occurrences = append(occurrences, metadataObjectValues(existing[headerFidelityOccurrenceFieldName])...)
 		}
+		seenOccurrences := make(map[string]bool, len(occurrences))
+		for _, entry := range occurrences {
+			if encoded, err := json.Marshal(entry); err == nil {
+				seenOccurrences[string(encoded)] = true
+			}
+		}
 		for _, omission := range projection.HeaderOmissions {
 			ref := sourceLocation(omission.Source)
 			entry := map[string]any{
@@ -355,7 +365,10 @@ func applyRuntimeFidelityMetadata(action *dsl.Action, projection runtimeFidelity
 				refs = append(refs, ref)
 			}
 			reasons = append(reasons, omission.ReasonCode)
-			occurrences = append(occurrences, entry)
+			if encoded, err := json.Marshal(entry); err == nil && !seenOccurrences[string(encoded)] {
+				seenOccurrences[string(encoded)] = true
+				occurrences = append(occurrences, entry)
+			}
 		}
 		action.Metadata[ImportHeaderFidelityMetadataKey] = map[string]any{
 			"version":             importRuntimeFidelityVersion,
@@ -542,6 +555,7 @@ func ApplyRuntimeFidelityReview(
 		script.GeneratedFrom,
 		"import",
 	)
+	configuredVersionPresent := script.Config.HTTP.Version != ""
 	configuredVersion := httpprotocol.NormalizeVersion(script.Config.HTTP.Version)
 	configVersionBlocked := strings.TrimSpace(script.Config.HTTP.Version) != "" &&
 		!httpprotocol.VersionExecutable(configuredVersion)
@@ -554,7 +568,11 @@ func ApplyRuntimeFidelityReview(
 	} else {
 		// Keep the runtime-facing spelling canonical even when a source used
 		// HTTP/1.1 or HTTP/2.0 aliases.
-		script.Config.HTTP.Version = configuredVersion
+		// A nonempty whitespace-only legacy config selects Auto before an
+		// exact protocol alias. Keep that presence across storage/reopen.
+		if configuredVersion != "" || !configuredVersionPresent {
+			script.Config.HTTP.Version = configuredVersion
+		}
 	}
 
 	type surfaceVersionDeclaration struct {
@@ -583,7 +601,7 @@ func ApplyRuntimeFidelityReview(
 		}
 		declarations[ref.Path] = surfaceVersionDeclaration{
 			raw:        raw,
-			normalized: httpprotocol.NormalizeVersion(raw),
+			normalized: sourceHTTPVersionNormalized(raw),
 			source:     declarationSource,
 			fromOption: fromOption,
 		}
@@ -597,14 +615,14 @@ func ApplyRuntimeFidelityReview(
 	// only when every request-shaped surface declares the same supported
 	// explicit version. Otherwise promotion could silently change an
 	// unspecified sibling request.
-	if configuredVersion == "" && !configVersionBlocked && surfaceCount > 0 {
+	if configuredVersion == "" && !configuredVersionPresent && dsl.InheritedHTTPVersion(script) == "" && !configVersionBlocked && surfaceCount > 0 {
 		var common string
 		canPromote := true
 		for _, declaration := range declarations {
 			if declaration.fromOption ||
 				strings.TrimSpace(declaration.raw) == "" ||
 				declaration.normalized == "" ||
-				!httpprotocol.VersionExecutable(declaration.normalized) {
+				!sourceHTTPVersionExecutable(declaration.normalized) || declaration.normalized == "auto" {
 				canPromote = false
 				break
 			}
@@ -632,7 +650,7 @@ func ApplyRuntimeFidelityReview(
 	}
 	defaultHeaderCount, defaultOmissions := sanitizeScriptDefaultHeaders(
 		&script.Config.HTTP,
-		configuredVersion,
+		"structural",
 		defaultSource,
 	)
 
@@ -645,15 +663,42 @@ func ApplyRuntimeFidelityReview(
 		}
 		visitedRequests++
 		source := runtimeSurfaceSource(ref, options.Source, sourceProfile)
+		if rawCapture, present := ref.Metadata()["response_content_capture"]; present {
+			captureAction := ref.Action
+			if captureAction == nil {
+				captureAction = &dsl.Action{Metadata: ref.Metadata()}
+			}
+			ApplyResponseContentCapture(captureAction, ReviewResponseContentMetadata(rawCapture), source)
+			if ref.Action == nil {
+				ref.SetMetadata(captureAction.Metadata)
+			}
+		}
+		declaration := declarations[ref.Path]
+		// Legacy per-request source provenance is promoted to a leaf only when
+		// the adapter did not already choose one. Source-wide LR declarations
+		// remain inherited and never override a caller-selected script mode.
+		if !declaration.fromOption && declaration.raw != "" {
+			if policy, supported := sourceHTTPVersionPolicy(declaration.raw); supported {
+				if ref.Action != nil && !ref.Action.HTTPVersion.IsPresent() {
+					ref.Action.HTTPVersion, _ = dsl.NewHTTPVersionOverride(policy)
+				} else if ref.Request != nil {
+					if _, present := ref.Request["http_version"]; !present {
+						ref.Request["http_version"] = policy
+					}
+				}
+			}
+		}
+		effectiveVersion, versionErr := runtimeSurfaceEffectiveHTTPVersion(ref, dsl.InheritedHTTPVersion(script))
 		projection := runtimeFidelityProjection{
 			HeaderOmissions:            headerOmissionsWithFallbackSource(defaultOmissions, source),
 			PreserveOmittedHeaderBytes: options.PreserveOmittedHeaderBytes,
 		}
+		projection.HeaderOmissions = append(projection.HeaderOmissions, inheritedDefaultHeaderIssues(script.Config.HTTP, ref, effectiveVersion, defaultSource)...)
 
 		if ref.Action != nil {
 			omissions := sanitizeDSLActionHeaders(
 				ref.Action,
-				configuredVersion,
+				effectiveVersion,
 				source,
 				defaultHeaderCount,
 			)
@@ -661,14 +706,13 @@ func ApplyRuntimeFidelityReview(
 		} else if ref.Request != nil {
 			omissions := sanitizeMapRequestHeaders(
 				ref.Request,
-				configuredVersion,
+				effectiveVersion,
 				source,
 				defaultHeaderCount,
 			)
 			projection.HeaderOmissions = append(projection.HeaderOmissions, omissions...)
 		}
 
-		declaration := declarations[ref.Path]
 		switch {
 		case configVersionBlocked:
 			projection.VersionBlocked = true
@@ -676,16 +720,26 @@ func ApplyRuntimeFidelityReview(
 			projection.VersionDetail = "the source script HTTP version cannot be selected exactly by the native HTTP runtime"
 			projection.VersionSource = defaultSource
 		case strings.TrimSpace(declaration.raw) != "" &&
-			!httpprotocol.VersionExecutable(declaration.normalized):
+			!sourceHTTPVersionExecutable(declaration.normalized):
 			projection.VersionBlocked = true
 			projection.VersionReason = reasonUnsupportedHTTPVersion
 			projection.VersionDetail = "the source HTTP version cannot be selected exactly by the native HTTP runtime"
 			projection.VersionSource = declaration.source
+		case versionErr != nil:
+			projection.VersionBlocked = true
+			projection.VersionReason = "malformed_http_version"
+			projection.VersionSource = source
+			projection.VersionDetail = "the imported leaf HTTP version has an invalid scalar shape or policy"
+			if ref.Request != nil {
+				delete(ref.Request, "http_version")
+			} else if ref.Action != nil {
+				ref.Action.HTTPVersion = dsl.OptionalHTTPVersion{}
+			}
 		case declaration.normalized != "" &&
-			declaration.normalized != configuredVersion:
+			declaration.normalized != effectiveVersion:
 			projection.VersionBlocked = true
 			projection.VersionReason = reasonHTTPVersionNotPreserved
-			projection.VersionDetail = "the source request's exact HTTP version is not guaranteed by the script-wide runtime mode"
+			projection.VersionDetail = "the source request's exact HTTP version is not guaranteed by its effective runtime policy"
 			projection.VersionSource = declaration.source
 		}
 		if len(projection.HeaderOmissions) == 0 && !projection.VersionBlocked {
@@ -696,7 +750,6 @@ func ApplyRuntimeFidelityReview(
 		if action == nil {
 			action = &dsl.Action{Name: ref.Name(), Metadata: ref.Metadata()}
 		}
-		headerOccurrenceBase := existingHeaderFidelityOccurrenceCount(action.Metadata)
 		applyRuntimeFidelityMetadata(action, projection)
 		for _, omission := range projection.HeaderOmissions {
 			finding := importreview.Finding{
@@ -738,11 +791,21 @@ func ApplyRuntimeFidelityReview(
 		if ref.Action == nil {
 			ref.SetMetadata(action.Metadata)
 		}
-		mappings = append(mappings, runtimeFidelitySourceMappings(
-			projection,
-			ref.Path,
-			headerOccurrenceBase,
-		)...)
+		leafMappings := runtimeFidelitySourceMappings(projection, ref.Path, 0)
+		// Repeated review can retain the same inherited omission. Map that
+		// evidence to its existing coordinate rather than beyond the array.
+		marker, _ := action.Metadata[ImportHeaderFidelityMetadataKey].(map[string]any)
+		occurrences := metadataObjectValues(marker[headerFidelityOccurrenceFieldName])
+		for index, omission := range projection.HeaderOmissions {
+			for retainedIndex, retained := range occurrences {
+				retainedRef, _ := retained["source_ref"].(string)
+				if retained["name"] == omission.Name && retained["reason_code"] == omission.ReasonCode && retainedRef == sourceLocation(omission.Source) && fmt.Sprint(retained["source_index"]) == fmt.Sprint(omission.SourceIndex) {
+					leafMappings[index].Target = fmt.Sprintf("%s.metadata.%s.%s[%d]", ref.Path, ImportHeaderFidelityMetadataKey, headerFidelityOccurrenceFieldName, retainedIndex)
+					break
+				}
+			}
+		}
+		mappings = append(mappings, leafMappings...)
 		return nil
 	})
 	if err != nil {
@@ -813,28 +876,28 @@ func sanitizeScriptDefaultHeaders(
 	if config == nil {
 		return 0, nil
 	}
-	_, userAgentShadowed := config.DefaultHeaders["User-Agent"]
-	_, acceptEncodingShadowed := config.DefaultHeaders["Accept-Encoding"]
-	_, acceptLanguageShadowed := config.DefaultHeaders["Accept-Language"]
+	userAgentShadowed := hasHeaderName(config.DefaultHeaders, "User-Agent")
+	acceptEncodingShadowed := hasHeaderName(config.DefaultHeaders, "Accept-Encoding")
+	acceptLanguageShadowed := hasHeaderName(config.DefaultHeaders, "Accept-Language")
 	effective := make(map[string]string, len(config.DefaultHeaders)+3)
-	if config.UserAgent != "" {
+	if config.UserAgent != "" && !userAgentShadowed {
 		effective["User-Agent"] = config.UserAgent
 	}
-	if config.AcceptEncoding != "" {
+	if config.AcceptEncoding != "" && !acceptEncodingShadowed {
 		effective["Accept-Encoding"] = config.AcceptEncoding
 	}
-	if config.AcceptLanguage != "" {
+	if config.AcceptLanguage != "" && !acceptLanguageShadowed {
 		effective["Accept-Language"] = config.AcceptLanguage
 	}
-	// Match protocol/http.buildDefaultHeaders exactly: an exact canonical key
-	// in DefaultHeaders overrides its scalar convenience field, while a
-	// case-variant remains a distinct authored map occurrence and is reviewed
-	// as an ambiguous collision.
+	// Match protocol/http.buildDefaultHeaders: an authored case-insensitive
+	// name overrides its scalar convenience field. Collisions within the
+	// authored map still have no deterministic winner.
 	for name, value := range config.DefaultHeaders {
 		effective[name] = value
 	}
-	count := len(effective)
-	sanitized, omissions := sanitizeHeaderMapOccurrences(effective, version, source, 0)
+	count := len(effective) + len(config.DefaultHeaderList)
+	list, sanitized, omissions := sanitizeHeaderSurfaces(config.DefaultHeaderList, effective, version, source, 0)
+	config.DefaultHeaderList = list
 
 	for name := range config.DefaultHeaders {
 		if _, retained := sanitized[name]; !retained {
@@ -845,7 +908,7 @@ func sanitizeScriptDefaultHeaders(
 		config.DefaultHeaders = nil
 	}
 	if userAgentShadowed {
-		// An exact canonical DefaultHeaders entry is the runtime winner. Drop
+		// An authored DefaultHeaders entry is the runtime winner. Drop
 		// the semantically dead convenience scalar even when the winning map
 		// value is valid, so stale invalid or sensitive source bytes cannot
 		// survive in the stored draft behind that override.
@@ -864,6 +927,15 @@ func sanitizeScriptDefaultHeaders(
 		config.AcceptLanguage = ""
 	}
 	return count, omissions
+}
+
+func hasHeaderName(headers map[string]string, name string) bool {
+	for existing := range headers {
+		if strings.EqualFold(strings.TrimSpace(existing), name) {
+			return true
+		}
+	}
+	return false
 }
 
 func sanitizeDSLActionHeaders(
@@ -954,7 +1026,11 @@ func sanitizeMapRequestHeaders(
 	if hadHeaderList || legacyHeadersList || len(sanitizedList) > 0 {
 		out := make([]map[string]any, 0, len(sanitizedList))
 		for _, header := range sanitizedList {
-			out = append(out, map[string]any{"name": header.Name, "value": header.Value})
+			entry := map[string]any{"name": header.Name, "value": header.Value}
+			if header.Enabled != nil {
+				entry["enabled"] = *header.Enabled
+			}
+			out = append(out, entry)
 		}
 		request["header_list"] = out
 	}
@@ -976,7 +1052,7 @@ func sanitizeHeaderSurfaces(
 	importHeaders := make(HeaderList, 0, len(list))
 	originalListNames := make(map[string]struct{}, len(list))
 	for _, header := range list {
-		importHeaders = append(importHeaders, Header{Name: header.Name, Value: header.Value, Source: source})
+		importHeaders = append(importHeaders, Header{Name: header.Name, Value: header.Value, Enabled: header.Enabled, Source: source})
 		originalListNames[headerIdentity(header.Name)] = struct{}{}
 	}
 	sanitizedList, listOmissions := sanitizeHeaderOccurrences(importHeaders, version)
@@ -986,7 +1062,7 @@ func sanitizeHeaderSurfaces(
 
 	outList := make(dsl.HeaderList, len(sanitizedList))
 	for index := range sanitizedList {
-		outList[index] = dsl.HeaderEntry{Name: sanitizedList[index].Name, Value: sanitizedList[index].Value}
+		outList[index] = dsl.HeaderEntry{Name: sanitizedList[index].Name, Value: sanitizedList[index].Value, Enabled: sanitizedList[index].Enabled}
 	}
 
 	outMap := cloneStringMap(headerMap)
@@ -1053,7 +1129,7 @@ func sanitizeHeaderMapOccurrences(
 	seen := make(map[string]struct{})
 	for pass := 0; pass <= len(headers) && len(active) > 0; pass++ {
 		keys := sortedStringKeys(active)
-		issues := httpprotocol.HeaderMapIssuesForVersionWithUnresolvedTemplates(active, version)
+		issues := structuralHeaderIssues(httpprotocol.HeaderMapIssuesForVersionWithUnresolvedTemplates(active, version), version)
 		if len(issues) == 0 {
 			break
 		}
@@ -1193,7 +1269,16 @@ func parseMapRequestHeaderList(
 				))
 				continue
 			}
-			out = append(out, dsl.HeaderEntry{Name: name, Value: headerValue})
+			header := dsl.HeaderEntry{Name: name, Value: headerValue}
+			if rawEnabled, present := value["enabled"]; present {
+				enabled, ok := rawEnabled.(bool)
+				if !ok {
+					omissions = append(omissions, malformedHeaderShapeOmission(sourceIndexOffset+index, name, source))
+					continue
+				}
+				header.Enabled = &enabled
+			}
+			out = append(out, header)
 		}
 		return parsedMapRequestHeaderList{
 			entries:     out,
@@ -1224,7 +1309,16 @@ func parseMapRequestHeaderList(
 				))
 				continue
 			}
-			out = append(out, dsl.HeaderEntry{Name: name, Value: headerValue})
+			header := dsl.HeaderEntry{Name: name, Value: headerValue}
+			if rawEnabled, present := value["enabled"]; present {
+				enabled, ok := rawEnabled.(bool)
+				if !ok {
+					omissions = append(omissions, malformedHeaderShapeOmission(sourceIndexOffset+index, name, source))
+					continue
+				}
+				header.Enabled = &enabled
+			}
+			out = append(out, header)
 		}
 		return parsedMapRequestHeaderList{
 			entries:     out,
@@ -1364,12 +1458,116 @@ func runtimeSurfaceDeclaredHTTPVersion(ref dslwalk.SurfaceRef) string {
 			return strings.TrimSpace(value)
 		}
 	}
-	if ref.Request != nil {
-		if value, ok := ref.Request["http_version"].(string); ok {
-			return strings.TrimSpace(value)
+	return ""
+}
+
+func sourceHTTPVersionPolicy(raw string) (string, bool) {
+	version := sourceHTTPVersionNormalized(raw)
+	switch version {
+	case "auto", "1.1", "2":
+		return version, true
+	default:
+		return "", false
+	}
+}
+
+func sourceHTTPVersionNormalized(raw string) string {
+	return httpprotocol.NormalizeVersion(raw)
+}
+
+func sourceHTTPVersionExecutable(raw string) bool {
+	if strings.TrimSpace(raw) == "" {
+		return true
+	}
+	_, ok := sourceHTTPVersionPolicy(raw)
+	return ok
+}
+
+func runtimeSurfaceEffectiveHTTPVersion(ref dslwalk.SurfaceRef, inherited string) (string, error) {
+	if ref.Action != nil {
+		return dsl.EffectiveHTTPVersion(*ref.Action, inherited)
+	}
+	action := dsl.Action{}
+	if raw, present := ref.Request["http_version"]; present {
+		value, ok := raw.(string)
+		if !ok {
+			return "auto", fmt.Errorf("invalid HTTP version scalar")
+		}
+		var err error
+		action.HTTPVersion, err = dsl.NewHTTPVersionOverride(value)
+		if err != nil {
+			return "auto", err
 		}
 	}
-	return ""
+	return dsl.EffectiveHTTPVersion(action, inherited)
+}
+
+func structuralHeaderIssues(issues []httpprotocol.HeaderListIssue, version string) []httpprotocol.HeaderListIssue {
+	if version != "structural" {
+		return issues
+	}
+	retained := issues[:0]
+	for _, issue := range issues {
+		if issue.Code != httpprotocol.HeaderListIssueHopByHopUnsupported && issue.Code != httpprotocol.HeaderListIssueExpectContinueUnsupported {
+			retained = append(retained, issue)
+		}
+	}
+	return retained
+}
+
+// Incompatible inherited defaults are gated on the affected leaf, rather than
+// removed globally and silently lost from valid sibling/resource requests.
+func inheritedDefaultHeaderIssues(config dsl.HTTPConfig, ref dslwalk.SurfaceRef, version string, source SourceRef) []runtimeHeaderOmission {
+	headers := cloneStringMap(config.DefaultHeaders)
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	for _, header := range []struct{ name, value string }{{"User-Agent", config.UserAgent}, {"Accept-Encoding", config.AcceptEncoding}, {"Accept-Language", config.AcceptLanguage}} {
+		if header.value != "" {
+			if !hasHeaderName(headers, header.name) {
+				headers[header.name] = header.value
+			}
+		}
+	}
+	var localHeaders map[string]string
+	var localList dsl.HeaderList
+	if ref.Action != nil {
+		localHeaders, localList = ref.Action.Headers, ref.Action.HeaderList
+	} else {
+		if raw, err := json.Marshal(ref.Request); err == nil {
+			var action dsl.Action
+			if json.Unmarshal(raw, &action) == nil {
+				localHeaders, localList = action.Headers, action.HeaderList
+			}
+		}
+	}
+	shadowed := make(map[string]bool)
+	for name := range localHeaders {
+		shadowed[strings.ToLower(name)] = true
+		for inherited := range headers {
+			if strings.EqualFold(name, inherited) {
+				delete(headers, inherited)
+			}
+		}
+	}
+	for _, header := range localList {
+		shadowed[strings.ToLower(header.Name)] = true
+	}
+	var defaults dsl.HeaderList
+	for _, header := range config.DefaultHeaderList {
+		if !shadowed[strings.ToLower(header.Name)] {
+			defaults = append(defaults, header)
+		}
+	}
+	for _, header := range append(append(dsl.HeaderList(nil), config.DefaultHeaderList...), localList...) {
+		for inherited := range headers {
+			if strings.EqualFold(header.Name, inherited) {
+				delete(headers, inherited)
+			}
+		}
+	}
+	_, _, omissions := sanitizeHeaderSurfaces(defaults, headers, version, source, 0)
+	return omissions
 }
 
 func runtimeSurfaceIsHTTPRequest(ref dslwalk.SurfaceRef) bool {
@@ -1431,7 +1629,7 @@ func runtimeSurfaceSource(ref dslwalk.SurfaceRef, fallback SourceRef, sourceProf
 
 func isHTTPFamilyProtocol(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", string(ProtocolHTTP), string(ProtocolSOAP), string(ProtocolJavaHTTP):
+	case "", string(ProtocolHTTP), "http/1.1", "http/2", string(ProtocolSOAP), string(ProtocolJavaHTTP):
 		return true
 	default:
 		return false

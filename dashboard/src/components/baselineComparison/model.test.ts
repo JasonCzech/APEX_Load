@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { comparisonMagnitude, comparisonRequestSignature, defaultPolicy, difference, measurementValue, number, type ComparisonRequest, type ComparisonRow, type Measurement } from './model'
+import { comparisonMagnitude, comparisonRequestSignature, defaultPolicy, difference, measurementValue, number, resourceMeanLabel, resourceProviderLabel, type ComparisonRequest, type ComparisonRow, type Measurement } from './model'
 
 describe('baseline comparison presentation', () => {
   it('does not invent a percentage for zero or missing baselines', () => {
@@ -49,4 +49,20 @@ it('keeps acceptance scope and measurements in the saved comparison identity', (
  for (const selection of [{regression_metrics:['consumer_lag_ms']},{regression_protocols:['kafka']},{regression_groups:['consumer']}, {regression_identities:['Receive']}]) {
   expect(comparisonRequestSignature({...request,...selection})).not.toBe(comparisonRequestSignature(request))
  }
+})
+
+it('preserves explicit zero grid means while excluding unavailable request statistics', () => {
+ const measurement = {mean:0,p95:0,successes:0,mean_statistic:'evaluation_grid_mean',available_statistics:['mean','min','max','samples','coverage_pct']} as Measurement
+ expect(measurementValue(measurement,'mean',true)).toBe(0)
+ expect(measurementValue(measurement,'p95',true)).toBeUndefined()
+ expect(measurementValue(measurement,'throughput',true)).toBeUndefined()
+})
+
+it('identifies the saved query and preserves Azure display labels for comparison text', () => {
+ const row:ComparisonRow={id:'resource/cpu',name:'cpu',group:'',source:'prometheus',unit:'percent',baselines:{},provider:{name:'prometheus',backend_profile:'azure_managed',query_id:'cpu',definition_hash:'a'.repeat(64),statistic:'gauge',evaluation_step_seconds:15,dimensions:{job:'checkoutapi'},entity_ids:{series:'b'.repeat(64)},display_labels:{Job:'CheckoutAPI'}}}
+ expect(resourceProviderLabel(row)).toBe('Prometheus · cpu · 15s grid · Job: CheckoutAPI')
+ expect(resourceMeanLabel(row)).toBe('Mean of evaluation grid')
+ row.provider!.statistic='quantile'
+ expect(resourceMeanLabel(row)).toBe('Mean of grid quantile estimates')
+ expect(resourceMeanLabel({} as ComparisonRow)).toBe('Time-weighted mean')
 })
