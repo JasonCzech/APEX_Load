@@ -54,6 +54,9 @@ func newManagementOriginGate(targets []AdapterTarget) *managementOriginGate {
 // Origin state is bounded by immutable local approval; no response can add an
 // endpoint. Solace polls share one conservative 30s management cadence.
 func (g *managementOriginGate) admit(ctx context.Context, endpoint, poll, pack string) (func(), error) {
+	if err := managementContextError(ctx); err != nil {
+		return nil, err
+	}
 	key := managementOriginKey(endpoint)
 	g.mu.Lock()
 	origin := g.origins[key]
@@ -64,15 +67,20 @@ func (g *managementOriginGate) admit(ctx context.Context, endpoint, poll, pack s
 	select {
 	case origin.slots <- struct{}{}:
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, managementContextError(ctx)
 	}
 	release := func() { <-origin.slots }
-	if err := ctx.Err(); err != nil {
+	if err := managementContextError(ctx); err != nil {
 		release()
 		return nil, err
 	}
 	if pack == "solace-semp" {
 		g.mu.Lock()
+		if err := managementContextError(ctx); err != nil {
+			g.mu.Unlock()
+			release()
+			return nil, err
+		}
 		now := time.Now()
 		if origin.poll != poll && now.Before(origin.next) {
 			g.mu.Unlock()

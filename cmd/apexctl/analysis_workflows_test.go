@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -83,5 +86,59 @@ func TestMonitorManagementQueryPreservesExactValues(t *testing.T) {
 		if err := executeWorkflowCommand(context.Background(), "monitor", args, &bytes.Buffer{}); err == nil {
 			t.Fatalf("accepted invalid query %v", args)
 		}
+	}
+}
+
+func TestMonitorSourceRevisionedCRUD(t *testing.T) {
+	var calls atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.URL.Path != "/api/v1/projects/project/monitor-sources/source" {
+			t.Errorf("source path: %s", r.URL.Path)
+		}
+		if r.Method == http.MethodDelete {
+			if (r.URL.Query().Get("revision") != "7" && r.URL.Query().Get("revision") != "4611686018427387904") || r.ContentLength > 0 {
+				t.Error("delete lost revision or unexpectedly supplied a body")
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		var source struct {
+			Revision int64 `json:"revision"`
+			Identity struct {
+				CredentialRef string `json:"credential_ref"`
+			} `json:"management_identity"`
+		}
+		if r.Method != http.MethodPut || json.NewDecoder(r.Body).Decode(&source) != nil || source.Revision != 7 || source.Identity.CredentialRef != "management-secret" {
+			t.Error("update lost exact source revision or separate management credential policy")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"revision":8,"management_identity":{"credential_version":"opaque-pin"}}`))
+	}))
+	defer server.Close()
+	file := filepath.Join(t.TempDir(), "source.json")
+	if err := os.WriteFile(file, []byte(`{"revision":7,"management_identity":{"credential_ref":"management-secret"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := executeWorkflowCommand(context.Background(), "monitor", []string{"update-source", "--project", "project", "--id", "source", "--file", file, "--api", server.URL}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "opaque-pin") {
+		t.Error("controller-generated identity pin missing from CLI output")
+	}
+	if err := executeWorkflowCommand(context.Background(), "monitor", []string{"delete-source", "--project", "project", "--id", "source", "--revision", "7", "--api", server.URL}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := executeWorkflowCommand(context.Background(), "monitor", []string{"delete-source", "--project", "project", "--id", "source", "--revision", "4611686018427387904", "--api", server.URL}, &output); err != nil {
+		t.Fatalf("final stored source revision cannot be deleted: %v", err)
+	}
+	for _, args := range [][]string{{"delete-source", "--project", "project", "--id", "source"}, {"delete-source", "--project", "project", "--id", "source", "--revision", "-1"}, {"delete-source", "--project", "project", "--id", "source", "--revision", "1.5"}, {"update-source", "--project", "project", "--id", "source"}, {"update-source", "--id", "source", "--file", file}} {
+		if err := executeWorkflowCommand(context.Background(), "monitor", append(args, "--api", server.URL), &output); err == nil {
+			t.Errorf("invalid source command admitted: %v", args)
+		}
+	}
+	if calls.Load() != 3 {
+		t.Errorf("invalid command used the network: calls=%d", calls.Load())
 	}
 }

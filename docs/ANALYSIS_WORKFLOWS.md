@@ -372,7 +372,7 @@ Counters and checkpoint timing distributions are cumulative by authenticated sou
 
 ## Exact messaging management evidence
 
-The management foundation is separate from data-plane action diagnostics and from native DuckDB queries. Enable new poll admission explicitly with both `APEXLOAD_RUN_MONITOR_PROJECTS` and `APEXLOAD_MESSAGING_MANAGEMENT_PROJECTS`. The capabilities response distinguishes the v1 evidence contract, project enablement and genuinely registered executable packs. The foundation alone registers no production provider observer.
+The management foundation is separate from data-plane action diagnostics and from native DuckDB queries. Enable new poll admission explicitly with both `APEXLOAD_RUN_MONITOR_PROJECTS` and `APEXLOAD_MESSAGING_MANAGEMENT_PROJECTS`. The capabilities response distinguishes the v1 evidence contract, project enablement and genuinely registered executable packs. The foundation and provider adapters are distinct releases. The collector now registers the genuine `kafka-offsets` reader; Service Bus and Solace readers remain unavailable until their own implementation and acceptance slices.
 
 An administrator-approved source carries a versioned entity inventory, provider identity, principal/policy metadata and an exact `management://alias` destination. The alias selects an operator-owned collector target containing finite approved endpoints; a job cannot replace those endpoints. Kafka scopes state `read_committed` or `read_uncommitted` explicitly. Source revisions are immutable for already-started runs. Collector readiness publishes startup instance and scope/identity hashes; required sources remain unavailable without a matching genuine observer.
 
@@ -393,3 +393,41 @@ Poll expiry is not proof that provider calls stopped. A source with unresolved p
 Terminal management poll journals remain available for seven days for retry and audit. The leader maintenance sweep scans at most 512 terminal journals and locks at most 50 projects per sweep. A durable cursor advances across protected records so repeated maintenance cannot scan the full retained history. Receipt-referenced polls, unresolved physical ownership, and the active configuration fairness cursor remain retained; run deletion makes obsolete journals eligible after the retry window.
 
 A collector supports at most 32 assigned collecting run jobs, separately from its 32-job pending evidence budget. Required bindings reserve assignment slots before optional bindings; excess required bindings block Prepare/Start, while excess optional bindings record `collector_capacity` incomplete coverage. Stopping a run releases its assignments. Existing databases above the assignment limit report an explicit error until runs are stopped or expired; they cannot claim full monitoring coverage.
+
+
+## Kafka management source configuration
+
+The `kafka-offsets` pack reads only approved topic/partition/group tuples. Select it in **Monitoring sources** when project management collection is enabled and the controller advertises that executable pack. Administrators enter the exact cluster ID, read isolation, finite inventory, collector alias, SASL principal/policy revision, management-secret reference and enrolled collector public key. The saved approval displays its source revision and opaque credential version separately from unsaved edits. Source updates use the expected revision; a conflict retains the draft for review and requires reloading the current approval.
+
+A local collector target pins every permitted TLS broker endpoint to an explicit numeric address at the same port. No hostname resolution or broker-discovered destination expands this map. The cluster ID must equal the scope provider. Supply a protected CA file containing only approved certificates; the collector loads and validates it once during configuration. Changing the file does not alter a running collector's trust. Reconstruct the collector with the revised configuration to approve new trust.
+
+```json
+{
+  "pack": "kafka-offsets",
+  "destination": "management://orders-kafka",
+  "management": {
+    "endpoints": ["tls://broker.example:9093"],
+    "tls_ca_file": "/protected/kafka-ca.pem",
+    "kafka": {
+      "cluster_id": "APPROVED_CLUSTER_ID",
+      "dial_addresses": {"tls://broker.example:9093": "192.0.2.10:9093"}
+    }
+  }
+}
+```
+
+This fragment illustrates routing, not a complete target: copy the saved `management_scope` and `management_identity` into the corresponding local `management.scope` and `management.identity`, including the controller-generated credential version. Keep the sealed management credential separate from script send/receive credentials. Supported authentication is SASL PLAIN over verified TLS and SCRAM SHA-256/SHA-512. Anonymous, OAuth and ambient credentials are unavailable for this reader. Readiness validates only local immutable approval and does not contact the broker.
+
+One source poll admits every TCP dial, TLS handshake and fixed Kafka request under the shared limits. The reader makes no background retries, consumption, production, offset commits or group joins. It verifies cluster identity on authenticated connections before reading positions. Observations preserve committed-next, high-watermark-next and last-stable-next separately; physical replica log-end remains unsupported. The capture time is the oldest successful component of a row, including cleanup in its source-age qualification. Partial permission or budget failures retain explicit field availability rather than converting missing positions to zero. The minimum source cadence is ten seconds.
+
+```sh
+apexctl monitor create-source --project PROJECT_ID --file source.json
+apexctl monitor update-source --project PROJECT_ID --id SOURCE_ID --file revised-source.json
+apexctl monitor delete-source --project PROJECT_ID --id SOURCE_ID --revision SOURCE_REVISION
+```
+
+An update file contains the currently saved `revision`. Deletion also requires that exact revision. Rotate a secret by saving a new administrator-approved source revision before collecting with the new credential. Existing run bindings retain their immutable older approval and fail visibly if its pinned credential no longer matches.
+
+A timeout or failed socket close cannot release physical ownership. The collector keeps that resource charged until closure is proven; an unresolved close can also hold collector shutdown. Verify the process has actually stopped before using the existing audited stopped-process release controls. A lease expiry alone is insufficient.
+
+Provider qualification is recorded separately from these implementation contracts. Controlled protocol fixtures cover framing, missing data, authentication, budgets and cleanup. Real broker results must identify the exact broker version/image, authentication profile and topology. The pinned Apache Kafka 3.9.2 single-broker fixture verifies all three SASL profiles and the distinction between high-watermark and last-stable next positions during an open transaction and after abort. This does not certify full consume-transform-produce atomicity, broker failover, newer releases, Event Hubs Kafka endpoints or protected hosted clusters.

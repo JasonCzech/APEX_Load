@@ -1,3 +1,5 @@
+import KafkaManagementSourceFields from './KafkaManagementSourceFields'
+import { kafkaSourceError, newKafkaIdentity, newKafkaScope } from './kafkaManagementSource'
 import ManagementCollectionState from "./ManagementCollectionState"
 import RunManagementEvidence from "./RunManagementEvidence"
 import SeriesChartExport from "./SeriesChartExport"
@@ -6,7 +8,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import DependencyEvidence from './DependencyEvidence'
 import { request } from '../hooks/apiClient'
 import type { JsonSuccessResponseBody } from '../types/generated/openapi'
-import type { AnalysisCapabilities, AnalysisPoint } from '../types/analysis'
+import type { AnalysisPoint } from '../types/analysis'
 import type { MetricsHistoryPoint, MonitoringCollectorListResponse } from '../types'
 
 type Source = JsonSuccessResponseBody<'handleMonitorSources', '200'>[number]
@@ -16,14 +18,18 @@ const emptySource = (): Source => ({ project_id: '', id: '', name: '', revision:
 const sourcePacks = ['linux-hosts', 'go-runtime', 'prometheus', 'ssh-linux', 'otel-metrics', 'jmx', 'jdbc', 'cloudwatch', 'azure-monitor']
 const sourcesPath = (project: string) => `/projects/${encodeURIComponent(project)}/monitor-sources`
 
-function useMonitoringEnabled(projectId?: string) {
-  const [enabled, setEnabled] = useState(false)
-  useEffect(() => { const c = new AbortController(); setEnabled(false); if (projectId) void request<AnalysisCapabilities>(`/analysis/capabilities?project_id=${encodeURIComponent(projectId)}`, { signal: c.signal }).then(caps => { if (!c.signal.aborted) setEnabled(caps.monitoring_enabled) }).catch(() => {}); return () => c.abort() }, [projectId])
-  return enabled
+function useMonitoringCapabilities(projectId?: string) {
+  const [capabilities, setCapabilities] = useState<JsonSuccessResponseBody<'handleAnalysisCapabilities', '200'>>()
+  useEffect(() => { const c = new AbortController(); setCapabilities(undefined); if (projectId) void request<JsonSuccessResponseBody<'handleAnalysisCapabilities', '200'>>(`/analysis/capabilities?project_id=${encodeURIComponent(projectId)}`, { signal: c.signal }).then(caps => { if (!c.signal.aborted) setCapabilities(caps) }).catch(() => {}); return () => c.abort() }, [projectId])
+  return capabilities
 }
+function useMonitoringEnabled(projectId?: string) { return useMonitoringCapabilities(projectId)?.monitoring_enabled === true }
 
 export function RunMonitorSources({ projectId, canManage = false }: { projectId?: string; canManage?: boolean }) {
-  const enabled = useMonitoringEnabled(projectId)
+  const capabilities = useMonitoringCapabilities(projectId)
+  const enabled = capabilities?.monitoring_enabled === true
+  const managementAvailable = capabilities?.messaging_management_enabled === true && capabilities.messaging_management_packs?.includes('kafka-offsets') === true
+  const availablePacks = managementAvailable ? [...sourcePacks, 'kafka-offsets'] : sourcePacks
   const [sources, setSources] = useState<Source[]>([])
   const [collectors, setCollectors] = useState<MonitoringCollectorListResponse['collectors']>([])
   const [draft, setDraft] = useState<Source>(emptySource)
@@ -43,12 +49,17 @@ export function RunMonitorSources({ projectId, canManage = false }: { projectId?
   const save = async (remove = false) => {
     const c = new AbortController(); operation.current = c; setBusy(true); setError('')
     try {
+      if (!remove && draft.pack === 'kafka-offsets') {
+        if (!managementAvailable) throw new Error('Kafka management configuration is unavailable for this project.')
+        const invalid = kafkaSourceError(draft)
+        if (invalid) throw new Error(invalid)
+      }
       const path = `${sourcesPath(projectId)}${draft.id ? `/${encodeURIComponent(draft.id)}` : ''}${remove ? `?revision=${draft.revision}` : ''}`
       await request(path, { method: remove ? 'DELETE' : draft.id ? 'PUT' : 'POST', signal: c.signal, ...(remove ? {} : { body: JSON.stringify({ ...draft, id: draft.id || undefined }) }) })
       if (!c.signal.aborted) { setDraft(emptySource()); setRefresh(x => x + 1) }
     } catch (e) { if (!c.signal.aborted) setError(String(e)) } finally { if (!c.signal.aborted) setBusy(false) }
   }
-  return <section className="analysis-workspace" aria-label="Run monitor sources">
+  return <section className="analysis-workspace run-monitor-sources" aria-label="Run monitor sources">
     <p>Sources are captured when a run starts. Edits apply to subsequent runs. Collection continues through pauses.</p>
     {error && <p role="alert">{error}</p>}
     {draft.id && draft.management_scope && <ManagementCollectionState key={`${projectId}:${draft.id}`} projectId={projectId} sourceId={draft.id} canManage={canManage} />}
@@ -57,16 +68,17 @@ export function RunMonitorSources({ projectId, canManage = false }: { projectId?
       <legend>{draft.id ? 'Edit source' : 'New source'}</legend>
       <label>Name<input value={draft.name} maxLength={256} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
       <label>Collector<select value={draft.collector_id} onChange={e => setDraft({ ...draft, collector_id: e.target.value })}><option value="">Select a collector</option>{collectors.map(c => <option key={c.id} value={c.id}>{c.name} · {c.health}</option>)}</select></label>
-      <label>Pack<select value={draft.pack} onChange={e => setDraft({ ...draft, pack: e.target.value, interval_seconds: ['cloudwatch', 'azure-monitor'].includes(e.target.value) ? Math.max(60, draft.interval_seconds) : draft.interval_seconds, destination: '', credential_ref: '', collector_public_key: '', management_scope: undefined, management_identity: undefined })}>{!sourcePacks.includes(draft.pack) && <option value={draft.pack} disabled>{draft.pack} (configured management pack)</option>}{sourcePacks.map(p => <option key={p}>{p}</option>)}</select></label>
-      {!['linux-hosts', 'go-runtime'].includes(draft.pack) && <label>Approved destination<input type="url" value={draft.destination ?? ''} onChange={e => setDraft({ ...draft, destination: e.target.value })} /></label>}
+      <label>Pack<select value={draft.pack} onChange={e => setDraft({ ...draft, pack: e.target.value, interval_seconds: ['cloudwatch', 'azure-monitor'].includes(e.target.value) ? Math.max(60, draft.interval_seconds) : e.target.value === 'kafka-offsets' ? Math.max(10, draft.interval_seconds) : draft.interval_seconds, destination: '', credential_ref: '', collector_public_key: '', management_scope: e.target.value === 'kafka-offsets' ? newKafkaScope() : undefined, management_identity: e.target.value === 'kafka-offsets' ? newKafkaIdentity() : undefined })}>{!availablePacks.includes(draft.pack) && <option value={draft.pack} disabled>{draft.pack} (configured management pack)</option>}{availablePacks.map(p => <option key={p}>{p}</option>)}</select></label>
+      {!['linux-hosts', 'go-runtime'].includes(draft.pack) && <label>Approved destination<input type={draft.pack === 'kafka-offsets' ? 'text' : 'url'} value={draft.destination ?? ''} onChange={e => setDraft({ ...draft, destination: e.target.value })} /></label>}
       <label>Dependency identity<input value={draft.service ?? ''} maxLength={128} onChange={e => setDraft({ ...draft, service: e.target.value })} /><small>Exact dependency label used to link collected evidence.</small></label>
       {['ssh-linux', 'jmx', 'jdbc'].includes(draft.pack) && <>
         <label>Project credential secret name<input value={draft.credential_ref ?? ''} maxLength={128} onChange={e => setDraft({ ...draft, credential_ref: e.target.value })} /></label>
         <label>Collector X25519 public key<input value={draft.collector_public_key ?? ''} onChange={e => setDraft({ ...draft, collector_public_key: e.target.value })} /><small>Enroll the public key from the approved collector. Jobs seal credentials to this key.</small></label>
       </>}
-      <label>Collection interval (seconds)<input type="number" min={1} max={3600} value={draft.interval_seconds} onChange={e => setDraft({ ...draft, interval_seconds: Number(e.target.value) })} /></label>
+      {draft.pack === 'kafka-offsets' && <KafkaManagementSourceFields source={draft} savedSource={sources.find(source => source.id === draft.id && source.pack === draft.pack)} available={managementAvailable} onChange={setDraft} />}
+      <label>Collection interval (seconds)<input type="number" min={draft.pack === 'kafka-offsets' ? 10 : 1} max={3600} value={draft.interval_seconds} onChange={e => setDraft({ ...draft, interval_seconds: Number(e.target.value) })} /></label>
       <label><input type="checkbox" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })} />Enabled</label>
-      <button type="button" disabled={!draft.name || !draft.collector_id} onClick={() => void save()}>Save monitor source</button>
+      <button type="button" disabled={!draft.name || !draft.collector_id || (draft.pack === 'kafka-offsets' && (!managementAvailable || !!kafkaSourceError(draft)))} onClick={() => void save()}>Save monitor source</button>
       {draft.id && <><button type="button" onClick={() => void save(true)}>Delete source</button><button type="button" onClick={() => setDraft(emptySource())}>New source</button></>}
     </fieldset>}
   </section>

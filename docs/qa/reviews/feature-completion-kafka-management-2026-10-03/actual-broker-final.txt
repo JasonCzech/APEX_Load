@@ -1,0 +1,100 @@
+=== RUN   TestKafkaManagementActualBroker
+=== RUN   TestKafkaManagementActualBroker/plain
+    messaging_kafka_integration_test.go:394: audited read-only frame key=18 version=0 correlation=1 bytes=33
+    messaging_kafka_integration_test.go:394: audited read-only frame key=17 version=1 correlation=2 bytes=40
+    messaging_kafka_integration_test.go:394: audited read-only frame key=36 version=1 correlation=3 bytes=77
+    messaging_kafka_integration_test.go:394: audited read-only frame key=3 version=12 correlation=4 bytes=62
+    messaging_kafka_integration_test.go:394: audited read-only frame key=10 version=2 correlation=5 bytes=43
+    messaging_kafka_integration_test.go:394: audited read-only frame key=9 version=7 correlation=6 bytes=58
+    messaging_kafka_integration_test.go:394: audited read-only frame key=2 version=5 correlation=7 bytes=70
+    messaging_kafka_integration_test.go:394: audited read-only frame key=2 version=5 correlation=8 bytes=70
+    messaging_kafka_integration_test.go:408: audited read-only frame key=18 version=0 correlation=1 bytes=33
+    messaging_kafka_integration_test.go:408: audited read-only frame key=17 version=1 correlation=2 bytes=40
+    messaging_kafka_integration_test.go:408: audited read-only frame key=36 version=1 correlation=3 bytes=77
+    messaging_kafka_integration_test.go:408: audited read-only frame key=3 version=12 correlation=4 bytes=62
+    messaging_kafka_integration_test.go:408: audited read-only frame key=10 version=2 correlation=5 bytes=50
+    messaging_kafka_integration_test.go:408: audited read-only frame key=2 version=5 correlation=6 bytes=70
+    messaging_kafka_integration_test.go:408: audited read-only frame key=2 version=5 correlation=7 bytes=70
+    messaging_kafka_integration_test.go:423: audited read-only frame key=18 version=0 correlation=1 bytes=33
+    messaging_kafka_integration_test.go:423: audited read-only frame key=17 version=1 correlation=2 bytes=40
+    messaging_kafka_integration_test.go:423: audited read-only frame key=36 version=1 correlation=3 bytes=77
+    messaging_kafka_integration_test.go:423: audited read-only frame key=3 version=12 correlation=4 bytes=62
+=== RUN   TestKafkaManagementActualBroker/scram_sha_256
+    messaging_kafka_integration_test.go:394: audited read-only frame key=18 version=0 correlation=1 bytes=33
+    messaging_kafka_integration_test.go:394: audited read-only frame key=17 version=1 correlation=2 bytes=48
+    messaging_kafka_integration_test.go:394: audited read-only frame key=36 version=1 correlation=3 bytes=78
+    messaging_kafka_integration_test.go:394: audited read-only frame key=36 version=1 correlation=4 bytes=145
+    messaging_kafka_integration_test.go:394: audited read-only frame key=3 version=12 correlation=5 bytes=62
+    messaging_kafka_integration_test.go:394: audited read-only frame key=10 version=2 correlation=6 bytes=43
+    messaging_kafka_integration_test.go:394: audited read-only frame key=9 version=7 correlation=7 bytes=58
+    messaging_kafka_integration_test.go:394: audited read-only frame key=2 version=5 correlation=8 bytes=70
+    messaging_kafka_integration_test.go:394: audited read-only frame key=2 version=5 correlation=9 bytes=70
+    messaging_kafka_integration_test.go:408: audited read-only frame key=18 version=0 correlation=1 bytes=33
+    messaging_kafka_integration_test.go:408: audited read-only frame key=17 version=1 correlation=2 bytes=48
+    messaging_kafka_integration_test.go:408: audited read-only frame key=36 version=1 correlation=3 bytes=78
+    messaging_kafka_integration_test.go:408: audited read-only frame key=36 version=1 correlation=4 bytes=145
+    messaging_kafka_integration_test.go:408: audited read-only frame key=3 version=12 correlation=5 bytes=62
+    messaging_kafka_integration_test.go:408: audited read-only frame key=10 version=2 correlation=6 bytes=50
+    messaging_kafka_integration_test.go:408: audited read-only frame key=2 version=5 correlation=7 bytes=70
+    messaging_kafka_integration_test.go:408: audited read-only frame key=2 version=5 correlation=8 bytes=70
+    messaging_kafka_integration_test.go:423: audited read-only frame key=18 version=0 correlation=1 bytes=33
+    messaging_kafka_integration_test.go:423: audited read-only frame key=17 version=1 correlation=2 bytes=48
+    messaging_kafka_integration_test.go:423: audited read-only frame key=36 version=1 correlation=3 bytes=78
+    messaging_kafka_integration_test.go:423: audited read-only frame key=36 version=1 correlation=4 bytes=146
+    messaging_kafka_integration_test.go:423: audited read-only frame key=3 version=12 correlation=5 bytes=62
+=== RUN   TestKafkaManagementActualBroker/scram_sha_512
+    messaging_kafka_integration_test.go:394: audited read-only frame key=18 version=0 correlation=1 bytes=33
+    messaging_kafka_integration_test.go:394: audited read-only frame key=17 version=1 correlation=2 bytes=48
+    messaging_kafka_integration_test.go:394: audited read-only frame key=36 version=1 correlation=3 bytes=78
+    messaging_kafka_integration_test.go:394: audited read-only frame key=36 version=1 correlation=4 bytes=189
+    messaging_kafka_integration_test.go:394: audited read-only frame key=3 version=12 correlation=5 bytes=62
+    messaging_kafka_integration_test.go:394: audited read-only frame key=10 version=2 correlation=6 bytes=43
+    messaging_kafka_integration_test.go:394: audited read-only frame key=9 version=7 correlation=7 bytes=58
+    messaging_kafka_integration_test.go:394: audited read-only frame key=2 version=5 correlation=8 bytes=70
+    messaging_kafka_integration_test.go:394: audited read-only frame key=2 version=5 correlation=9 bytes=70
+    messaging_kafka_integration_test.go:408: audited read-only frame key=18 version=0 correlation=1 bytes=33
+    messaging_kafka_integration_test.go:408: audited read-only frame key=17 version=1 correlation=2 bytes=48
+    messaging_kafka_integration_test.go:408: audited read-only frame key=36 version=1 correlation=3 bytes=78
+    messaging_kafka_integration_test.go:408: audited read-only frame key=36 version=1 correlation=4 bytes=189
+    messaging_kafka_integration_test.go:408: audited read-only frame key=3 version=12 correlation=5 bytes=62
+    messaging_kafka_integration_test.go:408: audited read-only frame key=10 version=2 correlation=6 bytes=50
+    messaging_kafka_integration_test.go:408: audited read-only frame key=2 version=5 correlation=7 bytes=70
+    messaging_kafka_integration_test.go:408: audited read-only frame key=2 version=5 correlation=8 bytes=70
+    messaging_kafka_integration_test.go:423: audited read-only frame key=18 version=0 correlation=1 bytes=33
+    messaging_kafka_integration_test.go:423: audited read-only frame key=17 version=1 correlation=2 bytes=48
+    messaging_kafka_integration_test.go:423: audited read-only frame key=36 version=1 correlation=3 bytes=78
+    messaging_kafka_integration_test.go:423: audited read-only frame key=36 version=1 correlation=4 bytes=189
+    messaging_kafka_integration_test.go:423: audited read-only frame key=3 version=12 correlation=5 bytes=62
+=== RUN   TestKafkaManagementActualBroker/open_transaction_read_boundaries
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=18 version=0 correlation=1 bytes=33
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=17 version=1 correlation=2 bytes=40
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=36 version=1 correlation=3 bytes=77
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=3 version=12 correlation=4 bytes=62
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=10 version=2 correlation=5 bytes=43
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=9 version=7 correlation=6 bytes=58
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=2 version=5 correlation=7 bytes=70
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=2 version=5 correlation=8 bytes=70
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=18 version=0 correlation=1 bytes=33
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=17 version=1 correlation=2 bytes=40
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=36 version=1 correlation=3 bytes=77
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=3 version=12 correlation=4 bytes=62
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=10 version=2 correlation=5 bytes=43
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=9 version=7 correlation=6 bytes=58
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=2 version=5 correlation=7 bytes=70
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=2 version=5 correlation=8 bytes=70
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=18 version=0 correlation=1 bytes=33
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=17 version=1 correlation=2 bytes=40
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=36 version=1 correlation=3 bytes=77
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=3 version=12 correlation=4 bytes=62
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=10 version=2 correlation=5 bytes=43
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=9 version=7 correlation=6 bytes=58
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=2 version=5 correlation=7 bytes=70
+    messaging_kafka_transaction_integration_test.go:245: audited read-only frame key=2 version=5 correlation=8 bytes=70
+    messaging_kafka_transaction_integration_test.go:313: genuine transaction boundaries pre HWM=4 LSO=4 committed=1; open HWM=5 LSO=4 committed=1; aborted HWM=6 LSO=6 committed=1; setup record offset=4
+--- PASS: TestKafkaManagementActualBroker (1.06s)
+    --- PASS: TestKafkaManagementActualBroker/plain (0.35s)
+    --- PASS: TestKafkaManagementActualBroker/scram_sha_256 (0.14s)
+    --- PASS: TestKafkaManagementActualBroker/scram_sha_512 (0.16s)
+    --- PASS: TestKafkaManagementActualBroker/open_transaction_read_boundaries (0.41s)
+PASS
+ok      github.com/jasonczech/apexload/pkg/collectoragent   1.391s

@@ -1,0 +1,4 @@
+# github.com/jasonczech/apexload/pkg/collectoragent [github.com/jasonczech/apexload/pkg/collectoragent.test]
+pkg/collectoragent/messaging_kafka_test.go:237:55: unknown field Mechanisms in struct literal of type kmsg.SASLHandshakeResponse
+FAIL    github.com/jasonczech/apexload/pkg/collectoragent [build failed]
+FAIL

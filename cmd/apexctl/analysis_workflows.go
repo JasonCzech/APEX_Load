@@ -47,7 +47,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	file := flags.String("file", "", "JSON request or Parquet input")
 	fileID := flags.String("file-id", "", "file ID within an import")
 	preparationID := flags.String("preparation-id", "", "ready preparation ID")
-	revision := flags.String("revision", "", "expected execution revision when starting")
+	revision := flags.String("revision", "", "expected revision when starting, renewing or deleting a source")
 	selection := flags.String("capacity", "", "existing or ephemeral preparation capacity")
 	spot := flags.String("spot", "off", "off, preferred, or required")
 	floor := flags.Int("on-demand-floor", 0, "minimum on-demand ephemeral generators")
@@ -143,6 +143,30 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 			if action == "create-source" {
 				method = http.MethodPost
 			}
+		case "update-source", "delete-source":
+			if *project == "" {
+				return errors.New("--project is required")
+			}
+			if err := requireID(); err != nil {
+				return err
+			}
+			path = "/api/v1/projects/" + url.PathEscape(*project) + "/monitor-sources/" + url.PathEscape(*id)
+			if action == "delete-source" {
+				version, err := strconv.ParseInt(*revision, 10, 64)
+				if err != nil || version < 1 {
+					return errors.New("--revision must be a positive source revision")
+				}
+				method, body = http.MethodDelete, nil
+				path += "?" + url.Values{"revision": {strconv.FormatInt(version, 10)}}.Encode()
+			} else {
+				var source struct {
+					Revision int64 `json:"revision"`
+				}
+				if err := json.Unmarshal(body, &source); err != nil || source.Revision < 1 || source.Revision >= 1<<62 {
+					return errors.New("--file must contain a source object with a positive revision")
+				}
+				method = http.MethodPut
+			}
 		case "bindings", "bind":
 			if err := requireID(); err != nil {
 				return err
@@ -209,9 +233,9 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 			}
 			path = "/api/v1/tests/" + url.PathEscape(*id) + "/monitors"
 		default:
-			return errors.New("monitor actions: sources, create-source, bindings, bind, run, dependencies, management, collection, release-collection")
+			return errors.New("monitor actions: sources, create-source, update-source, delete-source, bindings, bind, run, dependencies, management, collection, release-collection")
 		}
-		if method != http.MethodGet && len(body) == 0 {
+		if method != http.MethodGet && method != http.MethodDelete && len(body) == 0 {
 			return errors.New("--file JSON configuration is required")
 		}
 	case "analysis":

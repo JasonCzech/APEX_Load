@@ -103,6 +103,8 @@ Reuse signed collector jobs and monitor artifacts for allowlisted, paginated man
 
 Record expected inventory, observation time/freshness, permissions and missing entities. Failed probes never yield zero. Discover only approved entities and relationships; do not create queues, change subscriptions, trigger replay, consume to measure depth or claim unobserved provider-wide maxima. Credentials and destination policy apply to every request and redirect.
 
+Delivery progress: the shared management foundation is implemented and verified, including signed cohorts, durable receipts, exact historical/archive evidence and capability-gated reads. The subsequent `kafka-offsets` reader implements fixed TLS/SASL management operations, immutable routes/trust, exact approved inventory and source-authoring/CLI revision fences. Its Apache Kafka 3.9.2 single-broker authentication/offset and open-transaction visibility fixture passed, along with final browser workflows in both auth profiles; the full Go repository gate also passed, as recorded in the [Kafka verification record](qa/reviews/feature-completion-kafka-management-2026-10-03/README.md). Service Bus and Solace executable readers, hosted/provider breadth and the full MSG-2 release exit remain open.
+
 ### MSG-3: Kafka semantics and certification
 
 Certify real earliest/latest/explicit seek only for owned, fully polled partitions. Revocation invalidates in-flight resolution; buffered delivery and commit state follow the new cursor. Seek cannot silently commit offsets.

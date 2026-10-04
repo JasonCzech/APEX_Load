@@ -1,0 +1,3 @@
+
+> apexload-dashboard@0.1.0 lint
+> eslint . --max-warnings=0

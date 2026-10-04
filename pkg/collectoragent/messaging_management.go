@@ -24,11 +24,15 @@ type ManagementTarget struct {
 	Endpoints          []string                    `json:"endpoints"`
 	TLSCAFile          string                      `json:"tls_ca_file,omitempty"`
 	MinIntervalSeconds int                         `json:"min_interval_seconds,omitempty"`
+	Kafka              *KafkaManagementSettings    `json:"kafka,omitempty"`
+	kafkaApproval      *kafkaManagementApproval
 }
 
 func (t ManagementTarget) clone() ManagementTarget {
 	t.Scope = t.Scope.Clone()
 	t.Endpoints = append([]string(nil), t.Endpoints...)
+	t.Kafka = t.Kafka.clone()
+	t.kafkaApproval = t.kafkaApproval.clone()
 	return t
 }
 func managementKind(pack string) string {
@@ -95,15 +99,17 @@ func newCollectorInstanceID() (string, error) {
 	return hex.EncodeToString(random[:]), nil
 }
 
-// Observer implementations are compiled, fixed management readers. No observer
-// exists in this foundation; package-local tests inject controlled transports.
-// A later real provider adapter must implement policy through poll.request.
+// Observer implementations are compiled, fixed management readers. Startup
+// preparation may read approved local files; validation is pure and mandatory.
+// Controlled observers exist only in package-local tests.
 type managementObserver interface {
+	prepareTarget(*ManagementTarget) error
+	validateTarget(*ManagementTarget) error
 	observe(context.Context, *managementObservation) (*analysis.MessagingManagementSnapshot, error)
 }
 
 func registeredManagementObservers() map[string]managementObserver {
-	return map[string]managementObserver{}
+	return map[string]managementObserver{"kafka-offsets": kafkaManagementObserver{}}
 }
 func ManagementPacks() []string {
 	packs := []string{}
@@ -132,10 +138,48 @@ func newManagementObservation(target ManagementTarget, grant ManagementPollGrant
 	return &managementObservation{target: target.clone(), grant: grant, credentials: credentials, requestSlots: make(chan struct{}, 2)}
 }
 
+// A context timer can be queued after its actual deadline. Signed authority
+// cannot depend on that timer being scheduled before admission or publication.
+func managementContextError(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if deadline, ok := ctx.Deadline(); ok && !deadline.After(time.Now()) {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
+func managementPollAuthorityError(ctx context.Context, grant ManagementPollGrant) error {
+	if grant.Deadline.IsZero() || grant.AuthorizationExpiresAt.IsZero() {
+		return &managementObservationError{reason: "permission_denied"}
+	}
+	if err := managementContextError(ctx); err != nil {
+		return err
+	}
+	now := time.Now()
+	if !grant.Deadline.After(now) || !grant.AuthorizationExpiresAt.After(now) {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
 // request bounds every actual provider operation and holds admission until the
 // callback really returns, even when a transport ignores its cancellation.
 // The observer supplies only a destination already present in local approval.
 func (p *managementObservation) request(ctx context.Context, endpoint string, page bool, call func(context.Context) error) error {
+	// Scheduling and signed authorization are independent lifetimes. Derive the
+	// actual operation deadline before queue/origin admission, so waiting cannot
+	// consume authority and then start target work using an expired credential.
+	if err := managementPollAuthorityError(ctx, p.grant); err != nil {
+		return err
+	}
+	deadline := minTime(minTime(p.grant.Deadline, p.grant.AuthorizationExpiresAt), time.Now().Add(5*time.Second))
+	budget, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	if err := managementPollAuthorityError(budget, p.grant); err != nil {
+		return err
+	}
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
@@ -153,41 +197,61 @@ func (p *managementObservation) request(ctx context.Context, endpoint string, pa
 	}
 	select {
 	case p.requestSlots <- struct{}{}:
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-budget.Done():
+		return managementContextError(budget)
 	}
 	defer func() { <-p.requestSlots }()
+	if err := managementPollAuthorityError(budget, p.grant); err != nil {
+		return err
+	}
 	if p.origins != nil {
-		release, err := p.origins.admit(ctx, endpoint, p.grant.PollID, p.grant.Pack)
+		release, err := p.origins.admit(budget, endpoint, p.grant.PollID, p.grant.Pack)
 		if err != nil {
 			return err
 		}
 		defer release()
 	}
-	if err := ctx.Err(); err != nil {
+	if err := managementPollAuthorityError(budget, p.grant); err != nil {
 		return err
 	}
 	p.mu.Lock()
 	if p.requests >= 512 || page && p.pages >= 16 {
 		p.mu.Unlock()
-		return errors.New("management request budget exhausted")
+		return &managementBudgetError{}
 	}
 	p.requests++
 	if page {
 		p.pages++
 	}
 	p.mu.Unlock()
-	if err := ctx.Err(); err != nil {
+	if err := managementPollAuthorityError(budget, p.grant); err != nil {
 		return err
 	}
-	budget, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
 	err := call(budget)
-	if budget.Err() != nil {
-		return budget.Err()
+	if authorityErr := managementPollAuthorityError(budget, p.grant); authorityErr != nil {
+		return authorityErr
 	}
 	return err
 }
+
+// retainResource keeps physical ownership charged after a request callback
+// returns. The returned once-only release must run only after actual closure
+// proof; cancellation or an unexplained Close error does not discharge it.
+func (p *managementObservation) retainResource() (func(), error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return nil, errors.New("management poll is completed")
+	}
+	p.calls.Add(1)
+	var once sync.Once
+	return func() { once.Do(p.calls.Done) }, nil
+}
+
+type managementBudgetError struct{}
+
+func (*managementBudgetError) Error() string { return "management request budget exhausted" }
+
 func (p *managementObservation) finish() { p.mu.Lock(); p.closed = true; p.mu.Unlock(); p.calls.Wait() }
 func (p *managementObservation) counts() (int, int) {
 	p.mu.Lock()

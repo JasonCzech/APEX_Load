@@ -1,0 +1,1 @@
+Kafka management fixture: passed ; report: /private/tmp/apexload-kafka-392-qualification-72dccb69-6b79-48bc-aa1e-2cf9b090259a.json

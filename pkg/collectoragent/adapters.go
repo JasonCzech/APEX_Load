@@ -111,8 +111,14 @@ func (a *Agent) approvedDestinations() []string {
 		destinations = append(destinations, a.cfg.PrometheusURL)
 	}
 	for _, target := range a.cfg.AdapterTargets {
-		if target.Management != nil && (!hasConfiguredPack(a.cfg.Packs, target.Pack) || a.management == nil || a.management.observers[target.Pack] == nil) {
-			continue
+		if target.Management != nil {
+			if !hasConfiguredPack(a.cfg.Packs, target.Pack) || a.management == nil {
+				continue
+			}
+			observer := a.management.observers[target.Pack]
+			if observer == nil || observer.validateTarget(target.Management) != nil {
+				continue
+			}
 		}
 		destination := target.Destination
 		if target.Pack == "ssh-linux" || target.Pack == "jmx" || target.Pack == "jdbc" || target.Management != nil && target.Management.Identity.CredentialRef != "" {

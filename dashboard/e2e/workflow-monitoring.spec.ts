@@ -220,3 +220,83 @@ test('Dynatrace SaaS connection plumbing is manageable without exposing secret r
   expect((await deleted).status()).toBe(204)
   await expect(card).not.toContainText('Workflow Dynatrace updated')
 })
+
+
+test('Kafka management authoring retains scope, sealed-secret policy and revision conflicts through reload', async ({ page }) => {
+  const workspace = await createWorkspace(page.context().request)
+  const path = `/api/v1/projects/${workspace.projectId}/monitor-sources`
+  const credentialPin = `v1:${'a'.repeat(64)}`
+  let source: Record<string, unknown> | undefined
+  let staleUpdate: Record<string, unknown> | undefined
+  await page.route('**/api/v1/analysis/capabilities?*', route => route.fulfill({ json: { monitoring_enabled: true, messaging_management_enabled: true, messaging_management_packs: ['kafka-offsets'], messaging_management_version: 1, native_parquet: false } }))
+  await page.route('**/api/v1/monitoring/collectors?*', route => route.fulfill({ json: { collectors: [{ id: 'approved-collector', name: 'Approved collector', health: 'healthy' }] } }))
+  await page.route(`**${path}**`, route => {
+    const request = route.request()
+    if (new URL(request.url()).pathname.endsWith('/management-state')) return route.fulfill({ json: { state: 'unavailable' } })
+    if (request.method() === 'POST') {
+      const draft = request.postDataJSON() as Record<string, unknown>
+      expect(draft.credential_ref).toBe('')
+      expect(draft.password).toBeUndefined()
+      expect(draft.endpoints).toBeUndefined()
+      source = { ...draft, id: 'managed-source', revision: 1, management_identity: { ...(draft.management_identity as Record<string, unknown>), credential_version: credentialPin } }
+      return route.fulfill({ json: source })
+    }
+    if (request.method() === 'PUT') {
+      staleUpdate = request.postDataJSON() as Record<string, unknown>
+      source = { ...source, name: 'Changed by another administrator', revision: 2 }
+      return route.fulfill({ status: 409, json: { error: 'monitor source revision changed' } })
+    }
+    return route.fulfill({ json: source ? [source] : [] })
+  })
+  await page.goto(`/#/monitoring?${scopeQuery(workspace)}`); await page.reload()
+  await page.getByRole('tab', { name: 'Telemetry', exact: true }).click()
+  const sources = page.getByRole('region', { name: 'Run monitor sources', exact: true })
+  await sources.getByLabel('Name', { exact: true }).fill('Approved Kafka offsets')
+  await sources.getByRole('combobox', { name: 'Collector', exact: true }).selectOption('approved-collector')
+  await sources.getByRole('combobox', { name: 'Pack', exact: true }).selectOption('kafka-offsets')
+  await expect(sources.getByRole('button', { name: 'Save monitor source' })).toBeDisabled()
+  await sources.getByLabel('Approved destination', { exact: true }).fill('management://orders-cluster')
+  await sources.getByLabel('Kafka cluster ID', { exact: true }).fill('exact-broker-cluster-id')
+  await sources.getByRole('combobox', { name: 'Consumer isolation', exact: true }).selectOption('read_committed')
+  await sources.getByRole('combobox', { name: 'SASL identity', exact: true }).selectOption('sasl_scram')
+  await sources.getByLabel('Approved SASL username', { exact: true }).fill('offset-reader')
+  await sources.getByLabel('Identity policy revision', { exact: true }).fill('policy-1')
+  await sources.getByLabel('Management credential project-secret reference', { exact: true }).fill('offset-reader-secret')
+  await sources.getByLabel('Collector X25519 public key', { exact: true }).fill('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=')
+  await sources.getByLabel('Topic 1', { exact: true }).fill('orders')
+  await sources.getByLabel('Consumer group 1', { exact: true }).fill('workers')
+  await sources.getByRole('button', { name: 'Add Kafka entity' }).click()
+  await sources.getByLabel('Topic 2', { exact: true }).fill('orders')
+  await sources.getByLabel('Consumer group 2', { exact: true }).fill('workers')
+  await expect(sources).toContainText('Remove duplicate')
+  await sources.getByLabel('Partition 2', { exact: true }).fill('1')
+  await sources.getByRole('button', { name: 'Save monitor source' }).click()
+  await sources.getByRole('button', { name: 'Edit Approved Kafka offsets' }).click()
+  await sources.getByText('Saved collector approval · revision 1', { exact: true }).click()
+  await expect(sources.locator('pre')).toContainText(credentialPin)
+  await expect(sources.getByRole('combobox', { name: 'Consumer isolation', exact: true })).toHaveValue('read_committed')
+  await expect(sources.getByLabel('Partition 1', { exact: true })).toHaveValue('0')
+  await expect(sources.getByLabel('Partition 2', { exact: true })).toHaveValue('1')
+  await sources.getByLabel('Name', { exact: true }).fill('Unsaved stale draft')
+  await sources.getByRole('button', { name: 'Save monitor source' }).click()
+  await expect(sources.getByRole('alert')).toContainText('revision changed')
+  expect(staleUpdate?.revision).toBe(1)
+  await expect(sources.getByLabel('Name', { exact: true })).toHaveValue('Unsaved stale draft')
+  await page.reload()
+  await page.getByRole('tab', { name: 'Telemetry', exact: true }).click()
+  await sources.getByRole('button', { name: 'Edit Changed by another administrator' }).click()
+  await sources.getByText('Saved collector approval · revision 2', { exact: true }).click()
+  await expect(sources.locator('pre')).toContainText('exact-broker-cluster-id')
+  await expect(sources.getByLabel('Management credential project-secret reference', { exact: true })).toHaveValue('offset-reader-secret')
+  await sources.getByLabel('Kafka cluster ID', { exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: test.info().outputPath('kafka-management-source.png') })
+  await page.setViewportSize({ width: 375, height: 900 })
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
+  const approval = sources.getByRole('group', { name: 'Kafka management approval', exact: true })
+  await expect.poll(() => approval.evaluate(element => element.getBoundingClientRect().right <= window.innerWidth + 1)).toBe(true)
+  await expect(sources.locator('pre')).toContainText(credentialPin)
+  await sources.getByLabel('Kafka cluster ID', { exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: test.info().outputPath('kafka-management-source-narrow.png') })
+  await sources.getByText('Saved collector approval · revision 2', { exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: test.info().outputPath('kafka-management-approval-narrow.png') })
+})

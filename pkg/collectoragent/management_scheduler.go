@@ -69,6 +69,9 @@ func (s *managementScheduler) readiness() []ManagementReadinessScope {
 		if t.Management == nil || s.observers[t.Pack] == nil || !hasConfiguredPack(s.agent.cfg.Packs, t.Pack) {
 			continue
 		}
+		if s.observers[t.Pack].validateTarget(t.Management) != nil {
+			continue
+		}
 		scope, e := t.Management.Scope.Hash()
 		if e != nil {
 			continue
@@ -109,6 +112,9 @@ func (s *managementScheduler) candidate(signed SignedRunJob, now time.Time) (man
 	observer := s.observers[job.Pack]
 	if !ok || target.Management == nil || observer == nil || !hasConfiguredPack(s.agent.cfg.Packs, job.Pack) {
 		return managementCandidate{}, errors.New("management pack is unavailable or not locally approved")
+	}
+	if err := observer.validateTarget(target.Management); err != nil {
+		return managementCandidate{}, err
 	}
 	scope, err := target.Management.Scope.Hash()
 	if err != nil {
@@ -332,7 +338,9 @@ func (s *managementScheduler) run(ctx context.Context, source string, task *mana
 		return
 	}
 	started := time.Now()
-	deadline := minTime(grant.Deadline, started.Add(8*time.Second))
+	// The signed credential lifetime can end before the collection deadline.
+	// Expiry cancels provider work; retained resources still join physical cleanup.
+	deadline := minTime(minTime(grant.Deadline, grant.AuthorizationExpiresAt), started.Add(8*time.Second))
 	pollCtx, cancel := context.WithDeadline(ctx, deadline)
 	reason := grant.UnavailableReason
 	credentials := ManagementCredentials{Version: 2, Purpose: ManagementCredentialPurpose, Mode: managementCredentialMode(c.target.Identity.Mode)}
@@ -352,7 +360,7 @@ func (s *managementScheduler) run(ctx context.Context, source string, task *mana
 	poll := newManagementObservation(c.target, grant, credentials)
 	poll.origins = s.origins
 	var snapshot *analysis.MessagingManagementSnapshot
-	if reason == "" && pollCtx.Err() == nil {
+	if reason == "" && managementPollAuthorityError(pollCtx, grant) == nil {
 		snapshot, err = observeManagement(pollCtx, c.observer, poll)
 	}
 	poll.finish()
@@ -362,11 +370,8 @@ func (s *managementScheduler) run(ctx context.Context, source string, task *mana
 	base := poll.base(started, completed, elapsed, c.job.IntervalSeconds, s.missedTicks(source, started, completed, c.job.IntervalSeconds))
 	base.RequestCount = requests
 	base.PageCount = pages
-	if pollCtx.Err() != nil {
-		reason = "timeout"
-		if ctx.Err() != nil {
-			reason = "cancelled"
-		}
+	if completionReason := managementPollCompletionReason(ctx, pollCtx, grant, completed); completionReason != "" {
+		reason = completionReason
 	}
 	cancel()
 	if reason == "" && err != nil {
@@ -374,6 +379,10 @@ func (s *managementScheduler) run(ctx context.Context, source string, task *mana
 		var typed *managementObservationError
 		if errors.As(err, &typed) {
 			reason = typed.reason
+		}
+		var budget *managementBudgetError
+		if errors.As(err, &budget) {
+			reason = "budget_exhausted"
 		}
 	}
 	if reason == "" {
@@ -434,6 +443,20 @@ func observeManagement(ctx context.Context, observer managementObserver, poll *m
 		}
 	}()
 	return observer.observe(ctx, poll)
+}
+
+// Completed evidence is qualified only after physical cleanup. Check both the
+// signed times and actual context deadlines even if timer delivery is delayed.
+// Retry publication of already qualified durable evidence uses its original
+// capture/receipt contract and does not start new provider work.
+func managementPollCompletionReason(parent, poll context.Context, grant ManagementPollGrant, completed time.Time) string {
+	if managementContextError(parent) != nil {
+		return "cancelled"
+	}
+	if managementContextError(poll) != nil || !grant.Deadline.After(completed) || !grant.AuthorizationExpiresAt.After(completed) {
+		return "timeout"
+	}
+	return ""
 }
 
 type managementObservationError struct{ reason string }

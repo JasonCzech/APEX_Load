@@ -23,6 +23,18 @@ import (
 
 type managementObserverFunc func(context.Context, *managementObservation) (*analysis.MessagingManagementSnapshot, error)
 
+// The generic controlled profile is an explicit test-only observer contract.
+// Production New cannot inject this implementation or skip real validation.
+func (f managementObserverFunc) prepareTarget(t *ManagementTarget) error { return f.validateTarget(t) }
+func (f managementObserverFunc) validateTarget(t *ManagementTarget) error {
+	if t == nil {
+		return errors.New("controlled target missing")
+	}
+	if err := t.Scope.Validate(); err != nil {
+		return err
+	}
+	return t.Identity.Validate()
+}
 func (f managementObserverFunc) observe(ctx context.Context, p *managementObservation) (*analysis.MessagingManagementSnapshot, error) {
 	return f(ctx, p)
 }
@@ -81,8 +93,8 @@ func TestManagementPollGrantBoundedIdentityAndExactCohort(t *testing.T) {
 			t.Fatal("malformed signed grant accepted")
 		}
 	}
-	if packs := ManagementPacks(); packs == nil || len(packs) != 0 {
-		t.Fatal("foundation advertised a provider pack", packs)
+	if packs := ManagementPacks(); len(packs) != 1 || packs[0] != "kafka-offsets" {
+		t.Fatal("compiled provider inventory is incorrect", packs)
 	}
 }
 func TestManagementCredentialsPurposeAndOwnerBinding(t *testing.T) {
@@ -122,25 +134,26 @@ func TestManagementCredentialsPurposeAndOwnerBinding(t *testing.T) {
 }
 
 type managementFixture struct {
-	t                   *testing.T
-	mu                  sync.Mutex
-	jobs                []RunJob
-	grant               ManagementPollGrant
-	signed              SignedManagementPoll
-	state               string
-	batches             []RunSampleBatch
-	calls               atomic.Int64
-	releases            atomic.Int64
-	heartbeats          atomic.Int64
-	loseReply           bool
-	unavailableReason   string
-	nilTerminalGrant    bool
-	wrongAcceptedDigest bool
-	forceResponseState  string
-	pub                 ed25519.PublicKey
-	key                 ed25519.PrivateKey
-	server              *httptest.Server
-	agent               *Agent
+	t                     *testing.T
+	mu                    sync.Mutex
+	jobs                  []RunJob
+	grant                 ManagementPollGrant
+	signed                SignedManagementPoll
+	state                 string
+	batches               []RunSampleBatch
+	calls                 atomic.Int64
+	releases              atomic.Int64
+	heartbeats            atomic.Int64
+	loseReply             bool
+	unavailableReason     string
+	authorizationLifetime time.Duration
+	nilTerminalGrant      bool
+	wrongAcceptedDigest   bool
+	forceResponseState    string
+	pub                   ed25519.PublicKey
+	key                   ed25519.PrivateKey
+	server                *httptest.Server
+	agent                 *Agent
 }
 
 func newManagementFixture(t *testing.T, observer managementObserver) *managementFixture {
@@ -202,6 +215,9 @@ func (f *managementFixture) handle(w http.ResponseWriter, r *http.Request) {
 				f.grant.LeaderJobID = leader.ID
 				f.grant.Nonce = control.Nonce
 				f.grant.UnavailableReason = f.unavailableReason
+				if f.authorizationLifetime > 0 {
+					f.grant.AuthorizationExpiresAt = f.grant.IssuedAt.Add(f.authorizationLifetime)
+				}
 				f.grant.SourceRevision = leader.SourceRevision
 				f.grant.IdentityHash = leader.Management.IdentityHash
 				f.grant.ScopeHash = leader.Management.ScopeHash

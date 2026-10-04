@@ -119,6 +119,9 @@ func New(cfg Config) (*Agent, error) {
 	for i := range cfg.AdapterTargets {
 		if cfg.AdapterTargets[i].Management != nil {
 			cloned := cfg.AdapterTargets[i].Management.clone()
+			// Construction reloads local trust instead of accepting another agent's
+			// compiled transport approval. Dormant targets acquire no approval.
+			cloned.kafkaApproval = nil
 			cfg.AdapterTargets[i].Management = &cloned
 		}
 		if cfg.AdapterTargets[i].Cloud != nil {
@@ -163,10 +166,20 @@ func New(cfg Config) (*Agent, error) {
 				return nil, fmt.Errorf("prometheus pack requires prometheus URL")
 			}
 		default:
-			if isManagementPack(pack) && registeredManagementObservers()[pack] != nil {
+			if observer := registeredManagementObservers()[pack]; isManagementPack(pack) && observer != nil {
 				approved := false
-				for _, target := range cfg.AdapterTargets {
-					approved = approved || target.Pack == pack && target.Management != nil
+				for i := range cfg.AdapterTargets {
+					target := &cfg.AdapterTargets[i]
+					if target.Pack != pack || target.Management == nil {
+						continue
+					}
+					if err := observer.prepareTarget(target.Management); err != nil {
+						return nil, err
+					}
+					if err := observer.validateTarget(target.Management); err != nil {
+						return nil, err
+					}
+					approved = true
 				}
 				if approved {
 					continue
