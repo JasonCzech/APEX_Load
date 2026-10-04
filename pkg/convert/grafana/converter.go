@@ -125,15 +125,17 @@ type Dashboard struct {
 }
 
 type Panel struct {
-	PanelID       int              `json:"panel_id"`
-	Title         string           `json:"title"`
-	Kind          string           `json:"kind"`
-	Unit          string           `json:"unit,omitempty"`
-	GridPos       GridPos          `json:"grid_pos"`
-	Targets       []Target         `json:"targets"`
-	RowTitle      string           `json:"row_title,omitempty"`
-	DatasourceUID string           `json:"datasource_uid,omitempty"`
-	Thresholds    []PanelThreshold `json:"thresholds,omitempty"`
+	// Nil identifies older imports whose transformation state exists only in diagnostics.
+	UnsupportedTransformations *bool            `json:"unsupported_transformations,omitempty"`
+	PanelID                    int              `json:"panel_id"`
+	Title                      string           `json:"title"`
+	Kind                       string           `json:"kind"`
+	Unit                       string           `json:"unit,omitempty"`
+	GridPos                    GridPos          `json:"grid_pos"`
+	Targets                    []Target         `json:"targets"`
+	RowTitle                   string           `json:"row_title,omitempty"`
+	DatasourceUID              string           `json:"datasource_uid,omitempty"`
+	Thresholds                 []PanelThreshold `json:"thresholds,omitempty"`
 }
 
 type PanelThreshold struct {
@@ -492,16 +494,18 @@ func convertPanel(
 	noteLegacySingleStat(p, panelType, loc, title, thresholds, col)
 	warnDroppedPanelConstructs(p, loc, title, col)
 
+	unsupportedTransformations := len(p.Transformations) > 0
 	panel := Panel{
-		PanelID:       p.ID,
-		Title:         convertutil.FirstNonEmpty(title, fmt.Sprintf("Panel %d", p.ID)),
-		Kind:          kind,
-		Unit:          unit,
-		GridPos:       normalizeGridPos(p.GridPos, loc, title, col),
-		Targets:       targets,
-		RowTitle:      fp.rowTitle,
-		DatasourceUID: datasourceUIDForStorage(panelDS),
-		Thresholds:    thresholds,
+		UnsupportedTransformations: &unsupportedTransformations,
+		PanelID:                    p.ID,
+		Title:                      convertutil.FirstNonEmpty(title, fmt.Sprintf("Panel %d", p.ID)),
+		Kind:                       kind,
+		Unit:                       unit,
+		GridPos:                    normalizeGridPos(p.GridPos, loc, title, col),
+		Targets:                    targets,
+		RowTitle:                   fp.rowTitle,
+		DatasourceUID:              datasourceUIDForStorage(panelDS),
+		Thresholds:                 thresholds,
 	}
 	mergeUsedBy(usedBy, panelUsedBy)
 	return panel, true

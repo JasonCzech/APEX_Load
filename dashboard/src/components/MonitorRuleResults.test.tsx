@@ -26,3 +26,10 @@ it('shows measured zero and unevaluable evidence distinctly', () => {
   expect(container.textContent).toContain('0 ms'); expect(container.textContent).toContain('Not evaluated'); expect(container.textContent).toContain('40.0%')
   act(() => root.unmount())
 })
+
+it('preserves Prometheus query mode and freshness requirements in run criteria', () => {
+  const selected = { ...rule, query_id: 'cpu', evaluation_mode: 'series_points' as const, require_freshness: true }
+  expect(validateGoalConfig({ monitor_rules: [selected] })).toBeNull()
+  expect(buildGoalConfigPayload('vuser_driven', { monitor_rules: [selected] })).toEqual({ monitor_rules: [selected] })
+  expect(validateGoalConfig({ monitor_rules: [{ ...selected, evaluation_mode: 'future' as never }] })).toContain('evaluation mode')
+})

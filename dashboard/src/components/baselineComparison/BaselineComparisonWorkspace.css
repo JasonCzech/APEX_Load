@@ -4,3 +4,6 @@
 .bc-persistent-context{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:8px 20px;padding:12px 16px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);font-size:12px;box-shadow:0 3px 12px #0002}
 
 .bc-persistent-context,.bc-drawer,.bc-matrix tbody th:first-child{background:var(--bg-secondary)}
+
+.bc-matrix .bc-provider{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:900px){.bc-matrix .bc-provider{max-width:150px}}

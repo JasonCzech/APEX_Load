@@ -28,6 +28,7 @@ import ConfirmDestructiveModal, { type DestructiveConfirmation } from './Confirm
 import MonitoringCollectorsCard from './MonitoringCollectorsCard'
 import ELKConnectionsCard from './ELKConnectionsCard'
 import DynatraceConnectionsCard from './DynatraceConnectionsCard'
+import PrometheusConnectionsCard from './PrometheusConnectionsCard'
 import AppDynamicsConnectionsCard from './AppDynamicsConnectionsCard'
 import TimeslotsPanel from './TimeslotsPanel'
 import { dialogBackdropProps } from './dialogBackdropProps'
@@ -1676,6 +1677,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       icon: <span aria-hidden="true">DT</span>,
       content: <DynatraceConnectionsCard summaryOnly projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} />,
     },
+    { id: 'prometheus-test-connections', title: 'Prometheus Test Monitoring', icon: <span aria-hidden="true">P</span>, content: <PrometheusConnectionsCard summaryOnly projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /> },
     {
       id: 'appdynamics-connections',
       title: 'AppDynamics Connections',
@@ -1877,9 +1879,9 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
 
       <div className="monitor-context-actions settings-inline-actions">
         <span>{activeCategoryId === 'fleet' ? 'Distributed fleet status. Local execution is separate from generator inventory.' : `Project: ${activeProject?.name || 'No project selected'} · Control-plane health is deployment-wide.`}</span>
-        {canManageSystem && (activeCategoryId === 'fleet' ? [['pools', 'Configure pools'], ['clusters', 'Connect cluster'], ['cloud', 'Connections & targets'], ['capacity', 'Capacity source'], ['allocations', 'Standing allocations']] : activeCategoryId === 'alerts' ? [['thresholds', 'Alert & stop policies'], ['notifications', 'Notification routes']] : activeCategoryId === 'telemetry' ? [['prometheus', 'Prometheus'], ['grafana', 'Grafana'], ['dashboards', 'Import dashboards']] : activeCategoryId === 'schedules' ? [['scheduling', 'Schedule defaults'], ['allocations', 'Standing allocations']] : [['platform', 'Controller settings'], ['authentication', 'Authentication']]).map(([id, label]) => <a className="btn btn-secondary btn-sm" key={id} href={settingsHref(id)}>{label}</a>)}
+        {canManageSystem && (activeCategoryId === 'fleet' ? [['pools', 'Configure pools'], ['clusters', 'Connect cluster'], ['cloud', 'Connections & targets'], ['capacity', 'Capacity source'], ['allocations', 'Standing allocations']] : activeCategoryId === 'alerts' ? [['thresholds', 'Alert & stop policies'], ['notifications', 'Notification routes']] : activeCategoryId === 'telemetry' ? [['prometheus', 'APEX platform graphs'], ['grafana', 'Grafana'], ['dashboards', 'Import dashboards']] : activeCategoryId === 'schedules' ? [['scheduling', 'Schedule defaults'], ['allocations', 'Standing allocations']] : [['platform', 'Controller settings'], ['authentication', 'Authentication']]).map(([id, label]) => <a className="btn btn-secondary btn-sm" key={id} href={settingsHref(id)}>{label}</a>)}
       </div>
-      {activeCategoryId === 'telemetry' && <p className="monitor-context-actions">APM profiles describe outbound events and trace delivery. Test capture reads external data into an opted-in run. {(canManageSystem || canManageProjects) && <><a href={settingsHref('elk-capture')}>Elastic capture settings</a> · <a href={settingsHref('dynatrace-capture')}>Dynatrace capture settings</a> · <a href={settingsHref('appdynamics-capture')}>AppDynamics capture settings</a></>}</p>}
+      {activeCategoryId === 'telemetry' && <p className="monitor-context-actions">APM profiles describe outbound events and trace delivery. Test capture reads external data into an opted-in run. {(canManageSystem || canManageProjects) && <><a href={settingsHref('elk-capture')}>Elastic capture settings</a> · <a href={settingsHref('dynatrace-capture')}>Dynatrace capture settings</a> · <a href={settingsHref('appdynamics-capture')}>AppDynamics capture settings</a> · <a href={settingsHref('prometheus-capture')}>Prometheus test monitoring settings</a></>}</p>}
       {activeCategoryId === 'telemetry' && <MonitoringEvidenceCard canManage={canManageSystem} />}
       {activeCategoryId === 'alerts' && <section className="monitor-advisories" aria-label="System advisories">
         <h2>System advisories</h2>

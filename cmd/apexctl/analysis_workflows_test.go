@@ -86,6 +86,8 @@ func TestMonitoringControllerWorkflowParity(t *testing.T) {
 		{[]string{"delete-source", "--project", "p", "--id", "s", "--revision", "2"}, `{}`, "DELETE /api/v1/projects/p/monitor-sources/s?revision=2"},
 		{[]string{"series", "--id", "run", "--source-id", "s", "--metric", "calls", "--after-key", "cursor", "--limit", "50"}, `{}`, "GET /api/v1/tests/run/monitor-series?after_key=cursor&limit=50&metric=calls&source_id=s"},
 		{[]string{"evidence", "--id", "run", "--source-id", "s", "--kind", "snapshot", "--after-key", "cursor"}, `{}`, "GET /api/v1/tests/run/monitor-evidence?after_key=cursor&kind=snapshot&limit=100&source_id=s"},
+		{[]string{"evidence", "--id", "run", "--source-id", "prom", "--kind", "target", "--after-key", "cursor", "--limit", "50"}, `{}`, "GET /api/v1/tests/run/monitor-evidence?after_key=cursor&kind=target&limit=50&source_id=prom"},
+		{[]string{"evidence", "--id", "run", "--source-id", "prom", "--kind", "alert"}, `{}`, "GET /api/v1/tests/run/monitor-evidence?kind=alert&limit=100&source_id=prom"},
 		{[]string{"series", "--id", "run", "--source-id", "s", "--metric", "calls", "--limit", "999"}, `{}`, "GET /api/v1/tests/run/monitor-series?limit=999&metric=calls&source_id=s"},
 		{[]string{"create-run", "--project", "p", "--file", config}, `{"monitor_bindings":[],"goal_config":{"monitor_rules":[]}}`, "POST /api/v1/tests"},
 	} {
@@ -112,9 +114,14 @@ func TestMonitoringControllerWorkflowParity(t *testing.T) {
 	for _, args := range [][]string{
 		{"series", "--limit", "0"}, {"series", "--limit", "1000"},
 		{"evidence", "--limit", "0"}, {"evidence", "--limit", "101"},
+		{"evidence", "--kind", "unknown"},
 	} {
 		if err := executeWorkflowCommand(context.Background(), "monitor", append(args, "--id", "run", "--api", api.URL), &bytes.Buffer{}); err == nil || len(calls) != before {
 			t.Fatalf("invalid bounded page sent to controller: %v", args)
 		}
+	}
+	var help bytes.Buffer
+	if err := executeWorkflowCommand(context.Background(), "monitor", []string{"evidence", "--help"}, &help); err != nil || !strings.Contains(help.String(), "target or alert") {
+		t.Fatal("Prometheus evidence filters absent from help", help.String(), err)
 	}
 }

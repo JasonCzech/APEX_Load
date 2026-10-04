@@ -21,6 +21,8 @@ type BaselineMetricDefinition struct {
 }
 
 type baselineResourceSeries struct {
+	prometheus                                             *BaselinePrometheusIdentity
+	gridPhase                                              float64
 	name, unit, kind, source, identity, group, aggregation string
 	known                                                  bool
 	instances                                              int
@@ -130,6 +132,9 @@ func (s *Server) readBaselineResources(ctx context.Context, record *storage.RunA
 	if err != nil {
 		return fmt.Errorf("resource archive: %w", err)
 	}
+	if err := s.readBaselinePrometheusResources(ctx, record, r, started, &points); err != nil {
+		return err
+	}
 	if store, ok := s.store.(importedDashboardSnapshotStore); ok {
 		snapshot, e := store.GetGrafanaDashboardSnapshot(r.identity.ID, normalizeProjectID(r.manifest.Provenance.ProjectID))
 		if e == nil && snapshot != nil {
@@ -179,6 +184,10 @@ func (s *Server) readBaselineResources(ctx context.Context, record *storage.RunA
 	}
 	for key, series := range r.resources {
 		sort.SliceStable(series.points, func(i, j int) bool { return series.points[i].Seconds < series.points[j].Seconds })
+		if series.prometheus != nil {
+			r.resources[key] = series
+			continue
+		}
 		unit, factor := canonicalBaselineUnit(series.unit)
 		series.unit = unit
 		for i := range series.points {
@@ -191,6 +200,14 @@ func (s *Server) readBaselineResources(ctx context.Context, record *storage.RunA
 	consumed := map[string]bool{}
 	for _, m := range policy.ResourceMappings {
 		if (m.RunID != r.identity.ID && m.RunID != "*") || !m.Confirmed {
+			continue
+		}
+		prometheusMapping := false
+		for _, key := range m.Keys {
+			prometheusMapping = prometheusMapping || r.resources[key].prometheus != nil
+		}
+		if prometheusMapping {
+			r.warnings = append(r.warnings, "Prometheus query identities cannot be remapped or combined; define the intended aggregation in approved PromQL before capture")
 			continue
 		}
 		target := baselineResourceSeries{name: m.Identity, identity: m.Identity, unit: m.Unit, kind: m.Kind, group: m.Group, aggregation: m.Aggregation, known: true, instances: len(m.Keys)}
@@ -244,6 +261,9 @@ func (s *Server) readBaselineResources(ctx context.Context, record *storage.RunA
 }
 
 func baselineResourceMeasurement(series baselineResourceSeries, w BaselineLoadWindow) *BaselineMeasurement {
+	if series.prometheus != nil {
+		return baselinePrometheusResourceMeasurement(series, w)
+	}
 	if len(series.points) < 2 {
 		return nil
 	}
@@ -354,7 +374,7 @@ func compareBaselineResources(current *baselineComparisonRun, baselines []*basel
 			if series.kind == "counter" {
 				unit += "/s"
 			}
-			row := BaselineComparisonRow{ID: fmt.Sprintf("resource/%d", len(rows)), Name: key, Group: series.group, Source: series.source, Unit: unit, Window: &w, Baselines: map[string]BaselineComparisonCell{}}
+			row := BaselineComparisonRow{ID: fmt.Sprintf("resource/%d", len(rows)), Name: key, Group: series.group, Source: series.source, Unit: unit, Window: &w, Provider: series.prometheus, Baselines: map[string]BaselineComparisonCell{}}
 			if exists {
 				row.Current = baselineResourceMeasurement(series, w)
 			}
@@ -364,16 +384,29 @@ func compareBaselineResources(current *baselineComparisonRun, baselines []*basel
 				bw := matchingBaselineWindow(w, b.windows, p.LoadTolerancePct)
 				cell.Window = bw
 				if !ok || !exists {
-					cell.Qualification = append(cell.Qualification, "Metric missing; map changed source identities explicitly")
+					if series.prometheus != nil || bs.prometheus != nil {
+						cell.Qualification = append(cell.Qualification, "Prometheus series missing or its saved query identity differs")
+					} else {
+						cell.Qualification = append(cell.Qualification, "Metric missing; map changed source identities explicitly")
+					}
 				}
 				if !series.known || !bs.known {
-					cell.Qualification = append(cell.Qualification, "Metric definition unverified; confirm units, kind and identity in a mapping")
+					if series.prometheus != nil || bs.prometheus != nil {
+						cell.Qualification = append(cell.Qualification, "Prometheus saved query provenance unavailable or unverified")
+					} else {
+						cell.Qualification = append(cell.Qualification, "Metric definition unverified; confirm units, kind and identity in a mapping")
+					}
 				}
 				if series.group != bs.group || series.aggregation != bs.aggregation {
 					cell.Qualification = append(cell.Qualification, "Resource group mapping or aggregation differs")
 				}
 				if series.identity != bs.identity || series.unit != bs.unit || series.kind != bs.kind || series.source != bs.source {
 					cell.Qualification = append(cell.Qualification, "Metric source, definition or units differ")
+				}
+				if series.prometheus != nil || bs.prometheus != nil {
+					if !compatibleBaselinePrometheusIdentity(series.prometheus, bs.prometheus) {
+						cell.Qualification = append(cell.Qualification, "Prometheus query definition, backend, statistic, labels or evaluation step differs")
+					}
 				}
 				if bw == nil {
 					cell.Qualification = append(cell.Qualification, "No matching stable observed load")
@@ -389,7 +422,7 @@ func compareBaselineResources(current *baselineComparisonRun, baselines []*basel
 				}
 				if row.Current != nil && cell.Measurement != nil {
 					// Numeric deltas across incompatible units would be misleading.
-					if series.unit == bs.unit && series.kind == bs.kind {
+					if series.unit == bs.unit && series.kind == bs.kind && compatibleBaselinePrometheusIdentity(series.prometheus, bs.prometheus) {
 						cell.Delta, cell.DeltaPct = baselineDelta(row.Current.Mean, cell.Measurement.Mean)
 					}
 					if row.Current.Samples < 10 || cell.Measurement.Samples < 10 || row.Current.CoveragePct < 80 || cell.Measurement.CoveragePct < 80 {
@@ -401,7 +434,7 @@ func compareBaselineResources(current *baselineComparisonRun, baselines []*basel
 			rows = append(rows, row)
 		}
 		if !found {
-			row := BaselineComparisonRow{ID: fmt.Sprintf("resource/%d", len(rows)), Name: key, Group: series.group, Source: series.source, Unit: series.unit, Baselines: map[string]BaselineComparisonCell{}}
+			row := BaselineComparisonRow{ID: fmt.Sprintf("resource/%d", len(rows)), Name: key, Group: series.group, Source: series.source, Unit: series.unit, Provider: series.prometheus, Baselines: map[string]BaselineComparisonCell{}}
 			for _, b := range baselines {
 				row.Baselines[b.identity.ID] = BaselineComparisonCell{Qualification: []string{"No comparable current-run resource window"}}
 			}

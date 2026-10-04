@@ -58,6 +58,8 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 	cache := map[string]storage.ProviderMonitorBatch{}
 	receipts := map[string]storage.MonitorBatchReceipt{}
 	sources := map[string]string{}
+	jobsByID := map[string]storage.RunMonitorJob{}
+	firstHeads := map[string]storage.ObservationHead{}
 	if kind != "point" && len(heads) > 0 {
 		jobs, err := store.ListRunMonitorJobs(project, run)
 		if err != nil {
@@ -65,11 +67,29 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 		}
 		for _, job := range jobs {
 			sources[job.ID] = job.Source.ID
+			jobsByID[job.ID] = job
+		}
+		if firstStore, ok := store.(interface {
+			ListProviderFirstDiagnosticHeads(string, string, []string) ([]storage.ObservationHead, error)
+		}); ok {
+			keys := make([]string, 0, len(heads))
+			for _, h := range heads {
+				if jobsByID[h.JobID].Source.Pack == "prometheus-query" {
+					keys = append(keys, h.Key)
+				}
+			}
+			first, err := firstStore.ListProviderFirstDiagnosticHeads(project, run, keys)
+			if err != nil {
+				return out, err
+			}
+			for _, h := range first {
+				firstHeads[h.Key] = h
+			}
 		}
 	}
-	for _, h := range heads {
+	readHead := func(h storage.ObservationHead) (storage.ProviderMonitorBatch, storage.MonitorBatchReceipt, error) {
 		if err := ctx.Err(); err != nil {
-			return out, err
+			return storage.ProviderMonitorBatch{}, storage.MonitorBatchReceipt{}, err
 		}
 		key := fmt.Sprintf("%s:%d", h.JobID, h.Sequence)
 		batch, cached := cache[key]
@@ -77,19 +97,26 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 		if !cached {
 			page, err := store.ListMonitorBatchReceipts(project, run, h.JobID, h.Sequence-1, 1)
 			if err != nil || len(page) != 1 || page[0].JobID != h.JobID || page[0].Sequence != h.Sequence {
-				return out, errors.New("canonical receipt unavailable")
+				return batch, receipt, errors.New("canonical receipt unavailable")
 			}
 			receipt = page[0]
 			body, err := readMonitorArtifact(ctx, receipt.ArtifactKey, receipt.Digest)
 			if err != nil {
-				return out, err
+				return batch, receipt, err
 			}
 			batch, err = decodeMonitorArtifact(body)
 			if err != nil || len(batch.Points) != receipt.SampleCount {
-				return out, errors.New("canonical receipt is corrupt")
+				return batch, receipt, errors.New("canonical receipt is corrupt")
 			}
 			cache[key] = batch
 			receipts[key] = receipt
+		}
+		return batch, receipt, nil
+	}
+	for _, h := range heads {
+		batch, receipt, err := readHead(h)
+		if err != nil {
+			return out, err
 		}
 		if kind == "point" {
 			if h.Index < 0 || h.Index >= len(batch.Points) {
@@ -112,6 +139,24 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 			if sources[h.JobID] == "" {
 				return out, errors.New("canonical diagnostic source unavailable")
 			}
+			if job := jobsByID[h.JobID]; job.Source.Pack == "prometheus-query" {
+				first := d.TimestampUTC
+				if firstHead, ok := firstHeads["first:"+h.Key]; ok {
+					firstBatch, _, err := readHead(firstHead)
+					if err != nil {
+						return out, err
+					}
+					if firstHead.JobID != h.JobID || firstHead.Index < 0 || firstHead.Index >= len(firstBatch.Evidence) {
+						return out, errors.New("invalid first diagnostic reference")
+					}
+					firstDiagnostic := firstBatch.Evidence[firstHead.Index]
+					if "first:"+storage.DiagnosticKeyForJob(h.JobID, firstDiagnostic) != firstHead.Key {
+						return out, errors.New("first diagnostic identity mismatch")
+					}
+					first = firstDiagnostic.TimestampUTC
+				}
+				d = projectPrometheusDiagnostic(d, first, job)
+			}
 			out.Evidence = append(out.Evidence, d)
 			out.EvidenceSources = append(out.EvidenceSources, sources[h.JobID])
 		}
@@ -120,12 +165,37 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 	return out, nil
 }
 
+// Successful current-state snapshots establish absence, not historical resolution.
+// Derive this projection from durable receipts without altering retry content.
+func projectPrometheusDiagnostic(d appdynamics.Diagnostic, first time.Time, job storage.RunMonitorJob) appdynamics.Diagnostic {
+	properties := make(map[string]string, len(d.Properties)+3)
+	for key, value := range d.Properties {
+		properties[key] = value
+	}
+	properties["first_observed_utc"] = first.UTC().Format(time.RFC3339Nano)
+	properties["last_observed_utc"] = d.TimestampUTC.UTC().Format(time.RFC3339Nano)
+	key := "targets"
+	if d.Kind == "alert" {
+		key = "alerts"
+	}
+	coverage := job.Coverage[key]
+	if successful, ok := job.Coverage[key+"_last_success"]; ok {
+		coverage = successful
+	}
+	if (coverage.Status == "complete" || coverage.Status == "no_data") && !coverage.Truncated && len(coverage.Warnings) == 0 && coverage.ObservedAt != nil && coverage.ObservedAt.After(d.TimestampUTC) && (job.LoadEndedAt == nil || !coverage.ObservedAt.After(*job.LoadEndedAt)) {
+		d.Status = "no_longer_observed"
+		d.TimestampUTC = *coverage.ObservedAt
+		properties["state_observed_utc"] = d.TimestampUTC.UTC().Format(time.RFC3339Nano)
+	}
+	d.Properties = properties
+	return d
+}
+
 // This is shared by direct workers and authenticated collector submissions.
 // Artifacts are durable before their receipt, cursor and canonical heads commit.
 func (s *Server) ingestAppDynamicsBatch(ctx context.Context, job storage.RunMonitorJob, sequence int64, payload storage.ProviderMonitorBatch, term executionLeaseTerm) error {
-	store, ok := s.store.(providerMonitorStore)
-	if !ok {
-		return errors.New("provider monitor storage unavailable")
+	if job.Source.Pack == "prometheus-query" {
+		return s.ingestPrometheusBatch(ctx, job, sequence, payload, term)
 	}
 	if job.ConnectionSnapshot == nil || job.Source.AppDynamics == nil || sequence < 0 || len(payload.Points) > 512 || len(payload.Evidence) > 100 || len(payload.Coverage) > 128 || len(payload.Topology) > 256 {
 		return errors.New("invalid AppDynamics batch")
@@ -194,6 +264,14 @@ func (s *Server) ingestAppDynamicsBatch(ctx context.Context, job storage.RunMoni
 		c.Message = scrubTextBounded(c.Message, 256)
 		payload.Coverage[key] = c
 	}
+	return s.persistProviderBatch(ctx, job, sequence, payload, term, now)
+}
+
+func (s *Server) persistProviderBatch(ctx context.Context, job storage.RunMonitorJob, sequence int64, payload storage.ProviderMonitorBatch, term executionLeaseTerm, now time.Time) error {
+	store, ok := s.store.(providerMonitorStore)
+	if !ok {
+		return errors.New("provider monitor storage unavailable")
+	}
 	body, err := json.Marshal(payload)
 	if err != nil || len(body) > 1<<20 {
 		return errors.New("provider batch exceeds byte limit")
@@ -237,7 +315,7 @@ func (tr *TestRunner) ensureRunMonitorFinalization(project, run string) error {
 		return err
 	}
 	for _, job := range jobs {
-		if job.Source.Pack == "appdynamics" && (job.State == "reconciling" || job.State == "collecting") {
+		if (job.Source.CanonicalProvider() || job.FlushOnly) && (job.State == "reconciling" || job.State == "collecting" || job.State == "flushing") {
 			return errMonitoringPending
 		}
 	}

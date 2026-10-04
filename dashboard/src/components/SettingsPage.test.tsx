@@ -1060,7 +1060,7 @@ describe('SettingsPage', () => {
     await selectSettingsSubnav(integrationsSection, 'Notifications')
     expect(integrationsSection.querySelector('#settings-integrations-panel-library')?.hasAttribute('hidden')).toBe(true)
     expect(integrationsSection.querySelector('#settings-integrations-panel-notifications')?.hasAttribute('hidden')).toBe(false)
-    await selectSettingsSubnav(integrationsSection, 'Prometheus')
+    await selectSettingsSubnav(integrationsSection, 'APEX platform graphs')
     expect(integrationsSection.querySelector('#settings-integrations-panel-prometheus')?.hasAttribute('hidden')).toBe(false)
   })
 
@@ -1182,10 +1182,10 @@ describe('SettingsPage', () => {
     expect(integrationsSection).toBeTruthy()
     if (!integrationsSection) return
 
-    await selectSettingsSubnav(integrationsSection, 'Prometheus')
-    expect(integrationsSection.textContent).toContain('Prometheus Graphs')
+    await selectSettingsSubnav(integrationsSection, 'APEX platform graphs')
+    expect(integrationsSection.textContent).toContain('APEX platform graphs')
 
-    const enabledInput = findSettingInput(integrationsSection, 'Enable Prometheus Graphs')
+    const enabledInput = findSettingInput(integrationsSection, 'Enable APEX platform graphs')
     const urlInput = findSettingInput(integrationsSection, 'Server URL')
     const timeoutInput = findSettingInput(integrationsSection, 'Timeout (seconds)')
     expect(enabledInput).toBeTruthy()

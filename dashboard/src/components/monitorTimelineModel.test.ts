@@ -36,3 +36,15 @@ it('selects the most recent complete query aggregate without treating changing w
   expect(monitorSeriesIdentity(first)).toBe(monitorSeriesIdentity(newest))
   expect(monitorSeriesIdentity(point(0, 0))).not.toBe(monitorSeriesIdentity(first))
 })
+
+it('keeps Prometheus query identity and evaluation gaps separate from display labels', () => {
+  const first: AnalysisPoint = { ...point(0, 0), dimensions: { job: 'checkout' }, provider: { ...point(0, 0).provider!, name: 'prometheus', mode: 'evaluation_point', query_id: 'cpu', definition_hash: 'hash', backend_profile: 'prometheus', evaluation_step_seconds: 15, entity_ids: { series: 'opaque-id' } } }
+  const last = { ...first, timestamp_utc: new Date(45000).toISOString(), value: 42 }
+  expect(buildMonitorTimelineRows([first, last], [], 'tps')).toEqual([{ time: 0, monitor: 0 }, { time: 15000, monitor: null }, { time: 45000, monitor: 42 }])
+  expect(monitorEntityLabel(first)).toBe('job: checkout')
+  expect(monitorSeriesIdentity(first)).not.toBe(monitorSeriesIdentity({ ...first, provider: { ...first.provider!, definition_hash: 'changed' } }))
+  expect(monitorSeriesIdentity(first)).not.toBe(monitorSeriesIdentity({ ...first, provider: { ...first.provider!, evaluation_step_seconds: 30 } }))
+  const azure = { ...first, dimensions: { job: 'checkoutapi' }, provider: { ...first.provider!, backend_profile: 'azure_managed', display_labels: { Job: 'CheckoutAPI' } } }
+  expect(monitorEntityLabel(azure)).toBe('Job: CheckoutAPI')
+  expect(monitorSeriesIdentity(azure)).toBe(monitorSeriesIdentity({ ...azure, provider: { ...azure.provider, display_labels: { JOB: 'CHECKOUTAPI' } } }))
+})

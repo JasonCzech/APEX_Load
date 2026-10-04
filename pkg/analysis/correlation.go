@@ -46,6 +46,15 @@ func LaggedCorrelation(left, right []MetricPoint, from, to time.Time, bucketSeco
 		shifted := make([]MetricPoint, 0, len(right))
 		for _, p := range right {
 			p.TimestampUTC = p.TimestampUTC.Add(-time.Duration(lag) * time.Second)
+			if p.Provider != nil && p.Provider.Name == "prometheus" && p.Provider.Mode == "analysis_bucket" {
+				// Shift only the authorized calculation copy. Its explicit display
+				// interval follows that copy's timestamp; response provenance stays
+				// at the original source-aligned interval.
+				metadata := *p.Provider
+				metadata.BucketStart = metadata.BucketStart.Add(-time.Duration(lag) * time.Second)
+				metadata.BucketEnd = metadata.BucketEnd.Add(-time.Duration(lag) * time.Second)
+				p.Provider = &metadata
+			}
 			if !p.TimestampUTC.Before(from) && p.TimestampUTC.Before(to) {
 				shifted = append(shifted, p)
 			}

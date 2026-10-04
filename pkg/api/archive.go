@@ -82,6 +82,8 @@ type RunArchiveManifest struct {
 	MonitorEvidenceCount              int64                              `json:"monitor_evidence_count,omitempty"`
 	MonitorDiagnosticsFile            string                             `json:"monitor_diagnostics_file,omitempty"`
 	MonitorDiagnosticsCount           int64                              `json:"monitor_diagnostics_count,omitempty"`
+	FrozenMonitorRules                []analysis.MonitorRule             `json:"frozen_monitor_rules,omitempty"`
+	MonitorRulesFrozen                bool                               `json:"monitor_rules_frozen,omitempty"`
 	MonitoringStatus                  string                             `json:"monitoring_status,omitempty"`
 	MonitorRuleResults                []analysis.MonitorRuleResult       `json:"monitor_rule_results,omitempty"`
 	MonitorCoverage                   []RunMonitorCoverage               `json:"monitor_coverage,omitempty"`

@@ -4279,6 +4279,11 @@ paths:
                                 type: string
                               protocol:
                                 type: string
+                              provider:
+                                type: object
+                                description: 'Go type: BaselinePrometheusIdentity'
+                                additionalProperties: true
+                                nullable: true
                               source:
                                 type: string
                               unit:
@@ -4370,6 +4375,11 @@ paths:
                                 type: string
                               protocol:
                                 type: string
+                              provider:
+                                type: object
+                                description: 'Go type: BaselinePrometheusIdentity'
+                                additionalProperties: true
+                                nullable: true
                               source:
                                 type: string
                               unit:
@@ -8579,6 +8589,46 @@ paths:
                           type: string
                         error:
                           type: string
+                        frozen_monitor_rules:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              comparator:
+                                type: string
+                              dimensions:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              end_offset_seconds:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              evaluation_mode:
+                                type: string
+                              metric:
+                                type: string
+                              min_coverage_pct:
+                                type: number
+                                format: double
+                              query_id:
+                                type: string
+                              require_freshness:
+                                type: boolean
+                              severity:
+                                type: string
+                              source_id:
+                                type: string
+                              start_offset_seconds:
+                                type: integer
+                                format: int64
+                              statistic:
+                                type: string
+                              threshold:
+                                type: number
+                                format: double
+                              unit:
+                                type: string
                         initial_provenance:
                           type: object
                           properties:
@@ -8755,6 +8805,10 @@ paths:
                                 type: string
                               job_id:
                                 type: string
+                              prometheus:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               provider_coverage:
                                 type: object
                                 additionalProperties:
@@ -8809,6 +8863,8 @@ paths:
                                 additionalProperties: true
                               status:
                                 type: string
+                        monitor_rules_frozen:
+                          type: boolean
                         monitoring_status:
                           type: string
                         provenance:
@@ -9438,32 +9494,7 @@ paths:
                         properties:
                           diagnostic:
                             type: object
-                            properties:
-                              application_id:
-                                type: string
-                              deep_link:
-                                type: string
-                              entity_ids:
-                                type: object
-                                additionalProperties:
-                                  type: string
-                              id:
-                                type: string
-                              kind:
-                                type: string
-                              properties:
-                                type: object
-                                additionalProperties:
-                                  type: string
-                              severity:
-                                type: string
-                              status:
-                                type: string
-                              summary:
-                                type: string
-                              timestamp_utc:
-                                type: string
-                                format: date-time
+                            additionalProperties: true
                           source_id:
                             type: string
                     monitor_rule_results:
@@ -9496,11 +9527,17 @@ paths:
                                 type: integer
                                 format: int64
                                 nullable: true
+                              evaluation_mode:
+                                type: string
                               metric:
                                 type: string
                               min_coverage_pct:
                                 type: number
                                 format: double
+                              query_id:
+                                type: string
+                              require_freshness:
+                                type: boolean
                               severity:
                                 type: string
                               source_id:
@@ -11267,11 +11304,17 @@ paths:
                                 type: integer
                                 format: int64
                                 nullable: true
+                              evaluation_mode:
+                                type: string
                               metric:
                                 type: string
                               min_coverage_pct:
                                 type: number
                                 format: double
+                              query_id:
+                                type: string
+                              require_freshness:
+                                type: boolean
                               severity:
                                 type: string
                               source_id:
@@ -35386,11 +35429,17 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          evaluation_mode:
+                            type: string
                           metric:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          query_id:
+                            type: string
+                          require_freshness:
+                            type: boolean
                           severity:
                             type: string
                           source_id:
@@ -35528,11 +35577,17 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            evaluation_mode:
+                              type: string
                             metric:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
                             severity:
                               type: string
                             source_id:
@@ -35727,11 +35782,17 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            evaluation_mode:
+                              type: string
                             metric:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
                             severity:
                               type: string
                             source_id:
@@ -35897,11 +35958,17 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            evaluation_mode:
+                              type: string
                             metric:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
                             severity:
                               type: string
                             source_id:
@@ -49513,6 +49580,54 @@ paths:
                         type: string
                     violations:
                       type: boolean
+                coverage:
+                  type: object
+                  additionalProperties:
+                    type: object
+                    properties:
+                      cache_age_seconds:
+                        type: integer
+                        format: int64
+                      cached:
+                        type: boolean
+                      evidence:
+                        type: integer
+                        format: int64
+                      expected_points:
+                        type: integer
+                        format: int64
+                      freshness:
+                        type: string
+                      from:
+                        type: string
+                        format: date-time
+                      infos:
+                        type: array
+                        items:
+                          type: string
+                      message:
+                        type: string
+                      missing_points:
+                        type: integer
+                        format: int64
+                      observed_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      points:
+                        type: integer
+                        format: int64
+                      status:
+                        type: string
+                      to:
+                        type: string
+                        format: date-time
+                      truncated:
+                        type: boolean
+                      warnings:
+                        type: array
+                        items:
+                          type: string
                 entities:
                   type: array
                   items:
@@ -49541,6 +49656,151 @@ paths:
                       type: string
                 message:
                   type: string
+                points:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      active_runtime_ms:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      dataset_id:
+                        type: string
+                      dimensions:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      host:
+                        type: string
+                      input_kind:
+                        type: string
+                      kind:
+                        type: string
+                      metric_name:
+                        type: string
+                      project_id:
+                        type: string
+                      provider:
+                        type: object
+                        properties:
+                          aggregation_eligible:
+                            type: boolean
+                          analysis_statistic:
+                            type: string
+                          backend_profile:
+                            type: string
+                          bucket_end:
+                            type: string
+                            format: date-time
+                          bucket_start:
+                            type: string
+                            format: date-time
+                          catalog_path:
+                            type: string
+                          count:
+                            type: number
+                            format: double
+                            nullable: true
+                          definition_hash:
+                            type: string
+                          display_labels:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          entity_ids:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          evaluation_step_seconds:
+                            type: integer
+                            format: int64
+                          freshness_known:
+                            type: boolean
+                          max:
+                            type: number
+                            format: double
+                            nullable: true
+                          metric_id:
+                            type: string
+                          min:
+                            type: number
+                            format: double
+                            nullable: true
+                          mode:
+                            type: string
+                          name:
+                            type: string
+                          query_id:
+                            type: string
+                          query_window:
+                            type: boolean
+                          resolution_seconds:
+                            type: integer
+                            format: int64
+                          settled:
+                            type: boolean
+                          statistic:
+                            type: string
+                          sum:
+                            type: number
+                            format: double
+                            nullable: true
+                          underlying_sample_time:
+                            type: string
+                            format: date-time
+                            nullable: true
+                        nullable: true
+                      quality:
+                        type: string
+                      received_at:
+                        type: string
+                        format: date-time
+                      relative_time_ms:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_id:
+                        type: string
+                      scenario_id:
+                        type: string
+                      schema_version:
+                        type: string
+                      service:
+                        type: string
+                      source:
+                        type: string
+                      timestamp_utc:
+                        type: string
+                        format: date-time
+                      unit:
+                        type: string
+                      value:
+                        type: number
+                        format: double
+                        nullable: true
+                prometheus_capabilities:
+                  type: object
+                  properties:
+                    alerts:
+                      type: boolean
+                    backend_profile:
+                      type: string
+                    discovery:
+                      type: boolean
+                    exemplars:
+                      type: boolean
+                    metrics:
+                      type: boolean
+                    status:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    targets:
+                      type: boolean
+                    version:
+                      type: string
+                  nullable: true
                 truncated:
                   type: boolean
               required:
@@ -49715,14 +49975,35 @@ paths:
                   additionalProperties:
                     type: object
                     properties:
+                      cache_age_seconds:
+                        type: integer
+                        format: int64
+                      cached:
+                        type: boolean
                       evidence:
                         type: integer
                         format: int64
+                      expected_points:
+                        type: integer
+                        format: int64
+                      freshness:
+                        type: string
                       from:
                         type: string
                         format: date-time
+                      infos:
+                        type: array
+                        items:
+                          type: string
                       message:
                         type: string
+                      missing_points:
+                        type: integer
+                        format: int64
+                      observed_at:
+                        type: string
+                        format: date-time
+                        nullable: true
                       points:
                         type: integer
                         format: int64
@@ -49733,6 +50014,10 @@ paths:
                         format: date-time
                       truncated:
                         type: boolean
+                      warnings:
+                        type: array
+                        items:
+                          type: string
                 evidence:
                   type: array
                   items:
@@ -49802,6 +50087,10 @@ paths:
                         properties:
                           aggregation_eligible:
                             type: boolean
+                          analysis_statistic:
+                            type: string
+                          backend_profile:
+                            type: string
                           bucket_end:
                             type: string
                             format: date-time
@@ -49814,10 +50103,21 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          definition_hash:
+                            type: string
+                          display_labels:
+                            type: object
+                            additionalProperties:
+                              type: string
                           entity_ids:
                             type: object
                             additionalProperties:
                               type: string
+                          evaluation_step_seconds:
+                            type: integer
+                            format: int64
+                          freshness_known:
+                            type: boolean
                           max:
                             type: number
                             format: double
@@ -49828,7 +50128,11 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          mode:
+                            type: string
                           name:
+                            type: string
+                          query_id:
                             type: string
                           query_window:
                             type: boolean
@@ -49842,6 +50146,10 @@ paths:
                           sum:
                             type: number
                             format: double
+                            nullable: true
+                          underlying_sample_time:
+                            type: string
+                            format: date-time
                             nullable: true
                         nullable: true
                       quality:
@@ -49880,9 +50188,35 @@ paths:
                     next_query:
                       type: integer
                       format: int64
+                    next_time:
+                      type: string
+                      format: date-time
+                      nullable: true
                     total_queries:
                       type: integer
                       format: int64
+                  nullable: true
+                prometheus_capabilities:
+                  type: object
+                  properties:
+                    alerts:
+                      type: boolean
+                    backend_profile:
+                      type: string
+                    discovery:
+                      type: boolean
+                    exemplars:
+                      type: boolean
+                    metrics:
+                      type: boolean
+                    status:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    targets:
+                      type: boolean
+                    version:
+                      type: string
                   nullable: true
                 query_from_utc:
                   type: string
@@ -55075,6 +55409,78 @@ paths:
                     type: string
                   project_id:
                     type: string
+                  prometheus:
+                    type: object
+                    properties:
+                      alerts:
+                        type: boolean
+                      collection_id:
+                        type: string
+                      evidence_selector:
+                        type: string
+                      grid_anchor:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      project_id:
+                        type: string
+                      queries:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            allowed_labels:
+                              type: array
+                              items:
+                                type: string
+                            expression:
+                              type: string
+                            freshness_expression:
+                              type: string
+                            id:
+                              type: string
+                            max_sample_age_seconds:
+                              type: integer
+                              format: int64
+                            min_series:
+                              type: integer
+                              format: int64
+                            name:
+                              type: string
+                            parameters:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                            semantics:
+                              type: string
+                            terminal_expression:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - expression
+                            - id
+                            - name
+                      query_offset:
+                        type: integer
+                        format: int64
+                      query_time:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      settle_seconds:
+                        type: integer
+                        format: int64
+                      step_seconds:
+                        type: integer
+                        format: int64
+                      targets:
+                        type: boolean
+                    required:
+                      - project_id
+                      - queries
+                    nullable: true
                   revision:
                     type: integer
                     format: int64
@@ -55264,6 +55670,71 @@ paths:
                   type: string
                 project_id:
                   type: string
+                prometheus:
+                  type: object
+                  properties:
+                    alerts:
+                      type: boolean
+                    collection_id:
+                      type: string
+                    evidence_selector:
+                      type: string
+                    grid_anchor:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    project_id:
+                      type: string
+                    queries:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          allowed_labels:
+                            type: array
+                            items:
+                              type: string
+                          expression:
+                            type: string
+                          freshness_expression:
+                            type: string
+                          id:
+                            type: string
+                          max_sample_age_seconds:
+                            type: integer
+                            format: int64
+                          min_series:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          parameters:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              additionalProperties: true
+                          semantics:
+                            type: string
+                          terminal_expression:
+                            type: string
+                          unit:
+                            type: string
+                    query_offset:
+                      type: integer
+                      format: int64
+                    query_time:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    settle_seconds:
+                      type: integer
+                      format: int64
+                    step_seconds:
+                      type: integer
+                      format: int64
+                    targets:
+                      type: boolean
+                  nullable: true
                 revision:
                   type: integer
                   format: int64
@@ -55396,6 +55867,78 @@ paths:
                     type: string
                   project_id:
                     type: string
+                  prometheus:
+                    type: object
+                    properties:
+                      alerts:
+                        type: boolean
+                      collection_id:
+                        type: string
+                      evidence_selector:
+                        type: string
+                      grid_anchor:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      project_id:
+                        type: string
+                      queries:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            allowed_labels:
+                              type: array
+                              items:
+                                type: string
+                            expression:
+                              type: string
+                            freshness_expression:
+                              type: string
+                            id:
+                              type: string
+                            max_sample_age_seconds:
+                              type: integer
+                              format: int64
+                            min_series:
+                              type: integer
+                              format: int64
+                            name:
+                              type: string
+                            parameters:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                            semantics:
+                              type: string
+                            terminal_expression:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - expression
+                            - id
+                            - name
+                      query_offset:
+                        type: integer
+                        format: int64
+                      query_time:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      settle_seconds:
+                        type: integer
+                        format: int64
+                      step_seconds:
+                        type: integer
+                        format: int64
+                      targets:
+                        type: boolean
+                    required:
+                      - project_id
+                      - queries
+                    nullable: true
                   revision:
                     type: integer
                     format: int64
@@ -55586,6 +56129,71 @@ paths:
                   type: string
                 project_id:
                   type: string
+                prometheus:
+                  type: object
+                  properties:
+                    alerts:
+                      type: boolean
+                    collection_id:
+                      type: string
+                    evidence_selector:
+                      type: string
+                    grid_anchor:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    project_id:
+                      type: string
+                    queries:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          allowed_labels:
+                            type: array
+                            items:
+                              type: string
+                          expression:
+                            type: string
+                          freshness_expression:
+                            type: string
+                          id:
+                            type: string
+                          max_sample_age_seconds:
+                            type: integer
+                            format: int64
+                          min_series:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          parameters:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              additionalProperties: true
+                          semantics:
+                            type: string
+                          terminal_expression:
+                            type: string
+                          unit:
+                            type: string
+                    query_offset:
+                      type: integer
+                      format: int64
+                    query_time:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    settle_seconds:
+                      type: integer
+                      format: int64
+                    step_seconds:
+                      type: integer
+                      format: int64
+                    targets:
+                      type: boolean
+                  nullable: true
                 revision:
                   type: integer
                   format: int64
@@ -55718,6 +56326,78 @@ paths:
                     type: string
                   project_id:
                     type: string
+                  prometheus:
+                    type: object
+                    properties:
+                      alerts:
+                        type: boolean
+                      collection_id:
+                        type: string
+                      evidence_selector:
+                        type: string
+                      grid_anchor:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      project_id:
+                        type: string
+                      queries:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            allowed_labels:
+                              type: array
+                              items:
+                                type: string
+                            expression:
+                              type: string
+                            freshness_expression:
+                              type: string
+                            id:
+                              type: string
+                            max_sample_age_seconds:
+                              type: integer
+                              format: int64
+                            min_series:
+                              type: integer
+                              format: int64
+                            name:
+                              type: string
+                            parameters:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                            semantics:
+                              type: string
+                            terminal_expression:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - expression
+                            - id
+                            - name
+                      query_offset:
+                        type: integer
+                        format: int64
+                      query_time:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      settle_seconds:
+                        type: integer
+                        format: int64
+                      step_seconds:
+                        type: integer
+                        format: int64
+                      targets:
+                        type: boolean
+                    required:
+                      - project_id
+                      - queries
+                    nullable: true
                   revision:
                     type: integer
                     format: int64
@@ -55912,6 +56592,71 @@ paths:
                   type: string
                 project_id:
                   type: string
+                prometheus:
+                  type: object
+                  properties:
+                    alerts:
+                      type: boolean
+                    collection_id:
+                      type: string
+                    evidence_selector:
+                      type: string
+                    grid_anchor:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    project_id:
+                      type: string
+                    queries:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          allowed_labels:
+                            type: array
+                            items:
+                              type: string
+                          expression:
+                            type: string
+                          freshness_expression:
+                            type: string
+                          id:
+                            type: string
+                          max_sample_age_seconds:
+                            type: integer
+                            format: int64
+                          min_series:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          parameters:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              additionalProperties: true
+                          semantics:
+                            type: string
+                          terminal_expression:
+                            type: string
+                          unit:
+                            type: string
+                    query_offset:
+                      type: integer
+                      format: int64
+                    query_time:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    settle_seconds:
+                      type: integer
+                      format: int64
+                    step_seconds:
+                      type: integer
+                      format: int64
+                    targets:
+                      type: boolean
+                  nullable: true
                 revision:
                   type: integer
                   format: int64
@@ -56044,6 +56789,78 @@ paths:
                     type: string
                   project_id:
                     type: string
+                  prometheus:
+                    type: object
+                    properties:
+                      alerts:
+                        type: boolean
+                      collection_id:
+                        type: string
+                      evidence_selector:
+                        type: string
+                      grid_anchor:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      project_id:
+                        type: string
+                      queries:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            allowed_labels:
+                              type: array
+                              items:
+                                type: string
+                            expression:
+                              type: string
+                            freshness_expression:
+                              type: string
+                            id:
+                              type: string
+                            max_sample_age_seconds:
+                              type: integer
+                              format: int64
+                            min_series:
+                              type: integer
+                              format: int64
+                            name:
+                              type: string
+                            parameters:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                            semantics:
+                              type: string
+                            terminal_expression:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - expression
+                            - id
+                            - name
+                      query_offset:
+                        type: integer
+                        format: int64
+                      query_time:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      settle_seconds:
+                        type: integer
+                        format: int64
+                      step_seconds:
+                        type: integer
+                        format: int64
+                      targets:
+                        type: boolean
+                    required:
+                      - project_id
+                      - queries
+                    nullable: true
                   revision:
                     type: integer
                     format: int64
@@ -58696,6 +59513,1634 @@ paths:
       tags:
         - Projects
       x-handler: handleTestELKConnection
+  /api/v1/projects/{id}/monitoring/prometheus-connections:
+    get:
+      summary: List Prometheus Connections
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleListPrometheusConnections
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleListPrometheusConnections
+    post:
+      summary: Create Prometheus Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleCreatePrometheusConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client_certificate_secret:
+                  type: string
+                  nullable: true
+                client_key_secret:
+                  type: string
+                  nullable: true
+                client_secret_secret:
+                  type: string
+                  nullable: true
+                collection_mode:
+                  type: string
+                collector_agent_id:
+                  type: string
+                config:
+                  type: object
+                  properties:
+                    allow_private_http:
+                      type: boolean
+                    approved_cidrs:
+                      type: array
+                      items:
+                        type: string
+                    auth_type:
+                      type: string
+                    azure_credential_mode:
+                      type: string
+                    azure_tenant_id:
+                      type: string
+                    backend_profile:
+                      type: string
+                    ca_pem:
+                      type: string
+                    client_id:
+                      type: string
+                    context_path:
+                      type: string
+                    endpoint:
+                      type: string
+                    max_points:
+                      type: integer
+                      format: int64
+                    max_poll_seconds:
+                      type: integer
+                      format: int64
+                    max_requests_per_poll:
+                      type: integer
+                      format: int64
+                    max_response_bytes:
+                      type: integer
+                      format: int64
+                    max_series:
+                      type: integer
+                      format: int64
+                    mtls:
+                      type: boolean
+                    requests_per_minute:
+                      type: integer
+                      format: int64
+                    timeout_seconds:
+                      type: integer
+                      format: int64
+                description:
+                  type: string
+                enabled:
+                  type: boolean
+                name:
+                  type: string
+                password_secret:
+                  type: string
+                  nullable: true
+                revision:
+                  type: integer
+                  format: int64
+                token_secret:
+                  type: string
+                  nullable: true
+                username_secret:
+                  type: string
+                  nullable: true
+              required:
+                - name
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  capabilities:
+                    type: object
+                    properties:
+                      alerts:
+                        type: boolean
+                      backend_profile:
+                        type: string
+                      discovery:
+                        type: boolean
+                      exemplars:
+                        type: boolean
+                      metrics:
+                        type: boolean
+                      status:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      targets:
+                        type: boolean
+                      version:
+                        type: string
+                    required:
+                      - alerts
+                      - backend_profile
+                      - discovery
+                      - exemplars
+                      - metrics
+                      - targets
+                  collection_mode:
+                    type: string
+                  collector_agent_id:
+                    type: string
+                  config:
+                    type: object
+                    properties:
+                      allow_private_http:
+                        type: boolean
+                      approved_cidrs:
+                        type: array
+                        items:
+                          type: string
+                      auth_type:
+                        type: string
+                      azure_credential_mode:
+                        type: string
+                      azure_tenant_id:
+                        type: string
+                      backend_profile:
+                        type: string
+                      ca_pem:
+                        type: string
+                      client_id:
+                        type: string
+                      context_path:
+                        type: string
+                      endpoint:
+                        type: string
+                      max_points:
+                        type: integer
+                        format: int64
+                      max_poll_seconds:
+                        type: integer
+                        format: int64
+                      max_requests_per_poll:
+                        type: integer
+                        format: int64
+                      max_response_bytes:
+                        type: integer
+                        format: int64
+                      max_series:
+                        type: integer
+                        format: int64
+                      mtls:
+                        type: boolean
+                      requests_per_minute:
+                        type: integer
+                        format: int64
+                      timeout_seconds:
+                        type: integer
+                        format: int64
+                    required:
+                      - endpoint
+                  created_at:
+                    type: string
+                    format: date-time
+                  description:
+                    type: string
+                  enabled:
+                    type: boolean
+                  has_client_certificate:
+                    type: boolean
+                  has_client_key:
+                    type: boolean
+                  has_client_secret:
+                    type: boolean
+                  has_custom_ca:
+                    type: boolean
+                  has_password:
+                    type: boolean
+                  has_token:
+                    type: boolean
+                  has_username:
+                    type: boolean
+                  id:
+                    type: string
+                  last_check_message:
+                    type: string
+                  last_check_status:
+                    type: string
+                  last_checked_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                  status:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                  verified_revision:
+                    type: integer
+                    format: int64
+                required:
+                  - capabilities
+                  - collection_mode
+                  - config
+                  - created_at
+                  - enabled
+                  - has_client_certificate
+                  - has_client_key
+                  - has_client_secret
+                  - has_custom_ca
+                  - has_password
+                  - has_token
+                  - has_username
+                  - id
+                  - name
+                  - project_id
+                  - revision
+                  - status
+                  - updated_at
+                  - verified_revision
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleCreatePrometheusConnection
+  /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}:
+    delete:
+      summary: Delete Prometheus Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleDeletePrometheusConnection
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleDeletePrometheusConnection
+    get:
+      summary: Get Prometheus Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read'
+      operationId: handleGetPrometheusConnection
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  capabilities:
+                    type: object
+                    properties:
+                      alerts:
+                        type: boolean
+                      backend_profile:
+                        type: string
+                      discovery:
+                        type: boolean
+                      exemplars:
+                        type: boolean
+                      metrics:
+                        type: boolean
+                      status:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      targets:
+                        type: boolean
+                      version:
+                        type: string
+                    required:
+                      - alerts
+                      - backend_profile
+                      - discovery
+                      - exemplars
+                      - metrics
+                      - targets
+                  collection_mode:
+                    type: string
+                  collector_agent_id:
+                    type: string
+                  config:
+                    type: object
+                    properties:
+                      allow_private_http:
+                        type: boolean
+                      approved_cidrs:
+                        type: array
+                        items:
+                          type: string
+                      auth_type:
+                        type: string
+                      azure_credential_mode:
+                        type: string
+                      azure_tenant_id:
+                        type: string
+                      backend_profile:
+                        type: string
+                      ca_pem:
+                        type: string
+                      client_id:
+                        type: string
+                      context_path:
+                        type: string
+                      endpoint:
+                        type: string
+                      max_points:
+                        type: integer
+                        format: int64
+                      max_poll_seconds:
+                        type: integer
+                        format: int64
+                      max_requests_per_poll:
+                        type: integer
+                        format: int64
+                      max_response_bytes:
+                        type: integer
+                        format: int64
+                      max_series:
+                        type: integer
+                        format: int64
+                      mtls:
+                        type: boolean
+                      requests_per_minute:
+                        type: integer
+                        format: int64
+                      timeout_seconds:
+                        type: integer
+                        format: int64
+                    required:
+                      - endpoint
+                  created_at:
+                    type: string
+                    format: date-time
+                  description:
+                    type: string
+                  enabled:
+                    type: boolean
+                  has_client_certificate:
+                    type: boolean
+                  has_client_key:
+                    type: boolean
+                  has_client_secret:
+                    type: boolean
+                  has_custom_ca:
+                    type: boolean
+                  has_password:
+                    type: boolean
+                  has_token:
+                    type: boolean
+                  has_username:
+                    type: boolean
+                  id:
+                    type: string
+                  last_check_message:
+                    type: string
+                  last_check_status:
+                    type: string
+                  last_checked_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                  status:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                  verified_revision:
+                    type: integer
+                    format: int64
+                required:
+                  - capabilities
+                  - collection_mode
+                  - config
+                  - created_at
+                  - enabled
+                  - has_client_certificate
+                  - has_client_key
+                  - has_client_secret
+                  - has_custom_ca
+                  - has_password
+                  - has_token
+                  - has_username
+                  - id
+                  - name
+                  - project_id
+                  - revision
+                  - status
+                  - updated_at
+                  - verified_revision
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleGetPrometheusConnection
+    put:
+      summary: Update Prometheus Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleUpdatePrometheusConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client_certificate_secret:
+                  type: string
+                  nullable: true
+                client_key_secret:
+                  type: string
+                  nullable: true
+                client_secret_secret:
+                  type: string
+                  nullable: true
+                collection_mode:
+                  type: string
+                collector_agent_id:
+                  type: string
+                config:
+                  type: object
+                  properties:
+                    allow_private_http:
+                      type: boolean
+                    approved_cidrs:
+                      type: array
+                      items:
+                        type: string
+                    auth_type:
+                      type: string
+                    azure_credential_mode:
+                      type: string
+                    azure_tenant_id:
+                      type: string
+                    backend_profile:
+                      type: string
+                    ca_pem:
+                      type: string
+                    client_id:
+                      type: string
+                    context_path:
+                      type: string
+                    endpoint:
+                      type: string
+                    max_points:
+                      type: integer
+                      format: int64
+                    max_poll_seconds:
+                      type: integer
+                      format: int64
+                    max_requests_per_poll:
+                      type: integer
+                      format: int64
+                    max_response_bytes:
+                      type: integer
+                      format: int64
+                    max_series:
+                      type: integer
+                      format: int64
+                    mtls:
+                      type: boolean
+                    requests_per_minute:
+                      type: integer
+                      format: int64
+                    timeout_seconds:
+                      type: integer
+                      format: int64
+                description:
+                  type: string
+                enabled:
+                  type: boolean
+                name:
+                  type: string
+                password_secret:
+                  type: string
+                  nullable: true
+                revision:
+                  type: integer
+                  format: int64
+                token_secret:
+                  type: string
+                  nullable: true
+                username_secret:
+                  type: string
+                  nullable: true
+              required:
+                - name
+                - revision
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  capabilities:
+                    type: object
+                    properties:
+                      alerts:
+                        type: boolean
+                      backend_profile:
+                        type: string
+                      discovery:
+                        type: boolean
+                      exemplars:
+                        type: boolean
+                      metrics:
+                        type: boolean
+                      status:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      targets:
+                        type: boolean
+                      version:
+                        type: string
+                    required:
+                      - alerts
+                      - backend_profile
+                      - discovery
+                      - exemplars
+                      - metrics
+                      - targets
+                  collection_mode:
+                    type: string
+                  collector_agent_id:
+                    type: string
+                  config:
+                    type: object
+                    properties:
+                      allow_private_http:
+                        type: boolean
+                      approved_cidrs:
+                        type: array
+                        items:
+                          type: string
+                      auth_type:
+                        type: string
+                      azure_credential_mode:
+                        type: string
+                      azure_tenant_id:
+                        type: string
+                      backend_profile:
+                        type: string
+                      ca_pem:
+                        type: string
+                      client_id:
+                        type: string
+                      context_path:
+                        type: string
+                      endpoint:
+                        type: string
+                      max_points:
+                        type: integer
+                        format: int64
+                      max_poll_seconds:
+                        type: integer
+                        format: int64
+                      max_requests_per_poll:
+                        type: integer
+                        format: int64
+                      max_response_bytes:
+                        type: integer
+                        format: int64
+                      max_series:
+                        type: integer
+                        format: int64
+                      mtls:
+                        type: boolean
+                      requests_per_minute:
+                        type: integer
+                        format: int64
+                      timeout_seconds:
+                        type: integer
+                        format: int64
+                    required:
+                      - endpoint
+                  created_at:
+                    type: string
+                    format: date-time
+                  description:
+                    type: string
+                  enabled:
+                    type: boolean
+                  has_client_certificate:
+                    type: boolean
+                  has_client_key:
+                    type: boolean
+                  has_client_secret:
+                    type: boolean
+                  has_custom_ca:
+                    type: boolean
+                  has_password:
+                    type: boolean
+                  has_token:
+                    type: boolean
+                  has_username:
+                    type: boolean
+                  id:
+                    type: string
+                  last_check_message:
+                    type: string
+                  last_check_status:
+                    type: string
+                  last_checked_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                  status:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                  verified_revision:
+                    type: integer
+                    format: int64
+                required:
+                  - capabilities
+                  - collection_mode
+                  - config
+                  - created_at
+                  - enabled
+                  - has_client_certificate
+                  - has_client_key
+                  - has_client_secret
+                  - has_custom_ca
+                  - has_password
+                  - has_token
+                  - has_username
+                  - id
+                  - name
+                  - project_id
+                  - revision
+                  - status
+                  - updated_at
+                  - verified_revision
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleUpdatePrometheusConnection
+  /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/adopt-dashboard:
+    post:
+      summary: Prometheus Adopt Dashboard
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handlePrometheusAdoptDashboard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dashboard_id:
+                  type: string
+                range_seconds:
+                  type: integer
+                  format: int64
+                step_seconds:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection_id:
+                    type: string
+                  connection_revision:
+                    type: integer
+                    format: int64
+                  dashboard_id:
+                    type: string
+                  dashboard_sha256:
+                    type: string
+                  datasource_uids:
+                    type: array
+                    items:
+                      type: string
+                  range_seconds:
+                    type: integer
+                    format: int64
+                  resolved_bindings:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  selection:
+                    type: object
+                    properties:
+                      alerts:
+                        type: boolean
+                      collection_id:
+                        type: string
+                      evidence_selector:
+                        type: string
+                      grid_anchor:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      project_id:
+                        type: string
+                      queries:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            allowed_labels:
+                              type: array
+                              items:
+                                type: string
+                            expression:
+                              type: string
+                            freshness_expression:
+                              type: string
+                            id:
+                              type: string
+                            max_sample_age_seconds:
+                              type: integer
+                              format: int64
+                            min_series:
+                              type: integer
+                              format: int64
+                            name:
+                              type: string
+                            parameters:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                            semantics:
+                              type: string
+                            terminal_expression:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - expression
+                            - id
+                            - name
+                      query_offset:
+                        type: integer
+                        format: int64
+                      query_time:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      settle_seconds:
+                        type: integer
+                        format: int64
+                      step_seconds:
+                        type: integer
+                        format: int64
+                      targets:
+                        type: boolean
+                    required:
+                      - project_id
+                      - queries
+                  truncated:
+                    type: boolean
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - connection_id
+                  - connection_revision
+                  - dashboard_id
+                  - dashboard_sha256
+                  - datasource_uids
+                  - range_seconds
+                  - selection
+                  - truncated
+                  - warnings
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handlePrometheusAdoptDashboard
+  /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/discover:
+    post:
+      summary: Discover Prometheus Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleDiscoverPrometheusConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from_utc:
+                  type: string
+                  format: date-time
+                kind:
+                  type: string
+                label:
+                  type: string
+                selection:
+                  type: object
+                  properties:
+                    alerts:
+                      type: boolean
+                    collection_id:
+                      type: string
+                    evidence_selector:
+                      type: string
+                    grid_anchor:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    project_id:
+                      type: string
+                    queries:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          allowed_labels:
+                            type: array
+                            items:
+                              type: string
+                          expression:
+                            type: string
+                          freshness_expression:
+                            type: string
+                          id:
+                            type: string
+                          max_sample_age_seconds:
+                            type: integer
+                            format: int64
+                          min_series:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          parameters:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              additionalProperties: true
+                          semantics:
+                            type: string
+                          terminal_expression:
+                            type: string
+                          unit:
+                            type: string
+                    query_offset:
+                      type: integer
+                      format: int64
+                    query_time:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    settle_seconds:
+                      type: integer
+                      format: int64
+                    step_seconds:
+                      type: integer
+                      format: int64
+                    targets:
+                      type: boolean
+                  nullable: true
+                selector:
+                  type: string
+                to_utc:
+                  type: string
+                  format: date-time
+      responses:
+        2XX:
+          description: Successful response; exact status is selected by the handler.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection_id:
+                    type: string
+                  connection_revision:
+                    type: integer
+                    format: int64
+                  created_at:
+                    type: string
+                    format: date-time
+                  expires_at:
+                    type: string
+                    format: date-time
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  message:
+                    type: string
+                  result: {}
+                  status:
+                    type: string
+                required:
+                  - connection_id
+                  - connection_revision
+                  - created_at
+                  - expires_at
+                  - id
+                  - kind
+                  - status
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleDiscoverPrometheusConnection
+  /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/operations/{operation_id}:
+    get:
+      summary: Get Prometheus Operation
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read'
+      operationId: handleGetPrometheusOperation
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection_id:
+                    type: string
+                  connection_revision:
+                    type: integer
+                    format: int64
+                  created_at:
+                    type: string
+                    format: date-time
+                  expires_at:
+                    type: string
+                    format: date-time
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  message:
+                    type: string
+                  result: {}
+                  status:
+                    type: string
+                required:
+                  - connection_id
+                  - connection_revision
+                  - created_at
+                  - expires_at
+                  - id
+                  - kind
+                  - status
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: operation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleGetPrometheusOperation
+  /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/preview:
+    post:
+      summary: Preview Prometheus Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handlePreviewPrometheusConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from_utc:
+                  type: string
+                  format: date-time
+                kind:
+                  type: string
+                label:
+                  type: string
+                selection:
+                  type: object
+                  properties:
+                    alerts:
+                      type: boolean
+                    collection_id:
+                      type: string
+                    evidence_selector:
+                      type: string
+                    grid_anchor:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    project_id:
+                      type: string
+                    queries:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          allowed_labels:
+                            type: array
+                            items:
+                              type: string
+                          expression:
+                            type: string
+                          freshness_expression:
+                            type: string
+                          id:
+                            type: string
+                          max_sample_age_seconds:
+                            type: integer
+                            format: int64
+                          min_series:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          parameters:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              additionalProperties: true
+                          semantics:
+                            type: string
+                          terminal_expression:
+                            type: string
+                          unit:
+                            type: string
+                    query_offset:
+                      type: integer
+                      format: int64
+                    query_time:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    settle_seconds:
+                      type: integer
+                      format: int64
+                    step_seconds:
+                      type: integer
+                      format: int64
+                    targets:
+                      type: boolean
+                  nullable: true
+                selector:
+                  type: string
+                to_utc:
+                  type: string
+                  format: date-time
+      responses:
+        2XX:
+          description: Successful response; exact status is selected by the handler.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection_id:
+                    type: string
+                  connection_revision:
+                    type: integer
+                    format: int64
+                  created_at:
+                    type: string
+                    format: date-time
+                  expires_at:
+                    type: string
+                    format: date-time
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  message:
+                    type: string
+                  result: {}
+                  status:
+                    type: string
+                required:
+                  - connection_id
+                  - connection_revision
+                  - created_at
+                  - expires_at
+                  - id
+                  - kind
+                  - status
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handlePreviewPrometheusConnection
+  /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/test:
+    post:
+      summary: Test Prometheus Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleTestPrometheusConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from_utc:
+                  type: string
+                  format: date-time
+                kind:
+                  type: string
+                label:
+                  type: string
+                selection:
+                  type: object
+                  properties:
+                    alerts:
+                      type: boolean
+                    collection_id:
+                      type: string
+                    evidence_selector:
+                      type: string
+                    grid_anchor:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    project_id:
+                      type: string
+                    queries:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          allowed_labels:
+                            type: array
+                            items:
+                              type: string
+                          expression:
+                            type: string
+                          freshness_expression:
+                            type: string
+                          id:
+                            type: string
+                          max_sample_age_seconds:
+                            type: integer
+                            format: int64
+                          min_series:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          parameters:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              additionalProperties: true
+                          semantics:
+                            type: string
+                          terminal_expression:
+                            type: string
+                          unit:
+                            type: string
+                    query_offset:
+                      type: integer
+                      format: int64
+                    query_time:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    settle_seconds:
+                      type: integer
+                      format: int64
+                    step_seconds:
+                      type: integer
+                      format: int64
+                    targets:
+                      type: boolean
+                  nullable: true
+                selector:
+                  type: string
+                to_utc:
+                  type: string
+                  format: date-time
+      responses:
+        2XX:
+          description: Successful response; exact status is selected by the handler.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection_id:
+                    type: string
+                  connection_revision:
+                    type: integer
+                    format: int64
+                  created_at:
+                    type: string
+                    format: date-time
+                  expires_at:
+                    type: string
+                    format: date-time
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  message:
+                    type: string
+                  result: {}
+                  status:
+                    type: string
+                required:
+                  - connection_id
+                  - connection_revision
+                  - created_at
+                  - expires_at
+                  - id
+                  - kind
+                  - status
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleTestPrometheusConnection
   /api/v1/projects/{id}/releases:
     get:
       summary: List Project Releases
@@ -62119,11 +64564,17 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          evaluation_mode:
+                            type: string
                           metric:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          query_id:
+                            type: string
+                          require_freshness:
+                            type: boolean
                           severity:
                             type: string
                           source_id:
@@ -63105,11 +65556,17 @@ paths:
                                 type: integer
                                 format: int64
                                 nullable: true
+                              evaluation_mode:
+                                type: string
                               metric:
                                 type: string
                               min_coverage_pct:
                                 type: number
                                 format: double
+                              query_id:
+                                type: string
+                              require_freshness:
+                                type: boolean
                               severity:
                                 type: string
                               source_id:
@@ -65309,11 +67766,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -69964,11 +72427,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -74620,11 +77089,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -79288,11 +81763,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -83956,11 +86437,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -88624,11 +91111,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -93292,11 +95785,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -108121,11 +110620,17 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          evaluation_mode:
+                            type: string
                           metric:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          query_id:
+                            type: string
+                          require_freshness:
+                            type: boolean
                           severity:
                             type: string
                           source_id:
@@ -110152,11 +112657,17 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            evaluation_mode:
+                              type: string
                             metric:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
                             severity:
                               type: string
                             source_id:
@@ -112682,11 +115193,17 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            evaluation_mode:
+                              type: string
                             metric:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
                             severity:
                               type: string
                             source_id:
@@ -114977,11 +117494,17 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          evaluation_mode:
+                            type: string
                           metric:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          query_id:
+                            type: string
+                          require_freshness:
+                            type: boolean
                           severity:
                             type: string
                           source_id:
@@ -117008,11 +119531,17 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            evaluation_mode:
+                              type: string
                             metric:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
                             severity:
                               type: string
                             source_id:
@@ -119511,11 +122040,17 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            evaluation_mode:
+                              type: string
                             metric:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
                             severity:
                               type: string
                             source_id:
@@ -122725,11 +125260,17 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            evaluation_mode:
+                              type: string
                             metric:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
                             severity:
                               type: string
                             source_id:
@@ -125380,11 +127921,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -128739,11 +131286,17 @@ paths:
                                 type: integer
                                 format: int64
                                 nullable: true
+                              evaluation_mode:
+                                type: string
                               metric:
                                 type: string
                               min_coverage_pct:
                                 type: number
                                 format: double
+                              query_id:
+                                type: string
+                              require_freshness:
+                                type: boolean
                               severity:
                                 type: string
                               source_id:
@@ -130543,11 +133096,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -132572,11 +135131,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -134219,11 +136784,17 @@ paths:
                                 type: integer
                                 format: int64
                                 nullable: true
+                              evaluation_mode:
+                                type: string
                               metric:
                                 type: string
                               min_coverage_pct:
                                 type: number
                                 format: double
+                              query_id:
+                                type: string
+                              require_freshness:
+                                type: boolean
                               severity:
                                 type: string
                               source_id:
@@ -136023,11 +138594,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -137567,11 +140144,17 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          evaluation_mode:
+                            type: string
                           metric:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          query_id:
+                            type: string
+                          require_freshness:
+                            type: boolean
                           severity:
                             type: string
                           source_id:
@@ -264922,11 +267505,17 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          evaluation_mode:
+                            type: string
                           metric:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          query_id:
+                            type: string
+                          require_freshness:
+                            type: boolean
                           severity:
                             type: string
                           source_id:
@@ -268875,11 +271464,17 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            evaluation_mode:
+                              type: string
                             metric:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
                             severity:
                               type: string
                             source_id:
@@ -280285,11 +282880,17 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            evaluation_mode:
+                              type: string
                             metric:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
                             severity:
                               type: string
                             source_id:
@@ -290589,6 +293190,53 @@ paths:
                     type: string
                   error:
                     type: string
+                  frozen_monitor_rules:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        comparator:
+                          type: string
+                        dimensions:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        end_offset_seconds:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        evaluation_mode:
+                          type: string
+                        metric:
+                          type: string
+                        min_coverage_pct:
+                          type: number
+                          format: double
+                        query_id:
+                          type: string
+                        require_freshness:
+                          type: boolean
+                        severity:
+                          type: string
+                        source_id:
+                          type: string
+                        start_offset_seconds:
+                          type: integer
+                          format: int64
+                        statistic:
+                          type: string
+                        threshold:
+                          type: number
+                          format: double
+                        unit:
+                          type: string
+                      required:
+                        - comparator
+                        - metric
+                        - source_id
+                        - statistic
+                        - threshold
+                        - unit
                   initial_provenance:
                     type: object
                     properties:
@@ -291344,11 +293992,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -292668,19 +295322,79 @@ paths:
                           type: string
                         job_id:
                           type: string
+                        prometheus:
+                          type: object
+                          properties:
+                            alerts:
+                              type: boolean
+                            collection_id:
+                              type: string
+                            evidence_selector:
+                              type: string
+                            grid_anchor:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            project_id:
+                              type: string
+                            queries:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            query_offset:
+                              type: integer
+                              format: int64
+                            query_time:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            settle_seconds:
+                              type: integer
+                              format: int64
+                            step_seconds:
+                              type: integer
+                              format: int64
+                            targets:
+                              type: boolean
+                          required:
+                            - project_id
+                            - queries
+                          nullable: true
                         provider_coverage:
                           type: object
                           additionalProperties:
                             type: object
                             properties:
+                              cache_age_seconds:
+                                type: integer
+                                format: int64
+                              cached:
+                                type: boolean
                               evidence:
                                 type: integer
                                 format: int64
+                              expected_points:
+                                type: integer
+                                format: int64
+                              freshness:
+                                type: string
                               from:
                                 type: string
                                 format: date-time
+                              infos:
+                                type: array
+                                items:
+                                  type: string
                               message:
                                 type: string
+                              missing_points:
+                                type: integer
+                                format: int64
+                              observed_at:
+                                type: string
+                                format: date-time
+                                nullable: true
                               points:
                                 type: integer
                                 format: int64
@@ -292691,6 +295405,10 @@ paths:
                                 format: date-time
                               truncated:
                                 type: boolean
+                              warnings:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - evidence
                               - from
@@ -292779,11 +295497,17 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            evaluation_mode:
+                              type: string
                             metric:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
                             severity:
                               type: string
                             source_id:
@@ -292813,6 +295537,8 @@ paths:
                         - message
                         - rule
                         - status
+                  monitor_rules_frozen:
+                    type: boolean
                   monitoring_status:
                     type: string
                   provenance:
@@ -293570,11 +296296,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -295559,6 +298291,10 @@ paths:
                             current:
                               type: object
                               properties:
+                                available_statistics:
+                                  type: array
+                                  items:
+                                    type: string
                                 coverage_pct:
                                   type: number
                                   format: double
@@ -295763,6 +298499,8 @@ paths:
                                 mean:
                                   type: number
                                   format: double
+                                mean_statistic:
+                                  type: string
                                 messaging:
                                   type: object
                                   additionalProperties: true
@@ -296096,6 +298834,44 @@ paths:
                               type: string
                             protocol:
                               type: string
+                            provider:
+                              type: object
+                              properties:
+                                backend_profile:
+                                  type: string
+                                definition_hash:
+                                  type: string
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                display_labels:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_step_seconds:
+                                  type: integer
+                                  format: int64
+                                name:
+                                  type: string
+                                query_id:
+                                  type: string
+                                statistic:
+                                  type: string
+                              required:
+                                - backend_profile
+                                - definition_hash
+                                - dimensions
+                                - entity_ids
+                                - evaluation_step_seconds
+                                - name
+                                - query_id
+                                - statistic
+                              nullable: true
                             source:
                               type: string
                             unit:
@@ -296271,6 +299047,10 @@ paths:
                             current:
                               type: object
                               properties:
+                                available_statistics:
+                                  type: array
+                                  items:
+                                    type: string
                                 coverage_pct:
                                   type: number
                                   format: double
@@ -296475,6 +299255,8 @@ paths:
                                 mean:
                                   type: number
                                   format: double
+                                mean_statistic:
+                                  type: string
                                 messaging:
                                   type: object
                                   additionalProperties: true
@@ -296808,6 +299590,44 @@ paths:
                               type: string
                             protocol:
                               type: string
+                            provider:
+                              type: object
+                              properties:
+                                backend_profile:
+                                  type: string
+                                definition_hash:
+                                  type: string
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                display_labels:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_step_seconds:
+                                  type: integer
+                                  format: int64
+                                name:
+                                  type: string
+                                query_id:
+                                  type: string
+                                statistic:
+                                  type: string
+                              required:
+                                - backend_profile
+                                - definition_hash
+                                - dimensions
+                                - entity_ids
+                                - evaluation_step_seconds
+                                - name
+                                - query_id
+                                - statistic
+                              nullable: true
                             source:
                               type: string
                             unit:
@@ -302503,6 +305323,53 @@ paths:
                         type: string
                       error:
                         type: string
+                      frozen_monitor_rules:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            comparator:
+                              type: string
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            end_offset_seconds:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            evaluation_mode:
+                              type: string
+                            metric:
+                              type: string
+                            min_coverage_pct:
+                              type: number
+                              format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
+                            severity:
+                              type: string
+                            source_id:
+                              type: string
+                            start_offset_seconds:
+                              type: integer
+                              format: int64
+                            statistic:
+                              type: string
+                            threshold:
+                              type: number
+                              format: double
+                            unit:
+                              type: string
+                          required:
+                            - comparator
+                            - metric
+                            - source_id
+                            - statistic
+                            - threshold
+                            - unit
                       initial_provenance:
                         type: object
                         properties:
@@ -303409,6 +306276,46 @@ paths:
                               type: string
                             job_id:
                               type: string
+                            prometheus:
+                              type: object
+                              properties:
+                                alerts:
+                                  type: boolean
+                                collection_id:
+                                  type: string
+                                evidence_selector:
+                                  type: string
+                                grid_anchor:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                project_id:
+                                  type: string
+                                queries:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: Query'
+                                    additionalProperties: true
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                query_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                step_seconds:
+                                  type: integer
+                                  format: int64
+                                targets:
+                                  type: boolean
+                              required:
+                                - project_id
+                                - queries
+                              nullable: true
                             provider_coverage:
                               type: object
                               additionalProperties:
@@ -303478,11 +306385,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -303512,6 +306425,8 @@ paths:
                             - message
                             - rule
                             - status
+                      monitor_rules_frozen:
+                        type: boolean
                       monitoring_status:
                         type: string
                       provenance:
@@ -305072,11 +307987,17 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            evaluation_mode:
+                              type: string
                             metric:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
                             severity:
                               type: string
                             source_id:
@@ -307481,6 +310402,10 @@ paths:
                         current:
                           type: object
                           properties:
+                            available_statistics:
+                              type: array
+                              items:
+                                type: string
                             coverage_pct:
                               type: number
                               format: double
@@ -307685,6 +310610,8 @@ paths:
                             mean:
                               type: number
                               format: double
+                            mean_statistic:
+                              type: string
                             messaging:
                               type: object
                               properties:
@@ -308026,6 +310953,44 @@ paths:
                           type: string
                         protocol:
                           type: string
+                        provider:
+                          type: object
+                          properties:
+                            backend_profile:
+                              type: string
+                            definition_hash:
+                              type: string
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            display_labels:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_step_seconds:
+                              type: integer
+                              format: int64
+                            name:
+                              type: string
+                            query_id:
+                              type: string
+                            statistic:
+                              type: string
+                          required:
+                            - backend_profile
+                            - definition_hash
+                            - dimensions
+                            - entity_ids
+                            - evaluation_step_seconds
+                            - name
+                            - query_id
+                            - statistic
+                          nullable: true
                         source:
                           type: string
                         unit:
@@ -308234,6 +311199,10 @@ paths:
                         current:
                           type: object
                           properties:
+                            available_statistics:
+                              type: array
+                              items:
+                                type: string
                             coverage_pct:
                               type: number
                               format: double
@@ -308438,6 +311407,8 @@ paths:
                             mean:
                               type: number
                               format: double
+                            mean_statistic:
+                              type: string
                             messaging:
                               type: object
                               properties:
@@ -308779,6 +311750,44 @@ paths:
                           type: string
                         protocol:
                           type: string
+                        provider:
+                          type: object
+                          properties:
+                            backend_profile:
+                              type: string
+                            definition_hash:
+                              type: string
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            display_labels:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_step_seconds:
+                              type: integer
+                              format: int64
+                            name:
+                              type: string
+                            query_id:
+                              type: string
+                            statistic:
+                              type: string
+                          required:
+                            - backend_profile
+                            - definition_hash
+                            - dimensions
+                            - entity_ids
+                            - evaluation_step_seconds
+                            - name
+                            - query_id
+                            - statistic
+                          nullable: true
                         source:
                           type: string
                         unit:
@@ -309308,6 +312317,10 @@ paths:
                         current:
                           type: object
                           properties:
+                            available_statistics:
+                              type: array
+                              items:
+                                type: string
                             coverage_pct:
                               type: number
                               format: double
@@ -309512,6 +312525,8 @@ paths:
                             mean:
                               type: number
                               format: double
+                            mean_statistic:
+                              type: string
                             messaging:
                               type: object
                               properties:
@@ -309853,6 +312868,44 @@ paths:
                           type: string
                         protocol:
                           type: string
+                        provider:
+                          type: object
+                          properties:
+                            backend_profile:
+                              type: string
+                            definition_hash:
+                              type: string
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            display_labels:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_step_seconds:
+                              type: integer
+                              format: int64
+                            name:
+                              type: string
+                            query_id:
+                              type: string
+                            statistic:
+                              type: string
+                          required:
+                            - backend_profile
+                            - definition_hash
+                            - dimensions
+                            - entity_ids
+                            - evaluation_step_seconds
+                            - name
+                            - query_id
+                            - statistic
+                          nullable: true
                         source:
                           type: string
                         unit:
@@ -310061,6 +313114,10 @@ paths:
                         current:
                           type: object
                           properties:
+                            available_statistics:
+                              type: array
+                              items:
+                                type: string
                             coverage_pct:
                               type: number
                               format: double
@@ -310265,6 +313322,8 @@ paths:
                             mean:
                               type: number
                               format: double
+                            mean_statistic:
+                              type: string
                             messaging:
                               type: object
                               properties:
@@ -310606,6 +313665,44 @@ paths:
                           type: string
                         protocol:
                           type: string
+                        provider:
+                          type: object
+                          properties:
+                            backend_profile:
+                              type: string
+                            definition_hash:
+                              type: string
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            display_labels:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_step_seconds:
+                              type: integer
+                              format: int64
+                            name:
+                              type: string
+                            query_id:
+                              type: string
+                            statistic:
+                              type: string
+                          required:
+                            - backend_profile
+                            - definition_hash
+                            - dimensions
+                            - entity_ids
+                            - evaluation_step_seconds
+                            - name
+                            - query_id
+                            - statistic
+                          nullable: true
                         source:
                           type: string
                         unit:
@@ -313012,11 +316109,17 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            evaluation_mode:
+                              type: string
                             metric:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
                             severity:
                               type: string
                             source_id:
@@ -324366,11 +327469,17 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            evaluation_mode:
+                              type: string
                             metric:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
                             severity:
                               type: string
                             source_id:
@@ -339260,11 +342369,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -340697,11 +343812,17 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                evaluation_mode:
+                                  type: string
                                 metric:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                query_id:
+                                  type: string
+                                require_freshness:
+                                  type: boolean
                                 severity:
                                   type: string
                                 source_id:
@@ -343695,6 +346816,10 @@ paths:
                           properties:
                             aggregation_eligible:
                               type: boolean
+                            analysis_statistic:
+                              type: string
+                            backend_profile:
+                              type: string
                             bucket_end:
                               type: string
                               format: date-time
@@ -343707,10 +346832,21 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            definition_hash:
+                              type: string
+                            display_labels:
+                              type: object
+                              additionalProperties:
+                                type: string
                             entity_ids:
                               type: object
                               additionalProperties:
                                 type: string
+                            evaluation_step_seconds:
+                              type: integer
+                              format: int64
+                            freshness_known:
+                              type: boolean
                             max:
                               type: number
                               format: double
@@ -343721,7 +346857,11 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            mode:
+                              type: string
                             name:
+                              type: string
+                            query_id:
                               type: string
                             query_window:
                               type: boolean
@@ -343735,6 +346875,10 @@ paths:
                             sum:
                               type: number
                               format: double
+                              nullable: true
+                            underlying_sample_time:
+                              type: string
+                              format: date-time
                               nullable: true
                           required:
                             - aggregation_eligible
@@ -344367,6 +347511,55 @@ paths:
                           - revision
                           - scenario_id
                           - sources
+                      monitor_rules:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            comparator:
+                              type: string
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            end_offset_seconds:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            evaluation_mode:
+                              type: string
+                            metric:
+                              type: string
+                            min_coverage_pct:
+                              type: number
+                              format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
+                            severity:
+                              type: string
+                            source_id:
+                              type: string
+                            start_offset_seconds:
+                              type: integer
+                              format: int64
+                            statistic:
+                              type: string
+                            threshold:
+                              type: number
+                              format: double
+                            unit:
+                              type: string
+                          required:
+                            - comparator
+                            - metric
+                            - source_id
+                            - statistic
+                            - threshold
+                            - unit
+                      rules_frozen:
+                        type: boolean
                       scenario_id:
                         type: string
                       sources:
@@ -344452,6 +347645,46 @@ paths:
                               type: string
                             project_id:
                               type: string
+                            prometheus:
+                              type: object
+                              properties:
+                                alerts:
+                                  type: boolean
+                                collection_id:
+                                  type: string
+                                evidence_selector:
+                                  type: string
+                                grid_anchor:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                project_id:
+                                  type: string
+                                queries:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: Query'
+                                    additionalProperties: true
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                query_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                step_seconds:
+                                  type: integer
+                                  format: int64
+                                targets:
+                                  type: boolean
+                              required:
+                                - project_id
+                                - queries
+                              nullable: true
                             revision:
                               type: integer
                               format: int64
@@ -344553,6 +347786,55 @@ paths:
                           - revision
                           - scenario_id
                           - sources
+                      monitor_rules:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            comparator:
+                              type: string
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            end_offset_seconds:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            evaluation_mode:
+                              type: string
+                            metric:
+                              type: string
+                            min_coverage_pct:
+                              type: number
+                              format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
+                            severity:
+                              type: string
+                            source_id:
+                              type: string
+                            start_offset_seconds:
+                              type: integer
+                              format: int64
+                            statistic:
+                              type: string
+                            threshold:
+                              type: number
+                              format: double
+                            unit:
+                              type: string
+                          required:
+                            - comparator
+                            - metric
+                            - source_id
+                            - statistic
+                            - threshold
+                            - unit
+                      rules_frozen:
+                        type: boolean
                       scenario_id:
                         type: string
                       sources:
@@ -344638,6 +347920,46 @@ paths:
                               type: string
                             project_id:
                               type: string
+                            prometheus:
+                              type: object
+                              properties:
+                                alerts:
+                                  type: boolean
+                                collection_id:
+                                  type: string
+                                evidence_selector:
+                                  type: string
+                                grid_anchor:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                project_id:
+                                  type: string
+                                queries:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: Query'
+                                    additionalProperties: true
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                query_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                step_seconds:
+                                  type: integer
+                                  format: int64
+                                targets:
+                                  type: boolean
+                              required:
+                                - project_id
+                                - queries
+                              nullable: true
                             revision:
                               type: integer
                               format: int64
@@ -344816,6 +348138,55 @@ paths:
                           - revision
                           - scenario_id
                           - sources
+                      monitor_rules:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            comparator:
+                              type: string
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            end_offset_seconds:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            evaluation_mode:
+                              type: string
+                            metric:
+                              type: string
+                            min_coverage_pct:
+                              type: number
+                              format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
+                            severity:
+                              type: string
+                            source_id:
+                              type: string
+                            start_offset_seconds:
+                              type: integer
+                              format: int64
+                            statistic:
+                              type: string
+                            threshold:
+                              type: number
+                              format: double
+                            unit:
+                              type: string
+                          required:
+                            - comparator
+                            - metric
+                            - source_id
+                            - statistic
+                            - threshold
+                            - unit
+                      rules_frozen:
+                        type: boolean
                       scenario_id:
                         type: string
                       sources:
@@ -344901,6 +348272,46 @@ paths:
                               type: string
                             project_id:
                               type: string
+                            prometheus:
+                              type: object
+                              properties:
+                                alerts:
+                                  type: boolean
+                                collection_id:
+                                  type: string
+                                evidence_selector:
+                                  type: string
+                                grid_anchor:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                project_id:
+                                  type: string
+                                queries:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: Query'
+                                    additionalProperties: true
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                query_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                step_seconds:
+                                  type: integer
+                                  format: int64
+                                targets:
+                                  type: boolean
+                              required:
+                                - project_id
+                                - queries
+                              nullable: true
                             revision:
                               type: integer
                               format: int64
@@ -345002,6 +348413,55 @@ paths:
                           - revision
                           - scenario_id
                           - sources
+                      monitor_rules:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            comparator:
+                              type: string
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            end_offset_seconds:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            evaluation_mode:
+                              type: string
+                            metric:
+                              type: string
+                            min_coverage_pct:
+                              type: number
+                              format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
+                            severity:
+                              type: string
+                            source_id:
+                              type: string
+                            start_offset_seconds:
+                              type: integer
+                              format: int64
+                            statistic:
+                              type: string
+                            threshold:
+                              type: number
+                              format: double
+                            unit:
+                              type: string
+                          required:
+                            - comparator
+                            - metric
+                            - source_id
+                            - statistic
+                            - threshold
+                            - unit
+                      rules_frozen:
+                        type: boolean
                       scenario_id:
                         type: string
                       sources:
@@ -345087,6 +348547,46 @@ paths:
                               type: string
                             project_id:
                               type: string
+                            prometheus:
+                              type: object
+                              properties:
+                                alerts:
+                                  type: boolean
+                                collection_id:
+                                  type: string
+                                evidence_selector:
+                                  type: string
+                                grid_anchor:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                project_id:
+                                  type: string
+                                queries:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: Query'
+                                    additionalProperties: true
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                query_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                step_seconds:
+                                  type: integer
+                                  format: int64
+                                targets:
+                                  type: boolean
+                              required:
+                                - project_id
+                                - queries
+                              nullable: true
                             revision:
                               type: integer
                               format: int64
@@ -345285,6 +348785,55 @@ paths:
                           - revision
                           - scenario_id
                           - sources
+                      monitor_rules:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            comparator:
+                              type: string
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            end_offset_seconds:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            evaluation_mode:
+                              type: string
+                            metric:
+                              type: string
+                            min_coverage_pct:
+                              type: number
+                              format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
+                            severity:
+                              type: string
+                            source_id:
+                              type: string
+                            start_offset_seconds:
+                              type: integer
+                              format: int64
+                            statistic:
+                              type: string
+                            threshold:
+                              type: number
+                              format: double
+                            unit:
+                              type: string
+                          required:
+                            - comparator
+                            - metric
+                            - source_id
+                            - statistic
+                            - threshold
+                            - unit
+                      rules_frozen:
+                        type: boolean
                       scenario_id:
                         type: string
                       sources:
@@ -345370,6 +348919,46 @@ paths:
                               type: string
                             project_id:
                               type: string
+                            prometheus:
+                              type: object
+                              properties:
+                                alerts:
+                                  type: boolean
+                                collection_id:
+                                  type: string
+                                evidence_selector:
+                                  type: string
+                                grid_anchor:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                project_id:
+                                  type: string
+                                queries:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: Query'
+                                    additionalProperties: true
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                query_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                step_seconds:
+                                  type: integer
+                                  format: int64
+                                targets:
+                                  type: boolean
+                              required:
+                                - project_id
+                                - queries
+                              nullable: true
                             revision:
                               type: integer
                               format: int64
@@ -345471,6 +349060,55 @@ paths:
                           - revision
                           - scenario_id
                           - sources
+                      monitor_rules:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            comparator:
+                              type: string
+                            dimensions:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            end_offset_seconds:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            evaluation_mode:
+                              type: string
+                            metric:
+                              type: string
+                            min_coverage_pct:
+                              type: number
+                              format: double
+                            query_id:
+                              type: string
+                            require_freshness:
+                              type: boolean
+                            severity:
+                              type: string
+                            source_id:
+                              type: string
+                            start_offset_seconds:
+                              type: integer
+                              format: int64
+                            statistic:
+                              type: string
+                            threshold:
+                              type: number
+                              format: double
+                            unit:
+                              type: string
+                          required:
+                            - comparator
+                            - metric
+                            - source_id
+                            - statistic
+                            - threshold
+                            - unit
+                      rules_frozen:
+                        type: boolean
                       scenario_id:
                         type: string
                       sources:
@@ -345556,6 +349194,46 @@ paths:
                               type: string
                             project_id:
                               type: string
+                            prometheus:
+                              type: object
+                              properties:
+                                alerts:
+                                  type: boolean
+                                collection_id:
+                                  type: string
+                                evidence_selector:
+                                  type: string
+                                grid_anchor:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                project_id:
+                                  type: string
+                                queries:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: Query'
+                                    additionalProperties: true
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                query_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                step_seconds:
+                                  type: integer
+                                  format: int64
+                                targets:
+                                  type: boolean
+                              required:
+                                - project_id
+                                - queries
+                              nullable: true
                             revision:
                               type: integer
                               format: int64
@@ -347508,11 +351186,17 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          evaluation_mode:
+                            type: string
                           metric:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          query_id:
+                            type: string
+                          require_freshness:
+                            type: boolean
                           severity:
                             type: string
                           source_id:
@@ -350851,11 +354535,17 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          evaluation_mode:
+                            type: string
                           metric:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          query_id:
+                            type: string
+                          require_freshness:
+                            type: boolean
                           severity:
                             type: string
                           source_id:

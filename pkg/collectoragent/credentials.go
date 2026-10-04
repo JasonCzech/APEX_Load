@@ -15,6 +15,7 @@ import (
 // Credentials are sealed for one signed job lease and never written in plaintext
 // to the collector spool. Destination identity is authenticated as associated data.
 type Credentials struct {
+	Prometheus  *PrometheusCredentials  `json:"prometheus,omitempty"`
 	AppDynamics *AppDynamicsCredentials `json:"appdynamics,omitempty"`
 	Username    string                  `json:"username,omitempty"`
 	Password    string                  `json:"password,omitempty"`

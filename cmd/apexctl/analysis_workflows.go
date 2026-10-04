@@ -58,7 +58,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	ttl := flags.Duration("ttl", 30*time.Minute, "readiness lifetime")
 	sourceID := flags.String("source-id", "", "monitor source filter")
 	metric := flags.String("metric", "", "monitor metric name filter")
-	evidenceKind := flags.String("kind", "", "diagnostic kind filter")
+	evidenceKind := flags.String("kind", "", "diagnostic kind filter: event, violation, snapshot, log, transaction, target or alert")
 	afterKey := flags.String("after-key", "", "monitor evidence pagination cursor")
 	limit := flags.Int("limit", 100, "monitor page size (series: 1 to 999; evidence: 1 to 100)")
 	if err := flags.Parse(args[1:]); err != nil {
@@ -222,7 +222,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 				}
 			} else {
 				if *evidenceKind != "" {
-					if !strings.Contains("|event|violation|snapshot|log|transaction|", "|"+*evidenceKind+"|") {
+					if !strings.Contains("|event|violation|snapshot|log|transaction|target|alert|", "|"+*evidenceKind+"|") {
 						return errors.New("unsupported diagnostic --kind")
 					}
 					query.Set("kind", *evidenceKind)

@@ -18,35 +18,40 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 )
 
 // RunJob grants a short collection lease for one immutable run/source binding.
 // Destination is also checked against local operator configuration before I/O.
 type RunJob struct {
-	AppDynamics       *appdynamics.JobConfig `json:"appdynamics,omitempty"`
-	QueryFromUTC      time.Time              `json:"query_from_utc,omitempty"`
-	QueryUntilUTC     time.Time              `json:"query_until_utc,omitempty"`
-	LoadEndedAt       *time.Time             `json:"load_ended_at,omitempty"`
-	DrainDeadline     *time.Time             `json:"drain_deadline,omitempty"`
-	QueryWatermark    time.Time              `json:"query_watermark,omitempty"`
-	Reconciling       bool                   `json:"reconciling,omitempty"`
-	UnavailableReason string                 `json:"unavailable_reason,omitempty"`
-	Credentials       *SealedCredentials     `json:"credentials,omitempty"`
-	ID                string                 `json:"id"`
-	ProjectID         string                 `json:"project_id"`
-	RunID             string                 `json:"run_id"`
-	ScenarioID        string                 `json:"scenario_id,omitempty"`
-	CollectorID       string                 `json:"collector_id"`
-	SourceID          string                 `json:"source_id"`
-	SourceRevision    int64                  `json:"source_revision"`
-	Pack              string                 `json:"pack"`
-	Destination       string                 `json:"destination,omitempty"`
-	IntervalSeconds   int                    `json:"interval_seconds"`
-	StartedAt         time.Time              `json:"started_at"`
-	ExpiresAt         time.Time              `json:"expires_at"`
-	LeaseExpiresAt    time.Time              `json:"lease_expires_at"`
-	NextSequence      int64                  `json:"next_sequence"`
-	MaxBatches        int                    `json:"max_batches,omitempty"`
+	FlushOnly         bool                               `json:"flush_only,omitempty"`
+	Prometheus        *prometheus.JobConfig              `json:"prometheus,omitempty"`
+	TerminalWindows   []monitorprovider.EvaluationWindow `json:"terminal_windows,omitempty"`
+	AppDynamics       *appdynamics.JobConfig             `json:"appdynamics,omitempty"`
+	QueryFromUTC      time.Time                          `json:"query_from_utc,omitempty"`
+	QueryUntilUTC     time.Time                          `json:"query_until_utc,omitempty"`
+	LoadEndedAt       *time.Time                         `json:"load_ended_at,omitempty"`
+	DrainDeadline     *time.Time                         `json:"drain_deadline,omitempty"`
+	QueryWatermark    time.Time                          `json:"query_watermark,omitempty"`
+	Reconciling       bool                               `json:"reconciling,omitempty"`
+	UnavailableReason string                             `json:"unavailable_reason,omitempty"`
+	Credentials       *SealedCredentials                 `json:"credentials,omitempty"`
+	ID                string                             `json:"id"`
+	ProjectID         string                             `json:"project_id"`
+	RunID             string                             `json:"run_id"`
+	ScenarioID        string                             `json:"scenario_id,omitempty"`
+	CollectorID       string                             `json:"collector_id"`
+	SourceID          string                             `json:"source_id"`
+	SourceRevision    int64                              `json:"source_revision"`
+	Pack              string                             `json:"pack"`
+	Destination       string                             `json:"destination,omitempty"`
+	IntervalSeconds   int                                `json:"interval_seconds"`
+	StartedAt         time.Time                          `json:"started_at"`
+	ExpiresAt         time.Time                          `json:"expires_at"`
+	LeaseExpiresAt    time.Time                          `json:"lease_expires_at"`
+	NextSequence      int64                              `json:"next_sequence"`
+	MaxBatches        int                                `json:"max_batches,omitempty"`
 }
 
 type SignedRunJob struct {
@@ -55,18 +60,19 @@ type SignedRunJob struct {
 }
 
 type RunSampleBatch struct {
-	Topology       []appdynamics.Entity            `json:"topology,omitempty"`
-	Evidence       []appdynamics.Diagnostic        `json:"evidence,omitempty"`
-	Coverage       map[string]appdynamics.Coverage `json:"coverage,omitempty"`
-	Capabilities   appdynamics.Capabilities        `json:"capabilities,omitempty"`
-	Progress       *appdynamics.QueryProgress      `json:"progress,omitempty"`
-	QueryFromUTC   time.Time                       `json:"query_from_utc,omitempty"`
-	QueryUntilUTC  time.Time                       `json:"query_until_utc,omitempty"`
-	QueryWindowEnd *time.Time                      `json:"query_window_end,omitempty"`
-	Final          bool                            `json:"final,omitempty"`
-	Job            SignedRunJob                    `json:"job"`
-	Sequence       int64                           `json:"sequence"`
-	Points         []analysis.MetricPoint          `json:"points"`
+	Topology               []monitorprovider.Entity            `json:"topology,omitempty"`
+	Evidence               []monitorprovider.Diagnostic        `json:"evidence,omitempty"`
+	Coverage               map[string]monitorprovider.Coverage `json:"coverage,omitempty"`
+	PrometheusCapabilities *prometheus.Capabilities            `json:"prometheus_capabilities,omitempty"`
+	Capabilities           appdynamics.Capabilities            `json:"capabilities,omitempty"`
+	Progress               *monitorprovider.QueryProgress      `json:"progress,omitempty"`
+	QueryFromUTC           time.Time                           `json:"query_from_utc,omitempty"`
+	QueryUntilUTC          time.Time                           `json:"query_until_utc,omitempty"`
+	QueryWindowEnd         *time.Time                          `json:"query_window_end,omitempty"`
+	Final                  bool                                `json:"final,omitempty"`
+	Job                    SignedRunJob                        `json:"job"`
+	Sequence               int64                               `json:"sequence"`
+	Points                 []analysis.MetricPoint              `json:"points"`
 }
 
 func SignRunJob(job RunJob, key ed25519.PrivateKey) (SignedRunJob, error) {
@@ -77,7 +83,7 @@ func SignRunJob(job RunJob, key ed25519.PrivateKey) (SignedRunJob, error) {
 	if err != nil {
 		return SignedRunJob{}, err
 	}
-	if len(body) > 96<<10 || job.Pack != "appdynamics" && len(body) > 32768 {
+	if len(body) > 96<<10 || job.Pack != "appdynamics" && job.Prometheus == nil && len(body) > 32768 {
 		return SignedRunJob{}, errors.New("monitor job exceeds payload limit")
 	}
 	return SignedRunJob{Payload: string(body), Signature: base64.RawStdEncoding.EncodeToString(ed25519.Sign(key, body))}, nil
@@ -95,14 +101,29 @@ func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, 
 	if err = json.Unmarshal([]byte(signed.Payload), &job); err != nil {
 		return job, err
 	}
-	if job.Pack != "appdynamics" && len(signed.Payload) > 32768 {
+	if job.Pack != "appdynamics" && job.Prometheus == nil && len(signed.Payload) > 32768 {
 		return RunJob{}, errors.New("monitor job exceeds payload limit")
 	}
-	if job.MaxBatches < 0 || job.MaxBatches > 32 || job.Pack != "appdynamics" && job.MaxBatches > 1 {
+	if job.MaxBatches < 0 || job.MaxBatches > 32 || job.Pack != "appdynamics" && job.Prometheus == nil && job.MaxBatches > 1 {
 		return RunJob{}, errors.New("monitor grant batch budget rejected")
 	}
 	if job.CollectorID != collector || job.ID == "" || job.ProjectID == "" || job.RunID == "" || job.SourceID == "" || job.SourceRevision < 1 || job.NextSequence < 0 || job.IntervalSeconds < 1 || job.IntervalSeconds > 3600 || job.StartedAt.IsZero() || job.StartedAt.After(now.Add(30*time.Second)) || !job.ExpiresAt.After(now) || !job.LeaseExpiresAt.After(now) || job.LeaseExpiresAt.After(now.Add(2*time.Minute)) || job.LeaseExpiresAt.After(job.ExpiresAt) {
 		return RunJob{}, errors.New("monitor job identity or collection lease rejected")
+	}
+	if job.Prometheus != nil {
+		total := len(job.TerminalWindows) + len(job.Prometheus.Selection.Queries)
+		if job.Prometheus.Selection.Targets {
+			total++
+		}
+		if job.Prometheus.Selection.Alerts {
+			total++
+		}
+		if job.Pack != "prometheus-query" || job.Prometheus.Validate() != nil || job.Prometheus.Selection.ProjectID != job.ProjectID || job.Prometheus.Selection.CollectionID != "" && job.Prometheus.Selection.CollectionID != job.ID || total > 256 || !job.Reconciling && len(job.TerminalWindows) > 0 {
+			return RunJob{}, errors.New("Prometheus grant selection rejected")
+		}
+	}
+	if job.FlushOnly && (job.Pack != "prometheus" || job.Prometheus != nil || job.Reconciling || job.LoadEndedAt == nil || job.LoadEndedAt.Before(job.StartedAt) || job.LoadEndedAt.After(now.Add(30*time.Second)) || job.DrainDeadline == nil || job.DrainDeadline.After(job.LoadEndedAt.Add(30*time.Second))) {
+		return RunJob{}, errors.New("exporter flush lease rejected")
 	}
 	if (job.Pack == "cloudwatch" || job.Pack == "azure-monitor") && job.IntervalSeconds < 60 {
 		return RunJob{}, errors.New("cloud collection interval must be at least 60 seconds")
@@ -163,9 +184,9 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 				return err
 			}
 			delete(a.jobScanUnseen, job.ID)
-			if job.Pack == "appdynamics" {
+			if job.Pack == "appdynamics" || job.Prometheus != nil {
 				if !slices.Contains(a.cfg.Packs, job.Pack) || job.UnavailableReason != "" {
-					return errors.New("AppDynamics pack is disabled or temporarily unavailable")
+					return errors.New("provider pack is disabled or temporarily unavailable")
 				}
 				a.dispatchAppDynamicsJob(ctx, job, envelope)
 				return nil
@@ -189,6 +210,12 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 				batch = nil
 			}
 			if batch == nil {
+				if job.FlushOnly {
+					if job.Pack != "prometheus" || job.LoadEndedAt == nil {
+						return errors.New("invalid exporter flush assignment")
+					}
+					return a.jobRequest(ctx, http.MethodPost, "jobs/"+url.PathEscape(job.ID)+"/samples", RunSampleBatch{Job: envelope, Sequence: job.NextSequence, Final: true, Points: []analysis.MetricPoint{}}, nil)
+				}
 				if len(a.pendingBatches) >= maxCollectorSpoolJobs || job.Pack == "otel-metrics" && a.otlpAccepted[job.ID] == nil && len(a.otlpAccepted) >= maxCollectorSpoolJobs {
 					return errors.New("collector retry storage job budget reached")
 				}
@@ -382,7 +409,13 @@ func (a *Agent) jobRequestWithHeaders(ctx context.Context, method, path string, 
 	if path == "jobs" || strings.HasPrefix(path, "jobs?") {
 		ad := RunJobReadiness{Packs: a.cfg.Packs, SigningKey: base64.StdEncoding.EncodeToString(a.cfg.ControllerPublicKey)}
 		if slices.Contains(a.cfg.Packs, "appdynamics") {
-			ad.Contracts = []string{AppDynamicsBatchContract}
+			ad.Contracts = append(ad.Contracts, AppDynamicsBatchContract)
+		}
+		if a.hasPrometheusQueryTarget() {
+			ad.Contracts = append(ad.Contracts, PrometheusBatchContract)
+		}
+		if slices.Contains(a.cfg.Packs, "prometheus") {
+			ad.Contracts = append(ad.Contracts, PrometheusScrapeContract)
 		}
 		ad.Destinations = a.approvedDestinations()
 		payload, _ := json.Marshal(ad)
@@ -472,3 +505,8 @@ func boundedMonitorPoints(points []analysis.MetricPoint) ([]analysis.MetricPoint
 	}
 	return points[:low], nil
 }
+
+const PrometheusBatchContract = "prometheus-query.v1"
+
+// PrometheusScrapeContract advertises capture-only post-load spool flushing.
+const PrometheusScrapeContract = "prometheus-scrape.v2"

@@ -964,6 +964,7 @@ export interface TestNote {
 }
 
 export interface RunArchiveManifest {
+  frozen_monitor_rules?: import('./types/appdynamics').MonitorRule[]
   monitoring_status?: string
   monitor_coverage?: import('./types/appdynamics').RunMonitorCoverage[]
   monitor_evidence_file?: string
@@ -2925,6 +2926,7 @@ export interface ImportedDashboardTarget {
 }
 
 export interface ImportedDashboardPanelDef {
+  unsupported_transformations?: boolean
   panel_id: number
   title: string
   kind: ImportedDashboardPanelKind

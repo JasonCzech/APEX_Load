@@ -13,7 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 )
 
 // ErrMonitorRevision means a configuration changed after the caller read it.
@@ -82,6 +84,7 @@ type RunMonitorStore interface {
 // MonitorSource contains only public collection configuration. Credentials are
 // resolved on the assigned collector; bearer tokens must never enter this row.
 type MonitorSource struct {
+	Prometheus         *prometheus.Selection  `json:"prometheus,omitempty"`
 	ExecutorMode       string                 `json:"executor_mode,omitempty"`
 	ConnectionID       string                 `json:"connection_id,omitempty"`
 	AppDynamics        *appdynamics.Selection `json:"appdynamics,omitempty"`
@@ -114,32 +117,38 @@ type MonitorBindings struct {
 // RunMonitorJob is an immutable source snapshot. State and sequence are the
 // only mutable fields; changes to a source cannot redirect an existing job.
 type RunMonitorJob struct {
-	Topology           []appdynamics.Entity            `json:"topology,omitempty"`
-	ConnectionSnapshot *AppDynamicsConnectionSnapshot  `json:"-"`
-	LoadEndedAt        *time.Time                      `json:"load_ended_at,omitempty"`
-	DrainDeadline      *time.Time                      `json:"drain_deadline,omitempty"`
-	LastSuccessAt      *time.Time                      `json:"last_success_at,omitempty"`
-	QueryCoverage      map[string]appdynamics.Coverage `json:"-"`
-	QueryOffset        int                             `json:"query_offset,omitempty"`
-	QueryFromUTC       time.Time                       `json:"query_from_utc,omitempty"`
-	QueryUntilUTC      time.Time                       `json:"query_until_utc,omitempty"`
-	QueryWatermark     time.Time                       `json:"query_watermark,omitempty,omitzero"`
-	Coverage           map[string]appdynamics.Coverage `json:"coverage,omitempty"`
-	StablePasses       int                             `json:"stable_passes,omitempty"`
-	StableSinceAt      *time.Time                      `json:"-"`
-	FinalDigest        string                          `json:"final_digest,omitempty"`
-	ID                 string                          `json:"id"`
-	ProjectID          string                          `json:"project_id"`
-	RunID              string                          `json:"run_id"`
-	ScenarioID         string                          `json:"scenario_id,omitempty"`
-	BindingRevision    int64                           `json:"binding_revision"`
-	Source             MonitorSource                   `json:"source"`
-	Required           bool                            `json:"required"`
-	StartedAt          time.Time                       `json:"started_at"`
-	ExpiresAt          time.Time                       `json:"expires_at"`
-	State              string                          `json:"state"`
-	NextSequence       int64                           `json:"next_sequence"`
-	CoverageReason     string                          `json:"coverage_reason,omitempty"`
+	FlushOnly                    bool                                            `json:"flush_only,omitempty"`
+	FrozenMonitorRules           []analysis.MonitorRule                          `json:"frozen_monitor_rules,omitempty"`
+	RulesFrozen                  bool                                            `json:"rules_frozen,omitempty"`
+	QueryTime                    *time.Time                                      `json:"query_time,omitempty"`
+	PrometheusConnectionSnapshot *PrometheusConnectionSnapshot                   `json:"-"`
+	Topology                     []appdynamics.Entity                            `json:"topology,omitempty"`
+	ConnectionSnapshot           *AppDynamicsConnectionSnapshot                  `json:"-"`
+	LoadEndedAt                  *time.Time                                      `json:"load_ended_at,omitempty"`
+	DrainDeadline                *time.Time                                      `json:"drain_deadline,omitempty"`
+	LastSuccessAt                *time.Time                                      `json:"last_success_at,omitempty"`
+	QueryCoverage                map[string]appdynamics.Coverage                 `json:"-"`
+	PrometheusDiagnosticTimes    map[string]PrometheusDiagnosticObservationTimes `json:"-"`
+	QueryOffset                  int                                             `json:"query_offset,omitempty"`
+	QueryFromUTC                 time.Time                                       `json:"query_from_utc,omitempty"`
+	QueryUntilUTC                time.Time                                       `json:"query_until_utc,omitempty"`
+	QueryWatermark               time.Time                                       `json:"query_watermark,omitempty,omitzero"`
+	Coverage                     map[string]appdynamics.Coverage                 `json:"coverage,omitempty"`
+	StablePasses                 int                                             `json:"stable_passes,omitempty"`
+	StableSinceAt                *time.Time                                      `json:"-"`
+	FinalDigest                  string                                          `json:"final_digest,omitempty"`
+	ID                           string                                          `json:"id"`
+	ProjectID                    string                                          `json:"project_id"`
+	RunID                        string                                          `json:"run_id"`
+	ScenarioID                   string                                          `json:"scenario_id,omitempty"`
+	BindingRevision              int64                                           `json:"binding_revision"`
+	Source                       MonitorSource                                   `json:"source"`
+	Required                     bool                                            `json:"required"`
+	StartedAt                    time.Time                                       `json:"started_at"`
+	ExpiresAt                    time.Time                                       `json:"expires_at"`
+	State                        string                                          `json:"state"`
+	NextSequence                 int64                                           `json:"next_sequence"`
+	CoverageReason               string                                          `json:"coverage_reason,omitempty"`
 }
 
 type MonitorBatchReceipt struct {
@@ -215,8 +224,32 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 		b = *resolved
 	}
 	jobs := make([]RunMonitorJob, 0, len(b.Sources))
+	var frozenRules []analysis.MonitorRule
+	if prepared != nil && prepared.RulesFrozen {
+		frozenRules = prepared.MonitorRules
+	} else {
+		var goalsRaw string
+		if err = tx.QueryRow(`SELECT COALESCE(goal_config_json,'') FROM tests WHERE id=? AND project_id=?`, run, project).Scan(&goalsRaw); err != nil {
+			return nil, err
+		}
+		if goalsRaw != "" {
+			var goals struct {
+				MonitorRules []analysis.MonitorRule `json:"monitor_rules"`
+			}
+			if err = json.Unmarshal([]byte(goalsRaw), &goals); err != nil {
+				return nil, err
+			}
+			frozenRules = goals.MonitorRules
+		}
+	}
 	for _, binding := range b.Sources {
 		job := RunMonitorJob{ID: run + ":" + binding.SourceID, ProjectID: project, RunID: run, ScenarioID: scenario, BindingRevision: b.Revision, Required: binding.Required, StartedAt: started.UTC(), ExpiresAt: expires.UTC(), State: "collecting", Source: MonitorSource{ID: binding.SourceID, ProjectID: project}}
+		job.RulesFrozen = true
+		for _, rule := range frozenRules {
+			if rule.SourceID == binding.SourceID {
+				job.FrozenMonitorRules = append(job.FrozenMonitorRules, rule)
+			}
+		}
 		var body string
 		if prepared != nil {
 			source, ok := prepared.Sources[binding.SourceID]
@@ -243,8 +276,11 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 		if job.CoverageReason == "" && job.Source.Pack == "appdynamics" {
 			if prepared != nil {
 				job.ConnectionSnapshot = prepared.Connections[binding.SourceID]
+				if job.ConnectionSnapshot == nil {
+					job.CoverageReason = "connection_not_ready"
+				}
 			}
-			if job.ConnectionSnapshot == nil {
+			if job.CoverageReason == "" && job.ConnectionSnapshot == nil {
 				var connBody string
 				err = tx.QueryRow(`SELECT payload_json FROM appdynamics_connections WHERE id=? AND project_id=?`, job.Source.ConnectionID, project).Scan(&connBody)
 				if errors.Is(err, sql.ErrNoRows) {
@@ -264,6 +300,36 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 				}
 			}
 			if job.CoverageReason == "" && ValidateAppDynamicsSourceConnection(job.Source, job.ConnectionSnapshot) != nil {
+				job.CoverageReason = "connection_source_mismatch"
+			}
+		}
+		if job.CoverageReason == "" && job.Source.Pack == "prometheus-query" {
+			if prepared != nil {
+				job.PrometheusConnectionSnapshot = prepared.PrometheusConnections[binding.SourceID]
+				if job.PrometheusConnectionSnapshot == nil {
+					job.CoverageReason = "connection_not_ready"
+				}
+			}
+			if job.CoverageReason == "" && job.PrometheusConnectionSnapshot == nil {
+				var connBody string
+				err = tx.QueryRow(`SELECT payload_json FROM prometheus_connections WHERE id=? AND project_id=?`, job.Source.ConnectionID, project).Scan(&connBody)
+				if errors.Is(err, sql.ErrNoRows) {
+					job.CoverageReason = "connection_deleted"
+				} else if err != nil {
+					return nil, err
+				} else {
+					conn, e := UnmarshalPrometheusConnectionPrivate([]byte(connBody))
+					if e != nil {
+						return nil, e
+					}
+					if conn.ConfigurationStatus() != "ready" {
+						job.CoverageReason = "connection_not_ready"
+					} else {
+						job.PrometheusConnectionSnapshot = conn.Snapshot()
+					}
+				}
+			}
+			if job.CoverageReason == "" && ValidatePrometheusSourceConnection(job.Source, job.PrometheusConnectionSnapshot) != nil {
 				job.CoverageReason = "connection_source_mismatch"
 			}
 		}
@@ -305,6 +371,9 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 				}
 				if job.Source.Pack == "appdynamics" && !slices.Contains(packs, "appdynamics.v1") {
 					job.CoverageReason = "collector_appdynamics_contract_unavailable"
+				}
+				if job.Source.Pack == "prometheus-query" && !slices.Contains(packs, "prometheus-query.v1") {
+					job.CoverageReason = "collector_prometheus_contract_unavailable"
 				}
 			}
 		}
@@ -381,6 +450,9 @@ func (s *SQLiteStore) GetRunMonitorJob(project, id string) (*RunMonitorJob, erro
 // identical batches are acknowledged even after collection stops; conflicts
 // or gaps are rejected without advancing the collector cursor.
 func (s *SQLiteStore) AcceptMonitorBatch(project, collector string, b MonitorBatchReceipt) error {
+	return s.acceptMonitorBatch(project, collector, b, nil)
+}
+func (s *SQLiteStore) acceptMonitorBatch(project, collector string, b MonitorBatchReceipt, points []analysis.MetricPoint) error {
 	digest, err := hex.DecodeString(b.Digest)
 	if err != nil || len(digest) != 32 || b.Sequence < 0 || b.Sequence >= 1<<62 || b.SampleCount < 1 || b.SampleCount > 512 || b.ReceivedAt.IsZero() || len(b.ArtifactKey) == 0 || len(b.ArtifactKey) > 2048 {
 		return errors.New("invalid monitor batch receipt")
@@ -393,10 +465,10 @@ func (s *SQLiteStore) AcceptMonitorBatch(project, collector string, b MonitorBat
 	if _, err = lockProjectForOwnedMutation(tx, project); err != nil {
 		return err
 	}
-	var state, runStatus string
+	var state, runStatus, jobJSON string
 	var next int64
 	var expires time.Time
-	if err = tx.QueryRow(`SELECT j.state, j.next_sequence, j.expires_at,t.status FROM run_monitor_jobs j JOIN tests t ON t.id=j.test_id WHERE j.id=? AND j.project_id=? AND j.collector_id=?`, b.JobID, project, collector).Scan(&state, &next, &expires, &runStatus); err != nil {
+	if err = tx.QueryRow(`SELECT j.state, j.next_sequence, j.expires_at,t.status,j.payload FROM run_monitor_jobs j JOIN tests t ON t.id=j.test_id WHERE j.id=? AND j.project_id=? AND j.collector_id=?`, b.JobID, project, collector).Scan(&state, &next, &expires, &runStatus, &jobJSON); err != nil {
 		return err
 	}
 	var priorDigest, priorKey string
@@ -411,11 +483,24 @@ func (s *SQLiteStore) AcceptMonitorBatch(project, collector string, b MonitorBat
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	if state != "collecting" || (runStatus != "RUNNING" && runStatus != "PAUSED") || !expires.After(b.ReceivedAt) || next != b.Sequence {
+	var job RunMonitorJob
+	if err = json.Unmarshal([]byte(jobJSON), &job); err != nil {
+		return err
+	}
+	flushing := job.Source.Pack == "prometheus" && job.FlushOnly && state == "flushing"
+	if (state != "collecting" && !flushing) || (!flushing && runStatus != "RUNNING" && runStatus != "PAUSED") || !expires.After(b.ReceivedAt) || next != b.Sequence {
 		return errors.New("monitor job stopped, expired, or sequence out of order")
 	}
 	if _, err = tx.Exec(`INSERT INTO run_monitor_batches (job_id, sequence, digest, artifact_key, sample_count, received_at) VALUES (?, ?, ?, ?, ?, ?)`, b.JobID, b.Sequence, b.Digest, b.ArtifactKey, b.SampleCount, b.ReceivedAt.UTC()); err != nil {
 		return err
+	}
+	if points != nil {
+		if job.Source.Pack != "prometheus" || len(points) != b.SampleCount {
+			return errors.New("legacy scrape payload does not match receipt")
+		}
+		if err = recordPrometheusScrapeSlotTx(tx, job, b, points); err != nil {
+			return err
+		}
 	}
 	if _, err = tx.Exec(`UPDATE run_monitor_jobs SET next_sequence=next_sequence+1 WHERE id=?`, b.JobID); err != nil {
 		return err
@@ -474,6 +559,9 @@ func (m MonitorSource) Validate() error {
 		return errors.New("collector ID is required")
 	}
 	if m.Pack == "appdynamics" {
+		if m.Prometheus != nil {
+			return errors.New("Prometheus selection requires its own query pack")
+		}
 		if m.ConnectionID == "" || m.AppDynamics == nil || m.AppDynamics.ProjectID != m.ProjectID || m.AppDynamics.Validate() != nil || m.IntervalSeconds < 60 || m.IntervalSeconds > 3600 || m.CredentialRef != "" {
 			return errors.New("invalid AppDynamics monitor source")
 		}
@@ -482,8 +570,14 @@ func (m MonitorSource) Validate() error {
 		}
 		return nil
 	}
-	if m.ExecutorMode == "direct" || m.ConnectionID != "" || m.AppDynamics != nil {
-		return errors.New("provider fields require AppDynamics pack")
+	if m.Pack == "prometheus-query" {
+		if m.ConnectionID == "" || m.Prometheus == nil || m.Prometheus.ProjectID != m.ProjectID || m.Prometheus.Validate() != nil || m.IntervalSeconds < 15 || m.IntervalSeconds > 3600 || m.CredentialRef != "" || m.AppDynamics != nil {
+			return errors.New("invalid Prometheus query source")
+		}
+		return nil
+	}
+	if m.ExecutorMode == "direct" || m.ConnectionID != "" || m.AppDynamics != nil || m.Prometheus != nil {
+		return errors.New("provider fields require a governed provider pack")
 	}
 	if m.IntervalSeconds < 1 || m.IntervalSeconds > 3600 {
 		return errors.New("monitor interval must be 1-3600 seconds")
@@ -534,6 +628,9 @@ func (m MonitorSource) Validate() error {
 // SaveMonitorSource uses revision zero for creation and CAS for updates. The
 // collector's project and approved packs are rechecked inside the transaction.
 func (s *SQLiteStore) SaveMonitorSource(m MonitorSource, expected int64) (*MonitorSource, error) {
+	if m.Pack == "prometheus-query" && m.IntervalSeconds == 0 {
+		m.IntervalSeconds = 30
+	}
 	if m.Pack == "appdynamics" && m.IntervalSeconds == 0 {
 		m.IntervalSeconds = 60
 	}
@@ -553,6 +650,11 @@ func (s *SQLiteStore) SaveMonitorSource(m MonitorSource, expected int64) (*Monit
 	}
 	if m.Pack == "appdynamics" {
 		if err = validateAppDynamicsSourceTx(tx, &m); err != nil {
+			return nil, err
+		}
+	}
+	if m.Pack == "prometheus-query" {
+		if err = validatePrometheusSourceTx(tx, &m); err != nil {
 			return nil, err
 		}
 	}
@@ -740,8 +842,14 @@ func validateRemoteMonitorDestination(pack, destination string) error {
 }
 
 func (m MonitorSource) ReadinessDestination() string {
-	if m.CredentialRef != "" || m.Pack == "appdynamics" && m.ExecutorMode == "collector" {
+	if m.CredentialRef != "" || m.CanonicalProvider() && m.ExecutorMode == "collector" && m.CollectorPublicKey != "" {
 		return m.Destination + "#" + m.CollectorPublicKey
 	}
 	return m.Destination
+}
+
+// CanonicalProvider identifies jobs whose query progress and revisions are
+// durably reconciled; legacy point-only packs retain their wire contract.
+func (m MonitorSource) CanonicalProvider() bool {
+	return m.Pack == "appdynamics" || m.Pack == "prometheus-query"
 }

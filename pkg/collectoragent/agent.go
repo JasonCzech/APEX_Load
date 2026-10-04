@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 	"io"
 	"log/slog"
 	"math"
@@ -58,19 +59,20 @@ type Config struct {
 
 // Agent pushes heartbeats to the controller on an interval.
 type Agent struct {
-	stateMu         sync.Mutex
-	providerBusy    map[string]bool
-	providerSlots   chan struct{}
-	providerWorkers sync.WaitGroup
-	providerBacklog map[string][]*RunSampleBatch
-	cfg             Config
-	client          *http.Client
-	pendingBatches  map[string]*RunSampleBatch
-	nextCollection  map[string]time.Time
-	otlpAccepted    map[string]map[string]time.Time
-	jobPollAfterKey string
-	jobScanUnseen   map[string]bool
-	jobScanOffset   int
+	prometheusClient func(prometheus.Config, prometheus.Credentials) (*prometheus.Client, error)
+	stateMu          sync.Mutex
+	providerBusy     map[string]bool
+	providerSlots    chan struct{}
+	providerWorkers  sync.WaitGroup
+	providerBacklog  map[string][]*RunSampleBatch
+	cfg              Config
+	client           *http.Client
+	pendingBatches   map[string]*RunSampleBatch
+	nextCollection   map[string]time.Time
+	otlpAccepted     map[string]map[string]time.Time
+	jobPollAfterKey  string
+	jobScanUnseen    map[string]bool
+	jobScanOffset    int
 }
 
 type metricPack struct {
@@ -124,6 +126,11 @@ func New(cfg Config) (*Agent, error) {
 	cfg.CredentialPrivateKey = append([]byte(nil), cfg.CredentialPrivateKey...)
 	cfg.AdapterTargets = append([]AdapterTarget(nil), cfg.AdapterTargets...)
 	for i := range cfg.AdapterTargets {
+		if cfg.AdapterTargets[i].Prometheus != nil {
+			cloned := *cfg.AdapterTargets[i].Prometheus
+			cloned.ApprovedCIDRs = append([]string(nil), cloned.ApprovedCIDRs...)
+			cfg.AdapterTargets[i].Prometheus = &cloned
+		}
 		if cfg.AdapterTargets[i].Cloud != nil {
 			body, _ := json.Marshal(cfg.AdapterTargets[i].Cloud)
 			var cloned CloudQuery
@@ -141,7 +148,7 @@ func New(cfg Config) (*Agent, error) {
 		}
 		seenPacks[pack] = true
 		switch pack {
-		case "ssh-linux", "jmx", "jdbc", "otel-metrics", "appdynamics", "cloudwatch", "azure-monitor":
+		case "ssh-linux", "jmx", "jdbc", "otel-metrics", "appdynamics", "cloudwatch", "azure-monitor", "prometheus-query":
 			if len(cfg.ControllerPublicKey) == 0 {
 				return nil, fmt.Errorf("remote adapters require signed run jobs")
 			}
@@ -163,7 +170,7 @@ func New(cfg Config) (*Agent, error) {
 		case "linux-hosts", "go-runtime":
 		case "prometheus":
 			if strings.TrimSpace(cfg.PrometheusURL) == "" {
-				return nil, fmt.Errorf("prometheus pack requires prometheus URL")
+				return nil, fmt.Errorf("prometheus pack requires a scrape URL")
 			}
 		default:
 			return nil, fmt.Errorf("unsupported metric pack %q", pack)
@@ -274,9 +281,9 @@ func (a *Agent) tick(ctx context.Context) {
 			slog.Warn("collector heartbeat failed", "err", err)
 			return
 		}
-		if slicesContainsAppDynamics(a.cfg.Packs) {
+		if slicesContainsAppDynamics(a.cfg.Packs) || a.hasPrometheusQueryTarget() {
 			if err := a.inspectionTick(ctx); err != nil {
-				slog.Debug("AppDynamics inspection poll unavailable")
+				slog.Debug("provider inspection poll unavailable")
 			}
 		}
 		if err := a.runJobTick(ctx); err != nil {

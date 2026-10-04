@@ -66,21 +66,30 @@ type MetricPoint struct {
 // QueryWindow values describe a full query interval, which may exceed the
 // one-day maximum resolution of an individual source bucket.
 type ProviderMeasurement struct {
-	Name                string            `json:"name"`
-	MetricID            string            `json:"metric_id"`
-	CatalogPath         string            `json:"catalog_path,omitempty"`
-	EntityIDs           map[string]string `json:"entity_ids,omitempty"`
-	BucketStart         time.Time         `json:"bucket_start"`
-	BucketEnd           time.Time         `json:"bucket_end"`
-	ResolutionSeconds   int               `json:"resolution_seconds"`
-	Statistic           string            `json:"statistic"`
-	Count               *float64          `json:"count,omitempty"`
-	Sum                 *float64          `json:"sum,omitempty"`
-	Min                 *float64          `json:"min,omitempty"`
-	Max                 *float64          `json:"max,omitempty"`
-	Settled             bool              `json:"settled"`
-	AggregationEligible bool              `json:"aggregation_eligible"`
-	QueryWindow         bool              `json:"query_window,omitempty"`
+	Mode                  string            `json:"mode,omitempty"`
+	BackendProfile        string            `json:"backend_profile,omitempty"`
+	QueryID               string            `json:"query_id,omitempty"`
+	DefinitionHash        string            `json:"definition_hash,omitempty"`
+	DisplayLabels         map[string]string `json:"display_labels,omitempty"` // Azure display casing; canonical identity remains in Dimensions.
+	EvaluationStepSeconds int               `json:"evaluation_step_seconds,omitempty"`
+	AnalysisStatistic     string            `json:"analysis_statistic,omitempty"` // Explicit resampling of evaluation-grid values, never a source bucket.
+	UnderlyingSampleTime  *time.Time        `json:"underlying_sample_time,omitempty"`
+	FreshnessKnown        bool              `json:"freshness_known,omitempty"`
+	Name                  string            `json:"name"`
+	MetricID              string            `json:"metric_id"`
+	CatalogPath           string            `json:"catalog_path,omitempty"`
+	EntityIDs             map[string]string `json:"entity_ids,omitempty"`
+	BucketStart           time.Time         `json:"bucket_start"`
+	BucketEnd             time.Time         `json:"bucket_end"`
+	ResolutionSeconds     int               `json:"resolution_seconds"`
+	Statistic             string            `json:"statistic"`
+	Count                 *float64          `json:"count,omitempty"`
+	Sum                   *float64          `json:"sum,omitempty"`
+	Min                   *float64          `json:"min,omitempty"`
+	Max                   *float64          `json:"max,omitempty"`
+	Settled               bool              `json:"settled"`
+	AggregationEligible   bool              `json:"aggregation_eligible"`
+	QueryWindow           bool              `json:"query_window,omitempty"`
 }
 
 // Validate rejects non-finite, ambiguous, and unbounded measurements before
@@ -88,7 +97,14 @@ type ProviderMeasurement struct {
 func (p MetricPoint) Validate() error {
 	if p.Provider != nil {
 		m := p.Provider
-		if m.Name != "appdynamics" || m.MetricID == "" || len(m.MetricID) > 256 || len(m.CatalogPath) > 4096 || len(m.EntityIDs) > 16 || m.BucketStart.Location() != time.UTC || m.BucketEnd.Location() != time.UTC || m.BucketStart.IsZero() || !m.BucketEnd.After(m.BucketStart) || m.ResolutionSeconds < 1 || (!m.QueryWindow && m.ResolutionSeconds > 86400) || int64(m.ResolutionSeconds) > math.MaxInt64/int64(time.Second) || m.BucketEnd.Year() < 1 || m.BucketEnd.Year() > 9999 || !m.BucketStart.Add(time.Duration(m.ResolutionSeconds)*time.Second).Equal(m.BucketEnd) || !p.TimestampUTC.Equal(m.BucketStart) || len(m.Statistic) > 64 {
+		if m.Name != "appdynamics" && m.Name != "prometheus" || m.MetricID == "" || len(m.MetricID) > 256 || len(m.CatalogPath) > 4096 || len(m.EntityIDs) > 16 || len(m.Statistic) > 64 {
+			return errors.New("invalid provider bucket measurement")
+		}
+		if m.Name == "prometheus" {
+			if err := validatePrometheusMeasurement(p); err != nil {
+				return err
+			}
+		} else if m.Mode != "" && m.Mode != "interval_bucket" && m.Mode != "query_window" || m.Name == "appdynamics" && (m.BucketStart.Location() != time.UTC || m.BucketEnd.Location() != time.UTC || m.BucketStart.IsZero() || !m.BucketEnd.After(m.BucketStart) || m.ResolutionSeconds < 1 || (!m.QueryWindow && m.ResolutionSeconds > 86400) || int64(m.ResolutionSeconds) > math.MaxInt64/int64(time.Second) || m.BucketEnd.Year() < 1 || m.BucketEnd.Year() > 9999 || !m.BucketStart.Add(time.Duration(m.ResolutionSeconds)*time.Second).Equal(m.BucketEnd) || !p.TimestampUTC.Equal(m.BucketStart)) {
 			return errors.New("invalid provider bucket measurement")
 		}
 		for k, v := range m.EntityIDs {
@@ -171,6 +187,57 @@ func (p MetricPoint) Validate() error {
 	return nil
 }
 
+// Evaluation points are PromQL results on a fixed grid, not fabricated source
+// buckets. Exact-window aggregates carry their real interval separately.
+func validatePrometheusMeasurement(p MetricPoint) error {
+	m := p.Provider
+	if m.QueryID == "" || len(m.QueryID) > 128 || len(m.DefinitionHash) != 64 || (m.BackendProfile != "prometheus" && m.BackendProfile != "azure_managed") || m.EvaluationStepSeconds < 1 || m.EvaluationStepSeconds > 3600 {
+		return errors.New("invalid Prometheus evaluation identity")
+	}
+	if m.UnderlyingSampleTime != nil && (m.UnderlyingSampleTime.IsZero() || m.UnderlyingSampleTime.Location() != time.UTC || m.UnderlyingSampleTime.After(p.TimestampUTC.Add(30*time.Second))) {
+		return errors.New("invalid underlying sample timestamp")
+	}
+	if m.FreshnessKnown && m.UnderlyingSampleTime == nil {
+		return errors.New("known freshness requires an underlying sample timestamp")
+	}
+	if len(m.DisplayLabels) > 0 {
+		if m.BackendProfile != "azure_managed" || len(m.DisplayLabels) != len(p.Dimensions) || len(m.DisplayLabels) > maxDimensions {
+			return errors.New("invalid Azure display labels")
+		}
+		seen := map[string]bool{}
+		for key, value := range m.DisplayLabels {
+			canonical := strings.ToLower(key)
+			if key == "" || len(key) > maxDimensionBytes || len(value) > maxDimensionBytes || strings.ContainsAny(key+value, "\r\n\x00") || seen[canonical] || strings.ToLower(value) != p.Dimensions[canonical] {
+				return errors.New("display labels differ from canonical identity")
+			}
+			if _, exists := p.Dimensions[canonical]; !exists {
+				return errors.New("display labels differ from canonical identity")
+			}
+			seen[canonical] = true
+		}
+	}
+	switch m.Mode {
+	case "evaluation_point":
+		if !m.BucketStart.IsZero() || !m.BucketEnd.IsZero() || m.ResolutionSeconds != 0 || m.QueryWindow {
+			return errors.New("evaluation point cannot claim source bucket boundaries")
+		}
+	case "query_window":
+		if !m.QueryWindow || m.BucketStart.IsZero() || m.BucketStart.Location() != time.UTC || m.BucketEnd.Location() != time.UTC || !m.BucketEnd.After(m.BucketStart) || !p.TimestampUTC.Equal(m.BucketEnd) || m.ResolutionSeconds != 0 {
+			return errors.New("invalid exact Prometheus query window")
+		}
+	case "analysis_bucket":
+		if m.AnalysisStatistic != "avg" && m.AnalysisStatistic != "min" && m.AnalysisStatistic != "max" || m.QueryWindow || m.BucketStart.IsZero() || m.BucketStart.Location() != time.UTC || m.BucketEnd.Location() != time.UTC || !m.BucketEnd.After(m.BucketStart) || !p.TimestampUTC.Equal(m.BucketStart) || m.ResolutionSeconds < m.EvaluationStepSeconds || m.ResolutionSeconds > 86400 || m.BucketEnd.After(m.BucketStart.Add(time.Duration(m.ResolutionSeconds)*time.Second)) || m.AggregationEligible || m.UnderlyingSampleTime != nil || m.FreshnessKnown {
+			return errors.New("invalid derived Prometheus analysis bucket")
+		}
+	default:
+		return errors.New("unsupported Prometheus measurement mode")
+	}
+	if m.Mode != "analysis_bucket" && m.AnalysisStatistic != "" {
+		return errors.New("source measurements cannot claim an analysis statistic")
+	}
+	return nil
+}
+
 // NormalizeRunClock uses elapsed wall time, including pauses. Active runtime is
 // retained separately by the caller and never substituted for elapsed time.
 func NormalizeRunClock(p MetricPoint, runStart time.Time) (MetricPoint, error) {
@@ -201,7 +268,14 @@ func sameMetric(a, b MetricPoint) bool {
 	return a.ProjectID == b.ProjectID && a.Source == b.Source &&
 		a.ScenarioID == b.ScenarioID && a.Host == b.Host && a.Service == b.Service &&
 		a.MetricName == b.MetricName && a.Kind == b.Kind && a.InputKind == b.InputKind && a.Unit == b.Unit &&
-		maps.Equal(a.Dimensions, b.Dimensions)
+		maps.Equal(a.Dimensions, b.Dimensions) && compatiblePrometheusProvenance(a, b)
+}
+
+func compatiblePrometheusProvenance(a, b MetricPoint) bool {
+	if a.Provider != nil && a.Provider.Name == "prometheus" || b.Provider != nil && b.Provider.Name == "prometheus" {
+		return samePrometheusIdentity(a, b)
+	}
+	return true
 }
 
 func sameSeries(a, b MetricPoint) bool {

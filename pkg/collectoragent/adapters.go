@@ -3,6 +3,7 @@ package collectoragent
 import (
 	"context"
 	"crypto/ecdh"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -17,24 +18,26 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 )
 
 // AdapterTarget is a local operator approval. A signed job cannot add a remote
 // identity, executable, driver, command, query, or credential destination.
 type AdapterTarget struct {
-	Cloud           *CloudQuery `json:"cloud,omitempty"`
-	ApprovedCIDRs   []string    `json:"approved_cidrs,omitempty"`
-	CAPEM           string      `json:"ca_pem,omitempty"`
-	EventsEndpoint  string      `json:"events_endpoint,omitempty"`
-	Applications    []string    `json:"applications,omitempty"`
-	Pack            string      `json:"pack"`
-	Destination     string      `json:"destination"`
-	HostKey         string      `json:"host_key,omitempty"`
-	JavaExecutable  string      `json:"java_executable,omitempty"`
-	HelperClassPath string      `json:"helper_class_path,omitempty"`
-	QueryPack       string      `json:"query_pack,omitempty"`
-	TLSCAFile       string      `json:"tls_ca_file,omitempty"`
-	JVMTrustStore   string      `json:"jvm_trust_store,omitempty"`
+	Prometheus      *prometheus.Config `json:"prometheus,omitempty"`
+	Cloud           *CloudQuery        `json:"cloud,omitempty"`
+	ApprovedCIDRs   []string           `json:"approved_cidrs,omitempty"`
+	CAPEM           string             `json:"ca_pem,omitempty"`
+	EventsEndpoint  string             `json:"events_endpoint,omitempty"`
+	Applications    []string           `json:"applications,omitempty"`
+	Pack            string             `json:"pack"`
+	Destination     string             `json:"destination"`
+	HostKey         string             `json:"host_key,omitempty"`
+	JavaExecutable  string             `json:"java_executable,omitempty"`
+	HelperClassPath string             `json:"helper_class_path,omitempty"`
+	QueryPack       string             `json:"query_pack,omitempty"`
+	TLSCAFile       string             `json:"tls_ca_file,omitempty"`
+	JVMTrustStore   string             `json:"jvm_trust_store,omitempty"`
 }
 
 func LoadAdapterTargets(path string) ([]AdapterTarget, error) {
@@ -116,7 +119,7 @@ func (a *Agent) approvedDestinations() []string {
 	}
 	for _, target := range a.cfg.AdapterTargets {
 		destination := target.Destination
-		if target.Pack == "ssh-linux" || target.Pack == "jmx" || target.Pack == "jdbc" || target.Pack == "appdynamics" {
+		if target.Prometheus != nil || target.Pack == "ssh-linux" || target.Pack == "jmx" || target.Pack == "jdbc" || target.Pack == "appdynamics" {
 			if key, err := ecdh.X25519().NewPrivateKey(a.cfg.CredentialPrivateKey); err == nil {
 				destination += "#" + base64.StdEncoding.EncodeToString(key.PublicKey().Bytes())
 			}
@@ -133,6 +136,21 @@ func validateAdapterTargets(cfg Config) error {
 	}
 	seen := map[string]bool{}
 	for _, target := range cfg.AdapterTargets {
+		if target.Pack == "prometheus-query" {
+			if target.Prometheus == nil || target.Prometheus.Endpoint != target.Destination || target.Prometheus.Validate() != nil || len(cfg.ControllerPublicKey) != ed25519.PublicKeySize {
+				return errors.New("Prometheus query target requires valid local configuration and signing key")
+			}
+			if prometheusNeedsSealing(*target.Prometheus) {
+				if len(cfg.CredentialPrivateKey) != 32 {
+					return errors.New("secured Prometheus query target requires enrolled encryption key")
+				}
+			}
+			if seen[target.Pack+"\x00"+target.Destination] {
+				return errors.New("duplicate adapter destination")
+			}
+			seen[target.Pack+"\x00"+target.Destination] = true
+			continue
+		}
 		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "appdynamics": "https", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[target.Pack]
 		endpoint, err := url.Parse(target.Destination)
 		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && endpoint.Path != "" && !(target.Pack == "appdynamics" && endpoint.Path == "/") {

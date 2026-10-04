@@ -170,17 +170,19 @@ func applyGenericImportBatchContract(route discoveredRoute, contract *inferredRo
 // variants; these packages cover the public storage, DSL, execution, recorder,
 // protocol, and converter models that handlers decode or return directly.
 var openAPICrossPackageDirectories = map[string]string{
-	"analysis":       "analysis",
-	"analytics":      "analysis/duckdb",
-	"appdynamics":    "appdynamics",
-	"collectoragent": "collectoragent",
-	"dsl":            "dsl",
-	"engine":         "engine",
-	"k6":             "convert/k6",
-	"protocol":       "protocol",
-	"recorder":       "recorder",
-	"sample":         "convert/sample",
-	"storage":        "storage",
+	"analysis":        "analysis",
+	"analytics":       "analysis/duckdb",
+	"appdynamics":     "appdynamics",
+	"prometheus":      "prometheus",
+	"monitorprovider": "monitorprovider",
+	"collectoragent":  "collectoragent",
+	"dsl":             "dsl",
+	"engine":          "engine",
+	"k6":              "convert/k6",
+	"protocol":        "protocol",
+	"recorder":        "recorder",
+	"sample":          "convert/sample",
+	"storage":         "storage",
 }
 
 func addOpenAPICrossPackageTypeDefinitions(apiDir string, typeDefinitions map[string]ast.Expr) error {
@@ -260,6 +262,15 @@ var explicitRouteContractTypes = map[string]struct {
 	"PUT /api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}": {
 		requestType: "AppDynamicsConnectionRequest",
 	},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections":                                          {requestType: "PrometheusConnectionRequest", responseTypes: map[int]string{201: "PrometheusConnectionResponse"}},
+	"PUT /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}":                           {requestType: "PrometheusConnectionRequest", responseTypes: map[int]string{200: "PrometheusConnectionResponse"}},
+	"GET /api/v1/projects/{id}/monitoring/prometheus-connections":                                           {responseTypes: map[int]string{200: "[]PrometheusConnectionResponse"}},
+	"GET /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}":                           {responseTypes: map[int]string{200: "PrometheusConnectionResponse"}},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/test":                     {requestType: "PrometheusInspectionRequest", responseTypes: map[int]string{202: "PrometheusOperationResponse"}},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/discover":                 {requestType: "PrometheusInspectionRequest", responseTypes: map[int]string{202: "PrometheusOperationResponse"}},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/preview":                  {requestType: "PrometheusInspectionRequest", responseTypes: map[int]string{202: "PrometheusOperationResponse"}},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/adopt-dashboard":          {requestType: "PrometheusDashboardAdoptionRequest", responseTypes: map[int]string{200: "PrometheusDashboardAdoptionResponse"}},
+	"GET /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/operations/{operation_id}": {responseTypes: map[int]string{200: "PrometheusOperationResponse"}},
 	"POST /api/v1/monitoring/collectors/{id}/inspections/{operation_id}/result": {
 		requestType: "collectoragent.InspectionResult",
 	},
@@ -1244,6 +1255,8 @@ func explicitRequestRequiredFields(method, path string, properties map[string]oa
 	declared := map[string][]string{
 		"POST /api/v1/auth/login":                                                                       {"password", "username"},
 		"POST /api/v1/auth/ci/github/exchange":                                                          {"id_token", "project_id"},
+		"POST /api/v1/projects/{id}/monitoring/prometheus-connections":                                  {"name"},
+		"PUT /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}":                   {"name", "revision"},
 		"POST /api/v1/projects/{id}/monitoring/appdynamics-connections":                                 {"name"},
 		"PUT /api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}":                  {"name", "revision"},
 		"POST /api/v1/monitoring/collectors/{id}/inspections/{operation_id}/result":                     {"job"},

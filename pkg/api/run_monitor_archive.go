@@ -9,24 +9,26 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type RunMonitorCoverage struct {
-	JobID              string                          `json:"job_id"`
-	SourceID           string                          `json:"source_id"`
-	SourceRevision     int64                           `json:"source_revision"`
-	BindingRevision    int64                           `json:"binding_revision"`
-	ConnectionID       string                          `json:"connection_id,omitempty"`
-	ConnectionRevision int64                           `json:"connection_revision,omitempty"`
-	ExecutorMode       string                          `json:"executor_mode,omitempty"`
-	Selection          *appdynamics.Selection          `json:"appdynamics,omitempty"`
-	Required           bool                            `json:"required"`
-	State              string                          `json:"state"`
-	Reason             string                          `json:"reason,omitempty"`
-	Batches            int64                           `json:"batches"`
-	ProviderCoverage   map[string]appdynamics.Coverage `json:"provider_coverage,omitempty"`
-	Topology           []appdynamics.Entity            `json:"topology,omitempty"`
+	JobID               string                          `json:"job_id"`
+	SourceID            string                          `json:"source_id"`
+	SourceRevision      int64                           `json:"source_revision"`
+	BindingRevision     int64                           `json:"binding_revision"`
+	ConnectionID        string                          `json:"connection_id,omitempty"`
+	ConnectionRevision  int64                           `json:"connection_revision,omitempty"`
+	ExecutorMode        string                          `json:"executor_mode,omitempty"`
+	PrometheusSelection *prometheus.Selection           `json:"prometheus,omitempty"`
+	Selection           *appdynamics.Selection          `json:"appdynamics,omitempty"`
+	Required            bool                            `json:"required"`
+	State               string                          `json:"state"`
+	Reason              string                          `json:"reason,omitempty"`
+	Batches             int64                           `json:"batches"`
+	ProviderCoverage    map[string]appdynamics.Coverage `json:"provider_coverage,omitempty"`
+	Topology            []appdynamics.Entity            `json:"topology,omitempty"`
 }
 
 func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, budget *archiveOutputBudget) error {
@@ -57,6 +59,14 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 	packs := map[string]string{}
 	manifest.MonitoringStatus = "complete"
 	manifest.MonitorCoverage = nil
+	manifest.FrozenMonitorRules = nil
+	manifest.MonitorRulesFrozen = false
+	for _, job := range jobs {
+		if job.RulesFrozen {
+			manifest.MonitorRulesFrozen = true
+			manifest.FrozenMonitorRules = append(manifest.FrozenMonitorRules, job.FrozenMonitorRules...)
+		}
+	}
 	for _, job := range jobs {
 		starts[job.ID] = job.StartedAt
 		packs[job.ID] = job.Source.Pack
@@ -67,6 +77,17 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 		coverage := RunMonitorCoverage{JobID: job.ID, SourceID: job.Source.ID, SourceRevision: job.Source.Revision, BindingRevision: job.BindingRevision, Required: job.Required, State: job.State, Reason: reason, Batches: job.NextSequence, ExecutorMode: job.Source.ExecutorMode, ConnectionID: job.Source.ConnectionID, ProviderCoverage: job.Coverage, Topology: job.Topology}
 		if job.ConnectionSnapshot != nil {
 			coverage.ConnectionRevision = job.ConnectionSnapshot.Revision
+		}
+		if job.PrometheusConnectionSnapshot != nil {
+			coverage.ConnectionRevision = job.PrometheusConnectionSnapshot.Revision
+		}
+		if job.Source.Prometheus != nil {
+			selection := *job.Source.Prometheus
+			selection.QueryOffset = 0
+			selection.QueryTime = nil
+			selection.CollectionID = ""
+			selection.GridAnchor = nil
+			coverage.PrometheusSelection = &selection
 		}
 		if job.Source.AppDynamics != nil {
 			selection := *job.Source.AppDynamics
@@ -87,6 +108,8 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 	const pointsName = "monitor_evidence.v1.jsonl"
 	var pointCount int64
 	eligibleMetrics := make(map[string]map[string]bool)
+	prometheusEvaluations := map[string]map[int64]map[string]bool{}
+	freshnessCounts := map[string][3]int{}
 	var rulePoints []analysis.MetricPoint
 	rules := monitorRulesFromManifest(manifest)
 	ruleBudgetExceeded := false
@@ -100,7 +123,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 	reserve := int64(1<<20) + 4*int64(len(encodedManifest))
 	truncatedSources := map[string]bool{}
 	recordPoint := func(encoder *json.Encoder, p analysis.MetricPoint) error {
-		if p.Provider != nil && p.Provider.Name == "appdynamics" {
+		if p.Provider != nil {
 			written, err := encodeProviderMonitorArchiveRecord(encoder, budget, reserve, p)
 			if err != nil {
 				return err
@@ -120,6 +143,30 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 				eligibleMetrics[p.Source] = map[string]bool{}
 			}
 			eligibleMetrics[p.Source][p.Provider.EntityIDs["application"]+":"+p.MetricName] = true
+		}
+		if p.Provider != nil && p.Provider.Name == "prometheus" && p.Provider.Mode == "evaluation_point" {
+			key := p.Source + ":" + p.Provider.QueryID
+			counts := freshnessCounts[key]
+			counts[0]++
+			if p.Provider.FreshnessKnown {
+				counts[1]++
+			}
+			if p.Quality == analysis.QualityStale {
+				counts[2]++
+			}
+			freshnessCounts[key] = counts
+		}
+		if p.Provider != nil && p.Provider.Name == "prometheus" && p.Provider.Mode == "evaluation_point" && p.Value != nil && p.Quality == analysis.QualityValid && p.Provider.Settled {
+			key := p.Source + ":" + p.Provider.QueryID
+			if prometheusEvaluations[key] == nil {
+				prometheusEvaluations[key] = map[int64]map[string]bool{}
+			}
+			at := p.TimestampUTC.UnixNano()
+			if prometheusEvaluations[key][at] == nil {
+				prometheusEvaluations[key][at] = map[string]bool{}
+			}
+			labels, _ := json.Marshal(p.Dimensions)
+			prometheusEvaluations[key][at][string(labels)+p.Provider.EntityIDs["series"]] = true
 		}
 		for _, rule := range rules {
 			if p.Source == rule.SourceID && p.MetricName == rule.Metric {
@@ -149,7 +196,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			}
 			for _, receipt := range page {
 				afterJob, afterSequence = receipt.JobID, receipt.Sequence
-				if packs[receipt.JobID] == "appdynamics" {
+				if packs[receipt.JobID] == "appdynamics" || packs[receipt.JobID] == "prometheus-query" {
 					continue
 				}
 				body, err := readMonitorArtifact(ctx, receipt.ArtifactKey, receipt.Digest)
@@ -179,7 +226,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 		// Each provider bucket appears once with its latest accepted revision. Delayed
 		// values supersede older receipt contents rather than inflating counts.
 		for _, job := range jobs {
-			if job.Source.Pack != "appdynamics" {
+			if !job.Source.CanonicalProvider() {
 				continue
 			}
 			after := ""
@@ -207,6 +254,52 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 	manifest.MonitorEvidenceFile, manifest.MonitorEvidenceCount = pointsName, pointCount
 	for index := range manifest.MonitorCoverage {
 		coverage := &manifest.MonitorCoverage[index]
+		if coverage.PrometheusSelection != nil {
+			if coverage.ProviderCoverage == nil {
+				coverage.ProviderCoverage = map[string]appdynamics.Coverage{}
+			}
+			selection := coverage.PrometheusSelection.Defaults()
+			anchor := prometheusGridAnchor(manifestLoadStart(manifest))
+			until := manifest.CompletedAt
+			expected := 0
+			if !anchor.After(until) {
+				expected = int(until.Sub(anchor)/(time.Duration(selection.StepSeconds)*time.Second)) + 1
+			}
+			for _, query := range selection.Queries {
+				eligible := 0
+				minimum := max(1, query.MinSeries)
+				for at, series := range prometheusEvaluations[coverage.SourceID+":"+query.ID] {
+					pointTime := time.Unix(0, at)
+					if !pointTime.Before(anchor) && !pointTime.After(until) && pointTime.Sub(anchor)%(time.Duration(selection.StepSeconds)*time.Second) == 0 && len(series) >= minimum {
+						eligible++
+					}
+				}
+				status := "complete"
+				if expected == 0 || eligible == 0 || float64(eligible) < .95*float64(expected) {
+					status = "partial"
+					coverage.State = "incomplete"
+					coverage.Reason = "insufficient_numeric_evaluations"
+					manifest.MonitoringStatus = "incomplete"
+				}
+				freshness := "unknown"
+				counts := freshnessCounts[coverage.SourceID+":"+query.ID]
+				if counts[2] > 0 {
+					freshness = "stale"
+				} else if counts[1] > 0 && counts[1] == counts[0] {
+					freshness = "known"
+				} else if counts[1] > 0 {
+					freshness = "mixed"
+				}
+				coverage.ProviderCoverage["numeric:"+query.ID] = appdynamics.Coverage{Status: status, From: manifestLoadStart(manifest), To: until, Points: eligible, ExpectedPoints: expected, MissingPoints: max(0, expected-eligible), Freshness: freshness}
+			}
+		}
+		for key, value := range coverage.ProviderCoverage {
+			if (key == "targets_polling" || key == "alerts_polling") && value.Status != "complete" {
+				coverage.State = "incomplete"
+				coverage.Reason = "diagnostic_poll_gaps"
+				manifest.MonitoringStatus = "incomplete"
+			}
+		}
 		if coverage.Selection != nil && !selectedMonitorMetricsObserved(*coverage.Selection, eligibleMetrics[coverage.SourceID]) {
 			coverage.State = "incomplete"
 			coverage.Reason = "no_eligible_metric_buckets"
@@ -220,13 +313,13 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 	var diagnosticCount int64
 	hasProvider := false
 	for _, job := range jobs {
-		hasProvider = hasProvider || job.Source.Pack == "appdynamics"
+		hasProvider = hasProvider || job.Source.CanonicalProvider()
 	}
 	if hasProvider {
 		err = writeArchiveArtifactDurableWithWriter(record.ArchivePath, diagnosticsName, nil, 0600, func(file *os.File, _ []byte) (int, error) {
 			encoder := json.NewEncoder(&archiveOutputFile{file: file, budget: budget})
 			for _, job := range jobs {
-				if job.Source.Pack != "appdynamics" {
+				if !job.Source.CanonicalProvider() {
 					continue
 				}
 				after := ""
@@ -282,6 +375,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 	manifest.MonitorRuleResults = nil
 	for _, rule := range rules {
 		result := analysis.EvaluateMonitorRule(rule, rulePoints, start, end)
+		result = guardPrometheusRuleCoverage(result, jobs, start, end)
 		if truncatedSources[rule.SourceID] {
 			result = analysis.MonitorRuleResult{Rule: rule, Status: "not_evaluated", Message: "monitoring export reached the archive evidence budget"}
 		} else if ruleBudgetExceeded {
@@ -328,6 +422,9 @@ func monitorRulesFromManifest(manifest *RunArchiveManifest) []analysis.MonitorRu
 	if manifest == nil {
 		return nil
 	}
+	if manifest.MonitorRulesFrozen {
+		return manifest.FrozenMonitorRules
+	}
 	if manifest.InitialProvenance != nil && manifest.InitialProvenance.GoalConfig != nil {
 		return manifest.InitialProvenance.GoalConfig.MonitorRules
 	}
@@ -352,6 +449,9 @@ func manifestLoadStart(manifest *RunArchiveManifest) time.Time {
 // A captured percentile or unweighted average is still evidence even when it
 // cannot support a whole-run acceptance statistic.
 func monitorPointSatisfiesCapture(point analysis.MetricPoint, start, end time.Time) bool {
+	if point.Provider != nil && point.Provider.Name == "prometheus" {
+		return point.Value != nil && point.Quality == analysis.QualityValid && point.Validate() == nil && point.Provider.Settled && !point.TimestampUTC.Before(start) && !point.TimestampUTC.After(end)
+	}
 	return point.Provider != nil && point.Value != nil && point.Quality == analysis.QualityValid && point.Validate() == nil && point.Provider.Settled && !point.Provider.BucketStart.Before(start) && !point.Provider.BucketEnd.After(end)
 }
 

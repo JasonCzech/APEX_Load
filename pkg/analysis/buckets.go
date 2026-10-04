@@ -18,6 +18,9 @@ func BucketSeries(points []MetricPoint, from, to time.Time, seconds int, aggrega
 		return []MetricPoint{}, nil
 	}
 	if points[0].Provider != nil {
+		if points[0].Provider.Name == "prometheus" {
+			return bucketPrometheusSeries(points, from, to, seconds, aggregation)
+		}
 		return bucketProviderSeries(points, from, to, seconds, aggregation)
 	}
 	kind := points[0].Kind

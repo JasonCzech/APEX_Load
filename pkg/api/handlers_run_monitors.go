@@ -94,6 +94,13 @@ func (s *Server) handleMonitorSources(w http.ResponseWriter, r *http.Request) {
 	if source.AppDynamics != nil {
 		source.AppDynamics.ProjectID = project
 	}
+	if source.Prometheus != nil {
+		source.Prometheus.ProjectID = project
+		source.Prometheus.CollectionID = ""
+		source.Prometheus.QueryOffset = 0
+		source.Prometheus.QueryTime = nil
+		source.Prometheus.GridAnchor = nil
+	}
 	if r.Method == http.MethodPost {
 		if source.ID != "" || source.Revision != 0 {
 			writeError(w, 400, "new monitor source must omit id and revision")
@@ -199,6 +206,7 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 	}
 	now := time.Now().UTC()
 	appDynamicsContract := false
+	prometheusContract := false
 	if advertisement := r.Header.Get("X-APEX-Monitor-Readiness"); advertisement != "" {
 		var ad collectoragent.RunJobReadiness
 		if len(advertisement) > 8192 || json.Unmarshal([]byte(advertisement), &ad) != nil || ad.SigningKey != base64.StdEncoding.EncodeToString(key.Public().(ed25519.PublicKey)) {
@@ -209,19 +217,34 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 			writeError(w, 400, "invalid collector readiness contracts")
 			return
 		}
-		if slices.Contains(ad.Packs, collectoragent.AppDynamicsBatchContract) {
+		if slices.Contains(ad.Packs, collectoragent.AppDynamicsBatchContract) || slices.Contains(ad.Packs, collectoragent.PrometheusBatchContract) || slices.Contains(ad.Packs, "prometheus-scrape.v2") {
 			writeError(w, 400, "collector contracts must be advertised separately")
 			return
 		}
 		for _, contract := range ad.Contracts {
-			if contract != collectoragent.AppDynamicsBatchContract || !slices.Contains(ad.Packs, "appdynamics") {
+			switch contract {
+			case collectoragent.AppDynamicsBatchContract:
+				if !slices.Contains(ad.Packs, "appdynamics") {
+					writeError(w, 400, "AppDynamics contract requires pack approval")
+					return
+				}
+				appDynamicsContract = true
+			case collectoragent.PrometheusBatchContract:
+				if !slices.Contains(ad.Packs, "prometheus-query") {
+					writeError(w, 400, "Prometheus query contract requires pack approval")
+					return
+				}
+				prometheusContract = true
+			case "prometheus-scrape.v2":
+				if !slices.Contains(ad.Packs, "prometheus") {
+					writeError(w, 400, "Prometheus scrape contract requires pack approval")
+					return
+				}
+			default:
 				writeError(w, 400, "unsupported collector readiness contract")
 				return
 			}
-			appDynamicsContract = true
-		}
-		if appDynamicsContract {
-			ad.Packs = append(ad.Packs, collectoragent.AppDynamicsBatchContract)
+			ad.Packs = append(ad.Packs, contract)
 		}
 		if err := store.SaveCollectorRunReadiness(c.ProjectID, c.ID, ad.Packs, ad.Destinations, now); err != nil {
 			writeError(w, 400, "invalid collector readiness")
@@ -261,12 +284,25 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 			lease = j.ExpiresAt
 		}
 		job := collectoragent.RunJob{ID: j.ID, ProjectID: j.ProjectID, RunID: j.RunID, ScenarioID: j.ScenarioID, CollectorID: j.Source.CollectorID, SourceID: j.Source.ID, SourceRevision: j.Source.Revision, Pack: j.Source.Pack, Destination: j.Source.Destination, IntervalSeconds: j.Source.IntervalSeconds, StartedAt: j.StartedAt, ExpiresAt: j.ExpiresAt, LeaseExpiresAt: lease, NextSequence: j.NextSequence}
+		job.FlushOnly = j.FlushOnly
+		if j.FlushOnly {
+			job.LoadEndedAt = j.LoadEndedAt
+			job.DrainDeadline = j.DrainDeadline
+		}
 		if j.Source.Pack == "appdynamics" {
 			if !appDynamicsContract {
 				continue
 			}
 			if err := s.populateAppDynamicsGrant(r.Context(), &job, j); err != nil {
 				job.UnavailableReason = "AppDynamics credential unavailable"
+			}
+		}
+		if j.Source.Pack == "prometheus-query" {
+			if !prometheusContract {
+				continue
+			}
+			if err := s.populatePrometheusGrant(r.Context(), &job, j); err != nil {
+				job.UnavailableReason = "Prometheus executor unavailable"
 			}
 		}
 		if j.Source.CredentialRef != "" {
@@ -331,12 +367,18 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 		writeError(w, 404, "monitor job unavailable")
 		return
 	}
-	if job.Source.Pack == "appdynamics" {
-		if job.Source.CollectorID != c.ID || grant.SourceID != job.Source.ID || grant.SourceRevision != job.Source.Revision || grant.RunID != job.RunID || grant.Pack != "appdynamics" || grant.AppDynamics == nil || job.ConnectionSnapshot == nil || grant.AppDynamics.Config.Endpoint != job.ConnectionSnapshot.Config.Endpoint || batch.Sequence > grant.NextSequence+int64(max(1, grant.MaxBatches))-1 {
-			writeError(w, 403, "AppDynamics grant does not match job")
+	if job.Source.CanonicalProvider() {
+		validProvider := grant.Pack == job.Source.Pack
+		if job.Source.Pack == "appdynamics" {
+			validProvider = validProvider && grant.AppDynamics != nil && job.ConnectionSnapshot != nil && grant.AppDynamics.Config.Endpoint == job.ConnectionSnapshot.Config.Endpoint
+		} else {
+			validProvider = validProvider && grant.Prometheus != nil && job.PrometheusConnectionSnapshot != nil && grant.Prometheus.Config.Endpoint == job.PrometheusConnectionSnapshot.Config.Endpoint
+		}
+		if job.Source.CollectorID != c.ID || grant.SourceID != job.Source.ID || grant.SourceRevision != job.Source.Revision || grant.RunID != job.RunID || !validProvider || batch.Sequence > grant.NextSequence+int64(max(1, grant.MaxBatches))-1 {
+			writeError(w, 403, "provider grant does not match job")
 			return
 		}
-		if batch.Sequence == job.NextSequence && batch.Progress != nil && (!batch.QueryFromUTC.Equal(grant.QueryFromUTC) || !batch.QueryUntilUTC.Equal(grant.QueryUntilUTC)) {
+		if batch.Sequence == job.NextSequence && (!batch.QueryFromUTC.Equal(grant.QueryFromUTC) || !batch.QueryUntilUTC.Equal(grant.QueryUntilUTC)) {
 			writeError(w, 400, "query continuation does not match signed window")
 			return
 		}
@@ -348,6 +390,22 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, 200, map[string]any{"accepted": true, "sequence": batch.Sequence})
 		return
 	}
+	if job.FlushOnly && batch.Final && len(batch.Points) == 0 {
+		if grant.FlushOnly && grant.Pack == "prometheus" && job.Source.CollectorID == c.ID && grant.RunID == job.RunID && grant.SourceID == job.Source.ID && grant.SourceRevision == job.Source.Revision {
+			if legacy, ok := store.(interface {
+				CompleteLegacyPrometheusFlush(string, string, string, time.Time) error
+			}); ok {
+				if err := legacy.CompleteLegacyPrometheusFlush(c.ProjectID, c.ID, job.ID, now); err != nil {
+					writeError(w, 409, err.Error())
+					return
+				}
+				writeJSON(w, 200, map[string]any{"accepted": true})
+				return
+			}
+		}
+		writeError(w, 403, "exporter flush grant rejected")
+		return
+	}
 	if job.Source.CollectorID != c.ID || job.Source.ID != grant.SourceID || job.Source.Revision != grant.SourceRevision || job.RunID != grant.RunID || job.ScenarioID != grant.ScenarioID || len(batch.Points) < 1 || len(batch.Points) > 512 || batch.Sequence < 0 || batch.Sequence > grant.NextSequence {
 		writeError(w, 400, "monitor batch does not match job")
 		return
@@ -355,7 +413,7 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 	// Hash source observations before adding receive-time fields so retry
 	// identity does not depend on which replica accepted the request.
 	for i, p := range batch.Points {
-		if err := p.Validate(); err != nil || p.ProjectID != job.ProjectID || p.RunID != job.RunID || p.ScenarioID != job.ScenarioID || p.Source != job.Source.ID || p.DatasetID != "" || p.Host != c.ID || !p.ReceivedAt.IsZero() || p.ActiveRuntimeMS != nil {
+		if err := p.Validate(); err != nil || p.Provider != nil && p.Provider.Mode == "analysis_bucket" || p.ProjectID != job.ProjectID || p.RunID != job.RunID || p.ScenarioID != job.ScenarioID || p.Source != job.Source.ID || p.DatasetID != "" || p.Host != c.ID || !p.ReceivedAt.IsZero() || p.ActiveRuntimeMS != nil || job.Source.Pack == "prometheus" && (p.TimestampUTC.Before(job.StartedAt) || job.LoadEndedAt != nil && p.TimestampUTC.After(*job.LoadEndedAt)) {
 			writeError(w, 400, "invalid or misattributed monitor point")
 			return
 		}
@@ -373,7 +431,7 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	artifact, digest := monitorArtifactKey(job.ProjectID, job.RunID, body)
-	if batch.Sequence != job.NextSequence || job.State != "collecting" {
+	if batch.Sequence != job.NextSequence || job.State != "collecting" && !(job.Source.Pack == "prometheus" && job.State == "flushing" && job.FlushOnly) {
 		receipts, readErr := store.ListMonitorBatchReceipts(job.ProjectID, job.RunID, job.ID, batch.Sequence-1, 1)
 		if readErr == nil && len(receipts) == 1 && receipts[0].JobID == job.ID && receipts[0].Sequence == batch.Sequence && receipts[0].Digest == digest {
 			writeJSON(w, 200, map[string]any{"accepted": true, "sequence": batch.Sequence})
@@ -387,7 +445,14 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	receipt := storage.MonitorBatchReceipt{JobID: job.ID, Sequence: batch.Sequence, Digest: digest, ArtifactKey: artifact, SampleCount: len(batch.Points), ReceivedAt: now}
-	if err = store.AcceptMonitorBatch(c.ProjectID, c.ID, receipt); err != nil {
+	if legacy, ok := store.(interface {
+		AcceptLegacyPrometheusBatch(string, string, storage.MonitorBatchReceipt, []analysis.MetricPoint) error
+	}); ok && job.Source.Pack == "prometheus" {
+		err = legacy.AcceptLegacyPrometheusBatch(c.ProjectID, c.ID, receipt, batch.Points)
+	} else {
+		err = store.AcceptMonitorBatch(c.ProjectID, c.ID, receipt)
+	}
+	if err != nil {
 		writeError(w, 409, err.Error())
 		return
 	}
@@ -462,7 +527,7 @@ func (s *Server) handleRunMonitorSeries(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	job, jobErr := store.GetRunMonitorJob(project, r.PathValue("id")+":"+source)
-	if jobErr == nil && job.Source.Pack == "appdynamics" {
+	if jobErr == nil && job.Source.CanonicalProvider() {
 		limit := 999
 		if raw := r.URL.Query().Get("limit"); raw != "" {
 			parsed, err := strconv.Atoi(raw)

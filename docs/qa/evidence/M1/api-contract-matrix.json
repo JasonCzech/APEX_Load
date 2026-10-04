@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 671,
+    "routes": 681,
     "public": 26,
-    "protected": 645,
-    "rbac": 643,
+    "protected": 655,
+    "rbac": 653,
     "handler_authenticated": 2,
     "role_metadata_missing": 0,
-    "green": 671,
+    "green": 681,
     "partial": 0,
     "missing": 0
   },
@@ -7526,6 +7526,240 @@
       "method": "POST",
       "path": "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/test",
       "operation_id": "handleTestELKConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections",
+      "operation_id": "handleListPrometheusConnections",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections",
+      "operation_id": "handleCreatePrometheusConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}",
+      "operation_id": "handleDeletePrometheusConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}",
+      "operation_id": "handleGetPrometheusConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}",
+      "operation_id": "handleUpdatePrometheusConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/adopt-dashboard",
+      "operation_id": "handlePrometheusAdoptDashboard",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/discover",
+      "operation_id": "handleDiscoverPrometheusConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/operations/{operation_id}",
+      "operation_id": "handleGetPrometheusOperation",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/preview",
+      "operation_id": "handlePreviewPrometheusConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/test",
+      "operation_id": "handleTestPrometheusConnection",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

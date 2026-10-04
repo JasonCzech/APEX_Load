@@ -54,6 +54,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 27, Name: "object-activity-and-archives", Fingerprint: "10e70e6ffc7829b2d9e594c854903b1db57d4807b1c2878cea751e0eeb37d1d2"},
 	{Version: 28, Name: "archive-restoration-schedule-boundary", Fingerprint: "ba1ac64df70d019c92b5aaae2e4d6ed14f927d8fa4b30d9083a1f533e71981ed"},
 	{Version: 29, Name: "appdynamics-durable-run-monitoring", Fingerprint: "ba1618a00f60ea7b120e07b375d67d8fd7c6368d1a9e8a18ef25c09f9b4c0186"},
+	{Version: 30, Name: "prometheus-governed-run-monitoring", Fingerprint: "c1393b724be106974e1c3e9765668d426dbd6720dc6df89096b7a32ce0d0124f"},
 }
 
 type SchemaMigrationRecord struct {

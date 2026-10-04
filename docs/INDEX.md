@@ -31,6 +31,8 @@ kept for planning or audit context only.
 | [ENTERPRISE_PLATFORM_RUNBOOK.md](ENTERPRISE_PLATFORM_RUNBOOK.md) | Enterprise platform architecture, data platform operations, and database migration |
 | [OBSERVABILITY_INTEGRATIONS.md](OBSERVABILITY_INTEGRATIONS.md) | Prometheus, OpenTelemetry, Power BI, Dynatrace, and Elastic integrations |
 | [APPDYNAMICS.md](APPDYNAMICS.md) | Classic Controller connection setup, governed collection, run evidence, and troubleshooting |
+| [PROMETHEUS_MONITORING.md](PROMETHEUS_MONITORING.md) | Project target-system Prometheus connections, typed queries, collection, evidence, archives, acceptance and operating guidance |
+| [PROMETHEUS_MONITORING_SPEC.md](PROMETHEUS_MONITORING_SPEC.md) | Target-system monitoring baseline audit, contracts, implementation sequence, limits and qualification matrix |
 | [ENTERPRISE_FLEET_AND_CAPACITY.md](ENTERPRISE_FLEET_AND_CAPACITY.md) | Generator fleet inventory, autoscaling, capacity reservations, and run supervision |
 
 ## Engineering and product references

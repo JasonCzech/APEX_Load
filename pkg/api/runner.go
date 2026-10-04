@@ -186,6 +186,7 @@ type runtimeSecretRecoveryState struct {
 
 type TestRunner struct {
 	appDynamicsPrepare    func(context.Context, storage.MonitorSource, *storage.AppDynamicsConnectionSnapshot) error
+	prometheusPrepare     func(context.Context, storage.MonitorSource, *storage.PrometheusConnectionSnapshot, []analysis.MonitorRule) error
 	thresholdJournal      *thresholdJournalWriter
 	tests                 map[string]*ManagedTest
 	scripts               map[string]*StoredScript

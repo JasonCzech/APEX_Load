@@ -326,7 +326,7 @@ func (s *Server) handlePollAppDynamicsInspections(w http.ResponseWriter, r *http
 	if c == nil {
 		return
 	}
-	if !appDynamicsCollectorAllowed(c, c.ProjectID) {
+	if !appDynamicsCollectorAllowed(c, c.ProjectID) && !prometheusCollectorAllowed(c, c.ProjectID) {
 		writeError(w, 403, "AppDynamics pack is not approved for this collector")
 		return
 	}
@@ -400,6 +400,12 @@ func (s *Server) handlePollAppDynamicsInspections(w http.ResponseWriter, r *http
 		}
 		out = append(out, envelope)
 	}
+	prometheusJobs, prometheusErr := s.pollPrometheusInspections(r, c, capacity-len(out), key)
+	if prometheusErr != nil {
+		writeError(w, 503, "cannot poll provider inspections")
+		return
+	}
+	out = append(out, prometheusJobs...)
 	writeJSON(w, 200, out)
 }
 func (s *Server) handleAppDynamicsInspectionResult(w http.ResponseWriter, r *http.Request) {
@@ -407,7 +413,7 @@ func (s *Server) handleAppDynamicsInspectionResult(w http.ResponseWriter, r *htt
 	if c == nil {
 		return
 	}
-	if !appDynamicsCollectorAllowed(c, c.ProjectID) {
+	if !appDynamicsCollectorAllowed(c, c.ProjectID) && !prometheusCollectorAllowed(c, c.ProjectID) {
 		writeError(w, 403, "AppDynamics pack is not approved")
 		return
 	}
@@ -428,6 +434,10 @@ func (s *Server) handleAppDynamicsInspectionResult(w http.ResponseWriter, r *htt
 	job, err := collectoragent.VerifyInspectionJob(result.Job, key.Public().(ed25519.PublicKey), c.ID, time.Now().UTC())
 	if err != nil || job.ProjectID != c.ProjectID || job.ID != r.PathValue("operation_id") {
 		writeError(w, 403, "inspection authorization rejected")
+		return
+	}
+	if job.Prometheus != nil {
+		s.handlePrometheusInspectionResult(w, r, c, result, job)
 		return
 	}
 	op, err := store.GetAppDynamicsInspection(job.ID)

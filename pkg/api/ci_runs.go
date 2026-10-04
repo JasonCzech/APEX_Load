@@ -306,7 +306,7 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 				writeError(w, 503, "monitoring selections unavailable")
 				return
 			}
-			if err = validateSelectedMonitorRules(bindings, sources, req.Goals.goalConfig()); err != nil {
+			if err = s.runner.validateSelectedMonitorRules(bindings, sources, req.Goals.goalConfig()); err != nil {
 				writeError(w, 400, err.Error())
 				return
 			}
