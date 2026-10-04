@@ -10,11 +10,13 @@ import (
 	"io"
 	"log/slog"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
@@ -106,7 +108,8 @@ func (vu *VUser) loadDataRow() error {
 		vu.Variables = make(map[string]string)
 	}
 	for _, name := range vu.DataProvider.SourceNames() {
-		row := vu.DataProvider.GetRow(name, vu.ID)
+		row, receipt := vu.DataProvider.getRowWithReceipt(name, vu.ID)
+		vu.recordReplayRuntimeRow("datasource", name, name, receipt)
 		// A missing row must never retain a previous iteration's bindings.
 		source := vu.DataProvider.sources[name]
 		for _, column := range source.columns {
@@ -125,6 +128,10 @@ func (vu *VUser) loadDataRow() error {
 
 // makeLogger creates a logger for this VUser based on the log config.
 func (vu *VUser) makeLogger(cfg dsl.LogConfig) *slog.Logger {
+	if vu.runtimeCredentialRedactionErr != nil {
+		// No complete matcher exists; outcome sinks retain the fixed failure.
+		cfg.Level = "disabled"
+	}
 	attrs := []any{"vuser", vu.ID, "group", vu.Group}
 
 	switch cfg.Level {
@@ -137,7 +144,7 @@ func (vu *VUser) makeLogger(cfg dsl.LogConfig) *slog.Logger {
 		if cfg.OnErrorOnly {
 			return vu.errorOnlyLogger(cfg)
 		}
-		return slog.With(attrs...)
+		return slog.New(&runtimePublicationLogHandler{next: slog.Default().Handler(), vu: vu}).With(attrs...)
 	}
 }
 
@@ -202,7 +209,7 @@ func (vu *VUser) bindRuntimeTextRedactor() {
 	if vu == nil || vu.Proto == nil {
 		return
 	}
-	vu.runtimeRedaction.Store(vu.RedactionConfig)
+	vu.runtimeRedaction.Store(vu.resultPublicationRedactionConfig())
 	bindProtocolRuntimeRedaction(vu.Proto, func() *RedactionConfig { return vu.runtimeRedaction.Load() })
 }
 
@@ -231,6 +238,8 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	vu.unresolvedFileRefs = nil
 	vu.unresolvedParameterRefs = nil
 	vu.unresolvedRunRefs = nil
+	vu.bodyResolutionError = nil
+	vu.structuredBodyResolvedAction = nil
 	target, redactedTarget := vu.interpolateWithSecrets(action.Target)
 	selector, redactedSelector := vu.interpolateWithSecrets(action.Selector)
 	value, redactedValue := vu.interpolateWithSecrets(action.Value)
@@ -247,6 +256,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		action.Body,
 		action.BodyEncoding,
 		actionBodyTemplateValueEncoding(action.Metadata),
+		action.Metadata[dsl.ImportAuraTemplateContractMetadataKey],
 	)
 	auth, redactedAuth := toProtocolAuthConfig(action.Auth, vu)
 	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
@@ -269,6 +279,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		Name:                         action.Name,
 		Type:                         action.Type,
 		Method:                       action.Method,
+		HTTPVersion:                  action.HTTPVersion,
 		Target:                       target,
 		RedactedTarget:               redactedTarget,
 		Selector:                     selector,
@@ -316,6 +327,9 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	// {{secret.NAME}} has already been replaced by its value. Both per-action
 	// surfaces — the auth block and the target's URL userinfo — are enumerated
 	// by actionCredentialCompositeSurfaces.
+	if actionBodyTemplateValueEncoding(action.Metadata) == dsl.ImportAuraJSONTemplateValueEncoding && vu.bodyResolutionError == nil {
+		vu.structuredBodyResolvedAction = resolved
+	}
 	vu.actionCredentialComposites = resolvedActionCredentialComposites{
 		action: resolved,
 		values: runtimeActionCompositeValues(&action, resolved),
@@ -398,7 +412,70 @@ func actionBodyTemplateValueEncoding(metadata map[string]any) string {
 	return strings.TrimSpace(value)
 }
 
-func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding string) (string, string) {
+func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding string, rawContract any) (string, string) {
+	if templateValueEncoding == dsl.ImportAuraJSONTemplateValueEncoding {
+		remaining := aurapayload.MaxTemplateOccurrences
+		var interpolationErr error
+		resolve := func(value string, templateContext aurapayload.TemplateContext) (string, string) {
+			if interpolationErr != nil {
+				return value, value
+			}
+			allowance := &remaining
+			if budget := vu.concurrentPreparation; budget != nil {
+				allowance = &budget.templatesRemaining
+			}
+			transform := func(index int, _ string, actual, safe string) (string, string, error) {
+				if !templateContext.IsFormWireToken(index) {
+					return actual, safe, nil
+				}
+				decoded, err := url.QueryUnescape(actual)
+				if err != nil {
+					return "", "", &aurapayload.Error{Code: aurapayload.InvalidForm}
+				}
+				if safe == actual {
+					safe = decoded
+				}
+				return decoded, safe, nil
+			}
+			actual, safe, err := vu.interpolateWithSecretsPolicyBounded(value, transform, aurapayload.MaxBodyBytes, allowance, templateContext.IsLiteralToken)
+			if err != nil {
+				interpolationErr = err
+				return value, value
+			}
+			return actual, safe
+		}
+		var resolved, redacted string
+		var err error
+		if budget := vu.concurrentPreparation; budget != nil {
+			// Reserve codec work separately from callback interpolation so both
+			// passes cannot independently consume the same group remainder.
+			allowance := min(aurapayload.MaxWorkBytes, budget.workRemaining/2, budget.bytesRemaining)
+			budget.workRemaining -= allowance
+			var work int
+			resolved, redacted, work, err = aurapayload.ResolveContextualWithWorkAccounting(body, encoding, rawContract, resolve, allowance)
+			budget.workRemaining += allowance - work
+		} else {
+			resolved, redacted, _, err = aurapayload.ResolveContextualWithWorkAccounting(body, encoding, rawContract, resolve, aurapayload.MaxWorkBytes)
+		}
+		if interpolationErr != nil {
+			err = interpolationErr
+		}
+		if err != nil {
+			vu.bodyResolutionError = err
+			return body, body
+		}
+		if budget := vu.concurrentPreparation; budget != nil {
+			if err := budget.charge(len(resolved) + len(redacted)); err != nil {
+				vu.bodyResolutionError = err
+				return "", ""
+			}
+		}
+		return resolved, redacted
+	}
+	if rawContract != nil {
+		vu.bodyResolutionError = &aurapayload.Error{Code: aurapayload.InvalidTemplateContract}
+		return body, body
+	}
 	interpolate := vu.interpolateWithSecrets
 	if templateValueEncoding == dsl.ImportURLFormTemplateValueEncodingQueryComponent {
 		interpolate = vu.interpolateURLFormTemplateValuesWithSecrets
@@ -415,7 +492,20 @@ func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding str
 			}
 		}
 	}
-	decoded, encoded, err := dsl.DecodeBodyEncoding(body, encoding, 0)
+	decodeLimit := 0
+	if budget := vu.concurrentPreparation; budget != nil {
+		decodeLimit = max(1, budget.bytesRemaining)
+		if strings.EqualFold(strings.TrimSpace(encoding), "base64") && !dsl.IsTrustedFullBodyBase64Template(body) {
+			if err := budget.charge(base64.StdEncoding.DecodedLen(len(body))); err != nil {
+				return "", ""
+			}
+		}
+	}
+	decoded, encoded, err := dsl.DecodeBodyEncoding(body, encoding, decodeLimit)
+	if err == dsl.ErrBodyEncodingLimit && vu.concurrentPreparation != nil {
+		vu.concurrentPreparation.err = err
+		return "", ""
+	}
 	if !encoded || err != nil {
 		// Preserve the established full-body-template behavior. A value such as
 		// {{secret.BASE64_PAYLOAD}} is itself resolved into encoded data and is
@@ -423,6 +513,11 @@ func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding str
 		return interpolate(body)
 	}
 	resolved, redacted := interpolate(string(decoded))
+	if budget := vu.concurrentPreparation; budget != nil {
+		if err := budget.charge(base64.StdEncoding.EncodedLen(len(resolved)) + base64.StdEncoding.EncodedLen(len(redacted))); err != nil {
+			return "", ""
+		}
+	}
 	return base64.StdEncoding.EncodeToString([]byte(resolved)),
 		base64.StdEncoding.EncodeToString([]byte(redacted))
 }
@@ -581,7 +676,7 @@ func scriptUsesHTTPDefaultHeaders(script *dsl.Script) bool {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(script.Protocol)) {
-	case "", "http", "soap", "java_http":
+	case "", "http", "http/1.1", "http/2", "soap", "java_http":
 		return true
 	default:
 		return false
@@ -680,37 +775,108 @@ func (vu *VUser) interpolateURLFormTemplateValuesWithSecrets(s string) (string, 
 }
 
 func (vu *VUser) interpolateWithSecretsTransform(s string, transform func(string) string) (string, string) {
+	if budget := vu.concurrentPreparation; budget != nil {
+		if budget.err != nil {
+			return "", ""
+		}
+		if budget.bytesRemaining <= 0 && s != "" {
+			budget.err = fmt.Errorf("concurrent HTTP preparation byte limit exceeded")
+			return "", ""
+		}
+		resolved, redacted, err := vu.interpolateWithSecretsTransformBounded(s, transform, budget.bytesRemaining, &budget.templatesRemaining)
+		if err != nil {
+			budget.err = err
+		}
+		return resolved, redacted
+	}
+	resolved, redacted, _ := vu.interpolateWithSecretsTransformBounded(s, transform, 0, nil)
+	return resolved, redacted
+}
+
+// Selected structured bodies check length while appending each authored
+// occurrence. Runtime values are never expanded into an unbounded temporary
+// string before the codec can enforce its own escaped/output work bounds.
+func (vu *VUser) interpolateWithSecretsTransformBounded(s string, transform func(string) string, maxBytes int, remaining *int) (string, string, error) {
+	var occurrenceTransform func(int, string, string, string) (string, string, error)
+	if transform != nil {
+		occurrenceTransform = func(_ int, _ string, actual, safe string) (string, string, error) {
+			if budget := vu.concurrentPreparation; budget != nil && (len(actual) > budget.bytesRemaining/3 || len(safe) > budget.bytesRemaining/3) {
+				return "", "", fmt.Errorf("concurrent HTTP preparation byte limit exceeded")
+			}
+			return transform(actual), transform(safe), nil
+		}
+	}
+	return vu.interpolateWithSecretsOccurrenceTransformBounded(s, occurrenceTransform, maxBytes, remaining)
+}
+
+func (vu *VUser) interpolateWithSecretsOccurrenceTransformBounded(s string, transform func(int, string, string, string) (string, string, error), maxBytes int, remaining *int) (string, string, error) {
+	return vu.interpolateWithSecretsPolicyBounded(s, transform, maxBytes, remaining, nil)
+}
+
+func (vu *VUser) interpolateWithSecretsPolicyBounded(s string, transform func(int, string, string, string) (string, string, error), maxBytes int, remaining *int, literal func(int) bool) (string, string, error) {
+	if maxBytes > 0 && len(s) > maxBytes {
+		return "", "", &aurapayload.Error{Code: aurapayload.ByteLimit}
+	}
 	if s == "" {
-		return s, s
+		return s, s, nil
 	}
-	matches := templatePattern.FindAllStringIndex(s, -1)
+	matchLimit := -1
+	if remaining != nil {
+		matchLimit = *remaining + 1
+	}
+	matches := templatePattern.FindAllStringIndex(s, matchLimit)
+	if remaining != nil {
+		if len(matches) > *remaining {
+			return "", "", &aurapayload.Error{Code: aurapayload.TokenLimit}
+		}
+		*remaining -= len(matches)
+	}
 	if len(matches) == 0 {
-		return s, s
+		if budget := vu.concurrentPreparation; budget != nil {
+			if err := budget.charge(2 * len(s)); err != nil {
+				return "", "", err
+			}
+		}
+		return s, s, nil
 	}
-	var resolved strings.Builder
-	var redacted strings.Builder
-	resolved.Grow(len(s))
-	redacted.Grow(len(s))
-	hasRedaction := false
-	last := 0
-	for _, match := range matches {
+	var resolved, redacted strings.Builder
+	if vu.concurrentPreparation == nil {
+		resolved.Grow(len(s))
+		redacted.Grow(len(s))
+	}
+	writePair := func(actual, safe string) error {
+		if maxBytes > 0 && (len(actual) > maxBytes-resolved.Len() || len(safe) > maxBytes-redacted.Len()) {
+			return &aurapayload.Error{Code: aurapayload.ByteLimit}
+		}
+		if budget := vu.concurrentPreparation; budget != nil {
+			if err := budget.charge(len(actual) + len(safe)); err != nil {
+				return err
+			}
+		}
+		resolved.WriteString(actual)
+		redacted.WriteString(safe)
+		return nil
+	}
+	hasRedaction, last := false, 0
+	for occurrenceIndex, match := range matches {
 		token := s[match[0]:match[1]]
 		expr := strings.TrimSpace(token[2 : len(token)-2])
-		resolved.WriteString(s[last:match[0]])
-		redacted.WriteString(s[last:match[0]])
+		if err := writePair(s[last:match[0]], s[last:match[0]]); err != nil {
+			return "", "", err
+		}
 		last = match[1]
-		if expr == "" {
-			resolved.WriteString(token)
-			redacted.WriteString(token)
+		if expr == "" || literal != nil && literal(occurrenceIndex) {
+			if err := writePair(token, token); err != nil {
+				return "", "", err
+			}
 			continue
 		}
-		resolvedValue := token
-		redactedValue := token
-		resolvedOK := false
+		if budget := vu.concurrentPreparation; budget != nil && strings.HasPrefix(expr, "var.") {
+			budget.references = append(budget.references, strings.TrimSpace(strings.TrimPrefix(expr, "var.")))
+		}
+		resolvedValue, redactedValue, resolvedOK := token, token, false
 		if value, ok := vu.resolveTemplateValue(expr); ok {
-			resolvedValue = value
-			redactedValue = value
-			resolvedOK = true
+			resolvedValue, redactedValue, resolvedOK = value, value, true
 		} else if strings.HasPrefix(expr, "secret.") {
 			vu.unresolvedSecretRefs = append(vu.unresolvedSecretRefs, expr)
 		} else if strings.HasPrefix(expr, "file.") {
@@ -719,6 +885,10 @@ func (vu *VUser) interpolateWithSecretsTransform(s string, transform func(string
 			vu.unresolvedParameterRefs = append(vu.unresolvedParameterRefs, expr)
 		} else if strings.HasPrefix(expr, "run.") {
 			vu.unresolvedRunRefs = append(vu.unresolvedRunRefs, expr)
+		}
+		if vu.concurrentPreparation != nil && !resolvedOK {
+			vu.concurrentPreparation.err = fmt.Errorf("concurrent HTTP template resolution failed")
+			return "", "", vu.concurrentPreparation.err
 		}
 		if strings.HasPrefix(expr, "secret.") {
 			hasRedaction = true
@@ -729,22 +899,25 @@ func (vu *VUser) interpolateWithSecretsTransform(s string, transform func(string
 				redactedValue = "[FILE:" + strings.TrimSpace(strings.TrimPrefix(expr, "file.")) + "]"
 			}
 		}
-		if resolvedOK {
-			if transform != nil {
-				resolvedValue = transform(resolvedValue)
-				redactedValue = transform(redactedValue)
+		if resolvedOK && transform != nil {
+			var err error
+			resolvedValue, redactedValue, err = transform(occurrenceIndex, token, resolvedValue, redactedValue)
+			if err != nil {
+				return "", "", err
 			}
 		}
-		resolved.WriteString(resolvedValue)
-		redacted.WriteString(redactedValue)
+		if err := writePair(resolvedValue, redactedValue); err != nil {
+			return "", "", err
+		}
 	}
-	resolved.WriteString(s[last:])
+	if err := writePair(s[last:], s[last:]); err != nil {
+		return "", "", err
+	}
 	if !hasRedaction {
-		resolvedString := resolved.String()
-		return resolvedString, resolvedString
+		actual := resolved.String()
+		return actual, actual, nil
 	}
-	redacted.WriteString(s[last:])
-	return resolved.String(), redacted.String()
+	return resolved.String(), redacted.String(), nil
 }
 
 func (vu *VUser) interpolateMap(m map[string]string) map[string]string {
@@ -761,8 +934,15 @@ func (vu *VUser) interpolateMapWithSecrets(m map[string]string) (map[string]stri
 	}
 	out := make(map[string]string, len(m))
 	redacted := make(map[string]string, len(m))
-	for k, v := range m {
-		resolvedValue, redactedValue := vu.interpolateWithSecrets(v)
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	if vu.concurrentPreparation != nil {
+		sort.Strings(keys)
+	}
+	for _, k := range keys {
+		resolvedValue, redactedValue := vu.interpolateWithSecrets(m[k])
 		out[k] = resolvedValue
 		redacted[k] = redactedValue
 	}
@@ -774,8 +954,8 @@ func (vu *VUser) interpolateAnyMap(m map[string]any) map[string]any {
 		return nil
 	}
 	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = vu.interpolateAny(v)
+	for _, k := range vu.interpolationKeys(m) {
+		out[k] = vu.interpolateAny(m[k])
 	}
 	return out
 }
@@ -786,8 +966,8 @@ func (vu *VUser) interpolateAnyMapWithSecrets(m map[string]any) (map[string]any,
 	}
 	resolved := make(map[string]any, len(m))
 	redacted := make(map[string]any, len(m))
-	for k, v := range m {
-		resolvedValue, redactedValue := vu.interpolateAnyWithSecrets(v)
+	for _, k := range vu.interpolationKeys(m) {
+		resolvedValue, redactedValue := vu.interpolateAnyWithSecrets(m[k])
 		resolved[k] = resolvedValue
 		redacted[k] = redactedValue
 	}
@@ -812,8 +992,8 @@ func (vu *VUser) interpolateAny(v any) any {
 		return out
 	case map[string]any:
 		out := make(map[string]any, len(typed))
-		for k, nested := range typed {
-			out[k] = vu.interpolateAny(nested)
+		for _, k := range vu.interpolationKeys(typed) {
+			out[k] = vu.interpolateAny(typed[k])
 		}
 		return out
 	default:
@@ -841,8 +1021,8 @@ func (vu *VUser) interpolateAnyWithSecrets(v any) (any, any) {
 	case map[string]any:
 		resolved := make(map[string]any, len(typed))
 		redacted := make(map[string]any, len(typed))
-		for k, nested := range typed {
-			resolved[k], redacted[k] = vu.interpolateAnyWithSecrets(nested)
+		for _, k := range vu.interpolationKeys(typed) {
+			resolved[k], redacted[k] = vu.interpolateAnyWithSecrets(typed[k])
 		}
 		return resolved, redacted
 	default:
@@ -904,12 +1084,59 @@ const (
 	maxVUserExtractionBytes    = 4 << 20
 )
 
-func (vu *VUser) mergeExtractions(r *protocol.Result) error {
-	if vu == nil || r == nil || len(r.Extractions) == 0 {
+// observeExtractionClassification admits response-derived classifications before
+// logs, retry decisions or variable storage can discard their source values.
+// It never changes variables or advances data/parameter allocation.
+func (vu *VUser) observeExtractionClassification(r *protocol.Result) error {
+	if vu == nil || r == nil {
 		return nil
 	}
+	if r.ExtractionsIncomplete {
+		vu.failRuntimeCredentialRedaction(fmt.Errorf("runtime credential extraction classification unavailable"))
+		return vu.runtimeCredentialRedactionErr
+	}
 	if err := protocol.ValidateExtractions(r.Extractions); err != nil {
+		vu.failRuntimeCredentialRedaction(fmt.Errorf("runtime credential extraction classification unavailable"))
 		return err
+	}
+	// Observing a named sensitive response value establishes its classification
+	// even if the separate variable-storage budget rejects this batch. Keep the
+	// bounded observation history so neutral aliases and earlier tokens remain
+	// protected across later scope refreshes and variable replacements.
+	vu.ensureRuntimeCredentialRedactionState()
+	const observedScope = "extraction:observed"
+	values := vu.runtimeCredentialScopes[observedScope]
+	var updates []string
+	for key, value := range r.Extractions {
+		if value == "" || !scrub.SensitiveName(key) {
+			continue
+		}
+		index := sort.SearchStrings(values, value)
+		if index < len(values) && values[index] == value {
+			continue
+		}
+		if updates == nil {
+			updates = append([]string(nil), values...)
+		}
+		updates = append(updates, value)
+	}
+	if updates != nil {
+		if err := vu.replaceRuntimeCredentialScope(observedScope, updates); err != nil {
+			return fmt.Errorf("sensitive extraction redaction: %s", err)
+		}
+	}
+	return nil
+}
+
+func (vu *VUser) mergeExtractions(r *protocol.Result) error {
+	if vu == nil || r == nil {
+		return nil
+	}
+	if err := vu.observeExtractionClassification(r); err != nil {
+		return err
+	}
+	if len(r.Extractions) == 0 {
+		return nil
 	}
 	if vu.Variables == nil {
 		vu.Variables = make(map[string]string)
@@ -933,25 +1160,6 @@ func (vu *VUser) mergeExtractions(r *protocol.Result) error {
 	if additionalBytes > maxVUserExtractionBytes-vu.extractedVariableBytes {
 		return fmt.Errorf("VUser extracted variables exceed %d bytes", maxVUserExtractionBytes)
 	}
-	// Build the complete runtime matcher before retaining any sensitive
-	// extraction. If its reversible spellings exceed the bounded matcher
-	// budget, fail this extraction atomically instead of keeping a value that
-	// later evidence could expose.
-	// Only the NAME of the receiving variable decides this. An extraction used to
-	// also be registered when an import happened to reference that variable from
-	// a credential-governed field, but import provenance says nothing about the
-	// value the system under test just returned — and the operator reads the
-	// import. scrub.SensitiveName is origin-independent and stays: a token landing
-	// in `session_token` is still suppressed.
-	sensitiveScopes := make(map[string][]string)
-	for key, value := range r.Extractions {
-		if scrub.SensitiveName(key) {
-			sensitiveScopes["extraction:"+strings.ToLower(strings.TrimSpace(key))] = []string{value}
-		}
-	}
-	if err := vu.replaceRuntimeCredentialScopes(sensitiveScopes); err != nil {
-		return fmt.Errorf("sensitive extraction redaction: %s", err)
-	}
 	for key, value := range r.Extractions {
 		size := len(key) + len(value)
 		oldSize := vu.extractedVariables[key]
@@ -959,11 +1167,7 @@ func (vu *VUser) mergeExtractions(r *protocol.Result) error {
 		vu.extractedVariables[key] = size
 		vu.extractedVariableBytes += size - oldSize
 	}
-	// Sensitive runtime extractions (tokens, sessions, passwords, and similar
-	// values) must remain usable by later actions without becoming observable
-	// in their resolved targets, evidence, logs, or replay reports. Add their
-	// exact values only to the in-memory redaction projection after the entire
-	// extraction batch has passed validation and retention bounds.
+	// Raw variables remain exact and are retained only after atomic storage admission.
 	return nil
 }
 

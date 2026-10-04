@@ -292,7 +292,9 @@ paths:
     const authLink = Array.from(container.querySelectorAll('a')).find(link => link.getAttribute('href') === '#/docs?guide=general&article=authentication')
     expect(authLink?.textContent, Array.from(container.querySelectorAll('a')).map(a => a.getAttribute('href')).join(' | ')).toBe('API authentication')
 
-  }, 10_000)
+    // Exercise the entire generated catalog and its filters without making
+    // concurrent full-suite scheduling part of the rendering contract.
+  }, 30_000)
 
   it('shows catalog-backed access badges and filters to current access on demand', async () => {
     await renderSwaggerDocsPage({ effectiveAccessResources: accessResources(['view_scripts']) })

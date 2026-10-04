@@ -17,6 +17,8 @@ import (
 )
 
 type VUser struct {
+	replayRuntime *replayRuntimeState
+
 	webSocketCallbackSteps []dsl.Action
 	inWebSocketCallback    bool
 	errorLogs              *errorLogBuffer
@@ -96,6 +98,17 @@ type VUser struct {
 	// A managed run ID must be supplied by the scheduler. Never send a literal
 	// {{run.id}} placeholder to an external target from a direct/library run.
 	unresolvedRunRefs []string
+	// bodyResolutionError prevents an opted-in structural body from falling back
+	// to legacy interpolation after a malformed payload or a codec limit.
+	bodyResolutionError                           error
+	concurrentPreparation                         *httpPreparationBudget
+	concurrentPublicationRedaction                *RedactionConfig
+	concurrentPublicationUnavailable              bool
+	concurrentGroupMetadata                       map[string]any
+	concurrentGroupHierarchy, concurrentGroupPage string
+	// The exact resolved action prevents reclassifying inserted literal body
+	// data as newly authored parameter references after structural resolution.
+	structuredBodyResolvedAction *protocol.Action
 	// actionCredentialComposites carries the platform-managed credential
 	// spellings for the protocol action produced by the most recent
 	// resolveAction, for the execution path to register before that action runs.
@@ -1166,6 +1179,10 @@ func (vu *VUser) prepareRuntimeState() error {
 		vu.Parameters = NewParameterRuntime(vu.Script.Parameters, vu.DataProvider, vu.ID)
 	}
 	if vu.Parameters != nil {
+		if vu.replayRuntime != nil {
+			vu.Parameters.runtimeObservation = vu.replayRuntime
+			vu.Parameters.runtimeObservations = make(map[string]parameterRuntimeObservation)
+		}
 		vu.Parameters.sourceState = vu.sourceParameters
 		if vu.Script.Config.JMeter != nil {
 			vu.Parameters.sourcePlan = vu.Script.Config.JMeter.SourcePlanID
@@ -1661,7 +1678,7 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 	}
 	tctx, tcancel := teardownContext()
 	defer tcancel()
-	if err := callProtocolTeardown(tctx, vu.Proto, vu.RedactionConfig); err != nil {
+	if err := callProtocolTeardown(tctx, vu.Proto, vu.resultPublicationRedactionConfig()); err != nil {
 		return err
 	}
 	vu.bindRuntimeTextRedactor()

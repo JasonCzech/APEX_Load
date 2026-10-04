@@ -96,11 +96,15 @@ type Options struct {
 	// complete scalar so unrelated wire bytes retain their authored spelling.
 	// Import conversion must leave this nil: executable projection is governed
 	// by source fields and requirements, not cross-field value equivalence.
-	KnownCredentialMatcher   func(string) bool
-	TargetField              string
-	multipartDepth           int
-	preserveSourceExpression bool
-	knownCredentialBudget    *knownCredentialComparisonBudget
+	KnownCredentialMatcher    func(string) bool
+	TargetField               string
+	multipartDepth            int
+	preserveSourceExpression  bool
+	knownCredentialBudget     *knownCredentialComparisonBudget
+	structuredRedactionBudget *structuredRedactionBudget
+	nestedJSONStringDepth     int
+	jsonDepthBase             int
+	nestedJSON                bool
 }
 
 type knownCredentialComparisonBudget struct {
@@ -303,6 +307,9 @@ func normalizeOptions(options Options) (Options, error) {
 		options.knownCredentialBudget = &knownCredentialComparisonBudget{
 			remainingBytes: remaining,
 		}
+	}
+	if options.Mode == Redact && options.structuredRedactionBudget == nil {
+		options.structuredRedactionBudget = newStructuredRedactionBudget(options.Limits)
 	}
 	if options.Registry == nil {
 		options.Registry = NewNameRegistry()
@@ -1263,10 +1270,10 @@ func ParseFormURLEncoded(raw string, options Options) ([]FormField, error) {
 	if len(raw) > options.Limits.MaxBytes {
 		return nil, errors.New("form payload exceeds credential projection limit")
 	}
-	segments := strings.Split(raw, "&")
-	if len(segments) > options.Limits.MaxValues {
+	if strings.Count(raw, "&")+1 > options.Limits.MaxValues {
 		return nil, errors.New("form field count exceeds credential projection limit")
 	}
+	segments := strings.Split(raw, "&")
 	fields := make([]FormField, 0, len(segments))
 	for occurrence, segment := range segments {
 		if segment == "" && len(segments) == 1 {
@@ -1324,6 +1331,19 @@ func projectFormURLEncoded(raw string, options Options, targetField string) (str
 				), nil
 		}
 	}
+	if options.Mode == Redact && len(raw) > options.Limits.MaxBytes {
+		return "", nil, rejected(options.Source, "credential_form_limit_exceeded"), nil
+	}
+	if !reserveStructuredRedactionBytes(options, len(raw)) {
+		return "", nil, rejected(options.Source, "credential_structured_work_limit_exceeded"), nil
+	}
+	formValues := 0
+	if raw != "" {
+		formValues = strings.Count(raw, "&") + 1
+	}
+	if !reserveStructuredRedactionValues(options, formValues) {
+		return "", nil, rejected(options.Source, "credential_structured_value_limit_exceeded"), nil
+	}
 	fields, err := ParseFormURLEncoded(raw, options)
 	if err != nil {
 		code := "credential_form_malformed"
@@ -1348,14 +1368,61 @@ func projectFormURLEncoded(raw string, options Options, targetField string) (str
 	}
 	result := exactResult()
 	segments := make([]string, 0, len(fields))
+	outputBytes := 0
 	for index := range fields {
 		field := &fields[index]
 		rawValue := field.RawValue
 		sensitiveName, sensitive := governedSensitiveName(field.Name, options)
-		if !sensitive {
+		queryField := options.Mode == Redact && !sensitive && strings.EqualFold(strings.TrimSpace(field.Name), "query") && strings.TrimSpace(field.Value) != credential.Redacted && !wholeStructuredRuntimeTemplate(field.Value)
+		nested := options.Mode == Redact && !sensitive && (nestedJSONObjectOrArray(field.Value) || queryField)
+		if !sensitive && !nested {
 			sensitiveName, sensitive = composedCredentialName(field.Value, options)
 		}
-		if sensitive {
+		if nested {
+			nestedOptions := options
+			nestedOptions.nestedJSON = true
+			nestedOptions.TargetField = targetField
+			var projected []byte
+			var item Result
+			var nestedErr error
+			if queryField {
+				queryJSON, work, classifyErr := InspectQueryValueStructure(field.Value, options.structuredRedactionBudget.remainingBytes)
+				if !reserveStructuredRedactionBytes(options, work) || classifyErr != nil {
+					return "", nil, rejected(options.Source, "credential_structured_work_limit_exceeded"), nil
+				}
+				if queryJSON {
+					projected, item, nestedErr = ProjectRequestBody([]byte(field.Value), "application/json", nestedOptions)
+				} else if knownCredentialScalarMatch(options, field.Value) {
+					projected, item = []byte(credential.Redacted), exactResult()
+				} else if !queryHasExecutableStructure(strings.TrimSpace(field.Value)) {
+					projected, item = []byte(field.Value), exactResult()
+				} else {
+					var graphQL GraphQL
+					graphQL, item, nestedErr = ProjectGraphQL(GraphQL{Query: []byte(field.Value)}, nestedOptions)
+					projected = graphQL.Query
+				}
+			} else {
+				projected, item, nestedErr = ProjectRequestBody([]byte(field.Value), "application/json", nestedOptions)
+			}
+			if nestedErr != nil {
+				return "", nil, Result{}, nestedErr
+			}
+			if item.Disposition == Rejected {
+				return "", nil, item, nil
+			}
+			if projected == nil {
+				return "", nil, rejected(options.Source, "credential_nested_json_rejected"), nil
+			}
+			result.Merge(item)
+			if string(projected) != field.Value {
+				if !reserveFormEncodedRedaction(options, projected) {
+					return "", nil, rejected(options.Source, "credential_structured_output_limit_exceeded"), nil
+				}
+				field.Value = string(projected)
+				rawValue = url.QueryEscape(field.Value)
+				field.RawValue = rawValue
+			}
+		} else if sensitive {
 			projected, item, err := projectSensitiveScalar(
 				field.RawValue,
 				sensitiveName,
@@ -1381,6 +1448,14 @@ func projectFormURLEncoded(raw string, options Options, targetField string) (str
 		if field.HadEquals {
 			segment += "=" + rawValue
 		}
+		separatorBytes := 0
+		if len(segments) > 0 {
+			separatorBytes = 1
+		}
+		if options.Mode == Redact && len(segment)+separatorBytes > options.Limits.MaxBytes-outputBytes {
+			return "", nil, rejected(options.Source, "credential_structured_output_limit_exceeded"), nil
+		}
+		outputBytes += len(segment) + separatorBytes
 		segments = append(segments, segment)
 	}
 	return strings.Join(segments, "&"), fields, result, nil
@@ -1734,6 +1809,15 @@ func ProjectGraphQL(input GraphQL, options Options) (GraphQL, Result, error) {
 			), nil
 		}
 		return GraphQL{}, rejected(options.Source, "credential_graphql_limit_exceeded"), nil
+	}
+	if options.Mode == Redact && !wholeStructuredRuntimeTemplate(string(input.Query)) {
+		jsonLike, work, inspectErr := InspectQueryValueStructure(string(input.Query), options.structuredRedactionBudget.remainingBytes)
+		if !reserveStructuredRedactionBytes(options, work) || inspectErr != nil {
+			return GraphQL{}, rejected(options.Source, "credential_structured_work_limit_exceeded"), nil
+		}
+		if jsonLike {
+			return GraphQL{}, rejected(options.Source, "credential_graphql_malformed_sensitive"), nil
+		}
 	}
 	containsLiteral, scanCode := scanGraphQLCredentialLiteral(input.Query, options)
 	if scanCode != "" {

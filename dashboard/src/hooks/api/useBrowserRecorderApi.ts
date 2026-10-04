@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { type StoredScript } from '../../types'
+import type { RecordingEnvironment } from '../../types/recordingEnvironment'
 import {
   type RecorderImportResult,
   type SecretBindingSelection,
@@ -96,6 +97,7 @@ export type BrowserRecorderSession = {
   open_transactions?: string[]
   section?: string
   device_profile?: string
+  recording_environment?: RecordingEnvironment
   picking?: boolean
   har_available: boolean
   storage_state_available?: boolean

@@ -45,7 +45,7 @@ func boundedErrorSnapshot(snapshot *protocol.ErrorSnapshot, maxBytes int) (*prot
 	largeFieldLimit := max(1, maxBytes/2)
 	out := &protocol.ErrorSnapshot{ResponseStatus: snapshot.ResponseStatus}
 	switch snapshot.ResponseBodyState {
-	case "captured", "empty", "redacted", "not_captured", "expired":
+	case "captured", "partial", "empty", "redacted", "not_captured", "expired":
 		out.ResponseBodyState = snapshot.ResponseBodyState
 	}
 	out.RequestMethod = takeSnapshotString(snapshot.RequestMethod, &remaining, 64)

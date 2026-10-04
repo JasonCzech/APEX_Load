@@ -1,10 +1,6 @@
 package recorder
 
 import (
-	"bytes"
-	"compress/flate"
-	"compress/gzip"
-	"compress/zlib"
 	"context"
 	"crypto/rsa"
 	"crypto/tls"
@@ -26,13 +22,14 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/andybalholm/brotli"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
+	"github.com/jasonczech/apexload/pkg/internal/contentdecode"
 )
 
 const defaultBodyCaptureLimitBytes = 512 * 1024
-const maxBodyCaptureLimitBytes = 16 << 20
+const maxBodyCaptureLimitBytes = requestimport.MaxResponseContentStorageBytes
 const maxRecordedRequests = 10_000
 const maxRecordedBodyBytes = 256 << 20
 const maxRecordedWebSocketMessages = 10_000
@@ -64,41 +61,44 @@ const (
 )
 
 type RecordedRequest struct {
-	Seq                     int                        `json:"seq"`
-	Timestamp               time.Time                  `json:"timestamp"`
-	Method                  string                     `json:"method"`
-	URL                     string                     `json:"url"`
-	Scheme                  string                     `json:"scheme,omitempty"`
-	Path                    string                     `json:"path"`
-	QueryString             string                     `json:"query_string,omitempty"`
-	Host                    string                     `json:"host"`
-	Headers                 map[string]string          `json:"headers"`
-	HeadersMulti            map[string][]string        `json:"headers_multi,omitempty"`
-	RawHeaders              map[string]string          `json:"-"`
-	RawHeadersMulti         map[string][]string        `json:"-"`
-	Body                    string                     `json:"body,omitempty"`
-	BodyEncoding            string                     `json:"body_encoding,omitempty"`
-	BodySizeBytes           int                        `json:"body_size_bytes,omitempty"`
-	BodyTruncated           bool                       `json:"body_truncated,omitempty"`
-	ContentType             string                     `json:"content_type,omitempty"`
-	StatusCode              int                        `json:"status_code"`
-	ResponseTimeMs          float64                    `json:"response_time_ms"`
-	ResponseBody            string                     `json:"response_body,omitempty"`
-	ResponseBodyEncoding    string                     `json:"response_body_encoding,omitempty"`
-	ResponseBodySizeBytes   int                        `json:"response_body_size_bytes,omitempty"`
-	ResponseBodyTruncated   bool                       `json:"response_body_truncated,omitempty"`
-	ResponseHeaders         map[string]string          `json:"response_headers,omitempty"`
-	ResponseHeadersMulti    map[string][]string        `json:"response_headers_multi,omitempty"`
-	RawResponseHeaders      map[string]string          `json:"-"`
-	RawResponseHeadersMulti map[string][]string        `json:"-"`
-	ThinkTimeMs             int64                      `json:"think_time_ms"`
-	IsStatic                bool                       `json:"is_static"`
-	ResourceType            string                     `json:"resource_type,omitempty"`
-	StepName                string                     `json:"step_name,omitempty"`
-	TransactionName         string                     `json:"transaction_name,omitempty"`
-	Note                    string                     `json:"note,omitempty"`
-	Excluded                bool                       `json:"excluded,omitempty"`
-	WebSocketMessages       []RecordedWebSocketMessage `json:"websocket_messages,omitempty"`
+	Seq                     int                                  `json:"seq"`
+	Timestamp               time.Time                            `json:"timestamp"`
+	Method                  string                               `json:"method"`
+	RequestHTTPVersion      string                               `json:"request_http_version,omitempty"`
+	ResponseHTTPVersion     string                               `json:"response_http_version,omitempty"`
+	URL                     string                               `json:"url"`
+	Scheme                  string                               `json:"scheme,omitempty"`
+	Path                    string                               `json:"path"`
+	QueryString             string                               `json:"query_string,omitempty"`
+	Host                    string                               `json:"host"`
+	Headers                 map[string]string                    `json:"headers"`
+	HeadersMulti            map[string][]string                  `json:"headers_multi,omitempty"`
+	RawHeaders              map[string]string                    `json:"-"`
+	RawHeadersMulti         map[string][]string                  `json:"-"`
+	Body                    string                               `json:"body,omitempty"`
+	BodyEncoding            string                               `json:"body_encoding,omitempty"`
+	BodySizeBytes           int                                  `json:"body_size_bytes,omitempty"`
+	BodyTruncated           bool                                 `json:"body_truncated,omitempty"`
+	ContentType             string                               `json:"content_type,omitempty"`
+	StatusCode              int                                  `json:"status_code"`
+	ResponseTimeMs          float64                              `json:"response_time_ms"`
+	ResponseBody            string                               `json:"response_body,omitempty"`
+	ResponseBodyEncoding    string                               `json:"response_body_encoding,omitempty"`
+	ResponseBodySizeBytes   int                                  `json:"response_body_size_bytes,omitempty"`
+	ResponseContentCapture  requestimport.ResponseContentCapture `json:"response_content_capture,omitzero"`
+	ResponseBodyTruncated   bool                                 `json:"response_body_truncated,omitempty"`
+	ResponseHeaders         map[string]string                    `json:"response_headers,omitempty"`
+	ResponseHeadersMulti    map[string][]string                  `json:"response_headers_multi,omitempty"`
+	RawResponseHeaders      map[string]string                    `json:"-"`
+	RawResponseHeadersMulti map[string][]string                  `json:"-"`
+	ThinkTimeMs             int64                                `json:"think_time_ms"`
+	IsStatic                bool                                 `json:"is_static"`
+	ResourceType            string                               `json:"resource_type,omitempty"`
+	StepName                string                               `json:"step_name,omitempty"`
+	TransactionName         string                               `json:"transaction_name,omitempty"`
+	Note                    string                               `json:"note,omitempty"`
+	Excluded                bool                                 `json:"excluded,omitempty"`
+	WebSocketMessages       []RecordedWebSocketMessage           `json:"websocket_messages,omitempty"`
 }
 
 type RecordedWebSocketMessage struct {
@@ -240,6 +240,7 @@ func NewWithOptions(options Options) *Recorder {
 	}
 	caCertPath, caKeyPath := resolveCAFiles(options.CACertPath, options.CAKeyPath)
 	transport := &http.Transport{
+		DisableCompression:     true, // Capture and forward original response wire bytes.
 		DialContext:            proxySafeDialer(30 * time.Second).DialContext,
 		TLSClientConfig:        recorderUpstreamTLSConfig(""),
 		MaxIdleConns:           256,
@@ -1310,26 +1311,20 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 	respHeadersMulti := sanitizeHeaders(resp.Header, s.Filters.RedactHeaders, false, s.Filters.CaptureCookies)
 
 	ct := resp.Header.Get("Content-Type")
-	// Decompress the captured response body so correlation/extraction works against
-	// real sites (the proxy forwards the browser's Accept-Encoding upstream, so Go's
-	// transport does not auto-decompress). The bytes written back to the browser are
-	// untouched — only the stored copy is decoded. Drop the now-stale encoding/length
-	// headers so the generated script doesn't claim an encoding it no longer carries.
-	respBodyForCapture := respBody
-	if decoded, ok := decodeBody(respBody, resp.Header.Get("Content-Encoding"), s.Filters.BodyCaptureLimitBytes); ok {
-		respBodyForCapture = decoded
-		delete(rawRespHeadersMulti, "Content-Encoding")
-		delete(rawRespHeadersMulti, "Content-Length")
-		delete(rawRespHeaders, "Content-Encoding")
-		delete(rawRespHeaders, "Content-Length")
-		delete(respHeadersMulti, "Content-Encoding")
-		delete(respHeadersMulti, "Content-Length")
-	}
+	// The browser receives the original wire bytes. Only a complete explicitly
+	// wire-captured snapshot can become decoded logical response content.
+	respBodyForCapture, capture := decodeRecordedResponse(req.Context(), req.Method, resp, respBody, s.Filters.BodyCaptureLimitBytes, opts.forceResponseBodyTruncate)
 	respHeaders := firstHeaderValues(respHeadersMulti)
-
 	respBodyStr, respBodyTruncated, respBodyEncoding := capturedBody(respBodyForCapture, ct, s.Filters.BodyCaptureLimitBytes)
-	if opts.forceResponseBodyTruncate {
-		respBodyTruncated = true
+	if capture.Complete() && respBodyEncoding == "" && !requestimport.IsResponseContentText(respBodyForCapture) {
+		respBodyStr, respBodyEncoding = base64.StdEncoding.EncodeToString(respBodyForCapture), "base64"
+	}
+	if capture.Complete() && respBodyEncoding == "base64" {
+		capture.BodyKind = "binary"
+	}
+	if !capture.Complete() {
+		respBodyStr, respBodyEncoding = "", ""
+		respBodyTruncated = capture.ReasonCode == "response_content_truncated" || capture.ReasonCode == "response_content_decode_limit"
 	}
 	reqBodyStr, reqBodyTruncated, reqBodyEncoding := capturedRequestBody(reqBody, req.Header.Get("Content-Type"), s.Filters.BodyCaptureLimitBytes)
 	if opts.forceRequestBodyTruncate {
@@ -1349,6 +1344,8 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		Seq:                     s.seq + 1,
 		Timestamp:               opts.requestStartedAt,
 		Method:                  req.Method,
+		RequestHTTPVersion:      observedHTTPVersion(req.Proto, req.ProtoMajor, req.ProtoMinor),
+		ResponseHTTPVersion:     observedHTTPVersion(resp.Proto, resp.ProtoMajor, resp.ProtoMinor),
 		URL:                     req.URL.String(),
 		Scheme:                  parsed.Scheme,
 		Path:                    parsed.Path,
@@ -1369,6 +1366,7 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		ResponseBodyEncoding:    respBodyEncoding,
 		ResponseBodySizeBytes:   responseBodySizeBytes,
 		ResponseBodyTruncated:   respBodyTruncated,
+		ResponseContentCapture:  capture,
 		ResponseHeaders:         respHeaders,
 		ResponseHeadersMulti:    respHeadersMulti,
 		RawResponseHeaders:      rawRespHeaders,
@@ -1394,6 +1392,10 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		}
 		remainingBodyBytes -= len(*stored.body)
 		bodyBytesAdded += len(*stored.body)
+	}
+	if rec.ResponseBodyTruncated && rec.ResponseContentCapture.Complete() {
+		rec.ResponseBody, rec.ResponseBodyEncoding = "", ""
+		rec.ResponseContentCapture = requestimport.UnavailableResponseContent("wire", "response_content_truncated")
 	}
 	requestBytes := estimateRecordedRequestBytes(rec)
 	if requestBytes > maxRecordedSessionBytes-s.retainedBytes {
@@ -1500,8 +1502,10 @@ func estimateRecordedRequestBytes(request RecordedRequest) int64 {
 	bytes := int64(1024)
 	for _, value := range []string{
 		request.Method, request.URL, request.Scheme, request.Path, request.QueryString,
+		request.RequestHTTPVersion, request.ResponseHTTPVersion,
 		request.Host, request.Body, request.BodyEncoding, request.ContentType,
 		request.ResponseBody, request.ResponseBodyEncoding, request.StepName,
+		request.ResponseContentCapture.Captured, request.ResponseContentCapture.Stored, request.ResponseContentCapture.State, request.ResponseContentCapture.ReasonCode,
 		request.TransactionName, request.Note, request.ResourceType,
 	} {
 		bytes += int64(len(value))
@@ -1641,56 +1645,69 @@ func firstHeaderValues(headers map[string][]string) map[string]string {
 	return result
 }
 
-// decodeBody decompresses a captured response body according to its
-// Content-Encoding. It returns (decoded, true) when it successfully applied a
-// known encoding, or (raw, false) when the body is unencoded or uses an
-// encoding we can't decode — callers keep the raw bytes in that
-// case. Decompression is bounded by limit (+1 so capturedBody can still flag
-// truncation) to guard against decompression bombs.
+// decodeBody is retained as a narrow compatibility helper. Failed decoding
+// never returns a partially decoded successful result.
 func decodeBody(raw []byte, encoding string, limit int) ([]byte, bool) {
-	enc := strings.ToLower(strings.TrimSpace(encoding))
-	// Multiple encodings are applied in order; the outermost (last) is what we
-	// see on the wire, so decode that one.
-	if idx := strings.LastIndex(enc, ","); idx >= 0 {
-		enc = strings.TrimSpace(enc[idx+1:])
-	}
-	if len(raw) == 0 || enc == "" || enc == "identity" {
+	if strings.TrimSpace(encoding) == "" || strings.EqualFold(strings.TrimSpace(encoding), "identity") {
 		return raw, false
 	}
 	if limit <= 0 {
 		limit = defaultBodyCaptureLimitBytes
 	}
-
-	var reader io.Reader
-	switch enc {
-	case "gzip", "x-gzip":
-		zr, err := gzip.NewReader(bytes.NewReader(raw))
-		if err != nil {
-			return raw, false
-		}
-		defer zr.Close()
-		reader = zr
-	case "deflate":
-		// "deflate" is nominally zlib-wrapped, but some servers send raw DEFLATE.
-		if zr, err := zlib.NewReader(bytes.NewReader(raw)); err == nil {
-			defer zr.Close()
-			reader = zr
-		} else {
-			fr := flate.NewReader(bytes.NewReader(raw))
-			defer fr.Close()
-			reader = fr
-		}
-	case "br":
-		reader = brotli.NewReader(bytes.NewReader(raw))
-	default:
-		return raw, false
-	}
-
-	decoded, err := io.ReadAll(io.LimitReader(reader, int64(limit)+1))
-	if len(decoded) == 0 && err != nil {
+	decoded, err := contentdecode.Decode(context.Background(), raw, []string{encoding}, contentdecode.DefaultLimits(int64(limit)))
+	if err != nil {
 		return raw, false
 	}
 	return decoded, true
+}
+
+func responseContentEncodingValues(headers http.Header) []string {
+	keys := make([]string, 0)
+	for name := range headers {
+		if strings.EqualFold(name, "Content-Encoding") {
+			keys = append(keys, name)
+		}
+	}
+	sort.Strings(keys)
+	var values []string
+	for _, name := range keys {
+		values = append(values, headers[name]...)
+	}
+	return values
+}
+
+func decodeRecordedResponse(ctx context.Context, method string, resp *http.Response, raw []byte, limit int, truncated bool) ([]byte, requestimport.ResponseContentCapture) {
+	if strings.EqualFold(method, http.MethodHead) || resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotModified {
+		if len(raw) != 0 {
+			return nil, requestimport.UnavailableResponseContent("wire", "malformed_response_content_provenance")
+		}
+		return nil, requestimport.CompleteResponseContent("wire", 0)
+	}
+	if truncated {
+		return nil, requestimport.UnavailableResponseContent("wire", "response_content_truncated")
+	}
+	if resp.Uncompressed {
+		return nil, requestimport.UnavailableResponseContent("unknown", "response_content_provenance_unavailable")
+	}
+	if limit <= 0 {
+		limit = defaultBodyCaptureLimitBytes
+	}
+	decoded, err := contentdecode.Decode(ctx, raw, responseContentEncodingValues(resp.Header), contentdecode.DefaultLimits(int64(limit)))
+	if err != nil {
+		reason := "invalid_response_content_encoding"
+		switch contentdecode.Kind(err) {
+		case contentdecode.UnsupportedEncoding:
+			reason = "unsupported_response_content_encoding"
+		case contentdecode.Truncated:
+			reason = "response_content_truncated"
+		case contentdecode.EncodedLimit, contentdecode.DecodedLimit, contentdecode.WorkLimit, contentdecode.LayerLimit, contentdecode.WindowLimit, contentdecode.MemoryLimit:
+			reason = "response_content_decode_limit"
+		case contentdecode.Canceled:
+			reason = "response_content_decode_canceled"
+		}
+		return nil, requestimport.UnavailableResponseContent("wire", reason)
+	}
+	return decoded, requestimport.CompleteResponseContent("wire", len(decoded))
 }
 
 func capturedBody(body []byte, contentType string, limit int) (string, bool, string) {

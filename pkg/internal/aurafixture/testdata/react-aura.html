@@ -1,0 +1,81 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Synthetic React Aura fixture</title></head>
+<body><div id="root"></div><script src="/react.js"></script><script src="/react-dom.js"></script>
+<script>
+(() => {
+  const h = React.createElement;
+  function App() {
+    const [session, setSession] = React.useState(null);
+    const [name, setName] = React.useState('Synthetic account');
+    const domNonce = React.useRef(crypto.randomUUID());
+    const [clientState, setClientState] = React.useState('loading');
+    const [result, setResult] = React.useState('Loading synthetic session');
+    const [busy, setBusy] = React.useState(false);
+    const [revision, setRevision] = React.useState(0);
+    const sequence = React.useRef(1);
+    React.useEffect(() => {
+      let disposed = false;
+      fetch('/bootstrap', {cache:'no-store'}).then(response => {
+        if (!response.ok) throw new Error('bootstrap');
+        return response.json();
+      }).then(data => {
+        if (disposed) return;
+        sequence.current = data.action_sequence;
+        setSession(data);
+        setClientState(data.client_state);
+        setResult('Ready for synthetic Aura batch');
+        localStorage.setItem('synthetic-aura-client-state', data.client_state);
+      }).catch(() => { if (!disposed) setResult('Synthetic session unavailable'); });
+      return () => { disposed = true; };
+    }, []);
+    async function submit(event) {
+      event.preventDefault();
+      if (!session || busy) return;
+      setBusy(true);
+      setResult('Waiting for synthetic Aura result');
+      const actions = [
+        {id:session.nonce+'-'+(sequence.current++)+';a', descriptor:'synthetic://Account/ACTION$lookup', params:{name,client_state:clientState}},
+        {id:session.nonce+'-'+(sequence.current++)+';a', descriptor:'synthetic://Account/ACTION$save', params:{name,client_state:clientState}}
+      ];
+      const form = new URLSearchParams({message:JSON.stringify({actions}), 'aura.token':session.token, 'aura.context':JSON.stringify(session.context)});
+      try {
+        const response = await fetch('/aura', {method:'POST', body:form});
+        if (!response.ok) throw new Error('transport');
+        const envelope = await response.json();
+        if (!Array.isArray(envelope.actions) || envelope.actions.length !== actions.length) throw new Error('coverage');
+        const expected = new Set(actions.map(action => action.id));
+        const seen = new Set();
+        for (const action of envelope.actions) {
+          if (!action || typeof action.id !== 'string' || !expected.has(action.id) || seen.has(action.id) || action.state !== 'SUCCESS') throw new Error('outcome');
+          seen.add(action.id);
+        }
+        if (seen.size !== expected.size) throw new Error('coverage');
+        setResult('Saved synthetic account '+name);
+        history.pushState({}, '', '/?saved=1');
+      } catch (_) {
+        setResult('Synthetic Aura batch failed');
+      } finally {
+        setClientState('warm');
+        localStorage.setItem('synthetic-aura-client-state','warm');
+        setRevision(value => value+1);
+        setBusy(false);
+      }
+    }
+    return h('main',null,
+      h('h1',null,'Synthetic React Aura fixture'),
+      h('p',null,'Loopback test target; no Salesforce or physical device qualification.'),
+      h('p',{'data-testid':'client-state'},'Client state: '+clientState),
+      h('form',{onSubmit:submit},
+        h('label',null,'Account name ',h('input',{'aria-label':'Account name',value:name,onChange:event=>{setName(event.target.value);setRevision(value=>value+1);}})),
+        h('button',{id:'synthetic-dynamic-'+domNonce.current+'-'+revision+':a','data-aura-class':'synthetic:button','aria-label':'Run Aura batch',disabled:!session||busy,type:'submit'},'Run Aura batch')
+      ),
+      h('p',{role:'status','data-testid':'business-result'},result)
+    );
+  }
+  if (!/^18\./.test(React.version || '')) {
+    document.getElementById('root').textContent='Synthetic fixture requires React18';
+    return;
+  }
+  ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+})();
+</script></body></html>

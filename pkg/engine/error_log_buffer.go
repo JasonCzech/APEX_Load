@@ -21,17 +21,21 @@ type bufferedLogRecord struct {
 	size   int
 }
 type errorLogBuffer struct {
-	mu      sync.Mutex
-	records []bufferedLogRecord
-	bytes   int
-	limit   int
+	mu             sync.Mutex
+	records        []bufferedLogRecord
+	bytes          int
+	limit          int
+	classification *RedactionConfig
+	omittedRecords int
 }
 type errorLogHandler struct {
-	next   slog.Handler
-	buffer *errorLogBuffer
-	redact func(string) string
-	attrs  []slog.Attr
-	group  string
+	next           slog.Handler
+	buffer         *errorLogBuffer
+	redact         func(string) string
+	unavailable    func() bool
+	classification func() *RedactionConfig
+	attrs          []slog.Attr
+	group          string
 }
 
 func (b *errorLogBuffer) clearLocked() {
@@ -44,11 +48,15 @@ func (h *errorLogHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= slog.LevelInfo
 }
 func (h *errorLogHandler) Handle(ctx context.Context, r slog.Record) error {
+	if h.unavailable != nil && h.unavailable() {
+		h.buffer.close()
+		return nil
+	}
 	// Freeze and redact before retention: never retain pointers to mutable action
 	// results, raw credentials, or pooled response buffers in an error log.
 	message := h.redact(r.Message)
 	if len(message) > 4096 {
-		message = message[:4096]
+		message = "log detail omitted by retention limit"
 	}
 	clean := slog.NewRecord(r.Time, r.Level, strings.Clone(message), r.PC)
 	size := len(clean.Message) + 256
@@ -58,14 +66,14 @@ func (h *errorLogHandler) Handle(ctx context.Context, r slog.Record) error {
 			return
 		}
 		count++
-		key := h.group + a.Key
+		key := h.redact(h.group + a.Key)
 		if len(key) > 256 {
-			key = key[:256]
+			key = "omitted_detail"
 		}
 		value := fmt.Sprint(a.Value.Resolve().Any())
 		value = h.redact(value)
 		if len(value) > 4096 {
-			value = value[:4096] + "…"
+			value = "log detail omitted by retention limit"
 		}
 		clean.AddAttrs(slog.String(strings.Clone(key), strings.Clone(value)))
 		size += len(key) + len(value) + 32
@@ -77,10 +85,33 @@ func (h *errorLogHandler) Handle(ctx context.Context, r slog.Record) error {
 	b := h.buffer
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if h.classification != nil {
+		current := h.classification()
+		if current != b.classification {
+			// Earlier helpers may already have bounded an unknown value to a
+			// prefix. A later exact matcher cannot safely recover that spelling.
+			// Never flush records across credential-classification epochs.
+			b.omittedRecords += len(b.records)
+			b.clearLocked()
+			b.classification = current
+		}
+	}
 	if r.Level >= slog.LevelError {
 		var first error
+		if b.omittedRecords > 0 {
+			omission := slog.NewRecord(r.Time, slog.LevelInfo, "prior buffered log records omitted after credential classification changed", r.PC)
+			omission.AddAttrs(slog.Int("omitted_records", b.omittedRecords))
+			first = h.next.Handle(ctx, omission)
+			b.omittedRecords = 0
+		}
 		for _, entry := range b.records {
-			if err := h.next.Handle(ctx, entry.record); err != nil && first == nil {
+			// Only records from the current classification epoch remain here.
+			projected := slog.NewRecord(entry.record.Time, entry.record.Level, h.redact(entry.record.Message), entry.record.PC)
+			entry.record.Attrs(func(attr slog.Attr) bool {
+				projected.AddAttrs(slog.String(h.redact(attr.Key), h.redact(attr.Value.String())))
+				return true
+			})
+			if err := h.next.Handle(ctx, projected); err != nil && first == nil {
 				first = err
 			}
 		}
@@ -136,7 +167,7 @@ func (vu *VUser) errorOnlyLogger(cfg dsl.LogConfig) *slog.Logger {
 		}
 		vu.errorLogs = &errorLogBuffer{limit: limit}
 	}
-	return slog.New(&errorLogHandler{next: slog.Default().Handler(), buffer: vu.errorLogs, redact: func(s string) string { return scrubSensitiveTextWithConfig(s, vu.RedactionConfig) }}).With("vuser", vu.ID, "group", vu.Group)
+	return slog.New(&errorLogHandler{next: slog.Default().Handler(), buffer: vu.errorLogs, unavailable: func() bool { return vu.resultPublicationUnavailable() }, classification: vu.resultPublicationRedactionConfig, redact: func(s string) string { return scrubSensitiveTextWithConfig(s, vu.resultPublicationRedactionConfig()) }}).With("vuser", vu.ID, "group", vu.Group)
 }
 
 func (vu *VUser) closeErrorLogs() {
@@ -150,10 +181,15 @@ func (vu *VUser) logDiagnosticResult(message, name string, action *protocol.Acti
 		return
 	}
 	cfg := vu.Script.Config.Log
+	if vu.resultPublicationUnavailable() {
+		// Prepared requests remain exact for execution/private diagnosis, but
+		// incomplete joined credential knowledge cannot expose their detail.
+		action, name = nil, "Concurrent request"
+	}
 	if !result.Success {
-		vu.makeLogger(cfg).Error(message+" failed", actionLogAttrs(name, action, result, cfg, true, vu.RedactionConfig)...)
+		vu.makeLogger(cfg).Error(message+" failed", actionLogAttrs(name, action, result, cfg, true, vu.resultPublicationRedactionConfig())...)
 	} else if cfg.OnErrorOnly || cfg.Level == "extended" {
-		vu.makeLogger(cfg).Info(message+" ok", actionLogAttrs(name, action, result, cfg, false, vu.RedactionConfig)...)
+		vu.makeLogger(cfg).Info(message+" ok", actionLogAttrs(name, action, result, cfg, false, vu.resultPublicationRedactionConfig())...)
 	}
 }
 
@@ -163,4 +199,91 @@ func (vu *VUser) runtimeLogger() *slog.Logger {
 		cfg = vu.Script.Config.Log
 	}
 	return vu.makeLogger(cfg)
+}
+
+// Run/lifecycle loggers can outlive the classification state at their creation.
+// Admission therefore belongs at Handle, before authored strings reach a sink.
+type runtimePublicationLogHandler struct {
+	next   slog.Handler
+	vu     *VUser
+	attrs  []runtimePublicationLogAttr
+	groups []string
+}
+type runtimePublicationLogAttr struct {
+	attr   slog.Attr
+	groups []string
+}
+
+func (h *runtimePublicationLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.next.Enabled(ctx, level)
+}
+func (h *runtimePublicationLogHandler) Handle(ctx context.Context, record slog.Record) error {
+	if h.vu.resultPublicationUnavailable() {
+		return nil
+	}
+	config := h.vu.resultPublicationRedactionConfig()
+	projectText := func(value string, limit int) string {
+		return cloneBoundedResultString(scrubSensitiveTextWithConfig(value, config), limit)
+	}
+	clean := slog.NewRecord(record.Time, record.Level, projectText(record.Message, 4096), record.PC)
+	remaining := 32
+	var projectAttr func(slog.Attr, int) slog.Attr
+	projectAttr = func(attr slog.Attr, depth int) slog.Attr {
+		if remaining <= 0 || depth >= 16 {
+			return slog.Attr{}
+		}
+		remaining--
+		attr.Key = projectText(attr.Key, 256)
+		attr.Value = attr.Value.Resolve()
+		switch attr.Value.Kind() {
+		case slog.KindString:
+			attr.Value = slog.StringValue(projectText(attr.Value.String(), 4096))
+		case slog.KindGroup:
+			children := attr.Value.Group()
+			out := make([]slog.Attr, 0, min(len(children), remaining))
+			for _, child := range children {
+				if remaining <= 0 {
+					break
+				}
+				out = append(out, projectAttr(child, depth+1))
+			}
+			attr.Value = slog.GroupValue(out...)
+		case slog.KindAny:
+			attr.Value = slog.StringValue(projectText(fmt.Sprint(attr.Value.Any()), 4096))
+		}
+		return attr
+	}
+	add := func(attr slog.Attr, groups []string) {
+		if remaining <= 0 {
+			return
+		}
+		attr = projectAttr(attr, 0)
+		for i := len(groups) - 1; i >= 0; i-- {
+			attr = slog.Attr{Key: projectText(groups[i], 256), Value: slog.GroupValue(attr)}
+		}
+		clean.AddAttrs(attr)
+	}
+	for _, item := range h.attrs {
+		add(item.attr, item.groups)
+	}
+	record.Attrs(func(attr slog.Attr) bool { add(attr, h.groups); return remaining > 0 })
+	return h.next.Handle(ctx, clean)
+}
+func (h *runtimePublicationLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	c := *h
+	c.attrs = append([]runtimePublicationLogAttr(nil), h.attrs...)
+	for _, attr := range attrs {
+		if len(c.attrs) >= 32 {
+			break
+		}
+		c.attrs = append(c.attrs, runtimePublicationLogAttr{attr: attr, groups: h.groups})
+	}
+	return &c
+}
+func (h *runtimePublicationLogHandler) WithGroup(name string) slog.Handler {
+	c := *h
+	if name != "" && len(h.groups) < 16 {
+		c.groups = append(append([]string(nil), h.groups...), name)
+	}
+	return &c
 }

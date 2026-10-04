@@ -30,8 +30,11 @@ const (
 // needs to reject credential-bearing inline values and variable defaults
 // that cannot be safely rewritten without a source/schema-aware AST.
 func scanGraphQLCredentialLiteral(query []byte, options Options) (bool, string) {
-	tokens, err := lexGraphQL(query, options.Limits.MaxValues)
+	tokens, err := lexGraphQLWithOptions(query, options)
 	if err != nil {
+		if errors.Is(err, errGraphQLWorkLimit) {
+			return false, "credential_structured_work_limit_exceeded"
+		}
 		if errors.Is(err, errGraphQLTokenLimit) {
 			return false, "credential_graphql_value_limit_exceeded"
 		}
@@ -111,8 +114,11 @@ func projectKnownGraphQLScalars(
 	if len(query) > options.Limits.MaxBytes {
 		return nil, rejected(options.Source, "credential_graphql_limit_exceeded"), nil
 	}
-	tokens, err := lexGraphQL(query, options.Limits.MaxValues)
+	tokens, err := lexGraphQLWithOptions(query, options)
 	if err != nil {
+		if errors.Is(err, errGraphQLWorkLimit) {
+			return nil, rejected(options.Source, "credential_structured_work_limit_exceeded"), nil
+		}
 		if errors.Is(err, errGraphQLTokenLimit) {
 			return nil,
 				rejected(options.Source, "credential_graphql_value_limit_exceeded"),
@@ -174,9 +180,9 @@ func projectKnownGraphQLScalars(
 	return applyReplacements(query, replacements), exactResult(), nil
 }
 
-func graphQLExecutableSource(query []byte, options Options) bool {
-	tokens, err := lexGraphQL(query, options.Limits.MaxValues)
-	return err == nil && graphQLExecutableDocument(tokens)
+func graphQLExecutableSource(query []byte, options Options) (bool, error) {
+	tokens, err := lexGraphQLWithOptions(query, options)
+	return err == nil && graphQLExecutableDocument(tokens), err
 }
 
 func graphQLExecutableDocument(tokens []graphQLToken) bool {
@@ -771,9 +777,32 @@ func nextSignificantGraphQLToken(tokens []graphQLToken, index int) int {
 }
 
 var errGraphQLTokenLimit = errors.New("GraphQL token limit exceeded")
+var errGraphQLWorkLimit = errors.New("GraphQL scan work limit exceeded")
+
+// Redact shares allocation and scan allowances across every nested query and
+// repeated lexer pass. Other projection modes retain their per-document limits.
+func lexGraphQLWithOptions(query []byte, options Options) ([]graphQLToken, error) {
+	if options.Mode != Redact {
+		return lexGraphQL(query, options.Limits.MaxValues)
+	}
+	if !reserveStructuredRedactionBytes(options, len(query)) {
+		return nil, errGraphQLWorkLimit
+	}
+	maxTokens := min(options.Limits.MaxValues, options.structuredRedactionBudget.remainingValues)
+	return lexGraphQLWithReservation(query, maxTokens, func() bool {
+		return reserveStructuredRedactionValues(options, 1)
+	})
+}
 
 func lexGraphQL(query []byte, maxTokens int) ([]graphQLToken, error) {
+	return lexGraphQLWithReservation(query, maxTokens, nil)
+}
+
+func lexGraphQLWithReservation(query []byte, maxTokens int, reserve func() bool) ([]graphQLToken, error) {
 	tokens := make([]graphQLToken, 0, min(len(query)/4, maxTokens))
+	admitToken := func() bool {
+		return len(tokens) < maxTokens && (reserve == nil || reserve())
+	}
 	appendToken := func(token graphQLToken) error {
 		if len(tokens) >= maxTokens {
 			return errGraphQLTokenLimit
@@ -787,6 +816,9 @@ func lexGraphQL(query []byte, maxTokens int) ([]graphQLToken, error) {
 			index++
 			continue
 		case '#':
+			if !admitToken() {
+				return nil, errGraphQLTokenLimit
+			}
 			start := index + 1
 			index = start
 			for index < len(query) && query[index] != '\r' && query[index] != '\n' {
@@ -806,6 +838,9 @@ func lexGraphQL(query []byte, maxTokens int) ([]graphQLToken, error) {
 			query[index] == 0xef && query[index+1] == 0xbb && query[index+2] == 0xbf {
 			index += 3
 			continue
+		}
+		if !admitToken() {
+			return nil, errGraphQLTokenLimit
 		}
 		if graphQLNumberStart(query, index) {
 			start := index
@@ -891,7 +926,7 @@ func lexGraphQL(query []byte, maxTokens int) ([]graphQLToken, error) {
 	return tokens, nil
 }
 
-func graphQLNumberStart(query []byte, index int) bool {
+func graphQLNumberStart[T ~string | ~[]byte](query T, index int) bool {
 	if index < 0 || index >= len(query) {
 		return false
 	}
@@ -903,7 +938,7 @@ func graphQLNumberStart(query []byte, index int) bool {
 		query[index+1] >= '0' && query[index+1] <= '9'
 }
 
-func graphQLNumberEnd(query []byte, index int) (int, error) {
+func graphQLNumberEnd[T ~string | ~[]byte](query T, index int) (int, error) {
 	start := index
 	if query[index] == '-' {
 		index++

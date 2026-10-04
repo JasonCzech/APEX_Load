@@ -54,7 +54,7 @@ import {
   type HTTPTransportTabId,
   type RuntimeSettingsSectionId,
 } from './scriptEditorRuntimeSettingsModel'
-import { formatHTTPVersion, HTTP_VERSION_OPTIONS } from './runtimeSettingsModel'
+import { HTTP_VERSION_OPTIONS, formatScriptHTTPVersion, scriptHTTPVersionSettings } from './httpVersionModel'
 import { formatPacingTiming } from './runtimeTiming'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 import HttpRequestDefaultsEditor, {
@@ -101,7 +101,7 @@ interface ScriptRuntimeSettingsSidebarProps {
   parityEntries: RuntimeParityEntry[]
   paritySummary?: string
   readiness: ReactNode
-  script: Pick<ScriptDefinition, 'config'>
+  script: Pick<ScriptDefinition, 'config'> & Partial<Pick<ScriptDefinition, 'protocol'>>
   /** Opens the Imported Source Runtime Settings section for the full per-key list. */
   onOpenImportedSource?: () => void
 }
@@ -114,7 +114,7 @@ export function ScriptRuntimeSettingsSidebar({
   onOpenImportedSource,
 }: ScriptRuntimeSettingsSidebarProps) {
   const { httpProxySummary, logLevelLabel, runLogicLabel, thinkTimeLabel } = buildScriptRuntimeSummary(script)
-  const httpVersionSummary = formatHTTPVersion(script.config.http?.version)
+  const httpVersionSummary = formatScriptHTTPVersion(script.protocol, script.config.http?.version)
   return (
     <>
       <div className="utility-card">
@@ -196,6 +196,7 @@ export function ScriptRuntimeSettingsView({
   const [search, setSearch] = useState('')
   const [modifiedOnly, setModifiedOnly] = useState(false)
   const timingIssues = runtimeTimingIssues(script.config)
+  const httpVersionSettings = scriptHTTPVersionSettings(script.protocol, script.config.http?.version)
   const capabilities = getRuntimeProtocolCapabilities(script.protocol)
   const {
     browser: isBrowserScript,
@@ -1179,14 +1180,20 @@ export function ScriptRuntimeSettingsView({
           <div className="form-grid">
             <HTTPReplayPolicyFields section="connection" value={script.config.http} onChange={patch => updateField('config.http', { ...script.config.http, ...patch })} />
             <label><span>HTTP Version</span>
-              <select value={script.config.http?.version || ''}
-                onChange={e => updateField('config.http', { ...script.config.http, version: e.target.value })}>
+              <select value={httpVersionSettings.selection} aria-invalid={!httpVersionSettings.valid}
+                onChange={e => {
+                  const value = e.target.value
+                  if (value === '' || value === '1.1' || value === '2') updateField('config.http', { ...script.config.http, version: value })
+                }}>
                 {HTTP_VERSION_OPTIONS.map(option => (
-                  <option key={option.value || 'auto'} value={option.value}>{option.label}</option>
+                  <option key={option.value || 'default'} value={option.value}>{option.value === '' ? httpVersionSettings.defaultLabel : option.label}</option>
                 ))}
+                {!httpVersionSettings.valid && <option value="invalid" disabled>Unsupported script HTTP version</option>}
+                {httpVersionSettings.selection === 'existing-auto' && <option value="existing-auto" disabled>Existing automatic setting (preserved)</option>}
               </select></label>
+            {!httpVersionSettings.valid && <p role="alert">This script HTTP version is unsupported. Its original value is preserved until you choose a supported setting or edit the source JSON.</p>}
             <div className="form-hint full-width">
-              Auto negotiates HTTP/2 or HTTP/1.1. Explicit versions are exact; required HTTP/2 never falls back to HTTP/1.1.
+              Effective script policy: {httpVersionSettings.effectiveLabel}. Explicit versions are exact; required HTTP/2 never falls back to HTTP/1.1. Each request can inherit this policy or select its own policy, including Auto.
             </div>
             <label><span>Max Conns/Host</span>
               <input type="number" value={script.config.http?.max_conns_per_host || 100}

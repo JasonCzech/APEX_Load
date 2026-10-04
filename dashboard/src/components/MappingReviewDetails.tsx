@@ -1,3 +1,4 @@
+import { scriptHasSourceOnlyReview } from './sourceReviewDomain'
 import { useState, useRef, useEffect } from 'react'
 import type { ScriptDefinition, SourceReviewMapping } from '../types/scripts'
 import { useAuthApi } from '../hooks/api/useAuthApi'
@@ -20,7 +21,7 @@ export function MappingReviewDetails({ mapping, script, state, resolution, onCha
   const [error, setError] = useState('')
   const current = state && decisionMatches(decision, state, resolution)
   const record = async (rebind: boolean) => {
-    if (!script || !state || !onChange) return
+    if (!script || !state || !onChange || scriptHasSourceOnlyReview(script) || state.sourceOnly) return
     setBusy(true); setError('')
     try {
       const auth = await getAuthStatus()
@@ -39,6 +40,7 @@ export function MappingReviewDetails({ mapping, script, state, resolution, onCha
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to record the review decision.') }
     finally { setBusy(false) }
   }
+  if (scriptHasSourceOnlyReview(script) || state?.sourceOnly) return null
   return <details className="mapping-review-details">
     <summary>Review &amp; mapping details · {decision ? current ? decision.outcome === 'acknowledged' ? 'Acknowledged' : 'Needs changes' : 'Decision needs renewed review' : 'Not reviewed'}</summary>
     <p>Review annotations are saved with the script. They do not change conversion status, runtime support, or execution approval.</p>

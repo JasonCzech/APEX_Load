@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { captureScript, compareRuns, eventIdentity, executionLabel, readProfiles, safeProfile, variablesAt } from './debuggerExperience'
 import { DebugRunHistory, DebugVariableWatches, DebugTimeline } from './DebuggerSessionTools'
+import { DebugParameterInspector } from './DebugParameterInspector'
+import { RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
 import { DEFAULT_REPLAY_OPTIONS } from './scriptEditorState'
 import type { BrowserReplayEvent, BrowserReplayReport, ScriptDebugSession } from '../types/replay'
 import type { ScriptDefinition } from '../types/scripts'
@@ -26,8 +28,26 @@ describe('debugger operator experience', () => {
     const events = [event({ extractions: { customer: 'first' } }), event({ extractions: { customer: 'second', order: '123' } })]
     expect(variablesAt(events, { input: 'seed' }, 0)).toEqual({ input: 'seed', customer: 'first' })
     expect(variablesAt(events, { input: 'seed' }, -1)).toEqual({ input: 'seed' })
-    const html = renderToStaticMarkup(<DebugVariableWatches events={events} seed={{}} latest={{ customer: 'second' }} selected={0} onSelect={() => {}} />)
-    expect(html).toContain('Latest session'); expect(html).toContain('Selected execution (after)'); expect(html).toContain('Pin customer')
+    const html = renderToStaticMarkup(<DebugVariableWatches mode="retained" events={events} seed={{}} latest={{ customer: 'second' }} selected={0} onSelect={() => {}} />)
+    expect(html).toContain('Retained history'); expect(html).toContain('Selected execution (after)'); expect(html).toContain('Pin customer')
+  })
+  it('hides retained watch values, namespace rows and JSON when runtime evidence is unavailable', () => {
+    const html = renderToStaticMarkup(<DebugVariableWatches evidenceUnavailable events={[event({ extractions: { captured: 'captured-value' } })]} seed={{ seeded: 'seed-value' }} latest={{ final: 'final-value' }} selected={0} onSelect={() => {}} />)
+    expect(html).toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    for (const value of ['captured-value', 'seed-value', 'final-value', 'Pin captured', 'Values as JSON', 'Variable values and provenance']) expect(html).not.toContain(value)
+    expect(html).toContain('role="status"')
+  })
+  it('hides captured parameter values and their event context when runtime evidence is unavailable', () => {
+    const script = { name: 'Parameters', version: '1.0', protocol: 'http', config: { base_url: '' }, actions: [], parameters: [{ name: 'account', type: 'counter', update: 'each_iteration', start: 1, step: 1 }] } as ScriptDefinition
+    const props = { script, name: 'account', values: { 'param.account': 'captured-parameter' }, event: event({ action_name: 'retained-event-value' }), matchesDraft: true, onEdit: () => {} }
+    const unavailable = renderToStaticMarkup(<DebugParameterInspector {...props} evidenceUnavailable />)
+    expect(unavailable).toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    expect(unavailable).toContain('Edit definition in Author')
+    for (const value of ['captured-parameter', 'retained-event-value', 'Reveal captured value', '<output>']) expect(unavailable).not.toContain(value)
+    const available = renderToStaticMarkup(<DebugParameterInspector {...props} />)
+    expect(available).toContain('Reveal captured value')
+    expect(available).toContain('retained-event-value')
+    expect(available).not.toContain('captured-parameter')
   })
   it('compares repeated/nested executions without overwriting iterations', () => {
     const a = event({ step_path: ['loop[0]'], iteration: 0 }); const b = event({ step_path: ['loop[0]'], iteration: 1 })
@@ -43,6 +63,29 @@ describe('debugger operator experience', () => {
     expect(readProfiles(JSON.stringify([{ ...profile, options: { ...profile.options, variablesText: 'private' } }]))).toEqual([profile])
     for (const input of ['{', '{}', '[null]', '[{"name":"bad","options":{}}]']) expect(readProfiles(input)).toEqual([])
   })
+  it('hides unavailable history detail and comparison bodies even when a caller retains an older raw report', () => {
+    const detail = 'synthetic-history-runtime-detail'
+    const retained = { ...report([event({ body: detail, snapshot: { response_body: detail }, extractions: { ordinary: detail }, protocol_evidence: { http_version_policy: '2', http_version_negotiated: '2', http_version_source: 'wire' } })]),
+      runtime_evidence_unavailable: true, dropped_event_count: 4, truncated_event_evidence_count: 2, final_variables: { ordinary: detail }, runtime_profile: { name: detail } }
+    const html = renderToStaticMarkup(<DebugRunHistory runs={[{ id: 'run1', report: retained, options: DEFAULT_REPLAY_OPTIONS,
+      breakpoints: [], target: 'authored-target.test', draft: true, failurePolicy: 'Stop on error' }]} current={retained} />)
+    expect(html).toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    expect(html).toContain('authored-target.test')
+    expect(html).toContain('4 executions omitted')
+    expect(html).toContain('2 execution details truncated')
+    expect(html).not.toContain(detail)
+    expect(html).not.toContain('Historical execution')
+    expect(html).not.toContain('HTTP version evidence')
+  })
+
+  it('shows qualified negotiated HTTP evidence in retained run history', () => {
+    const replay = report([event({ protocol_evidence: { http_version_policy: 'auto', http_version_negotiated: '1.1', http_version_source: 'wire' } })])
+    const html = renderToStaticMarkup(<DebugRunHistory runs={[{ id: 'run1', report: replay, options: DEFAULT_REPLAY_OPTIONS, breakpoints: [], target: 'localhost', draft: true, failurePolicy: 'Stop on error' }]} current={replay} />)
+    expect(html).toContain('HTTP version evidence')
+    expect(html).toContain('Replay policy</dt><dd>Auto-negotiate')
+    expect(html).toContain('Actual negotiated HTTP version</dt><dd>HTTP/1.1')
+  })
+
   it('renders protocol-appropriate history and navigable timeline controls', () => {
     const replay = report([event({ status_code: 200 })])
     const html = renderToStaticMarkup(<DebugRunHistory runs={[{ id: 'run1', report: replay, options: DEFAULT_REPLAY_OPTIONS, breakpoints: [], target: 'localhost', draft: true, failurePolicy: 'Stop on error' }]} current={replay} currentRecord={{ id: 'current', options: DEFAULT_REPLAY_OPTIONS, breakpoints: [], target: 'current-target.test', draft: true, failurePolicy: 'Continue' }} />)

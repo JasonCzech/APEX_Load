@@ -434,7 +434,24 @@ func TestSharedImportCommitProjectsDecodedBase64JSONAcrossLegacyRoutes(t *testin
 					BodyEncoding: "base64",
 				}},
 			}
-			payload, err := json.Marshal(map[string]any{"script": script})
+			// Encoded or typed credentials require the same authenticated
+			// inspection capability as directly locatable string credentials.
+			unattestedPayload, err := json.Marshal(map[string]any{"script": script})
+			if err != nil {
+				t.Fatal(err)
+			}
+			unattested := httptest.NewRecorder()
+			unattestedRequest := httptest.NewRequest(http.MethodPost, route.path, bytes.NewReader(unattestedPayload))
+			unattestedRequest.Header.Set("Content-Type", "application/json")
+			server.mux.ServeHTTP(unattested, unattestedRequest)
+			if unattested.Code != http.StatusConflict {
+				t.Fatalf("unattested credential commit status = %d, want 409", unattested.Code)
+			}
+			if _, persisted := server.runner.GetScript(scriptID); persisted {
+				t.Fatal("unattested credential draft was persisted")
+			}
+			submitted := attestedImportCommitDraft(t, server, route.path, script)
+			payload, err := json.Marshal(map[string]any{"script": submitted})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -554,7 +571,24 @@ func TestSharedImportCommitPreservesSensitiveTypedJSONAcrossLegacyRoutes(t *test
 					Body:    body,
 				}},
 			}
-			payload, err := json.Marshal(map[string]any{"script": script})
+			// Encoded or typed credentials require the same authenticated
+			// inspection capability as directly locatable string credentials.
+			unattestedPayload, err := json.Marshal(map[string]any{"script": script})
+			if err != nil {
+				t.Fatal(err)
+			}
+			unattested := httptest.NewRecorder()
+			unattestedRequest := httptest.NewRequest(http.MethodPost, route.path, bytes.NewReader(unattestedPayload))
+			unattestedRequest.Header.Set("Content-Type", "application/json")
+			server.mux.ServeHTTP(unattested, unattestedRequest)
+			if unattested.Code != http.StatusConflict {
+				t.Fatalf("unattested credential commit status = %d, want 409", unattested.Code)
+			}
+			if _, persisted := server.runner.GetScript(scriptID); persisted {
+				t.Fatal("unattested credential draft was persisted")
+			}
+			submitted := attestedImportCommitDraft(t, server, route.path, script)
+			payload, err := json.Marshal(map[string]any{"script": submitted})
 			if err != nil {
 				t.Fatal(err)
 			}

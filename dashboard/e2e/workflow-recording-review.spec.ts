@@ -1,8 +1,12 @@
 import { test, expect } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
+import type { ScriptDebugRuntimeState } from '../src/types/replay'
+import { login } from './support/workflow'
 
 // Deterministic recording/replay fixtures exercise the review UI without
 // requiring a headed workstation browser in CI. Go integration tests cover capture.
 test('recording review scopes verification to outputs and invalidates changed conversions', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const now = new Date().toISOString()
   const session = { id: 'review-recording', name: 'Checkout', status: 'stopped', start_url: 'https://shop.example', started_at: now, stopped_at: now, capture_har: true, har_available: true, step_count: 2, navigation_count: 1, network_request_count: 2, websocket_count: 0, warning_count: 0, steps: [
     { seq: 1, kind: 'click', title: 'Shop', timestamp: now, element: { text: 'Continue' } },
@@ -39,7 +43,9 @@ test('recording review scopes verification to outputs and invalidates changed co
   await expect(page.getByRole('button', { name: 'Save unverified draft', exact: true })).toBeVisible()
 })
 
-test('a narrow browser cockpit keeps assertion evidence and the captured viewport readable', async ({ page, request }, testInfo) => {
+test('a narrow browser cockpit keeps assertion evidence and the captured viewport readable', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
   const { createWorkspace, scopeQuery } = await import('./support/workspace')
   const workspace = await createWorkspace(request)
   const script = { name: 'Browser evidence layout', version: '1.0.0', protocol: 'browser', config: {}, actions: [{ name: 'Check greeting', type: 'browser_wait', selector: '#result' }] }
@@ -52,10 +58,17 @@ test('a narrow browser cockpit keeps assertion evidence and the captured viewpor
   await page.route(`**/api/v1/scripts/${id}/debug/sessions`, async route => {
     const sessionId = route.request().postDataJSON().replay_session_id
     const report = { replay_session_id: sessionId, group: 'Browser evidence layout', protocol: 'browser', started_at: now, completed_at: now, success: false, events: [event] }
-    await route.fulfill({ json: { debug_session_id: sessionId, replay_session_id: sessionId, session: { id: sessionId, status: 'failed', completed_at: now, report } } })
+    const sessionIncarnation = randomUUID()
+    const runtimeState = { version: 1, kind: 'full', session_id: sessionId,
+      session_incarnation: sessionIncarnation, state_revision: '1', state: 'unavailable',
+      reason: 'session_terminal', snapshot: null } satisfies ScriptDebugRuntimeState
+    await route.fulfill({ json: { debug_session_id: sessionId, replay_session_id: sessionId,
+      session: { id: sessionId, session_incarnation: sessionIncarnation, state_revision: '1',
+        runtime_state: runtimeState, status: 'failed', completed_at: now, report } } })
   })
   await page.setViewportSize({ width: 700, height: 1000 })
   await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
   await page.locator('.topbar-debug-action-run').click()
   const cockpit = page.locator('.script-browser-evidence')

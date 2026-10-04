@@ -1325,7 +1325,7 @@ func TestConvertHARDecodesBase64Bodies(t *testing.T) {
 	}
 }
 
-func TestConvertHARDecompressesResponseBeforeCorrelation(t *testing.T) {
+func TestConvertHARDoesNotWireDecodeStoredBinaryBeforeCorrelation(t *testing.T) {
 	responseBody := gzipBase64(t, []byte(`{"csrf_token":"gzip-token-abcdef123456"}`))
 	result, err := Convert(ImportRequest{
 		Format: "har",
@@ -1370,14 +1370,14 @@ func TestConvertHARDecompressesResponseBeforeCorrelation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	if result.Stats.CorrelationsDetected != 1 {
-		t.Fatalf("correlations = %d, want 1: %#v", result.Stats.CorrelationsDetected, result.Correlations)
+	if result.Stats.CorrelationsDetected != 0 {
+		t.Fatalf("correlations = %d, want no invented response from binary resource: %#v", result.Stats.CorrelationsDetected, result.Correlations)
 	}
-	if !strings.Contains(result.Script.Actions[1].Body, "{{var.corr_csrf_token}}") {
-		t.Fatalf("second action body = %q, want token from decompressed response", result.Script.Actions[1].Body)
+	if strings.Contains(result.Script.Actions[1].Body, "{{var.corr_csrf_token}}") {
+		t.Fatal("binary HAR resource generated an invented wire-decoded correlation")
 	}
-	if !containsSampleDiagnostic(result, "HAR content-encoding") {
-		t.Fatalf("diagnostics = %#v, want content-encoding info", result.Unsupported)
+	if !containsSampleDiagnostic(result, "HAR base64 content") {
+		t.Fatalf("diagnostics = %#v, want binary storage info", result.Unsupported)
 	}
 }
 

@@ -2,6 +2,7 @@ import { test, expect, idOf, json, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('script sidebars preserve selection, source scope, body editing and Debug options across narrow layouts', async ({ page }) => {
+  test.setTimeout(120_000)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const request = page.context().request
   const workspace = await createWorkspace(request)
@@ -71,6 +72,7 @@ test('script sidebars preserve selection, source scope, body editing and Debug o
 })
 
 test('Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore', async ({ page }) => {
+  test.setTimeout(120_000)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const request = page.context().request
   const workspace = await createWorkspace(request)

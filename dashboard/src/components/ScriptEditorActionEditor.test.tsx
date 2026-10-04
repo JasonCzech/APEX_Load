@@ -5,8 +5,9 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useState } from 'react'
-import type { ScriptActionDefinition } from '../types/scripts'
+import type { ScriptActionDefinition, ScriptAssertionDefinition } from '../types/scripts'
 import { ActionEditor, ControlBranchEditor, ControlFlowFields } from './ScriptEditorActionEditor'
+import { ProtocolAssertionsSection } from './scriptActionFields'
 import { CODE_LINE_WRAP_STORAGE_KEY } from './codeLineWrapPreference'
 
 vi.mock('./SourceCodeViewer', () => ({
@@ -195,7 +196,7 @@ describe('ActionEditor transaction field', () => {
 
   const renderEditor = (
     action: ScriptActionDefinition,
-    options: { protocol?: string; isJmsScript?: boolean; inspector?: boolean } = {},
+    options: { protocol?: string; isJmsScript?: boolean; inspector?: boolean; assertionUpdate?: (ai: number, ai2: number, field: keyof ScriptAssertionDefinition, value: unknown) => void } = {},
   ) => {
     const updates: Array<[number, string, unknown]> = []
     const noop = () => {}
@@ -211,7 +212,7 @@ describe('ActionEditor transaction field', () => {
           onUpdateExtractor={noop}
           onRemoveExtractor={noop}
           onAddAssertion={noop}
-          onUpdateAssertion={noop}
+          onUpdateAssertion={options.assertionUpdate || noop}
           onRemoveAssertion={noop}
           onAddHeader={noop}
           onUpdateHeader={noop}
@@ -259,6 +260,39 @@ describe('ActionEditor transaction field', () => {
   it('prefills the Transaction field from the existing tag', () => {
     renderEditor({ name: 'Login', type: 'POST', target: '/login', metadata: { source_transaction: 'Auth', keep: 1 } } as unknown as ScriptActionDefinition)
     expect(labelInput('Transaction')!.value).toBe('Auth')
+  })
+
+  it('edits imported Aura success assertions without value fields and offers them only for HTTP', () => {
+    const action: ScriptActionDefinition = { name: 'Aura batch', type: 'request', method: 'POST', target: '/aura', assertions: [{ type: 'aura_actions_success' }] }
+    const update = vi.fn()
+    for (const protocol of ['http', 'http/1.1', 'http/2']) {
+      renderEditor(action, { protocol, assertionUpdate: update })
+      const row = container.querySelector('.assertion-row')!
+      const select = row.querySelector('select') as HTMLSelectElement
+      expect(select.value).toBe('aura_actions_success')
+      expect(select.selectedOptions[0].textContent).toBe('Aura actions succeed')
+      expect(row.querySelectorAll('input')).toHaveLength(0)
+      act(() => { setSelectValue(select, 'status_code') })
+      expect(update).toHaveBeenCalledWith(0, 0, 'type', 'status_code')
+    }
+    for (const protocol of ['browser', 'grpc', 'soap', 'database', 'network', 'websocket', 'java_http', 'kafka']) {
+      renderEditor({ ...action, assertions: [{ type: 'body_contains', value: 'ok' }] }, { protocol })
+      const select = container.querySelector('.assertion-row select') as HTMLSelectElement
+      expect([...select.options].map(option => option.value)).not.toContain('aura_actions_success')
+    }
+  })
+
+  it('clears incompatible fields when switching an authored check to Aura success', () => {
+    let current: ScriptActionDefinition
+    function AuthoredCheck() {
+      const [action, setAction] = useState<ScriptActionDefinition>({ name: 'Aura request', type: 'request', target: '/aura', assertions: [{ type: 'status_code', expected: 200, value: 'recorded-id', min: 1, max: 5000, legacy_html_check: true }] })
+      current = action
+      return <ProtocolAssertionsSection action={action} index={0} protocol="http" onAddAssertion={() => {}} onRemoveAssertion={() => {}} onUpdateAssertion={(_index, assertionIndex, field, value) => setAction(previous => ({ ...previous, assertions: previous.assertions!.map((assertion, index) => index === assertionIndex ? { ...assertion, [field]: value } : assertion) }))} />
+    }
+    act(() => { root.render(<AuthoredCheck />) })
+    act(() => { setSelectValue(container.querySelector('.assertion-row select') as HTMLSelectElement, 'aura_actions_success') })
+    expect(JSON.parse(JSON.stringify(current!.assertions))).toEqual([{ type: 'aura_actions_success' }])
+    expect(container.querySelectorAll('.assertion-row input')).toHaveLength(0)
   })
 
   it('offers exact HTTP header and regex-capture assertion types', () => {

@@ -425,6 +425,10 @@ describe('ProtocolAssetImport', () => {
         items: ['Aura and Lightning endpoints were detected.'],
       }],
       repair_suggestions: [],
+      source_review: {
+        source_files: [{ path: 'sample.har', language: 'json', content: '{"log":{"entries":[]}}' }],
+        mappings: [{ id: 'sf-source-request', source_file: 'sample.har', start_line: 1, function: 'har_entry', target_path: 'actions[0]', target_name: 'Aura Bootstrap', target_kind: 'action', status: 'converted' }],
+      },
       correlations: [{ name: 'aura_token', source: 'body', expression: 'aura.token', found_in_seq: 1 }],
       stats: {
         format: 'har',
@@ -438,13 +442,22 @@ describe('ProtocolAssetImport', () => {
       summary: {
         artifact_mode: 'salesforce_native_http',
         salesforce_review: {
+          aura_outcomes: {
+            complete: true, total_batches: 1, inspected_batches: 1, complete_batches: 1, incomplete_batches: 0,
+            omitted_batches: 0, missing_responses: 0, invalid_requests: 0, request_actions: 2, response_actions: 2, matched_actions: 2,
+            batch_limit: 512, analysis_byte_limit: 67108864, state_counts: { SUCCESS: 1, ERROR: 1 },
+            issue_counts: { non_success_state: 1 },
+            batches: [{ action_sequence: 1, action_path: 'actions[0]', har_entry_id: 7, request_valid: true,
+              analysis: { success: false, complete: true, has_response: true, request_actions: 2, response_actions: 2, matched_actions: 2,
+                outcomes: [{ ordinal: 1, state: 'SUCCESS' }, { ordinal: 2, state: 'ERROR' }], issues: [{ code: 'non_success_state', ordinal: 2 }] } }],
+          },
           detected: true,
           domains: [{ host: 'acme.my.salesforce.com', kind: 'lightning', count: 2 }],
           aura_endpoints: [{ method: 'POST', path: '/aura', host: 'acme.my.salesforce.com', count: 2 }],
           lightning_endpoints: [{ method: 'GET', path: '/lightning', host: 'acme.my.salesforce.com', count: 1 }],
           apex_rest_endpoints: [{ method: 'GET', path: '/services/apexrest/Acct', host: 'acme.my.salesforce.com', count: 3 }],
           composite_endpoints: [{ method: 'POST', path: '/services/data/v60.0/composite', host: 'acme.my.salesforce.com', count: 2 }],
-          parameterizations: [{ name: 'param_recordid', source: 'aura_message', expression: 'actions[0].params.recordId', param_key: 'recordId', sample_value: '001D000000IqhSLIAZ', kind: 'record_id', column: 'recordid', template: '{{data.salesforce_records.recordid}}' }],
+          parameterizations: [{ name: 'param_recordid', source: 'aura_message', expression: 'actions[0].params.recordId', action_path: 'actions[0].control.steps[1]', decoded_field_path: 'actions[0].params.details::<json>.recordId', encoding_layers: ['url_form', 'json', 'json_string'], param_key: 'recordId', sample_value: '001D000000IqhSLIAZ', kind: 'record_id', column: 'recordid', template: '{{data.salesforce_records.recordid}}' }],
           transactions: [{ name: 'Salesforce Login', source: 'har', request_count: 2, aura_actions: 1 }],
           correlation_confidence: 'high',
           har_match_coverage: { har_provided: true, imported_requests: 2, matched_requests: 2, coverage_pct: 100 },
@@ -1987,6 +2000,12 @@ describe('ProtocolAssetImport', () => {
 
 	  it('imports Salesforce HAR files through the native review flow', async () => {
 	    const salesforceResult = await apiMock.importSalesforce()
+        const candidate = salesforceResult.summary.salesforce_review.parameterizations[0]
+        salesforceResult.summary.salesforce_review.parameterizations = [
+          { ...candidate, expression: '', name: 'param_recordid_first', decoded_field_path: 'actions[0].params.details::<json>.records[0].recordId' },
+          { ...candidate, expression: '', name: 'param_recordid_second', decoded_field_path: 'actions[0].params.details::<json>.records[1].recordId' },
+        ]
+        const consoleError = vi.spyOn(console, 'error')
 	    apiMock.importHAR.mockResolvedValueOnce(salesforceResult)
 	    await act(async () => {
 	      root.render(<ProtocolAssetImport kind="har" projectId="project-1" />)
@@ -2028,10 +2047,28 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('Composite')
     // Aura message parameterization candidates (G3)
     expect(container.textContent).toContain('Aura parameterization candidates')
+    const parameterLocation = container.querySelector('.aura-parameter-location-details')!
+    expect(parameterLocation.textContent).toContain('actions[0].control.steps[1]')
+    expect(parameterLocation.textContent).toContain('JSON string')
+    expect(parameterLocation.parentElement?.textContent).not.toContain('001D000000IqhSLIAZ')
+    expect(container.querySelectorAll('.aura-parameter-location-details')).toHaveLength(2)
+    expect(container.textContent).toContain('records[0].recordId')
+    expect(container.textContent).toContain('records[1].recordId')
+    expect(consoleError.mock.calls.flat().map(String).join(' ')).not.toContain('same key')
+    consoleError.mockRestore()
     expect(container.textContent).toContain('recordId')
     // Agentforce panel from preserved metadata (G4)
     expect(container.textContent).toContain('Agentforce Agent API Review')
     expect(container.textContent).toContain('streaming (SSE)')
+    const aura = container.querySelector('.aura-outcome-review')!
+    expect(aura.textContent).toContain('1 captured action did not succeed.')
+    expect(aura.textContent).toContain('HAR entry 7')
+    const sourceLink = [...aura.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'View request 1 source mapping')!
+    await act(async () => { sourceLink.click() })
+    await flushPromises()
+    const sourceTab = container.querySelector('[role=tab][aria-label="Source Mapping"]')!
+    expect(sourceTab.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('tr.active[data-mapping-id]')?.getAttribute('data-mapping-id')).toBe('sf-source-request')
   })
 
   it('imports RAML files through the shared protocol asset flow', async () => {

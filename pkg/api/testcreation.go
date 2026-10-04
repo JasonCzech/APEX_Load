@@ -573,6 +573,7 @@ func (tr *TestRunner) managedTestBuildSnapshotLocked(req CreateTestRequest) (*Te
 		hub:                     nil,
 		maxTests:                tr.maxTests,
 		settings:                cloneSystemSettings(tr.settings),
+		testStore:               tr.testStore,
 		scriptStore:             tr.scriptStore,
 		dataPoolStore:           tr.dataPoolStore,
 		projectStore:            tr.projectStore,

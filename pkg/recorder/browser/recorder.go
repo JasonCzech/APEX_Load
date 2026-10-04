@@ -280,6 +280,10 @@ func CheckChromiumInstalled() error {
 
 // New prepares a recorder; Start launches the browser.
 func New(opts Options) *Recorder {
+	if opts.Device != nil {
+		device := *opts.Device
+		opts.Device = &device
+	}
 	device := ""
 	if opts.Device != nil {
 		device = boundedtext.TruncateUTF8(opts.Device.Name, maxBrowserNativeTitleBytes)
@@ -426,12 +430,16 @@ func (r *Recorder) Start() error {
 		}
 		contextOptions.StorageState = state
 	}
+	observedEnvironment := recordingEnvironmentForContext(r.opts.Device, contextOptions)
 	context, err := browser.NewContext(contextOptions)
 	if err != nil {
 		r.cleanup()
 		return fmt.Errorf("create browser context: %w", err)
 	}
 	r.context = context
+	r.mu.Lock()
+	r.session.RecordingEnvironment = observedEnvironment.Clone()
+	r.mu.Unlock()
 	if r.opts.CaptureHAR {
 		go r.monitorHARSize(r.harCapturePath, context)
 	}

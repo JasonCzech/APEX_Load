@@ -239,3 +239,22 @@
     flex-direction: column;
   }
 }
+
+.paramize-aura-coverage {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.paramize-aura-coverage h5,
+.paramize-aura-coverage p {
+  margin: 4px 0;
+}
+
+.paramize-aura-coverage .paramize-coverage-warning {
+  color: var(--warning);
+}

@@ -40,6 +40,9 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 		}
 		return nil, rejected(options.Source, "credential_json_limit_exceeded"), nil, nil
 	}
+	if !reserveStructuredRedactionBytes(options, len(payload)) {
+		return nil, rejected(options.Source, "credential_structured_work_limit_exceeded"), nil, nil
+	}
 	if !utf8.Valid(payload) {
 		if options.Mode == Preserve {
 			return append([]byte(nil), payload...),
@@ -60,7 +63,7 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 	if parser.index == len(payload) {
 		return append([]byte(nil), payload...), blocked(options.Source, "credential_json_empty"), nil, nil
 	}
-	if err := parser.parseValue("", "", 0, false); err != nil {
+	if err := parser.parseValue("", "", options.jsonDepthBase, false); err != nil {
 		if options.Mode == Preserve {
 			result := parser.result
 			result.Merge(preservedOpaquePayloadResult(
@@ -69,6 +72,12 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 				"credential_json_malformed",
 			))
 			return append([]byte(nil), payload...), result, nil, nil
+		}
+		if options.Mode == Redact && parser.result.Disposition == Rejected {
+			return nil, parser.result, nil, nil
+		}
+		if options.Mode == Redact && options.nestedJSON {
+			return nil, rejected(options.Source, "credential_nested_json_rejected"), nil, nil
 		}
 		if containsSensitiveNameHintWithOptions(payload, options) {
 			return nil, rejected(options.Source, "credential_json_malformed_sensitive"), nil, nil
@@ -88,6 +97,9 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 					"credential_json_trailing_value",
 				), nil, nil
 		}
+		if options.Mode == Redact && options.nestedJSON {
+			return nil, rejected(options.Source, "credential_nested_json_rejected"), nil, nil
+		}
 		if containsSensitiveNameHintWithOptions(payload[parser.index:], options) ||
 			len(parser.replacements) > 0 ||
 			options.KnownCredentialMatcher != nil {
@@ -97,6 +109,9 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 	}
 	if parser.result.Disposition == Rejected {
 		return nil, parser.result, nil, nil
+	}
+	if options.Mode == Redact && !structuredRedactionOutputWithinLimit(payload, parser.replacements, options.Limits.MaxBytes) {
+		return nil, rejected(options.Source, "credential_structured_output_limit_exceeded"), nil, nil
 	}
 	return applyReplacements(payload, parser.replacements), parser.result, parser.graphQLQueries, nil
 }
@@ -124,6 +139,10 @@ func (parser *jsonProjectionParser) parseValue(
 			parser.result.Merge(rejected(parser.options.Source, "credential_json_depth_limit_exceeded"))
 		}
 		return errors.New("JSON depth limit exceeded")
+	}
+	if !reserveStructuredRedactionValues(parser.options, 1) {
+		parser.result.Merge(rejected(parser.options.Source, "credential_structured_value_limit_exceeded"))
+		return errors.New("structured value limit exceeded")
 	}
 	parser.values++
 	valueIndex := parser.values - 1
@@ -180,11 +199,68 @@ func (parser *jsonProjectionParser) parseValue(
 		if err != nil {
 			return err
 		}
+		// Recognized encoded JSON is a structured layer, not one large scalar.
+		// Project its semantic leaves before consulting the known-value matcher.
+		jsonLayer := parser.options.Mode == Redact && sensitiveName == "" && nestedJSONObjectOrArray(decoded)
+		if parser.options.Mode == Redact && sensitiveName == "" && captureGraphQLQuery && !wholeStructuredRuntimeTemplate(decoded) {
+			queryJSON, work, classifyErr := InspectQueryValueStructure(decoded, parser.options.structuredRedactionBudget.remainingBytes)
+			if !reserveStructuredRedactionBytes(parser.options, work) || classifyErr != nil {
+				parser.result.Merge(rejected(parser.options.Source, "credential_structured_work_limit_exceeded"))
+				return nil
+			}
+			jsonLayer = queryJSON
+		}
+		if jsonLayer {
+			if parser.options.nestedJSONStringDepth >= maxRedactionJSONStringDepth {
+				parser.result.Merge(rejected(parser.options.Source, "credential_nested_json_depth_limit_exceeded"))
+				return nil
+			}
+			nestedOptions := parser.options
+			nestedOptions.nestedJSONStringDepth++
+			nestedOptions.jsonDepthBase = depth + 1
+			nestedOptions.nestedJSON = true
+			projected, item, nestedErr := ProjectRequestBody([]byte(decoded), "application/json", nestedOptions)
+			if nestedErr != nil {
+				return nestedErr
+			}
+			if item.Disposition == Rejected {
+				parser.result.Merge(item)
+				return nil
+			}
+			if projected == nil {
+				parser.result.Merge(rejected(parser.options.Source, "credential_nested_json_rejected"))
+				return nil
+			}
+			parser.result.Merge(item)
+			if string(projected) != decoded {
+				if !reserveJSONEncodedRedaction(parser.options, projected) {
+					parser.result.Merge(rejected(parser.options.Source, "credential_structured_output_limit_exceeded"))
+					return nil
+				}
+				encoded, marshalErr := json.Marshal(string(projected))
+				if marshalErr != nil {
+					return errors.New("projected nested JSON string could not be encoded")
+				}
+				parser.replacements = append(parser.replacements, replacement{start: valueStart, end: end, value: encoded})
+			}
+			return nil
+		}
 		if captureGraphQLQuery {
 			parser.graphQLQueries = append(parser.graphQLQueries, decoded)
-			if sensitiveName == "" &&
-				parser.options.KnownCredentialMatcher != nil &&
-				graphQLExecutableSource([]byte(decoded), parser.options) {
+			executableQuery := false
+			if sensitiveName == "" && parser.options.KnownCredentialMatcher != nil {
+				var inspectErr error
+				executableQuery, inspectErr = graphQLExecutableSource([]byte(decoded), parser.options)
+				if errors.Is(inspectErr, errGraphQLWorkLimit) {
+					parser.result.Merge(rejected(parser.options.Source, "credential_structured_work_limit_exceeded"))
+					return nil
+				}
+				if errors.Is(inspectErr, errGraphQLTokenLimit) {
+					parser.result.Merge(rejected(parser.options.Source, "credential_graphql_value_limit_exceeded"))
+					return nil
+				}
+			}
+			if sensitiveName == "" && parser.options.KnownCredentialMatcher != nil && executableQuery {
 				projectedQuery, queryResult, err := projectKnownGraphQLScalars(
 					[]byte(decoded),
 					parser.options,
@@ -409,6 +485,23 @@ func (parser *jsonProjectionParser) parseString() (int, string, error) {
 				for _, digit := range parser.payload[parser.index+1 : parser.index+5] {
 					if !isHexDigit(digit) {
 						return 0, "", errors.New("JSON unicode escape is malformed")
+					}
+				}
+				if parser.options.Mode == Redact {
+					code := jsonUnicodeEscapeCode(parser.payload[parser.index+1 : parser.index+5])
+					if code >= 0xd800 && code <= 0xdbff {
+						lowStart := parser.index + 5
+						if lowStart+6 > len(parser.payload) || parser.payload[lowStart] != '\\' || parser.payload[lowStart+1] != 'u' ||
+							!validLowJSONSurrogate(parser.payload[lowStart+2:lowStart+6]) {
+							parser.result.Merge(rejected(parser.options.Source, "credential_json_invalid_surrogate"))
+							return 0, "", errors.New("JSON surrogate is malformed")
+						}
+						parser.index += 11
+						continue
+					}
+					if code >= 0xdc00 && code <= 0xdfff {
+						parser.result.Merge(rejected(parser.options.Source, "credential_json_invalid_surrogate"))
+						return 0, "", errors.New("JSON surrogate is malformed")
 					}
 				}
 				parser.index += 5

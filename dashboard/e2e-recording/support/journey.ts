@@ -38,7 +38,7 @@ export async function startRecording(page: Page, h: Harness, agent = false, opti
   await page.getByLabel('Start URL scheme', { exact: true }).selectOption('http://')
   await page.getByLabel('Start URL address', { exact: true }).fill(h.target.url.replace('http://',''))
   await page.getByLabel('Capture side-car HAR', { exact: false }).setChecked(options.har ?? true)
-  if (options.mobile) await page.getByLabel('Device preset', { exact: true }).selectOption({ label: options.mobile })
+  if (options.mobile) await page.getByLabel('Emulated device preset', { exact: true }).selectOption({ label: options.mobile })
   if (options.screenshots || options.minimal || options.ws !== undefined || options.excludeHosts) {
     await page.getByRole('button', { name: 'Advanced options', exact: true }).click()
     if (options.excludeHosts) await page.getByLabel('Exclude hosts',{exact:true}).fill(options.excludeHosts)
@@ -62,7 +62,7 @@ export async function startRecording(page: Page, h: Harness, agent = false, opti
   const target = browser.contexts().flatMap(c => c.pages()).find(p => p.url().startsWith(h.target.url))
   expect(target, 'Recorder-owned target page').toBeTruthy()
   await expect(target!.locator('body')).toHaveAttribute('data-token', /.+/)
-  return { browser, target: target!, id: session.id as string }
+  return { browser, target: target!, id: session.id as string, session }
 }
 export async function snapshot(h: Harness, id: string, raw = false) {
   const response = await h.request.get(`/api/v1/browser-recorder/sessions/${id}${raw?'?raw=true':''}`)

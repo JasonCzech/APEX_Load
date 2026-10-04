@@ -22,7 +22,10 @@ var mappingIDUnsafeChars = regexp.MustCompile(`[^a-z0-9_.\[\]-]+`)
 
 // Review contains imported source files and source-to-DSL mappings produced by
 // import converters for side-by-side review.
+const OriginalImportTargetDomain = "original_import"
+
 type Review struct {
+	TargetDomain       string       `json:"target_domain,omitempty"`
 	SourceFiles        []SourceFile `json:"source_files,omitempty"`
 	Mappings           []Mapping    `json:"mappings,omitempty"`
 	TotalSourceFiles   int          `json:"total_source_files,omitempty"`

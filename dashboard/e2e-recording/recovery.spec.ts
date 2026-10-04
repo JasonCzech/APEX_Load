@@ -37,7 +37,7 @@ test('reject duplicate capture, survive dashboard reload and recover after windo
 
 test('mobile recording reuses exported session state with HAR disabled',async({page,harness:h},info)=>{
   await studio(page,h)
-  const preset=page.getByLabel('Device preset',{exact:true})
+  const preset=page.getByLabel('Emulated device preset',{exact:true})
   await expect(preset.locator('option').filter({hasText:'iphone 15 pro'})).toHaveCount(1)
   const mobileValue=await preset.locator('option').evaluateAll(options=>(options.find(o=>/iphone|pixel/i.test(o.textContent||'')) as HTMLOptionElement|undefined)?.value)
   expect(mobileValue).toBeTruthy()

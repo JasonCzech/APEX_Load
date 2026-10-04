@@ -17,6 +17,45 @@
             "type": "status_code"
           }
         ],
+        "metadata": {
+          "execution_blocker": "import_review_required",
+          "execution_blockers": [
+            "import_review_required"
+          ],
+          "http_version_capture": {
+            "provenance": "request",
+            "proxy": false,
+            "request_state": "unavailable",
+            "response_state": "unavailable",
+            "version": 1
+          },
+          "import_http_version_fidelity": {
+            "reason_code": "http_version_unavailable",
+            "source_refs": [
+              "log.entries[0].request.httpVersion"
+            ],
+            "version": 1
+          },
+          "import_review": {
+            "reason_codes": [
+              "http_version_unavailable"
+            ],
+            "resolution": "replace_behavior_and_remove_gate",
+            "source": "har",
+            "source_refs": [
+              "log.entries[0].request.httpVersion"
+            ],
+            "version": 1
+          },
+          "response_content_capture": {
+            "body_kind": "text",
+            "captured": "har_decoded",
+            "decoded_size_bytes": 2,
+            "state": "complete",
+            "stored": "decoded",
+            "version": 1
+          }
+        },
         "method": "GET",
         "name": "01 - GET health",
         "target": "/health",
@@ -143,6 +182,14 @@
     "format": "har",
     "total_requests": 1
   },
+  "unsupported": [
+    {
+      "detail": "Captured HTTP version evidence requires review before replay (http_version_unavailable).",
+      "element": "HTTP version",
+      "location": "HAR entry 1",
+      "severity": "blocker"
+    }
+  ],
   "warnings": [
     "no reusable correlation values were detected across the provided samples"
   ]

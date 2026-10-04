@@ -39,6 +39,9 @@ func (report *ReplayReport) nextEventIndex() int {
 // only while the aggregate evidence budget remains, and then enforces both the
 // entry and serialized-event budgets by evicting the oldest retained entries.
 func appendReplayReportEvent(report *ReplayReport, event ReplayActionEvent) ReplayActionEvent {
+	if report != nil && report.RuntimeEvidenceUnavailable {
+		omitUnredactableReplayActionEvent(&event)
+	}
 	if report == nil {
 		return BoundReplayActionEventForRetention(event, false)
 	}
@@ -260,7 +263,7 @@ func truncateReplayScalar(value string, maxBytes int) string {
 }
 
 func recordReplayReportDiagnosis(report *ReplayReport, event ReplayActionEvent) {
-	if report == nil || event.Success {
+	if report == nil || report.RuntimeEvidenceUnavailable || event.Success {
 		return
 	}
 	if report.DiagnosisSummary == nil {

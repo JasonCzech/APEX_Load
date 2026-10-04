@@ -1,0 +1,9 @@
+.salesforce-correlation-review { min-width: 0; }
+.salesforce-correlation-review p { overflow-wrap: anywhere; }
+.salesforce-correlation-table-wrap { overflow-x: auto; }
+.salesforce-correlation-table-wrap table { width: 100%; border-collapse: collapse; }
+.salesforce-correlation-table-wrap th, .salesforce-correlation-table-wrap td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+.salesforce-correlation-row { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.salesforce-correlation-reference { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 8px 0; min-width: 0; }
+.salesforce-correlation-reference span, .salesforce-correlation-reference code { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.salesforce-correlation-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }

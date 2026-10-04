@@ -100,10 +100,11 @@ type exchange struct {
 }
 
 type response struct {
-	Status     int
-	Headers    map[string]string
-	HeaderList dsl.HeaderList
-	Body       string
+	ContentCapture requestimport.ResponseContentCapture
+	Status         int
+	Headers        map[string]string
+	HeaderList     dsl.HeaderList
+	Body           string
 }
 
 // Sensitive header detection is shared with the paramize package so every

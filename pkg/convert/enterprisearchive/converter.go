@@ -180,6 +180,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		return nil, fmt.Errorf("no source functions found in action files")
 	}
 
+	concurrentPlan := planSourceConcurrentGroups(allFunctions, actions)
 	projectionFunctions := disclosureSafeSourceProjectionFunctions(allFunctions)
 	protocolName, soapConfig, protocolWarning := detectImportProtocol(projectionFunctions)
 	result.Script.Protocol = protocolName
@@ -248,7 +249,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		}
 	}
 
-	for _, fn := range allFunctions {
+	for functionIndex, fn := range allFunctions {
 		if sourceFunctionHasUnsupportedTransactionDependency(fn) &&
 			!nativeSourceTransactionReviewUnsupported(fn.Name) {
 			notes := "Execution depends on an unsupported native transaction return value; preserved as a disclosure-safe review action and not executed."
@@ -620,17 +621,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			recordSourceFunctionSupport(result, SourceFunctionSupportNativeNoop)
 
 		case "web_concurrent_start", "web_concurrent_end":
-			// APEX Load has no concurrent-request primitive; requests inside a
-			// web_concurrent_start/web_concurrent_end block are emitted and replayed
-			// sequentially. Preserve the markers and warn so the serialization is
-			// explicit rather than silently lost.
-			preserveSourceRuntimeControl(result.Script, "source_concurrent_groups", fn, map[string]any{"marker": fn.Name})
-			if fn.Name == "web_concurrent_start" {
-				result.Warnings = append(result.Warnings, fmt.Sprintf("line %d: web_concurrent_start group is replayed sequentially; APEX Load has no concurrent-request primitive, so the parallel timing of the grouped requests is not preserved", fn.LineNumber))
-			}
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.source_concurrent_groups", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "review", "converted", "Concurrent-request block marker preserved; the inner requests are replayed sequentially.", SourceFunctionSupportNativeNoop))
-			result.Stats.ContributorFunctions++
-			recordSourceFunctionSupport(result, SourceFunctionSupportNativeNoop)
+			appendSourceConcurrentMarker(result, fn, functionIndex, concurrentPlan)
 
 		case "web_convert_param":
 			action := convertWebConvertParamAction(fn)
@@ -834,6 +825,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	)
 
 	appendCSourceParseFailureGates(result, actions)
+	structureSourceConcurrentGroups(result, concurrentPlan)
 	structureSourceControlFlow(result)
 	compactSourceHTTPActions(result)
 
@@ -847,6 +839,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	for _, rename := range uniquify.DeduplicateActionNames(result.Script) {
 		reconcileSourceReviewName(result, rename.OldName, rename.NewName)
 	}
+	reconcileSourceConcurrentMarkerNames(result)
 
 	if result.Script.Config.ThinkTime.Type == "" && opts.DefaultThinkTimeMs > 0 {
 		result.Script.Config.ThinkTime = dsl.ThinkTimeConfig{

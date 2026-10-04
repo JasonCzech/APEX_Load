@@ -18,6 +18,22 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+// Credential-lineage fixtures model supported, observed proxy legs. Recordings
+// without those observations intentionally retain their separate review gate.
+func assertRecordedCredentialHTTPVersion(t *testing.T, script *dsl.Script) {
+	t.Helper()
+	if script == nil || len(script.Actions) != 1 {
+		t.Fatal("credential recording must convert to one action")
+	}
+	version, err := dsl.EffectiveHTTPVersion(script.Actions[0], dsl.InheritedHTTPVersion(script))
+	if err != nil || version != "1.1" {
+		t.Fatalf("recorded HTTP version = %q, err=%v, want 1.1", version, err)
+	}
+	if len(executionReviewBlockerCodes(script.Actions[0].Metadata)) != 0 {
+		t.Fatal("supported recorded proxy legs unexpectedly require import review")
+	}
+}
+
 func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	session, err := server.recorder.StartSession("rec-1", "Checkout Recording", recorder.SessionFilters{}, nil)
@@ -27,13 +43,15 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 	session.BaseURL = "https://shop.example.com"
 	session.Requests = append(session.Requests,
 		recorder.RecordedRequest{
-			Seq:        1,
-			Method:     http.MethodGet,
-			URL:        "https://shop.example.com/api/cart",
-			Path:       "/api/cart",
-			Headers:    map[string]string{"Authorization": "Bearer preview-secret"},
-			StatusCode: http.StatusOK,
-			StepName:   "Load Cart",
+			Seq:                 1,
+			Method:              http.MethodGet,
+			URL:                 "https://shop.example.com/api/cart",
+			Path:                "/api/cart",
+			Headers:             map[string]string{"Authorization": "Bearer preview-secret"},
+			StatusCode:          http.StatusOK,
+			StepName:            "Load Cart",
+			RequestHTTPVersion:  "HTTP/1.1",
+			ResponseHTTPVersion: "HTTP/1.1",
 		},
 		recorder.RecordedRequest{
 			Seq:        2,
@@ -96,6 +114,7 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &previewEnvelope); err != nil {
 		t.Fatal(err)
 	}
+	assertRecordedCredentialHTTPVersion(t, &previewEnvelope.Script)
 	if !isCredentialPreservingImport(&previewEnvelope.Script) ||
 		importDraftAttestationToken(&previewEnvelope.Script) == "" {
 		t.Fatalf("preview lacks server-owned credential-preserving save proof: %#v", previewEnvelope.Script.Metadata)
@@ -186,15 +205,17 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	session.BaseURL = "https://shop.example.com"
 	session.Requests = append(session.Requests,
 		recorder.RecordedRequest{
-			Seq:             1,
-			Method:          http.MethodPost,
-			URL:             "https://shop.example.com/api/login",
-			Path:            "/api/login",
-			Headers:         map[string]string{"Authorization": "Bearer recorded-secret"},
-			Body:            `{"password":"hunter2"}`,
-			StatusCode:      http.StatusOK,
-			ResponseBody:    `{"csrf":"csrf-recorded"}`,
-			ResponseHeaders: map[string]string{"Set-Cookie": "sid=abc"},
+			Seq:                 1,
+			Method:              http.MethodPost,
+			URL:                 "https://shop.example.com/api/login",
+			Path:                "/api/login",
+			Headers:             map[string]string{"Authorization": "Bearer recorded-secret"},
+			Body:                `{"password":"hunter2"}`,
+			StatusCode:          http.StatusOK,
+			ResponseBody:        `{"csrf":"csrf-recorded"}`,
+			ResponseHeaders:     map[string]string{"Set-Cookie": "sid=abc"},
+			RequestHTTPVersion:  "HTTP/1.1",
+			ResponseHTTPVersion: "HTTP/1.1",
 		},
 		recorder.RecordedRequest{
 			Seq:        2,
@@ -249,6 +270,7 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	if !ok || storedScript == nil || storedScript.Script == nil {
 		t.Fatalf("stored script %q was unavailable", payload.Script.ID)
 	}
+	assertRecordedCredentialHTTPVersion(t, storedScript.Script)
 	storedJSON, err := json.Marshal(storedScript.Script)
 	if err != nil {
 		t.Fatal(err)

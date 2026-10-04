@@ -234,7 +234,7 @@ func TestHTTPExecuteDoesNotCacheFailedBodyRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	if first.Success || !strings.Contains(first.ErrorMessage, "response body exceeded") {
+	if first.Success || !strings.Contains(first.ErrorMessage, "exceeded") || first.ResponseBody != "" || first.Snapshot == nil || first.Snapshot.ResponseBodyState != "not_captured" || first.ProtocolEvidence["response_content_state"] != "unavailable" {
 		t.Fatalf("first result = %+v, want bounded read failure", first)
 	}
 

@@ -3802,7 +3802,7 @@ describe("RecordingStudio", () => {
     expect(apiMock.getBrowserRecording).toHaveBeenCalledWith("brec-1");
   });
 
-  it("offers a device preset selector and threads it into start", async () => {
+  it("labels device presets as workstation emulation and threads the selected preset into start", async () => {
     await act(async () => {
       root.render(
         <RecordingStudio
@@ -3813,10 +3813,12 @@ describe("RecordingStudio", () => {
     await flushPromises();
 
     const deviceSelect = container.querySelector(
-      'select[aria-label="Device preset"]',
+      'select[aria-label="Emulated device preset"]',
     ) as HTMLSelectElement;
     expect(deviceSelect).not.toBeNull();
     expect(deviceSelect.textContent).toContain("iphone 15 pro");
+    expect(container.textContent).toContain("recording workstation");
+    expect(container.textContent).toContain("They do not qualify Chrome on a physical iPad.");
 
     const urlInput = container.querySelector(
       'input[aria-label="Start URL address"]',

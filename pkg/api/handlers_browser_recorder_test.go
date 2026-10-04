@@ -1099,6 +1099,8 @@ func TestHandleConvertBrowserRecordingPreservesHARCredentialInDurableScript(t *t
 func TestHandleConvertBrowserRecordingReplaysCompletedReceiptAfterRestart(t *testing.T) {
 	t.Setenv(recordingBaselineKeyEnvVar, "browser-restart-baseline-key")
 	artifact := recordedBrowserArtifact()
+	artifact.DeviceProfile = "ipad_air"
+	artifact.RecordingEnvironment = recordingEnvironmentFixture()
 	const credential = "restart-safe-browser-token"
 	artifact.HAR = []byte(`{"log":{"version":"1.2","entries":[{"startedDateTime":"2026-05-12T20:00:00Z","time":12,"request":{"method":"GET","url":"https://shop.example/api/cart","httpVersion":"HTTP/1.1","headers":[{"name":"Authorization","value":"Bearer ` + credential + `"}],"queryString":[],"cookies":[],"headersSize":-1,"bodySize":0},"response":{"status":200,"statusText":"OK","httpVersion":"HTTP/1.1","headers":[{"name":"Set-Cookie","value":"session=response-secret"}],"cookies":[],"content":{"size":17,"mimeType":"application/json","text":"{\"token\":\"reply\"}"},"redirectURL":"","headersSize":-1,"bodySize":17},"cache":{},"timings":{"send":1,"wait":10,"receive":1}}]}}`)
 	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-restart.db"))
@@ -1135,6 +1137,7 @@ func TestHandleConvertBrowserRecordingReplaysCompletedReceiptAfterRestart(t *tes
 	firstIDs := map[string]struct{}{}
 	for _, stored := range firstStored {
 		firstIDs[stored.ID] = struct{}{}
+		assertRecordingEnvironment(t, stored.Script, recbrowser.RecordingObservationLocal)
 		if stored.Script.FolderID == nil || *stored.Script.FolderID != "browser-restart-folder" {
 			t.Fatalf("first save folder = %#v, want browser-restart-folder", stored.Script.FolderID)
 		}
@@ -1174,6 +1177,7 @@ func TestHandleConvertBrowserRecordingReplaysCompletedReceiptAfterRestart(t *tes
 	}
 	var httpStored *StoredScript
 	for _, stored := range retriedStored {
+		assertRecordingEnvironment(t, stored.Script, recbrowser.RecordingObservationLocal)
 		if _, ok := firstIDs[stored.ID]; !ok {
 			t.Fatalf("restart retry created a different script %q", stored.ID)
 		}
@@ -2889,13 +2893,13 @@ func TestRecordingStudioUsesSalesforceNativeHTTPDraft(t *testing.T) {
 		if !strings.Contains(action.Body, "{{var.") || strings.Contains(action.Body, "tok%2B%2F%3D%3D") {
 			t.Fatalf("Aura token not correlated: %s", action.Body)
 		}
-		hasErrorCheck := false
+		hasAuraCheck := false
 		for _, assertion := range action.Assertions {
-			if assertion.Type == "body_not_contains" && strings.Contains(assertion.Value, "ERROR") {
-				hasErrorCheck = true
+			if assertion.Type == "aura_actions_success" {
+				hasAuraCheck = true
 			}
 		}
-		if !hasErrorCheck {
+		if !hasAuraCheck {
 			t.Fatal("native Aura response assertion missing")
 		}
 	}

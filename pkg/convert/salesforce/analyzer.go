@@ -14,9 +14,14 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
+	"github.com/jasonczech/apexload/pkg/protocol/aura"
 )
 
 type AnalyzeOptions struct {
@@ -41,6 +46,8 @@ type Review struct {
 	Parameterizations     []ParameterizationCandidate `json:"parameterizations,omitempty"`
 	CorrelationConfidence string                      `json:"correlation_confidence,omitempty"`
 	HARMatchCoverage      MatchCoverage               `json:"har_match_coverage"`
+	AuraOutcomes          *AuraOutcomeReview          `json:"aura_outcomes,omitempty"`
+	Warnings              []string                    `json:"warnings,omitempty"`
 	Blockers              []string                    `json:"blockers,omitempty"`
 	NextActions           []string                    `json:"next_actions,omitempty"`
 	NativePreview         *NativePreview              `json:"native_preview,omitempty"`
@@ -76,21 +83,27 @@ type MatchCoverage struct {
 }
 
 type NativePreview struct {
-	Script       *dsl.Script            `json:"script,omitempty"`
-	Correlations []CorrelationCandidate `json:"correlations,omitempty"`
+	Script              *dsl.Script                `json:"script,omitempty"`
+	Correlations        []CorrelationCandidate     `json:"correlations,omitempty"`
+	NativePathDomain    string                     `json:"native_path_domain,omitempty"`
+	CorrelationCoverage *NativeCorrelationCoverage `json:"correlation_coverage,omitempty"`
+	referenceCatalog    *nativeReferenceCatalog
 }
 
 type CorrelationCandidate struct {
-	Name         string   `json:"name"`
-	Source       string   `json:"source"`
-	Expression   string   `json:"expression"`
-	FoundInSeq   int      `json:"found_in_seq"`
-	UsedInSeqs   []int    `json:"used_in_seqs,omitempty"`
-	RuleID       string   `json:"rule_id,omitempty"`
-	Confidence   float64  `json:"confidence,omitempty"`
-	Reasons      []string `json:"reasons,omitempty"`
-	PreApplied   bool     `json:"pre_applied,omitempty"`
-	ReviewAction string   `json:"review_action,omitempty"`
+	Name                      string                   `json:"name"`
+	Source                    string                   `json:"source"`
+	Expression                string                   `json:"expression"`
+	FoundInSeq                int                      `json:"found_in_seq"`
+	UsedInSeqs                []int                    `json:"used_in_seqs,omitempty"`
+	RuleID                    string                   `json:"rule_id,omitempty"`
+	Confidence                float64                  `json:"confidence,omitempty"`
+	Reasons                   []string                 `json:"reasons,omitempty"`
+	PreApplied                bool                     `json:"pre_applied,omitempty"`
+	ReviewAction              string                   `json:"review_action,omitempty"`
+	ProducerReference         *NativeRequestReference  `json:"producer_reference,omitempty"`
+	ConsumerReferences        []NativeRequestReference `json:"consumer_references,omitempty"`
+	ConsumerReferencesOmitted int                      `json:"consumer_references_omitted,omitempty"`
 }
 
 // ParameterizationCandidate is a record/object identifier discovered inside an
@@ -99,15 +112,18 @@ type CorrelationCandidate struct {
 // These are surfaced for review and are not auto-applied; the value comes from a
 // user-supplied dataset via the parameterization-review flow.
 type ParameterizationCandidate struct {
-	Name        string `json:"name"`
-	Source      string `json:"source"`
-	Expression  string `json:"expression"`
-	ActionSeq   int    `json:"action_seq,omitempty"`
-	ParamKey    string `json:"param_key"`
-	SampleValue string `json:"sample_value,omitempty"`
-	Kind        string `json:"kind"`
-	Column      string `json:"column"`
-	Template    string `json:"template"`
+	Name             string   `json:"name"`
+	Source           string   `json:"source"`
+	Expression       string   `json:"expression"`
+	ActionSeq        int      `json:"action_seq,omitempty"`
+	ActionPath       string   `json:"action_path,omitempty"`
+	DecodedFieldPath string   `json:"decoded_field_path,omitempty"`
+	EncodingLayers   []string `json:"encoding_layers,omitempty"`
+	ParamKey         string   `json:"param_key"`
+	SampleValue      string   `json:"sample_value,omitempty"`
+	Kind             string   `json:"kind"`
+	Column           string   `json:"column"`
+	Template         string   `json:"template"`
 }
 
 type actionRef struct {
@@ -123,6 +139,7 @@ type actionRef struct {
 	Object      string
 	Transaction string
 	HARID       int
+	ActionPath  string
 }
 
 type harEntry struct {
@@ -151,7 +168,10 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
-	refs := flattenRequestActions(script)
+	refs, err := flattenRequestActionsChecked(script, false)
+	if err != nil {
+		return nil, fmt.Errorf("inspect Salesforce request actions: %w", err)
+	}
 	entries, err := parseHAR(opts.HARData)
 	if err != nil {
 		return nil, err
@@ -187,6 +207,21 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 			"Replay the native preview against a controlled Salesforce sandbox and attach evidence.",
 		},
 	}
+	review.AuraOutcomes = inspectAuraOutcomes(refs, entries)
+	if outcomes := review.AuraOutcomes; outcomes != nil {
+		if !outcomes.DetailsComplete {
+			review.Warnings = append(review.Warnings, "Aura review detail retention was bounded; full inspected aggregate counts remain available with explicit omitted detail counts.")
+		}
+		if !outcomes.Complete {
+			review.Warnings = append(review.Warnings, "Aura baseline analysis is incomplete; review missing responses, malformed or unmatched actions, and analysis limits before controlled replay.")
+		}
+		if outcomes.StateCounts[aura.Error]+outcomes.StateCounts[aura.Incomplete]+outcomes.StateCounts[aura.Aborted] > 0 {
+			review.Warnings = append(review.Warnings, "Captured Aura responses contain unsuccessful action states; review baseline failures before controlled replay.")
+		}
+		if opts.BuildNative && outcomes.InvalidRequests > 0 {
+			review.Blockers = append(review.Blockers, "Imported Aura requests could not be validated; native replay is gated until those request envelopes are repaired.")
+		}
+	}
 	if opts.BuildNative && len(entries) == 0 {
 		review.Blockers = append(review.Blockers, "Salesforce native preview requires a HAR captured from the same recording for high-confidence correlation.")
 	}
@@ -211,19 +246,26 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 		review.Blockers = append(review.Blockers, "Salesforce correlation analysis was incomplete: "+warning)
 	}
 	review.CorrelationConfidence = correlationConfidence(correlations, len(entries))
-	review.Parameterizations = auraMessageParameterizations(refs, correlations)
+	var parameterWarnings []string
+	review.Parameterizations, parameterWarnings = auraMessageParameterizationsChecked(refs, correlations)
+	review.Warnings = append(review.Warnings, parameterWarnings...)
 	if opts.BuildNative {
 		preview, err := buildNativePreview(script, refs, entries, matches, correlations)
 		if err != nil {
 			return nil, err
 		}
 		review.NativePreview = preview
+		if preview.CorrelationCoverage != nil && len(correlationWarnings) > 0 {
+			preview.referenceCatalog.base.Complete = false
+			preview.CorrelationCoverage.Complete = false
+		}
 	}
 	return review, nil
 }
 
 func flattenRequestActions(script *dsl.Script) []actionRef {
-	return flattenRequestActionsWithSequencePersistence(script, false)
+	refs, _ := flattenRequestActionsChecked(script, false)
+	return refs
 }
 
 // flattenRequestActionsForRewrite is the mutable counterpart used by the native
@@ -231,13 +273,21 @@ func flattenRequestActions(script *dsl.Script) []actionRef {
 // them into detached dsl.Action values is not enough: mutations made through the
 // returned refs must point at a slice stored back on the parent action.
 func flattenRequestActionsForRewrite(script *dsl.Script) []actionRef {
-	return flattenRequestActionsWithSequencePersistence(script, true)
+	refs, _ := flattenRequestActionsChecked(script, true)
+	return refs
 }
 
-func flattenRequestActionsWithSequencePersistence(script *dsl.Script, persistSequenceChildren bool) []actionRef {
+func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bool) ([]actionRef, error) {
+	if script == nil {
+		return nil, nil
+	}
+	rootCount := len(script.Init) + len(script.Actions) + len(script.Teardown)
+	if rootCount > dsl.MaxScriptActionDefinitions {
+		return nil, fmt.Errorf("script action definitions exceed %d", dsl.MaxScriptActionDefinitions)
+	}
 	refs := make([]actionRef, 0, len(script.Init)+len(script.Actions)+len(script.Teardown))
 	seq := 1
-	appendRef := func(phase string, index int, action *dsl.Action, inheritedTransaction string) {
+	appendRef := func(phase string, index int, action *dsl.Action, inheritedTransaction, actionPath string) {
 		method := strings.ToUpper(strings.TrimSpace(action.Method))
 		if method == "" {
 			method = strings.ToUpper(strings.TrimSpace(action.Type))
@@ -250,6 +300,7 @@ func flattenRequestActionsWithSequencePersistence(script *dsl.Script, persistSeq
 		descriptor := extractAuraDescriptor(evidence)
 		refs = append(refs, actionRef{
 			Phase:       phase,
+			ActionPath:  actionPath,
 			Index:       index,
 			Sequence:    seq,
 			Action:      action,
@@ -263,38 +314,72 @@ func flattenRequestActionsWithSequencePersistence(script *dsl.Script, persistSeq
 		})
 		seq++
 	}
-	appendRefs := func(phase string, actions []dsl.Action) {
+	definitions := 0
+	var appendRefs func(string, []dsl.Action, string, int, string) error
+	appendRefs = func(phase string, actions []dsl.Action, prefix string, depth int, inheritedTransaction string) error {
+		if depth > dsl.MaxScriptActionDepth {
+			return fmt.Errorf("action nesting exceeds %d levels", dsl.MaxScriptActionDepth)
+		}
 		for index := range actions {
+			definitions++
+			if definitions > dsl.MaxScriptActionDefinitions {
+				return fmt.Errorf("script action definitions exceed %d", dsl.MaxScriptActionDefinitions)
+			}
 			action := &actions[index]
+			actionPath := fmt.Sprintf("%s[%d]", prefix, index)
+			transaction := convertutil.FirstNonEmpty(metadataString(action.Metadata, "source_transaction"), inheritedTransaction)
 			if strings.EqualFold(action.Type, "http_sequence") {
-				transaction := convertutil.FirstNonEmpty(metadataString(action.Metadata, "source_transaction"), metadataString(action.Metadata, "source_transaction"))
+				definitions += salesforceSequenceRequestCount(*action)
+				if definitions > dsl.MaxScriptActionDefinitions {
+					return fmt.Errorf("script action/request definitions exceed %d", dsl.MaxScriptActionDefinitions)
+				}
 				children := salesforceSequenceChildren(*action)
+				exactChildIndexes := len(children) == salesforceSequenceRequestCount(*action)
 				if persistSequenceChildren && len(children) > 0 {
-					// Store the typed slice on the parent before taking child pointers.
-					// The interface keeps the same backing array, so every extractor,
-					// assertion, metadata, and correlation rewrite below survives in
-					// the returned native script.
+					// Preserve mutable child pointers inside the returned native script.
 					action.Params["requests"] = children
 				}
 				for childIndex := range children {
 					child := &children[childIndex]
-					if child.Metadata == nil {
-						child.Metadata = map[string]any{}
+					if persistSequenceChildren {
+						if child.Metadata == nil {
+							child.Metadata = map[string]any{}
+						}
+						if child.Metadata["source_transaction"] == nil && transaction != "" {
+							child.Metadata["source_transaction"] = transaction
+						}
 					}
-					if child.Metadata["source_transaction"] == nil && transaction != "" {
-						child.Metadata["source_transaction"] = transaction
+					childPath := ""
+					if persistSequenceChildren || exactChildIndexes {
+						childPath = fmt.Sprintf("%s.params.requests[%d]", actionPath, childIndex)
 					}
-					appendRef(phase, index, child, transaction)
+					appendRef(phase, index, child, transaction, childPath)
 				}
-				continue
+			} else {
+				appendRef(phase, index, action, transaction, actionPath)
 			}
-			appendRef(phase, index, action, "")
+			if action.Control != nil {
+				if len(action.Control.Cases)+len(action.Control.Branches) > dsl.MaxScriptActionDefinitions {
+					return fmt.Errorf("control branch definitions exceed %d", dsl.MaxScriptActionDefinitions)
+				}
+				for _, branch := range action.Control.ActionBranches() {
+					if err := appendRefs(phase, branch.Actions, actionPath+".control."+branch.Path, depth+1, transaction); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
+	}
+	for _, phase := range []struct {
+		name, path string
+		actions    []dsl.Action
+	}{{"init", "init", script.Init}, {"action", "actions", script.Actions}, {"teardown", "teardown", script.Teardown}} {
+		if err := appendRefs(phase.name, phase.actions, phase.path, 1, ""); err != nil {
+			return nil, err
 		}
 	}
-	appendRefs("init", script.Init)
-	appendRefs("action", script.Actions)
-	appendRefs("teardown", script.Teardown)
-	return refs
+	return refs, nil
 }
 
 func isEngineAction(actionType string) bool {
@@ -303,6 +388,24 @@ func isEngineAction(actionType string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// Generic source navigation must not guess indexes after malformed request
+// entries have been filtered out by the sequence adapter.
+func salesforceSequenceRequestCount(action dsl.Action) int {
+	if action.Params == nil {
+		return 0
+	}
+	switch requests := action.Params["requests"].(type) {
+	case []any:
+		return len(requests)
+	case []map[string]any:
+		return len(requests)
+	case []dsl.Action:
+		return len(requests)
+	default:
+		return 0
 	}
 }
 
@@ -585,7 +688,7 @@ func classifySalesforceAction(action *dsl.Action, rawURL string) string {
 		return "generic"
 	}
 	host := strings.ToLower(parsed.Hostname())
-	path := strings.ToLower(parsed.EscapedPath())
+	path := strings.ToLower(parsed.Path)
 	body := strings.ToLower(action.Body)
 	switch {
 	// Concrete API surfaces are matched before the login heuristic so that data
@@ -594,8 +697,6 @@ func classifySalesforceAction(action *dsl.Action, rawURL string) string {
 	// class) are not misclassified as auth traffic.
 	case strings.Contains(path, "/einstein/ai-agent"):
 		return "agentforce"
-	case strings.Contains(path, "/aura") || strings.Contains(body, "aura.context") || strings.Contains(body, "aura.token") || strings.Contains(body, "\"descriptor\""):
-		return "aura"
 	case strings.Contains(path, "/services/apexrest/"):
 		return "apex_rest"
 	case strings.Contains(path, "/services/data/") && strings.Contains(path, "/ui-api/"):
@@ -608,6 +709,8 @@ func classifySalesforceAction(action *dsl.Action, rawURL string) string {
 		return "bulk_data"
 	case strings.Contains(path, "/services/data/"):
 		return "rest_api"
+	case isAuraEndpointPath(path) || hasAuraActionEnvelopeEvidence(action):
+		return "aura"
 	case strings.Contains(path, "/cometd") || strings.Contains(body, "/meta/handshake") || strings.Contains(body, "/meta/connect") || strings.Contains(body, "/meta/subscribe"):
 		return "cometd"
 	case isSalesforceLoginRequest(host, path):
@@ -617,6 +720,42 @@ func classifySalesforceAction(action *dsl.Action, rawURL string) string {
 	default:
 		return "generic"
 	}
+}
+
+func isAuraEndpointPath(path string) bool {
+	for _, segment := range strings.Split(path, "/") {
+		if strings.EqualFold(segment, "aura") {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAuraActionEnvelopeEvidence(action *dsl.Action) bool {
+	body, code := auraActionRequestBody(action)
+	return code == "" && hasAuraEnvelopeEvidence(body)
+}
+
+func hasAuraEnvelopeEvidence(body string) bool {
+	if len(body) > aura.MaxEnvelopeBytes {
+		return false
+	}
+	// A valid raw or message-form envelope establishes structure without
+	// relying on incidental business payload keys such as descriptor.
+	if validateAuraRequest(body).Success {
+		return true
+	}
+	if strings.HasPrefix(strings.TrimSpace(body), "{") {
+		return false
+	}
+	if strings.Count(body, "&")+1 > aura.MaxFormFields {
+		return false
+	}
+	values, _ := url.ParseQuery(body)
+	_, message := values["message"]
+	_, context := values["aura.context"]
+	_, token := values["aura.token"]
+	return message && (context || token)
 }
 
 // isSalesforceLoginRequest matches genuine Salesforce authentication traffic by
@@ -969,7 +1108,10 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 	clone.GeneratedFrom = "enterprise_script_archive+har"
 	ensureMetadata(clone)["salesforce_native_preview"] = true
 
-	cloneRefs := flattenRequestActionsForRewrite(clone)
+	cloneRefs, err := flattenRequestActionsChecked(clone, true)
+	if err != nil {
+		return nil, fmt.Errorf("inspect native Salesforce request actions: %w", err)
+	}
 	harIDToRef := make(map[int]*actionRef)
 	for refIndex, harID := range matches {
 		if refIndex >= len(cloneRefs) {
@@ -992,9 +1134,21 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 			"sequence":        ref.Sequence,
 			"har_match_id":    ref.HARID,
 		}
-		if ref.Kind == "aura" {
-			addAssertionIfMissing(ref.Action, dsl.Assertion{Type: "body_not_contains", Value: `"state":"ERROR"`})
-			addAssertionIfMissing(ref.Action, dsl.Assertion{Type: "body_not_contains", Value: `"state":"INCOMPLETE"`})
+		if isAuraBatch(*ref) {
+			if validateAuraActionRequest(ref.Action).Success {
+				// Replace the legacy generated substring guards with validation of
+				// the actual outgoing request IDs and every response action.
+				removeLegacyAuraAssertions(ref.Action)
+				addAssertionIfMissing(ref.Action, dsl.Assertion{Type: "aura_actions_success"})
+			} else {
+				const code = "salesforce_aura_request_requires_review"
+				importreview.ApplyToAction(ref.Action, []importreview.Finding{{
+					Code: code, ReasonCode: code, Severity: diag.Blocker,
+					Detail:     "The imported Aura request envelope is malformed, ambiguous, or exceeds validation limits; repair it before native replay.",
+					ActionPath: ref.ActionPath, Gate: importreview.GateExecution,
+					Resolution: "replace_behavior_and_remove_gate",
+				}})
+			}
 		}
 	}
 
@@ -1162,13 +1316,15 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 		action.HeaderList = applyCorrelationVarsToHeaderList(action.HeaderList, actionVars)
 	}
 
+	originalCorrelationRefs := make(map[int]*actionRef, len(harIDToRef))
+	for id, ref := range harIDToRef {
+		copied := *ref
+		originalCorrelationRefs[id] = &copied
+	}
 	synthesizeBulkPollLoops(cloneRefs)
 	collapseCometdConnectLoops(clone)
 
-	return &NativePreview{
-		Script:       clone,
-		Correlations: correlationSummaries(namedCorrelations, harIDToRef, applications),
-	}, nil
+	return newNativeReferencePreview(clone, correlations, namedCorrelations, originalCorrelationRefs, applications), nil
 }
 
 // collapseCometdConnectLoops folds a contiguous run of CometD Bayeux
@@ -1185,24 +1341,50 @@ func collapseCometdConnectLoops(script *dsl.Script) {
 }
 
 func collapseCometdConnectRun(actions []dsl.Action) []dsl.Action {
-	out := make([]dsl.Action, 0, len(actions))
-	for i := 0; i < len(actions); {
-		if isCometdConnectAction(&actions[i]) {
-			j := i + 1
-			for j < len(actions) && isCometdConnectAction(&actions[j]) {
-				j++
-			}
-			if j-i >= 2 && cometdConnectExtractorsAreEquivalent(actions[i:j]) {
-				connect := actions[i]
-				out = append(out, wrapCometdConnectLoop(connect, j-i))
-				i = j
-				continue
-			}
-		}
-		out = append(out, actions[i])
-		i++
-	}
+	out, _ := collapseCometdConnectRunInspected(actions)
 	return out
+}
+
+// Keep at most the current signature and one pending signature. Every request
+// is admitted/normalized once, including the first non-equivalent next request.
+func collapseCometdConnectRunInspected(actions []dsl.Action) ([]dsl.Action, int) {
+	out := make([]dsl.Action, 0, len(actions))
+	inspections := 0
+	pendingIndex := -1
+	var pending dsl.Action
+	pendingOK := false
+	prepare := func(index int) (dsl.Action, bool) {
+		if index == pendingIndex {
+			pendingIndex = -1
+			return pending, pendingOK
+		}
+		inspections++
+		return cometdConnectComparisonAction(actions[index])
+	}
+	for i := 0; i < len(actions); {
+		first, ok := prepare(i)
+		if !ok {
+			out = append(out, actions[i])
+			i++
+			continue
+		}
+		j := i + 1
+		for j < len(actions) {
+			candidate, admitted := prepare(j)
+			if !admitted || !cometdConnectComparisonsEqual(first, candidate) {
+				pendingIndex, pending, pendingOK = j, candidate, admitted
+				break
+			}
+			j++
+		}
+		if j-i >= 2 && cometdConnectExtractorsAreEquivalent(actions[i:j]) {
+			out = append(out, wrapCometdConnectLoop(actions[i], j-i))
+		} else {
+			out = append(out, actions[i:j]...)
+		}
+		i = j
+	}
+	return out, inspections
 }
 
 // cometdConnectExtractorsAreEquivalent keeps correlation timing intact when a
@@ -1234,13 +1416,17 @@ func isCometdConnectAction(action *dsl.Action) bool {
 	if action == nil || actionClassification(action) != "cometd" {
 		return false
 	}
-	body := strings.ToLower(action.Body)
-	// Only a request whose Bayeux payload is purely /meta/connect is foldable: a
-	// batched message that also carries /meta/subscribe or /meta/handshake must
-	// stay a discrete step (folding it would repeat the subscribe/handshake).
-	return strings.Contains(body, "/meta/connect") &&
-		!strings.Contains(body, "/meta/subscribe") &&
-		!strings.Contains(body, "/meta/handshake")
+	// Only a bounded, unambiguous single connect
+	// can become a repeated action. Channel text elsewhere is not evidence.
+	if strings.TrimSpace(action.BodyEncoding) != "" {
+		return false
+	}
+	message, ok := cometdConnectMessageBody(action.Body)
+	if !ok {
+		return false
+	}
+	_, _, ok = singleBayeuxConnectMessage(message)
+	return ok
 }
 
 func actionClassification(action *dsl.Action) string {
@@ -1291,6 +1477,9 @@ func wrapCometdConnectLoop(connect dsl.Action, count int) dsl.Action {
 }
 
 func rewriteCometdConnectLoopID(body string) string {
+	if len(body) > maxCometdConnectBodyBytes {
+		return body
+	}
 	trimmed := strings.TrimSpace(body)
 	if trimmed == "" {
 		return body
@@ -1308,40 +1497,16 @@ func rewriteCometdConnectLoopID(body string) string {
 }
 
 func rewriteFormEncodedCometdMessage(body string) (string, bool) {
-	parts := strings.Split(body, "&")
-	messageIndex := -1
-	messageKey := ""
-	messageValue := ""
-	for index, part := range parts {
-		key, value, ok := strings.Cut(part, "=")
-		if !ok {
-			continue
-		}
-		decodedKey, err := url.QueryUnescape(key)
-		if err != nil || decodedKey != "message" {
-			continue
-		}
-		if messageIndex >= 0 {
-			return "", false
-		}
-		decodedValue, err := url.QueryUnescape(value)
-		if err != nil {
-			return "", false
-		}
-		messageIndex = index
-		messageKey = key
-		messageValue = decodedValue
-	}
-	if messageIndex < 0 {
+	message, ok := cometdConnectMessageBody(body)
+	if !ok {
 		return "", false
 	}
-	rewrittenMessage, ok := rewriteBayeuxConnectMessageID(messageValue)
+	rewrittenMessage, ok := rewriteBayeuxConnectMessageID(message)
 	if !ok {
 		return "", false
 	}
 	encodedMessage := preserveTemplateBraces(url.QueryEscape(rewrittenMessage))
-	parts[messageIndex] = messageKey + "=" + encodedMessage
-	return strings.Join(parts, "&"), true
+	return replaceCometdFormMessage(body, encodedMessage)
 }
 
 func preserveTemplateBraces(value string) string {
@@ -1353,26 +1518,15 @@ func preserveTemplateBraces(value string) string {
 }
 
 func rewriteBayeuxConnectMessageID(raw string) (string, bool) {
-	var messages []map[string]any
-	if err := json.Unmarshal([]byte(raw), &messages); err == nil {
-		if len(messages) != 1 || !rewriteSingleBayeuxConnectID(messages[0]) {
-			return "", false
-		}
-		rewritten, err := json.Marshal(messages)
-		if err != nil {
-			return "", false
-		}
-		return string(rewritten), true
-	}
-
-	var message map[string]any
-	if err := json.Unmarshal([]byte(raw), &message); err != nil {
+	message, array, ok := singleBayeuxConnectMessage(raw)
+	if !ok || !rewriteSingleBayeuxConnectID(message) {
 		return "", false
 	}
-	if !rewriteSingleBayeuxConnectID(message) {
-		return "", false
+	var value any = message
+	if array {
+		value = []map[string]any{message}
 	}
-	rewritten, err := json.Marshal(message)
+	rewritten, err := json.Marshal(value)
 	if err != nil {
 		return "", false
 	}
@@ -2802,138 +2956,150 @@ func dynamicJSONKey(key string) bool {
 	return containsAny(lower, "token", "access_token", "id_token", "refresh_token", "session", "sessionid", "sid", "csrf", "xsrf", "auth", "nonce", "state", "recordid", "record_id", "interactionid", "interaction_id", "workorderid", "work_order_id", "accountid", "account_id", "contactid", "contact_id", "orderid", "order_id", "cartid", "cart_id", "id")
 }
 
-// auraMessageParameterizations cracks open the Aura `message` envelope of each
-// /aura request and proposes data-source parameterization for record/object
-// identifiers carried in action params. Values that are already correlated
-// (produced by an earlier response) are skipped — those are handled
-// deterministically by the correlation pass instead.
+const (
+	maxAuraParamInspectionBytes = 64 << 20
+	maxAuraParamCandidateBytes  = 128 << 10
+	maxAuraParamCandidates      = 2048
+)
+
+// auraMessageParameterizations is retained for callers interested only in the
+// candidates. Analyze uses the checked form so incomplete coverage is visible.
 func auraMessageParameterizations(refs []actionRef, correlations []correlate.Correlation) []ParameterizationCandidate {
+	candidates, _ := auraMessageParameterizationsChecked(refs, correlations)
+	return candidates
+}
+
+func auraMessageParameterizationsChecked(refs []actionRef, correlations []correlate.Correlation) ([]ParameterizationCandidate, []string) {
 	correlated := make(map[string]bool, len(correlations))
 	for _, corr := range correlations {
 		if corr.Value != "" {
 			correlated[corr.Value] = true
 		}
 	}
-	seenValues := map[string]bool{}
 	usedNames := map[string]bool{}
 	out := make([]ParameterizationCandidate, 0)
+	warnings := make([]string, 0)
+	work, retainedBytes, omitted, uninspected, rejected, unsupported, unsafePaths := 0, 0, 0, 0, 0, 0, 0
+	detailsFull := false
 	for _, ref := range refs {
-		if ref.Action == nil {
+		if ref.Action == nil || ref.Action.Body == "" || ref.Kind != "aura" && ref.Kind != "" {
 			continue
 		}
-		message := auraMessageBody(ref.Action.Body)
-		if message == "" {
+		remaining := maxAuraParamInspectionBytes - work
+		if len(ref.Action.Body) > remaining {
+			uninspected++
 			continue
 		}
-		var decoded any
-		if err := json.Unmarshal([]byte(message), &decoded); err != nil {
+		inspection, err := aurapayload.InspectWithWorkLimit(ref.Action.Body, ref.Action.BodyEncoding, remaining)
+		if err != nil {
+			if bounded, ok := err.(*aurapayload.Error); ok {
+				work += bounded.WorkBytes
+				if bounded.Code == aurapayload.WorkLimit && remaining < aurapayload.MaxWorkBytes {
+					uninspected++
+					continue
+				}
+			}
+			rejected++
 			continue
 		}
-		actions, ok := auraMessageActions(decoded)
-		if !ok {
-			continue
-		}
-		for actionIndex, actionValue := range actions {
-			params, ok := auraActionParams(actionValue)
-			if !ok {
+		work += inspection.WorkBytes
+		for _, leaf := range inspection.Leaves {
+			if !auraBusinessParamRoute(leaf.Route) {
 				continue
 			}
-			base := fmt.Sprintf("actions[%d].params", actionIndex)
-			walkAuraParams(params, base, "", func(key, value, expression string) {
-				kind, ok := auraParamIdentifierKind(key, value)
-				if !ok || correlated[value] || seenValues[value] {
-					return
+			if leaf.ValueType != "string" {
+				if paramize.LooksAuraParameterName(leaf.Key) {
+					unsupported++
 				}
-				seenValues[value] = true
-				column := correlate.Slug(key)
-				if column == "" {
-					column = "record_id"
-				}
-				name := "param_" + column
-				for i := 2; usedNames[name]; i++ {
-					name = fmt.Sprintf("param_%s_%d", column, i)
-				}
-				usedNames[name] = true
-				out = append(out, ParameterizationCandidate{
-					Name:        name,
-					Source:      "aura_message",
-					Expression:  expression,
-					ActionSeq:   ref.Sequence,
-					ParamKey:    key,
-					SampleValue: correlate.Truncate(value, 80),
-					Kind:        kind,
-					Column:      column,
-					Template:    "{{data.salesforce_records." + column + "}}",
-				})
-			})
+				continue
+			}
+			kind, ok := auraParamIdentifierKind(leaf.Key, leaf.Value)
+			if !ok || correlated[leaf.Value] || strings.Contains(leaf.Value, "{{") {
+				continue
+			}
+			if !paramize.SafeAuraParameterRoute(leaf.Route) {
+				unsafePaths++
+				continue
+			}
+			if detailsFull {
+				omitted++
+				continue
+			}
+			column := correlate.Slug(leaf.Key)
+			if len(column) > 64 {
+				column = column[:64]
+			}
+			if column == "" {
+				column = "record_id"
+			}
+			name := "param_" + column
+			for suffix := 2; usedNames[name]; suffix++ {
+				name = fmt.Sprintf("param_%s_%d", column, suffix)
+			}
+			column = strings.TrimPrefix(name, "param_")
+			expression := auraParamExpression(leaf.Route)
+			candidate := ParameterizationCandidate{
+				Name: name, Source: "aura_message", Expression: expression, ActionSeq: ref.Sequence, ActionPath: ref.ActionPath,
+				DecodedFieldPath: leaf.DisplayPath, EncodingLayers: append([]string(nil), leaf.EncodingLayers...),
+				ParamKey: leaf.Key, SampleValue: correlate.Truncate(leaf.Value, 80), Kind: kind, Column: column,
+				Template: "{{data.salesforce_records." + column + "}}",
+			}
+			encoded, _ := json.Marshal(candidate)
+			if len(out) >= maxAuraParamCandidates || len(encoded) > maxAuraParamCandidateBytes-retainedBytes {
+				omitted++
+				detailsFull = true
+				continue
+			}
+			usedNames[name] = true
+			retainedBytes += len(encoded)
+			out = append(out, candidate)
 		}
 	}
-	return out
+	if rejected > 0 {
+		warnings = append(warnings, fmt.Sprintf("Aura parameter inspection could not inspect %d request(s): malformed, ambiguous, unsupported body encoding or inspection limits. No candidates were produced from those requests.", rejected))
+	}
+	if uninspected > 0 {
+		warnings = append(warnings, fmt.Sprintf("Aura parameter inspection omitted %d request(s) after its %d-byte aggregate work limit; coverage is incomplete.", uninspected, maxAuraParamInspectionBytes))
+	}
+	if omitted > 0 {
+		warnings = append(warnings, fmt.Sprintf("Aura parameter review omitted %d candidate(s) after bounded detail retention; inspect those source fields manually.", omitted))
+	}
+	if unsafePaths > 0 {
+		warnings = append(warnings, fmt.Sprintf("Aura parameter inspection excluded %d field(s) whose safe structural paths could not be published; review those source fields manually.", unsafePaths))
+	}
+	if unsupported > 0 {
+		warnings = append(warnings, fmt.Sprintf("Aura parameter inspection left %d non-string business field(s) unchanged; structured substitution currently supports string values.", unsupported))
+	}
+	return out, warnings
 }
 
-// auraMessageBody returns the decoded Aura `message` payload from a request
-// body. Lightning posts /aura as application/x-www-form-urlencoded with a
-// url-encoded JSON `message` field; recorded/imported bodies may also carry the
-// raw JSON directly. Returns "" when no Aura message envelope is present.
-func auraMessageBody(body string) string {
-	trimmed := strings.TrimSpace(body)
-	if trimmed == "" {
-		return ""
+func auraBusinessParamRoute(route []aurapayload.Segment) bool {
+	if len(route) < 4 || route[0].Kind != aurapayload.KeySegment || route[0].Key != "actions" || route[1].Kind != aurapayload.IndexSegment || route[2].Kind != aurapayload.KeySegment || route[2].Key != "params" {
+		return false
 	}
-	// Raw-JSON Aura bodies start with '{'; form-encoded bodies (message=...&aura.token=...)
-	// never do. Detect raw JSON first so url.ParseQuery does not mis-split a JSON
-	// string value that happens to contain a "message=" / "&...=" substring.
-	if strings.HasPrefix(trimmed, "{") {
-		if strings.Contains(trimmed, `"actions"`) {
-			return trimmed
-		}
-		return ""
-	}
-	if values, err := url.ParseQuery(trimmed); err == nil {
-		if msg := strings.TrimSpace(values.Get("message")); msg != "" {
-			return msg
+	for _, segment := range route[3:] {
+		if segment.Kind == aurapayload.KeySegment && credential.SensitiveName(segment.Key) {
+			return false
 		}
 	}
-	if strings.Contains(trimmed, `"actions"`) {
-		return trimmed
-	}
-	return ""
+	return true
 }
 
-func auraMessageActions(decoded any) ([]any, bool) {
-	obj, ok := decoded.(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	actions, ok := obj["actions"].([]any)
-	return actions, ok
-}
-
-func auraActionParams(actionValue any) (any, bool) {
-	obj, ok := actionValue.(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	params, ok := obj["params"]
-	return params, ok
-}
-
-// walkAuraParams visits every string leaf in an Aura action params tree,
-// reporting the leaf key, value, and JMESPath expression rooted at the params
-// node.
-func walkAuraParams(value any, path, key string, visit func(key, value, expression string)) {
-	switch typed := value.(type) {
-	case map[string]any:
-		for childKey, child := range typed {
-			walkAuraParams(child, appendJMESPath(path, childKey), childKey, visit)
+// Keep the historical JMESPath display only when no decoding boundary exists.
+// Nested JSON strings use the explicit DecodedFieldPath and EncodingLayers.
+func auraParamExpression(route []aurapayload.Segment) string {
+	path := ""
+	for _, segment := range route {
+		switch segment.Kind {
+		case aurapayload.KeySegment:
+			path = appendJMESPath(path, segment.Key)
+		case aurapayload.IndexSegment:
+			path = fmt.Sprintf("%s[%d]", path, segment.Index)
+		case aurapayload.JSONStringSegment:
+			return ""
 		}
-	case []any:
-		for index, child := range typed {
-			walkAuraParams(child, fmt.Sprintf("%s[%d]", path, index), key, visit)
-		}
-	case string:
-		visit(key, typed, path)
 	}
+	return path
 }
 
 // auraParamIdentifierKind classifies an Aura param value as a Salesforce

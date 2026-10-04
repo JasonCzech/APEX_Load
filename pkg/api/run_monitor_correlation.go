@@ -82,7 +82,12 @@ func (tr *TestRunner) validateRunMonitorCorrelation(id string) error {
 		return errors.New("test not found")
 	}
 	for _, group := range test.groupSpecs {
-		if group.Script == nil || (group.Script.Protocol != "http" && group.Script.Protocol != "soap") {
+		if group.Script == nil {
+			continue
+		}
+		switch group.Script.Protocol {
+		case "http", "http/1.1", "http/2", "soap":
+		default:
 			continue
 		}
 		if err := engine.ValidateRunCorrelationHeaders(group.Script, id); err != nil {

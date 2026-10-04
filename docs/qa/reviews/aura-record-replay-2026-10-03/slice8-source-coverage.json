@@ -1,0 +1,259 @@
+{
+  "schema_version": 1,
+  "slice": 8,
+  "traffic_executed": false,
+  "evidence_scope": "Private offline supplied capture conversion; no wire decoding, live session or physical device qualification inferred.",
+  "captures": [
+    {
+      "response_content_states": {
+        "complete": 150,
+        "unavailable": 8
+      },
+      "response_content_capture_bases": {
+        "har_decoded": 158
+      },
+      "response_content_stored_bases": {
+        "decoded": 150,
+        "unavailable": 8
+      },
+      "response_content_body_kinds": {
+        "binary": 2,
+        "none": 8,
+        "text": 148
+      },
+      "response_content_gate_reasons": {
+        "invalid_har_content_storage": 8
+      },
+      "declared_complete_decoded_bytes": 18293006,
+      "capture": "WLS",
+      "har_documents": 1,
+      "entries": 158,
+      "imported": true,
+      "emitted_http_leaves": 158,
+      "leaf_policies": {
+        "inherit": 158
+      },
+      "request_capture_states": {
+        "unavailable": 158
+      },
+      "http_version_gate_reasons": {
+        "http_version_unavailable": 158
+      },
+      "all_review_gated_leaves": 158,
+      "proxy_connect_entries": 0,
+      "websocket_upgrade_entries": 0,
+      "unemitted_entries": 0,
+      "conversion_failures": 0
+    },
+    {
+      "response_content_states": {
+        "complete": 286,
+        "unavailable": 15
+      },
+      "response_content_capture_bases": {
+        "har_decoded": 301
+      },
+      "response_content_stored_bases": {
+        "decoded": 286,
+        "unavailable": 15
+      },
+      "response_content_body_kinds": {
+        "binary": 35,
+        "none": 15,
+        "text": 251
+      },
+      "response_content_gate_reasons": {
+        "invalid_har_content_storage": 15
+      },
+      "declared_complete_decoded_bytes": 36968735,
+      "capture": "CM",
+      "har_documents": 1,
+      "entries": 301,
+      "imported": true,
+      "emitted_http_leaves": 301,
+      "leaf_policies": {
+        "1.1": 7,
+        "inherit": 294
+      },
+      "request_capture_states": {
+        "available": 7,
+        "unavailable": 294
+      },
+      "http_version_gate_reasons": {
+        "http_version_unavailable": 294
+      },
+      "all_review_gated_leaves": 294,
+      "proxy_connect_entries": 0,
+      "websocket_upgrade_entries": 0,
+      "unemitted_entries": 0,
+      "conversion_failures": 0
+    },
+    {
+      "response_content_states": {
+        "complete": 287,
+        "unavailable": 60
+      },
+      "response_content_capture_bases": {
+        "har_decoded": 347
+      },
+      "response_content_stored_bases": {
+        "decoded": 287,
+        "unavailable": 60
+      },
+      "response_content_body_kinds": {
+        "binary": 30,
+        "none": 60,
+        "text": 257
+      },
+      "response_content_gate_reasons": {},
+      "declared_complete_decoded_bytes": 47203610,
+      "capture": "Desktop",
+      "har_documents": 1,
+      "entries": 347,
+      "imported": true,
+      "emitted_http_leaves": 347,
+      "leaf_policies": {
+        "1.1": 71,
+        "2": 276
+      },
+      "request_capture_states": {
+        "available": 347
+      },
+      "http_version_gate_reasons": {},
+      "all_review_gated_leaves": 274,
+      "proxy_connect_entries": 0,
+      "websocket_upgrade_entries": 0,
+      "unemitted_entries": 0,
+      "conversion_failures": 0
+    },
+    {
+      "response_content_states": {
+        "complete": 189,
+        "unavailable": 6
+      },
+      "response_content_capture_bases": {
+        "har_decoded": 195
+      },
+      "response_content_stored_bases": {
+        "decoded": 189,
+        "unavailable": 6
+      },
+      "response_content_body_kinds": {
+        "binary": 19,
+        "none": 6,
+        "text": 170
+      },
+      "response_content_gate_reasons": {},
+      "declared_complete_decoded_bytes": 26674094,
+      "capture": "Login",
+      "har_documents": 1,
+      "entries": 273,
+      "imported": true,
+      "emitted_http_leaves": 195,
+      "leaf_policies": {
+        "1.1": 195
+      },
+      "request_capture_states": {
+        "available": 195
+      },
+      "http_version_gate_reasons": {},
+      "all_review_gated_leaves": 15,
+      "proxy_connect_entries": 78,
+      "websocket_upgrade_entries": 0,
+      "unemitted_entries": 78,
+      "conversion_failures": 0
+    }
+  ],
+  "source_header_and_storage_inventory": {
+    "schema_version": 1,
+    "method": "Private offline HAR content/header/base64 classification only. Textlike is UTF8 plus existing ASCII-control heuristic; no wire decoding/proof inferred. Base64 inspection capped at14MiB encoded perbody. Counts only; KM incomplete capture excluded.",
+    "per_capture": [
+      {
+        "capture": "WLS",
+        "entries": 158,
+        "content_encoding_counts": {
+          "absent": 10,
+          "gzip": 148
+        },
+        "body_provenance_counts": {
+          "base64_binary_looking_without_wire_encoding_header": 2,
+          "base64_textlike_with_wire_encoding_header": 126,
+          "plain_content_text_with_wire_encoding_header": 22,
+          "text_absent": 8
+        },
+        "traffic_executed": false
+      },
+      {
+        "capture": "CM",
+        "entries": 301,
+        "content_encoding_counts": {
+          "absent": 53,
+          "gzip": 248
+        },
+        "body_provenance_counts": {
+          "base64_binary_looking_without_wire_encoding_header": 35,
+          "base64_textlike_with_wire_encoding_header": 215,
+          "plain_content_text_with_wire_encoding_header": 33,
+          "plain_content_text_without_wire_encoding_header": 3,
+          "text_absent": 15
+        },
+        "traffic_executed": false
+      },
+      {
+        "capture": "Desktop",
+        "entries": 347,
+        "content_encoding_counts": {
+          "absent": 115,
+          "gzip": 232
+        },
+        "body_provenance_counts": {
+          "base64_binary_looking_without_wire_encoding_header": 29,
+          "base64_textlike_with_wire_encoding_header": 1,
+          "plain_content_text_with_wire_encoding_header": 217,
+          "plain_content_text_without_wire_encoding_header": 31,
+          "text_absent": 62,
+          "text_empty": 7
+        },
+        "traffic_executed": false
+      },
+      {
+        "capture": "Login",
+        "entries": 273,
+        "content_encoding_counts": {
+          "absent": 152,
+          "br": 2,
+          "gzip": 119
+        },
+        "body_provenance_counts": {
+          "base64_binary_looking_without_wire_encoding_header": 19,
+          "base64_textlike_without_wire_encoding_header": 71,
+          "plain_content_text_with_wire_encoding_header": 121,
+          "plain_content_text_without_wire_encoding_header": 29,
+          "text_absent": 6,
+          "text_empty": 27
+        },
+        "traffic_executed": false
+      }
+    ]
+  },
+  "aggregate": {
+    "entries": 1079,
+    "http_request_leaves": 1001,
+    "connect_tunnel_entries": 78,
+    "conversion_failures": 0,
+    "complete_response_content": 912,
+    "complete_text": 826,
+    "complete_binary": 86,
+    "unavailable_response_content": 89,
+    "invalid_explicit_null_storage_review_gates": 23,
+    "ordinary_optional_response_absence": 66,
+    "declared_complete_decoded_bytes": 129139445
+  },
+  "qualification": {
+    "null_text": "The23invalid storage gates are explicit content.text:null fields; missing optional text stays unavailable without a source failure gate.",
+    "binary": "Binary source bytes are retained in immutable source storage; binary bodies are omitted from textual correlation baselines.",
+    "truncated_capture_excluded": true,
+    "stacked_and_zstandard_wire_support": "Synthetic fixtures only; supplied captures do not establish this wire behavior.",
+    "existing_other_review_gates": "Remain independent; successful conversion does not imply replay readiness."
+  }
+}

@@ -14,6 +14,12 @@ func TestSensitiveNamePreservesNormalizedVocabulary(t *testing.T) {
 	}{
 		{"password", true},
 		{"clientSecret", true},
+		{"apiToken", true},
+		{"api_token", true},
+		{"API_TOKEN", true},
+		{"tokenURL", false},
+		{"apiTokenCount", false},
+		{"businessTokenLabel", false},
 		{"credentials[client_secret]", true},
 		{"auth.private-key", true},
 		{"client%255Fsecret", true},

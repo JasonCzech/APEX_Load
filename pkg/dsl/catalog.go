@@ -94,6 +94,9 @@ func (s ActionSpec) EngineAction() bool {
 // "jms-solace", "jms-ibmmq") onto their family ("jms").
 func ProtocolFamily(protocol string) string {
 	trimmed := strings.TrimSpace(protocol)
+	if trimmed == "http/1.1" || trimmed == "http/2" {
+		return "http"
+	}
 	if strings.HasPrefix(trimmed, "jms-") {
 		return "jms"
 	}
@@ -255,7 +258,7 @@ func CommonActionFields() []FieldSpec {
 		{Name: "think_time", Kind: FieldKindObject, Doc: "Per-action think-time override (type, mean_ms, ...)."},
 		{Name: "think_time_after", Kind: FieldKindBool, Doc: "Apply think time after this action completes."},
 		{Name: "extractors", Kind: FieldKindArray, Doc: "Response extractors: {name, source, type, expression, on_miss, default_value, mode, save_offset, save_length, convert}. on_miss: \"fail\" fails the request when nothing matches, \"empty\" assigns an empty string; \"default\" assigns default_value (including an explicitly empty default); mode \"all\" saves every match as name_1..name_N plus name_count; save_offset/save_length trim each value (bytes); convert post-processes it (url_encode | url_decode | html_decode | html_url_encode). The behavior fields are honored by the HTTP protocol family."},
-		{Name: "assertions", Kind: FieldKindArray, Doc: "Response assertions: {type, expected, value, max}. HTTP supports status/time/body checks plus header_contains (value is a case-insensitive header name; expected is a case-sensitive substring) and body_regex_capture_equals (value is a Go/RE2 pattern up to 4 KiB; expected equals the first capture group, or the full match when no group exists)."},
+		{Name: "assertions", Kind: FieldKindArray, Doc: "Response assertions: {type, expected, value, max}. HTTP supports status/time/body checks plus header_contains (value is a case-insensitive header name; expected is a case-sensitive substring) and body_regex_capture_equals (value is a Go/RE2 pattern up to 4 KiB; expected equals the first capture group, or the full match when no group exists). aura_actions_success takes no options and structurally verifies that the actual outgoing Aura request and response contain unique matching action IDs and SUCCESS states; malformed, incomplete, unknown or over-limit envelopes fail with bounded value-free evidence."},
 		{Name: "metadata", Kind: FieldKindObject, Doc: "Free-form metadata; importers preserve source details here."},
 		{Name: "timeout_ms", Kind: FieldKindInt, Doc: "Per-action timeout override in milliseconds."},
 		{Name: "max_redirects", Kind: FieldKindInt, Doc: "Per-action redirect-policy override (-1 disables)."},

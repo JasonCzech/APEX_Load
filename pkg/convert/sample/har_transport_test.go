@@ -109,8 +109,11 @@ func TestHARUnknownVersionIsUnavailableMetadata(t *testing.T) {
 				t.Fatal(err)
 			}
 			action := result.Script.Actions[0]
-			if action.Metadata["har.request.http_version"] != version {
+			if version != "HTTP/1.0" && version != "HTTP/3" && action.Metadata["har.request.http_version"] != version {
 				t.Fatalf("recorded version metadata lost: %+v", action.Metadata)
+			}
+			if (version == "HTTP/1.0" || version == "HTTP/3") && action.Metadata["har.request.http_version"] != nil {
+				t.Fatal("unsupported source value copied instead of bounded capture state")
 			}
 			blocked := false
 			for _, d := range result.Unsupported {
@@ -118,7 +121,7 @@ func TestHARUnknownVersionIsUnavailableMetadata(t *testing.T) {
 					blocked = true
 				}
 			}
-			wantBlocked := version == "HTTP/1.0" || version == "HTTP/3"
+			wantBlocked := version == "HTTP/1.0" || version == "HTTP/3" || strings.EqualFold(strings.TrimSpace(version), "unknown")
 			if blocked != wantBlocked {
 				t.Fatalf("HTTP version blocker=%v, want %v", blocked, wantBlocked)
 			}
@@ -126,8 +129,8 @@ func TestHARUnknownVersionIsUnavailableMetadata(t *testing.T) {
 				if result.Script.Config.HTTP.Version != "" {
 					t.Fatalf("unspecified version forced to %q", result.Script.Config.HTTP.Version)
 				}
-				if _, ok := action.Metadata["import_http_version_fidelity"]; ok {
-					t.Fatal("unavailable version created durable execution gate")
+				if _, ok := action.Metadata["import_http_version_fidelity"]; !ok {
+					t.Fatal("unavailable capture lost durable execution gate")
 				}
 			}
 		})

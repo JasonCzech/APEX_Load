@@ -1,0 +1,319 @@
+{
+  "slice": 8,
+  "evidence_scope": "synthetic desktop Chromium; narrow390px uses actual operator sidebar-collapse control; no physical iPad/live Salesforce claim",
+  "image_count": 24,
+  "images": [
+    {
+      "path": "screenshots/slice8-dev-admin-response-content-blocker-narrow-focused.png",
+      "profile": "dev-admin",
+      "width": 258,
+      "height": 646,
+      "bytes": 50326,
+      "sha256": "666cbbb773935b294cfba902ae87f1c221fb5d59fbe6dfefb9c3088ee4db6e76",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-dev-admin-response-content-blocker-narrow.png",
+      "profile": "dev-admin",
+      "width": 390,
+      "height": 900,
+      "bytes": 92950,
+      "sha256": "d475393f6d8a0f6186ac4433abb23cf2c80cda7bb5f58fff27613b788d9335a6",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-dev-admin-response-content-blocker.png",
+      "profile": "dev-admin",
+      "width": 1280,
+      "height": 720,
+      "bytes": 156684,
+      "sha256": "6687ad15813410e2b403944c9dade7940ebbd80e3c18758247e3dba1e60e4cd2",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-dev-admin-response-content-reopened-blocker.png",
+      "profile": "dev-admin",
+      "width": 1280,
+      "height": 720,
+      "bytes": 199138,
+      "sha256": "a995a3942c1a3324fe23d6c589ac522fdf6be208861dc22511967fb5de1b65ef",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-dev-admin-response-content-retained-source.png",
+      "profile": "dev-admin",
+      "width": 1280,
+      "height": 720,
+      "bytes": 187939,
+      "sha256": "c0765318d9445f35d45b17728416bf9b7302a6c05ee516b1e3710b35ad03f477",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-dev-admin-response-content-gzip-replay-narrow-focused.png",
+      "profile": "dev-admin",
+      "width": 216,
+      "height": 165,
+      "bytes": 12831,
+      "sha256": "f80d67e971b476cffc9278558484f8491d3a95b17b452e64ee38715ad8b7d737",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-dev-admin-response-content-gzip-replay-narrow.png",
+      "profile": "dev-admin",
+      "width": 390,
+      "height": 1204,
+      "bytes": 156292,
+      "sha256": "b067d9bc6cdfb5215b0c43d947e757873a54c947c52f8899cdc2a5ad4a67a883",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-dev-admin-response-content-gzip-replay.png",
+      "profile": "dev-admin",
+      "width": 1280,
+      "height": 720,
+      "bytes": 223748,
+      "sha256": "ba5e72388ff3f3ca9e16dc6a3d460c51f673ef35ab98a983245bc38054e8fc0f",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-dev-admin-response-content-har-review.png",
+      "profile": "dev-admin",
+      "width": 1280,
+      "height": 720,
+      "bytes": 186870,
+      "sha256": "5e9281924a05c34e689258bb71ad55c1095ac1c9e87fb0de9c4938c83608c7ed",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-dev-admin-response-content-partial-stream-narrow-focused.png",
+      "profile": "dev-admin",
+      "width": 216,
+      "height": 209,
+      "bytes": 17651,
+      "sha256": "0527d747bef62431b85e3bffc3112f53c709a9918aeea446cd3bafd615defbc4",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-dev-admin-response-content-partial-stream-narrow.png",
+      "profile": "dev-admin",
+      "width": 390,
+      "height": 1197,
+      "bytes": 155766,
+      "sha256": "1000732fcc2196fc61f50665fddefebdfec010b5f7786985e41473cee50f83a0",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-dev-admin-response-content-partial-stream.png",
+      "profile": "dev-admin",
+      "width": 1280,
+      "height": 720,
+      "bytes": 213657,
+      "sha256": "d5acc2ba4e51e31a885645ce1eb71677deae46748ce96862fdcb09ace939055f",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-local-auth-response-content-blocker-narrow-focused.png",
+      "profile": "local-auth",
+      "width": 258,
+      "height": 646,
+      "bytes": 50326,
+      "sha256": "666cbbb773935b294cfba902ae87f1c221fb5d59fbe6dfefb9c3088ee4db6e76",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-local-auth-response-content-blocker-narrow.png",
+      "profile": "local-auth",
+      "width": 390,
+      "height": 900,
+      "bytes": 92098,
+      "sha256": "09a3deca6a2e5e3c3f94f075c9f75ba33708c2090f6402befce78889de3ec90b",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-local-auth-response-content-blocker.png",
+      "profile": "local-auth",
+      "width": 1280,
+      "height": 720,
+      "bytes": 158175,
+      "sha256": "9bb51bd95dd5e8dd59b2d9e70f577e8acc972517b4f03eb58ed18630209c9fa8",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-local-auth-response-content-reopened-blocker.png",
+      "profile": "local-auth",
+      "width": 1280,
+      "height": 720,
+      "bytes": 201297,
+      "sha256": "80419759340b2a4b34475330fe11e54c28b6362ac5f8c08750faec2c8ed178ec",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-local-auth-response-content-retained-source.png",
+      "profile": "local-auth",
+      "width": 1280,
+      "height": 720,
+      "bytes": 189762,
+      "sha256": "1a814df02906f850927a4dbe73504821ab3b95ac75fcf131016dd5847e4a9980",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-local-auth-response-content-gzip-replay-narrow-focused.png",
+      "profile": "local-auth",
+      "width": 216,
+      "height": 165,
+      "bytes": 12831,
+      "sha256": "f80d67e971b476cffc9278558484f8491d3a95b17b452e64ee38715ad8b7d737",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-local-auth-response-content-gzip-replay-narrow.png",
+      "profile": "local-auth",
+      "width": 390,
+      "height": 1204,
+      "bytes": 155975,
+      "sha256": "dbcc6f94a26c9557b811b11ff1622dccd30673c570feda96fe93d43f190b9d8e",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-local-auth-response-content-gzip-replay.png",
+      "profile": "local-auth",
+      "width": 1280,
+      "height": 720,
+      "bytes": 225587,
+      "sha256": "9d466d8d3d96ccbf46cbf44b5c106151db9b665c3cd346d3b657d57c4e22956d",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-local-auth-response-content-har-review.png",
+      "profile": "local-auth",
+      "width": 1280,
+      "height": 720,
+      "bytes": 188046,
+      "sha256": "c5ef9bf8758a5bc014022cb9b4630f73bf4e7a95938881c8154d63cd3721384b",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-local-auth-response-content-partial-stream-narrow-focused.png",
+      "profile": "local-auth",
+      "width": 216,
+      "height": 209,
+      "bytes": 17651,
+      "sha256": "0527d747bef62431b85e3bffc3112f53c709a9918aeea446cd3bafd615defbc4",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-local-auth-response-content-partial-stream-narrow.png",
+      "profile": "local-auth",
+      "width": 390,
+      "height": 1197,
+      "bytes": 155579,
+      "sha256": "cd764d5d140d6e25e1a55af2580cf7bddde5f1b25e700fd3be2558965ced4568",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    },
+    {
+      "path": "screenshots/slice8-local-auth-response-content-partial-stream.png",
+      "profile": "local-auth",
+      "width": 1280,
+      "height": 720,
+      "bytes": 215402,
+      "sha256": "639215a1c95216691b1e71f0e3c40f852d8e9c756e44e79ba8b11da75d262c5f",
+      "reviewed_at_original_resolution_by": [
+        "root",
+        "independent_UI_peer"
+      ],
+      "remaining_actionable_findings": 0
+    }
+  ]
+}

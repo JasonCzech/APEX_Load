@@ -1084,9 +1084,9 @@ export function useScriptApi() {
       agentforce_transform?: boolean
     }): Promise<HARImportResult> => {
       const formData = new FormData()
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_static_assets) formData.append('include_static_assets', 'true')
       if (options?.secondary_file) formData.append('secondary_file', options.secondary_file)
@@ -1095,6 +1095,7 @@ export function useScriptApi() {
       if (typeof options?.redact_sensitive === 'boolean') formData.append('redact_sensitive', options.redact_sensitive ? 'true' : 'false')
 
       const query = new URLSearchParams()
+      if (options?.project_id) query.set('project_id', options.project_id)
       if (options?.salesforce_native === false) query.set('salesforce_native', 'false')
       if (options?.agentforce_transform) query.set('agentforce_transform', 'true')
       const suffix = query.toString()
@@ -1110,12 +1111,16 @@ export function useScriptApi() {
   const importSalesforce = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; project_id?: string; agentforce_transform?: boolean }): Promise<SalesforceImportResult> => {
       const formData = new FormData()
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
-      const res = await apiFetch(`/scripts/import/salesforce${options?.agentforce_transform ? '?agentforce_transform=true' : ''}`, { method: 'POST', body: formData })
+      const query = new URLSearchParams()
+      if (options?.project_id) query.set('project_id', options.project_id)
+      if (options?.agentforce_transform) query.set('agentforce_transform', 'true')
+      const suffix = query.toString()
+      const res = await apiFetch(`/scripts/import/salesforce${suffix ? `?${suffix}` : ''}`, { method: 'POST', body: formData })
       if (!res.ok) {
         throw new Error(await errorMessageFromResponse(res))
       }

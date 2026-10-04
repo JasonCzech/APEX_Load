@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
 )
 
 const (
@@ -70,10 +72,16 @@ const (
 	// application/x-www-form-urlencoded body whose literal spans are already
 	// escaped but whose runtime template values still need component escaping.
 	ImportURLFormTemplateValueEncodingMetadataKey = "body_template_value_encoding"
-	// ImportURLFormTemplateValueEncodingQueryComponent is the only recognized
-	// marker value. Older runtimes treat the metadata as inert instead of
-	// applying an unintended whole-body transform.
-	ImportURLFormTemplateValueEncodingQueryComponent = "url_query_component"
+	// ImportURLFormTemplateValueEncodingQueryComponent escapes each resolved
+	// template as a form component while preserving imported literal spans.
+	ImportURLFormTemplateValueEncodingQueryComponent = aurapayload.TemplateValueEncodingQueryComponent
+	// ImportAuraJSONTemplateValueEncoding opts into bounded structural Aura
+	// substitution through JSON strings and the outer form component. Invalid
+	// or unsupported payloads fail before traffic; legacy modes are unchanged.
+	ImportAuraJSONTemplateValueEncoding = aurapayload.TemplateValueEncodingJSONStrings
+	// ImportAuraTemplateContractMetadataKey binds retained form-wire template
+	// occurrences to value-free typed consumer and token fingerprints.
+	ImportAuraTemplateContractMetadataKey = "body_aura_template_contract"
 )
 
 type Script struct {
@@ -1041,12 +1049,13 @@ func (headers HeaderList) ToMap() map[string]string {
 }
 
 type Action struct {
-	PacingIDs []string `json:"pacing_ids,omitempty"`
-	Name      string   `json:"name"`
-	Type      string   `json:"type"`
-	Method    string   `json:"method,omitempty"`
-	Target    string   `json:"target"`
-	Selector  string   `json:"selector,omitempty"`
+	PacingIDs   []string            `json:"pacing_ids,omitempty"`
+	Name        string              `json:"name"`
+	Type        string              `json:"type"`
+	Method      string              `json:"method,omitempty"`
+	HTTPVersion OptionalHTTPVersion `json:"http_version,omitzero"`
+	Target      string              `json:"target"`
+	Selector    string              `json:"selector,omitempty"`
 	// ObjectRef binds this action to a named object in a project-scoped object
 	// repository instead of (or as a fallback to) an inline selector. The
 	// controller resolves it at script-preparation time into a concrete selector

@@ -1,0 +1,68 @@
+{
+  "slice": 3,
+  "status": "complete",
+  "scope": "bounded encoded Aura parameter editing, runtime substitution, protected import and disclosure review",
+  "independent_review": {
+    "remaining_actionable_findings": 0,
+    "final_peer_re_reviews": 2,
+    "root_review_and_visual_inspection": "passed"
+  },
+  "go": {
+    "full_suite": "passed",
+    "command": "GOMEMLIMIT=8GiB go test -p 2 -timeout 20m ./...",
+    "api_seconds": 457.319,
+    "affected_packages": "passed",
+    "final_focused_race": "passed",
+    "race_selection": "Test.*(Query|GraphQL|Nested|Malformed|Template|Structured|Encoded|Form|Neutral)"
+  },
+  "dashboard": {
+    "final_typecheck": "passed",
+    "final_lint": "passed",
+    "final_targeted_unit_tests": 23,
+    "final_build": "passed",
+    "final_browser_profiles": {
+      "dev-admin": {
+        "passed": 2
+      },
+      "local-auth": {
+        "passed": 2
+      }
+    },
+    "final_screenshots_visually_reviewed": 4,
+    "earlier_full_test_cycle": {
+      "passed": true,
+      "unit_files": 458,
+      "unit_tests": 4791,
+      "dev_admin_passed": 195,
+      "dev_admin_optional_skipped": 5,
+      "local_auth_passed": 116,
+      "local_auth_optional_skipped": 1,
+      "scope_note": "Full cycle preceded the final coverage/caption wording regressions; final source passed typecheck, lint, 23 affected UI tests, build and both affected browser profiles."
+    }
+  },
+  "source_evidence": {
+    "recognized_aura_bodies": 409,
+    "inspected_bodies": 405,
+    "rejected_bodies": 4,
+    "retained_business_suggestions": 86,
+    "salesforce_parameterization_candidates": 42,
+    "additional_unclassified_bodies_omitted_by_detection": 16,
+    "unsafe_path_fields": 372,
+    "captured_json_string_leaves": 57,
+    "admitted_nested_business_suggestions_in_supplied_captures": 0,
+    "all_capture_coverage_complete": false,
+    "private_hosts_contacted": 0
+  },
+  "qualification": {
+    "synthetic_desktop_browser_http": "tested",
+    "physical_chrome_ipad": "not tested",
+    "live_salesforce_new_session": "not tested"
+  },
+  "documentation": {
+    "active_markdown_files": 103,
+    "check_docs": "passed",
+    "qa_freshness": "passed",
+    "dsl_api_generated_freshness": "passed",
+    "diff_check": "passed"
+  }
+}

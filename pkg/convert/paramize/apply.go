@@ -28,6 +28,10 @@ func ApplySuggestions(script *dsl.Script, suggestions []Suggestion, selected map
 	if script == nil {
 		return nil, nil, fmt.Errorf("script is required")
 	}
+	plans, err := planAuraApplication(script, suggestions, selected)
+	if err != nil {
+		return nil, nil, err
+	}
 	if err := validateSelectedSuggestionApplication(script, suggestions, selected); err != nil {
 		return nil, nil, err
 	}
@@ -36,7 +40,10 @@ func ApplySuggestions(script *dsl.Script, suggestions []Suggestion, selected map
 		return nil, nil, fmt.Errorf("failed to clone script: %w", err)
 	}
 
-	diffs := make([]Diff, 0)
+	diffs, err := applyAuraPlans(clone, plans)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed bounded Aura apply traversal")
+	}
 	dataColumns := make(map[string]string) // column -> seed value
 	dataColumnOrder := make([]string, 0)
 
@@ -144,6 +151,9 @@ func validateSelectedSuggestionApplication(script *dsl.Script, suggestions []Sug
 			}
 		}
 		for _, location := range suggestion.Locations {
+			if hasAuraLocation(location) {
+				continue
+			}
 			literal := location.SearchText
 			if literal == "" {
 				if suggestion.Kind == KindCorrelation {
@@ -422,6 +432,9 @@ func applyReplacements(script *dsl.Script, suggestion Suggestion) []Diff {
 	groups := make(map[fieldKey]*fieldReplacements, len(suggestion.Locations))
 	order := make([]fieldKey, 0, len(suggestion.Locations))
 	for _, location := range suggestion.Locations {
+		if hasAuraLocation(location) {
+			continue
+		}
 		if location.SearchText == "" {
 			continue
 		}

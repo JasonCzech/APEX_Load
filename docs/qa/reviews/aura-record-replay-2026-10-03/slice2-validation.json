@@ -1,0 +1,54 @@
+{
+  "slice": 2,
+  "scope": "synthetic-loopback-react-aura",
+  "physical_device_qualified": false,
+  "live_salesforce_qualified": false,
+  "raw_capture_committed": false,
+  "checks": {
+    "affected_go_packages": {
+      "passed": true,
+      "packages": [
+        "pkg/internal/aurafixture",
+        "pkg/engine",
+        "pkg/recorder/browser",
+        "pkg/convert/har",
+        "pkg/convert/salesforce"
+      ]
+    },
+    "real_browser_repeat": {
+      "passed": true,
+      "count": 3
+    },
+    "required_ci_browser_selection": {
+      "passed": true,
+      "race": true,
+      "tests": 2
+    },
+    "fixture_engine_repeat": {
+      "passed": true,
+      "race": true,
+      "shuffle": true,
+      "count": 3
+    },
+    "docs": {
+      "passed": true,
+      "active_markdown_files": 103
+    },
+    "qa_artifact_freshness": {
+      "passed": true
+    }
+  },
+  "review_fixes": [
+    "Cross-context DOM identity varies per mount",
+    "Test protocol registration occurs once",
+    "Implementation-mirroring substring test replaced by actual browser evidence"
+  ],
+  "remaining_actionable_findings": 0,
+  "browser_case_counts": {
+    "successful_batches": 5,
+    "distinct_success_sessions": 3,
+    "warm_reload_bootstraps": 2,
+    "failure_scenarios": 4,
+    "distinct_dom_mounts": 9
+  }
+}

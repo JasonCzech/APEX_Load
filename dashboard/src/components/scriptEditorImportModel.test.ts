@@ -374,4 +374,25 @@ describe('script editor import model', () => {
       .toBe('Table • column user • table users.csv')
     expect(formatImportParameterMapping({})).toBe('No preserved mapping details')
   })
+  it.each(['original_import', 'future_domain'])('does not infer current action or correlation navigation from %s paths', domain => {
+    const currentActions = [action('Unrelated native action'), action('Another native action')]
+    const source = { target_domain: domain, mappings: [{ id: 'old', source_file: 'capture.har', start_line: 1, target_path: 'actions[0]', target_name: 'Unrelated native action', status: 'converted' }] }
+    expect(findSourceMappingForAction(source, currentActions[0], 0)).toBeNull()
+    const targets = buildImportedCorrelationFocusTargets(currentActions, [{ name: 'value', source: 'body', expression: '$.result', found_at: 'Request 1', used_at: ['Request 2'] }], source)
+    expect(targets[0]).toMatchObject({ foundAtActionIndex: null, foundAtLabel: 'Request 1', usedAtTargets: [], usedAtLocations: [{ location: 'Request 2', actionIndex: null, label: 'Request 2' }] })
+  })
+
+  it('normalizes legacy native-selected source navigation while leaving generic imports current', () => {
+    const review = { mappings: [{ id: 'original', source_file: 'capture.har', target_path: 'actions[0]', target_name: 'Unrelated', status: 'converted' }] }
+    const preserved = { source_review: review, salesforce_review: { native_preview: { correlations: [] } } }
+    const native = readSourceReview({ source: 'salesforce', preserved })!
+    expect(native.target_domain).toBe('original_import')
+    expect(findSourceMappingForAction(native, action('Unrelated'), 0)).toBeNull()
+    expect(buildImportedCorrelationFocusTargets([action('Unrelated')], [{ name: 'value', source: 'body', expression: '$.value', found_at: 'Request 1', used_at: [] }], native)[0].foundAtActionIndex).toBeNull()
+    const generic = readSourceReview({ source: 'har', preserved })!
+    expect(generic).toBe(review)
+    expect(findSourceMappingForAction(generic, action('Unrelated'), 0)?.id).toBe('original')
+    expect(preserved.source_review).toBe(review)
+  })
+
 })

@@ -11,6 +11,7 @@ func httpActionSpecs() []ActionSpec {
 	requestFields := []FieldSpec{
 		{Name: "target", Required: true, Kind: FieldKindString, Doc: "Request path or absolute URL; relative paths resolve against config.base_url."},
 		{Name: "method", Kind: FieldKindString, Doc: "Explicit HTTP method override; defaults to the action type."},
+		{Name: "http_version", Kind: FieldKindEnum, Enum: []string{"auto", "1.1", "2"}, SchemaEnum: true, Doc: "Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid."},
 		{Name: "headers", Kind: FieldKindObject, Doc: "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative."},
 		{Name: "header_list", Kind: FieldKindArray, Doc: "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate."},
 		{Name: "body", Kind: FieldKindString, Doc: "Request body; template variables are expanded."},
@@ -53,9 +54,11 @@ func httpActionSpecs() []ActionSpec {
 	specs = append(specs, ActionSpec{
 		Type:      "http_sequence",
 		Protocols: []string{"http"},
-		Summary:   "Composite step that issues an ordered list of child HTTP requests as one reported unit.",
+		Summary:   "Composite HTTP step with sequential execution by default or bounded concurrent requests sharing one VUser session.",
 		Fields: []FieldSpec{
-			{Name: "params.requests", Required: true, Kind: FieldKindArray, Doc: "Child requests: {name, method (or type), target, headers, header_list, body}. Header occurrence and transport-normalization rules match top-level requests. At least one required."},
+			{Name: "params.requests", Required: true, Kind: FieldKindArray, Doc: "Child HTTP requests with full action fields. At least one required; concurrent mode permits at most 256. Concurrent children are prepared in source order, joined, then publish extractions in source order."},
+			{Name: "params.execution_mode", Kind: FieldKindEnum, Enum: []string{HTTPSequenceSequential, HTTPSequenceConcurrent}, SchemaEnum: true, Doc: "Sequential when absent. Concurrent requests share the parent HTTP session; debugger pause and step occur at the group boundary."},
+			{Name: "params.max_concurrency", Kind: FieldKindInt, Maximum: MaxHTTPConcurrency, Doc: "Integer 1..16. Concurrent default is min(8, child count). Concurrent preparation is bounded to 16 MiB of source and prepared surfaces and 64 MiB of work. Duplicate extractor names and nonzero child think time are rejected before traffic."},
 		},
 		Validate: validateHTTPSequenceActionIssues,
 	})

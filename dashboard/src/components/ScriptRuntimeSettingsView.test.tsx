@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ScriptDefinition } from '../types/scripts'
-import { ScriptRuntimeSettingsView } from './ScriptRuntimeSettingsView'
+import { ScriptRuntimeSettingsSidebar, ScriptRuntimeSettingsView } from './ScriptRuntimeSettingsView'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -367,6 +367,50 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     expect(container.textContent).not.toContain('Java Env Settings')
     expect(container.querySelector('input[aria-label="JDK Home"]')).toBeNull()
     expect(container.textContent).toContain('Base URL')
+  })
+
+  it.each([
+    { protocol: 'http', version: undefined, expected: 'Auto-negotiate (HTTP/2 or HTTP/1.1)', selection: '' },
+    { protocol: 'http/1.1', version: '', expected: 'HTTP/1.1 required', selection: '' },
+    { protocol: 'http/2', version: undefined, expected: 'HTTP/2 required (no fallback)', selection: '' },
+    { protocol: 'http/2', version: '1.1', expected: 'HTTP/1.1 required', selection: '1.1' },
+    { protocol: 'http/1.1', version: 'HTTP/2.0', expected: 'HTTP/2 required (no fallback)', selection: '2' },
+    { protocol: 'http/2', version: '  ', expected: 'Auto-negotiate (HTTP/2 or HTTP/1.1)', selection: 'existing-auto' },
+  ])('aligns the summary and global select for $protocol setting $version', ({ protocol, version, expected, selection }) => {
+    const onUpdateField = vi.fn()
+    const script: ScriptDefinition = { name: 'Version settings', version: '1', protocol, config: { base_url: '', http: { version } }, actions: [] }
+    act(() => root.render(<>
+      <ScriptRuntimeSettingsSidebar script={script} parityEntries={[]} readiness={null} />
+      <ScriptRuntimeSettingsView activeHTTPTransportTab="connection" activeSection="http" canEditProtocol={false}
+        onSave={vi.fn()} onSelectHTTPTransportTab={vi.fn()} onSelectSection={vi.fn()} onUpdateField={onUpdateField}
+        onUpdateProtocol={vi.fn()} saveDisabled saving={false} script={script} />
+    </>))
+    expect(container.querySelector('.utility-list')?.textContent).toContain(`HTTP version: ${expected}`)
+    const select = Array.from(container.querySelectorAll<HTMLSelectElement>('select')).find(item => item.parentElement?.textContent?.includes('HTTP Version'))!
+    expect(select.value).toBe(selection)
+    expect(select.getAttribute('aria-invalid')).toBe('false')
+    expect(container.textContent).toContain(`Effective script policy: ${expected}`)
+    if (protocol === 'http/2') expect(select.options[0].textContent).toBe('Protocol default (HTTP/2 required (no fallback))')
+    expect(onUpdateField).not.toHaveBeenCalled()
+    expect(script.config.http?.version).toBe(version)
+    expect(Array.from(select.options).filter(option => !option.disabled).map(option => option.value)).toEqual(['', '1.1', '2'])
+  })
+
+  it.each([null, 'auto', '1.0', 2, {}, []].map(value => ({ value })))('retains malformed global $value visibly until an intentional edit', ({ value }) => {
+    const onUpdateField = vi.fn()
+    const script = { name: 'Malformed version', version: '1', protocol: 'http/2', config: { base_url: '', http: { version: value, max_conns_per_host: 7, vendor_extension: { keep: true } } }, actions: [] } as unknown as ScriptDefinition
+    act(() => root.render(<ScriptRuntimeSettingsView activeHTTPTransportTab="connection" activeSection="http" canEditProtocol={false}
+      onSave={vi.fn()} onSelectHTTPTransportTab={vi.fn()} onSelectSection={vi.fn()} onUpdateField={onUpdateField}
+      onUpdateProtocol={vi.fn()} saveDisabled saving={false} script={script} />))
+    const select = Array.from(container.querySelectorAll<HTMLSelectElement>('select')).find(item => item.parentElement?.textContent?.includes('HTTP Version'))!
+    expect(select.value).toBe('invalid')
+    expect(select.getAttribute('aria-invalid')).toBe('true')
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('original value is preserved')
+    expect(onUpdateField).not.toHaveBeenCalled()
+    expect(script.config.http?.version).toBe(value)
+    act(() => { select.value = ''; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(onUpdateField).toHaveBeenCalledWith('config.http', { ...script.config.http, version: '' })
+    expect(script.config.http?.version).toBe(value)
   })
 
   it('stores auto-negotiated HTTP version as the DSL empty value', () => {

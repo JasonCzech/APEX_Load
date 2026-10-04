@@ -1,0 +1,77 @@
+{
+  "slice": 6,
+  "status": "complete",
+  "scope": "parent-session concurrent HTTP request groups with joined load/replay publication and fail-closed public evidence",
+  "independent_review": {
+    "remaining_actionable_findings": 0,
+    "importer_core_api_ui_source": "passed after findings repaired and re-reviewed",
+    "final_browser_fixture": "passed",
+    "root_desktop_narrow_visual_review": "passed",
+    "peer_desktop_narrow_visual_review": "passed"
+  },
+  "go": {
+    "affected_engine_seconds": 81.749,
+    "affected_dsl_protocol_http_aura_payload": "passed",
+    "engine_race_runs": 3,
+    "engine_race_order": "shuffled",
+    "engine_race_seconds": 471.252,
+    "importer_full_seconds": 7.317,
+    "importer_race_runs": 3,
+    "importer_race_order": "shuffled",
+    "importer_race_seconds": 11.306,
+    "api_debugger_seconds": 4.522,
+    "api_race_runs": 2,
+    "api_race_order": "shuffled",
+    "api_race_seconds": 8.132,
+    "full_integrated_suite": "required before series merge"
+  },
+  "dashboard": {
+    "broad_affected_unit_tests": 260,
+    "broad_affected_unit_files": 6,
+    "final_admission_and_retention_regressions": "passed; overlapping tests are not added to the broad count",
+    "typecheck_including_e2e": "passed",
+    "global_and_final_affected_lint": "passed",
+    "production_build": "passed",
+    "browser_profiles": {
+      "dev-admin": {
+        "passed": 6,
+        "skipped": 0,
+        "retries": 0,
+        "real_importer_engine_cases": 2,
+        "synthetic_transport_dto_cases": 1,
+        "shared_sidebar_cases": 3
+      },
+      "local-auth": {
+        "passed": 6,
+        "skipped": 0,
+        "retries": 0,
+        "real_importer_engine_cases": 2,
+        "synthetic_transport_dto_cases": 1,
+        "shared_sidebar_cases": 3
+      }
+    },
+    "synthetic_viewport_screenshots": 4
+  },
+  "private_capture": {
+    "source_coverage": "slice6-source-coverage.json",
+    "source_groups": 3,
+    "source_requests": 8,
+    "native_groups": 0,
+    "review_barriers": 3,
+    "traffic_executed": false
+  },
+  "qualification": {
+    "synthetic_loopback_http_load_and_replay": "tested",
+    "physical_chrome_ipad": "not tested",
+    "live_salesforce": "not tested",
+    "full_integrated_dashboard_cycle": "required before series merge"
+  },
+  "documentation": {
+    "generated_dsl_api_coverage": "passed",
+    "check_docs": "passed",
+    "qa_generated_freshness": "passed",
+    "diff_check": "passed",
+    "active_markdown_files": 103
+  },
+  "cache_cleanup": "retained while later slices and integrated verification need the build caches"
+}

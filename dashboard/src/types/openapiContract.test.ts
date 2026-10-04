@@ -26,6 +26,8 @@ type StepBody = JsonRequestBody<'handleStepScriptDebugSession'>
 type BreakpointsBody = JsonRequestBody<'handleUpdateScriptDebugBreakpoints'>
 type OptionsBody = JsonRequestBody<'handleUpdateScriptDebugOptions'>
 type StepSuccessBody = JsonSuccessResponseBody<'handleStepScriptDebugSession', '200'>
+type DebugSessionContract = NonNullable<StepSuccessBody['session']>
+type DebugRuntimeContract = DebugSessionContract['runtime_state']
 type BrowserReplayBody = JsonRequestBody<'handleStartBrowserReplayDraftScript'>
 
 const startFixture = {
@@ -52,6 +54,9 @@ const optionsFixture = { break_on_failure: true } satisfies OptionsBody
 const successFixture = {
   session: {
     id: 'debug-session-1',
+    session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    state_revision: '0',
+    runtime_state: { version: 1, kind: 'full', session_id: 'debug-session-1', session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state_revision: '0', state: 'unavailable', reason: 'pause_pending', snapshot: null },
     status: 'paused',
     group: 'checkout-debug',
     protocol: 'http',
@@ -84,6 +89,10 @@ describe('generated OpenAPI transport helpers', () => {
     expectTypeOf<StepSuccessBody>().not.toBeAny()
     expectTypeOf<'session'>().toMatchTypeOf<keyof StepSuccessBody>()
     expectTypeOf<StepSuccessBody>().toMatchTypeOf<{ session?: { id?: string } | null }>()
+    expectTypeOf<'session_incarnation' | 'state_revision' | 'runtime_state'>().toMatchTypeOf<RequiredKeysOf<DebugSessionContract>>()
+    expectTypeOf<'version' | 'kind' | 'session_id' | 'session_incarnation' | 'state_revision' | 'state' | 'reason' | 'snapshot'>().toMatchTypeOf<RequiredKeysOf<DebugRuntimeContract>>()
+    expectTypeOf<DebugSessionContract['state_revision']>().toEqualTypeOf<string>()
+    expectTypeOf<DebugRuntimeContract['state_revision']>().toEqualTypeOf<string>()
 
     expect({
       startFixture,
@@ -112,6 +121,9 @@ describe('generated OpenAPI transport helpers', () => {
       successFixture: {
         session: {
           id: 'debug-session-1',
+          session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          state_revision: '0',
+          runtime_state: { version: 1, kind: 'full', session_id: 'debug-session-1', session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state_revision: '0', state: 'unavailable', reason: 'pause_pending', snapshot: null },
           status: 'paused',
           group: 'checkout-debug',
           protocol: 'http',

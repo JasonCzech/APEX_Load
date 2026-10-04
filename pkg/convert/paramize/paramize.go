@@ -23,6 +23,8 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
 )
 
 type Kind string
@@ -42,12 +44,18 @@ const autoApplyConfidence = 0.8
 // surrounding context (e.g. `user_id=12345` or `"user_id": "12345"`) to make
 // the replacement unambiguous within the field.
 type Location struct {
-	Section     string `json:"section"`      // "init", "actions", or "teardown"
-	ActionIndex int    `json:"action_index"` // 0-based index within the section
-	ActionName  string `json:"action_name,omitempty"`
-	Field       string `json:"field"` // "target", "body", "value", or "headers.<Name>"
-	SearchText  string `json:"search_text,omitempty"`
-	ReplaceText string `json:"replace_text"`
+	Section           string                `json:"section"`      // "init", "actions", or "teardown"
+	ActionIndex       int                   `json:"action_index"` // 0-based index within the section
+	ActionName        string                `json:"action_name,omitempty"`
+	Field             string                `json:"field"` // "target", "body", "value", or "headers.<Name>"
+	SearchText        string                `json:"search_text,omitempty"`
+	ReplaceText       string                `json:"replace_text"`
+	ActionPath        string                `json:"action_path,omitempty"`
+	AuraRoute         []aurapayload.Segment `json:"aura_route,omitempty"`
+	DecodedFieldPath  string                `json:"decoded_field_path,omitempty"`
+	EncodingLayers    []string              `json:"encoding_layers,omitempty"`
+	PayloadShape      string                `json:"payload_shape,omitempty"`
+	auraExpectedShape string
 }
 
 // Suggestion is one proposed parameterization. It is advice only: nothing in
@@ -92,9 +100,10 @@ type Summary struct {
 }
 
 type Result struct {
-	Suggestions []Suggestion `json:"suggestions"`
-	Summary     Summary      `json:"summary"`
-	Warnings    []string     `json:"warnings,omitempty"`
+	Suggestions []Suggestion         `json:"suggestions"`
+	Summary     Summary              `json:"summary"`
+	Warnings    []string             `json:"warnings,omitempty"`
+	AuraPayload *AuraPayloadCoverage `json:"aura_payload,omitempty"`
 }
 
 // PreAppliedCorrelation describes a correlation a converter already applied to
@@ -123,10 +132,11 @@ type Options struct {
 	ObservationIDsZeroBased bool
 	// PreApplied lists correlations the converter already wired into the
 	// script; they surface as informational pre_applied suggestions.
-	PreApplied        []PreAppliedCorrelation
-	EnableCorrelation bool
-	EnableDataParams  bool
-	EnableSecrets     bool
+	PreApplied           []PreAppliedCorrelation
+	EnableCorrelation    bool
+	EnableDataParams     bool
+	EnableSecrets        bool
+	AuraInspectionBudget *AuraInspectionBudget `json:"-"`
 }
 
 // Suggest inspects a converted script and returns parameterization advice.
@@ -159,7 +169,16 @@ func Suggest(script *dsl.Script, opts Options) Result {
 		}
 	}
 	if opts.EnableDataParams {
-		dataAdvice, err := dataParamSuggestions(script, names, claimedValues(suggestions))
+		claimed := claimedValues(suggestions)
+		auraAdvice, coverage, warnings := auraPayloadSuggestions(script, names, claimed, opts.AuraInspectionBudget)
+		result.AuraPayload = coverage
+		result.Warnings = append(result.Warnings, warnings...)
+		suggestions = append(suggestions, auraAdvice...)
+		skipBodies := map[string]bool{}
+		if coverage != nil {
+			skipBodies = coverage.skipBodies
+		}
+		dataAdvice, err := dataParamSuggestions(script, names, claimed, skipBodies)
 		if err != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("Data-parameter analysis was not completed and no data-parameter suggestions were produced: %v", err))
 		} else {
@@ -243,6 +262,19 @@ func suggestionID(s Suggestion) string {
 		appendSuggestionIDPart(location.ActionName)
 		appendSuggestionIDPart(location.Field)
 		appendSuggestionIDPart(location.ReplaceText)
+		if hasAuraLocation(location) {
+			appendSuggestionIDPart(location.ActionPath)
+			appendSuggestionIDPart(location.DecodedFieldPath)
+			appendSuggestionIDPart(location.PayloadShape)
+			for _, layer := range location.EncodingLayers {
+				appendSuggestionIDPart(layer)
+			}
+			for _, segment := range location.AuraRoute {
+				appendSuggestionIDPart(segment.Kind)
+				appendSuggestionIDPart(segment.Key)
+				appendSuggestionIDPart(strconv.Itoa(segment.Index))
+			}
+		}
 	}
 
 	appendSuggestionIDPart(string(s.Kind))
@@ -298,12 +330,50 @@ func newNameRegistry(script *dsl.Script) *nameRegistry {
 	for _, source := range script.DataSources {
 		registry.taken[source.Name] = true
 	}
-	forEachAction(script, func(_ string, _ int, action *dsl.Action) {
-		for _, extractor := range action.Extractors {
-			registry.taken[extractor.Name] = true
+	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		if ref.Action != nil {
+			for _, extractor := range ref.Action.Extractors {
+				registry.taken[extractor.Name] = true
+			}
 		}
+		if ref.Request != nil {
+			// Native imports keep typed extractors in sequence request maps;
+			// JSON round trips turn them into maps. Reserve the same names in
+			// both representations so suggestion IDs remain selectable on import.
+			reserveExtractorNames(registry.taken, ref.Request["extractors"])
+		}
+		return nil
 	})
 	return registry
+}
+
+func reserveExtractorNames(taken map[string]bool, raw any) {
+	reserve := func(value any) {
+		var name string
+		switch extractor := value.(type) {
+		case dsl.Extractor:
+			name = extractor.Name
+		case map[string]any:
+			name, _ = extractor["name"].(string)
+		}
+		if name != "" {
+			taken[name] = true
+		}
+	}
+	switch extractors := raw.(type) {
+	case []dsl.Extractor:
+		for _, extractor := range extractors {
+			reserve(extractor)
+		}
+	case []map[string]any:
+		for _, extractor := range extractors {
+			reserve(extractor)
+		}
+	case []any:
+		for _, extractor := range extractors {
+			reserve(extractor)
+		}
+	}
 }
 
 func (r *nameRegistry) claim(base string) string {

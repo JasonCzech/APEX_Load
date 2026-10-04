@@ -98,6 +98,7 @@ export function httpSequenceRequests(action: Action): Action[] {
       name: asString(request.name) || `${action.name || 'Request'} ${index + 1}`,
       type: asString(request.type) || method,
       method,
+      ...(Object.prototype.hasOwnProperty.call(request, 'http_version') ? { http_version: request.http_version as Action['http_version'] } : {}),
       target: asString(request.target),
       headers: asHeaders(request.headers),
       header_list: asHeaderList(request.header_list),

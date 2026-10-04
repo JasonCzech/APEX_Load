@@ -328,8 +328,8 @@ func TestFinalizeScriptSanitizesAndGatesEffectiveDefaultHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(result.Script.Config.HTTP.DefaultHeaders, map[string]string{"X-Safe": "yes"}) ||
-		result.Script.Config.HTTP.UserAgent != "first" {
+	if !reflect.DeepEqual(result.Script.Config.HTTP.DefaultHeaders, map[string]string{"X-Safe": "yes", "user-agent": "second"}) ||
+		result.Script.Config.HTTP.UserAgent != "" {
 		t.Fatalf("http config = %#v", result.Script.Config.HTTP)
 	}
 	for index, action := range result.Script.Actions {
@@ -338,8 +338,6 @@ func TestFinalizeScriptSanitizesAndGatesEffectiveDefaultHeaders(t *testing.T) {
 		}
 		marker := headerFidelityMarker(t, action)
 		if !reflect.DeepEqual(marker["reason_codes"], []string{
-			"http_header_ambiguous_header_map",
-			"http_header_duplicate_singleton_header",
 			"http_header_transport_owned_header",
 		}) {
 			t.Fatalf("action %d marker = %#v", index, marker)
@@ -546,24 +544,21 @@ func TestFinalizeScriptReconcilesRequestHTTPVersions(t *testing.T) {
 			wantGated:         []bool{false, false},
 		},
 		{
-			name:            "mixed exact versions remain auto and gated",
+			name:            "mixed exact versions remain independent leaves",
 			requestVersions: []string{"HTTP/1.1", "HTTP/2"},
-			wantGated:       []bool{true, true},
-			wantReason:      reasonHTTPVersionNotPreserved,
+			wantGated:       []bool{false, false},
 		},
 		{
-			name:              "configured exact mismatch gates source request",
+			name:              "leaf overrides configured exact mode",
 			configVersion:     "1.1",
 			requestVersions:   []string{"HTTP/2"},
 			wantConfigVersion: "1.1",
-			wantGated:         []bool{true},
-			wantReason:        reasonHTTPVersionNotPreserved,
+			wantGated:         []bool{false},
 		},
 		{
 			name:            "declared plus unspecified cannot promote",
 			requestVersions: []string{"HTTP/2", ""},
-			wantGated:       []bool{true, false},
-			wantReason:      reasonHTTPVersionNotPreserved,
+			wantGated:       []bool{false, false},
 		},
 		{
 			name:            "unsupported request version is a blocked draft",

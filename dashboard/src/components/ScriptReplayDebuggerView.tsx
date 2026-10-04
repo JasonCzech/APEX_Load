@@ -2,8 +2,11 @@ import TooltipButton from './ux/TooltipButton'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import { executionLabel, eventLocation, type DebugRunRecord } from './debuggerExperience'
 import { DebugProfiles, DebugVariableWatches, DebugTimeline, DebugRunHistory, DebugBreakpointControls } from './DebuggerSessionTools'
+import { HTTPVersionReplayEvidence } from './HTTPVersionReplayEvidence'
+import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
 import { debugOverrideCount, sessionVariablesError, handleOutlineKeys } from './scriptSidebarModel'
 import { DEFAULT_REPLAY_OPTIONS } from './scriptEditorState'
+import { currentRuntimeParameter, type RuntimeInspectionMode } from './debugRuntimeState'
 import { DebugParameterInspector } from './DebugParameterInspector'
 import { ParameterDefinitionGuide } from './ParameterDefinitionGuide'
 import TabList from './ux/TabList'
@@ -20,6 +23,7 @@ import type {
   ScriptDebugLogLevel,
   ScriptDebugSession,
   ScriptDebugBreakpoint,
+  ReplayRuntimeSnapshot,
 } from '../types/replay'
 import type {
   ScriptDefinition,
@@ -170,6 +174,13 @@ export interface ScriptReplayDebuggerViewProps {
   replayStatusLabel: 'Stopping' | 'Paused' | 'Running' | 'Success' | 'Failed' | 'Stopped'
   replayVariableDiffs: Array<Record<string, { previous?: string; next: string }>>
   replayVariableInspector: Record<string, string> | null
+  currentRuntimeSnapshot: ReplayRuntimeSnapshot | null
+  currentRuntimeReason: string
+  canInspectRuntimeFrame: (frame: ReplayRuntimeSnapshot['frames'][number]) => boolean
+  onInspectRuntimeFrame: (frame: ReplayRuntimeSnapshot['frames'][number]) => void
+  runtimeInspectionMode: RuntimeInspectionMode
+  onRuntimeInspectionMode: (mode: RuntimeInspectionMode) => void
+  runtimeVariablesUnavailable?: boolean
   replayVariableTimeline: ReplayVariableTimelineEntry[]
   saving: boolean
   script: ScriptDefinition
@@ -241,6 +252,8 @@ export function ScriptReplayDebuggerView({
   replayStatusLabel,
   replayVariableDiffs,
   replayVariableInspector,
+  runtimeVariablesUnavailable = false,
+  currentRuntimeSnapshot, currentRuntimeReason, runtimeInspectionMode, onRuntimeInspectionMode, canInspectRuntimeFrame, onInspectRuntimeFrame,
   replayVariableTimeline,
   saving,
   script,
@@ -442,11 +455,11 @@ export function ScriptReplayDebuggerView({
             )}
 
             <div className="debugger-body">
-              {isBrowserScript && selectedOutlineParameterName && <DebugParameterInspector key={`${selectedOutlineParameterName}:${selectedReplayEventIndex}`} script={script} name={selectedOutlineParameterName} values={replayVariableInspector} event={selectedReplayEvent} matchesDraft={replayMatchesCurrentScript} onEdit={onEditParameterDefinition} onFindUsages={() => { selectOutlineParameter(selectedOutlineParameterName); setNarrowPane('editor') }} />}
+              {isBrowserScript && selectedOutlineParameterName && <DebugParameterInspector key={`${selectedOutlineParameterName}:${selectedReplayEventIndex}`} script={script} name={selectedOutlineParameterName} values={replayVariableInspector} evidenceUnavailable={runtimeVariablesUnavailable} event={selectedReplayEvent} matchesDraft={replayMatchesCurrentScript} runtimeParameter={runtimeInspectionMode === 'current' ? currentRuntimeParameter(currentRuntimeSnapshot, selectedOutlineParameterName) : undefined} currentMode={runtimeInspectionMode === 'current'} onEdit={onEditParameterDefinition} onFindUsages={() => { selectOutlineParameter(selectedOutlineParameterName); setNarrowPane('editor') }} />}
               {isBrowserScript && <details className="debugger-evidence-hint"><summary>About debug evidence</summary><p>Recording verification checks a conversion draft. Debugging here checks the current saved or edited script; changes require a new debug run.</p></details>}
               <div className="debug-session-disclosures">
               <details className="debug-effective-settings"><summary>Effective run configuration · {runRecord?.draft ? 'Unsaved draft' : 'Script settings'}</summary><dl><dt>Target</dt><dd>{runRecord?.target || script.config.base_url || 'Action-specific targets'}</dd><dt>Evidence capture</dt><dd>{runRecord?.options.capture || replayOptions.capture || 'diagnostic'}</dd><dt>Failure policy</dt><dd>{runRecord?.failurePolicy || (script.config.error_handling?.continue_on_error ? 'Continue on error' : 'Stop on error')}</dd><dt>Inputs</dt><dd>{runRecord?.inputs?.length ?? (script.parameters?.length || 0)} parameters · {runRecord?.dataSourceCount ?? (script.data_sources?.length || 0)} data sources. Row selection follows Parameter Data; session variables override matching inputs.</dd></dl><ul>{(runRecord?.inputs || (script.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed }))).map(p => <li key={p.name}>{p.name}: {p.source} · {p.selection} · {p.update || 'default update'}{p.startRow != null ? ` · start row ${p.startRow}` : ''}{p.seed != null ? ` · seed ${p.seed}` : ''}</li>)}</ul></details>
-              {isBrowserScript && <details className="debug-effective-settings"><summary>Variable watches</summary><DebugVariableWatches events={debugEvents} seed={seedVariables} latest={replayVariableInspector} selected={selectedReplayEventIndex} onSelect={jumpToEvent} /></details>}
+              {isBrowserScript && <details className="debug-effective-settings"><summary>Variable watches</summary><DebugVariableWatches events={debugEvents} seed={seedVariables} latest={replayVariableInspector} evidenceUnavailable={runtimeVariablesUnavailable} selected={selectedReplayEventIndex} onSelect={jumpToEvent} snapshot={currentRuntimeSnapshot} currentReason={currentRuntimeReason} mode={runtimeInspectionMode} onModeChange={onRuntimeInspectionMode} completed={Boolean(replayReport?.completed_at)} canInspectFrame={canInspectRuntimeFrame} onInspectFrame={frame => { onInspectRuntimeFrame(frame); setNarrowPane('editor') }} /></details>}
               <DebugRunHistory key={scriptId || projectId || 'draft'} runs={runHistory} current={replayReport} currentRecord={runRecord} />
               <DebugBreakpointControls breakpoints={debugBreakpoints} disabled={breakpointsPending} onChange={next => { setBreakpointsPending(true); void onUpdateBreakpoints(next).finally(() => setBreakpointsPending(false)) }} />
               </div>
@@ -938,9 +951,9 @@ export function ScriptReplayDebuggerView({
                   <div className="debugger-center-body">
                     {debuggerTab === 'variables' ? (
                       <div className="debugger-variables-body">
-                        {selectedOutlineParameterName && <DebugParameterInspector key={`${selectedOutlineParameterName}:${selectedReplayEventIndex}`} script={script} name={selectedOutlineParameterName} values={replayVariableInspector} event={selectedReplayEvent} matchesDraft={replayMatchesCurrentScript} onFindUsages={() => { selectOutlineParameter(selectedOutlineParameterName); setNarrowPane('editor') }} onEdit={onEditParameterDefinition} />}
+                        {selectedOutlineParameterName && <DebugParameterInspector key={`${selectedOutlineParameterName}:${selectedReplayEventIndex}`} script={script} name={selectedOutlineParameterName} values={replayVariableInspector} evidenceUnavailable={runtimeVariablesUnavailable} event={selectedReplayEvent} matchesDraft={replayMatchesCurrentScript} runtimeParameter={runtimeInspectionMode === 'current' ? currentRuntimeParameter(currentRuntimeSnapshot, selectedOutlineParameterName) : undefined} currentMode={runtimeInspectionMode === 'current'} onFindUsages={() => { selectOutlineParameter(selectedOutlineParameterName); setNarrowPane('editor') }} onEdit={onEditParameterDefinition} />}
                         <details><summary>Template namespaces and definitions</summary><ParameterDefinitionGuide script={script} /></details>
-                        <DebugVariableWatches events={debugEvents} seed={seedVariables} latest={replayVariableInspector} selected={selectedReplayEventIndex} onSelect={jumpToEvent} />
+                        <DebugVariableWatches events={debugEvents} seed={seedVariables} latest={replayVariableInspector} evidenceUnavailable={runtimeVariablesUnavailable} selected={selectedReplayEventIndex} onSelect={jumpToEvent} snapshot={currentRuntimeSnapshot} currentReason={currentRuntimeReason} mode={runtimeInspectionMode} onModeChange={onRuntimeInspectionMode} completed={Boolean(replayReport?.completed_at)} canInspectFrame={canInspectRuntimeFrame} onInspectFrame={frame => { onInspectRuntimeFrame(frame); setNarrowPane('editor') }} />
                         {replayVariableTimeline.length > 0 && (
                           <div className="replay-variable-timeline">
                             <h5>Variable Timeline</h5>
@@ -1036,6 +1049,8 @@ export function ScriptReplayDebuggerView({
                                 </div>
                                       {!isBrowserScript && <section aria-label="Response evidence">
                                   <strong>Actual response: {event.status_code || 'No protocol status'}</strong>
+                                  <HTTPVersionReplayEvidence evidence={event.protocol_evidence} unavailable={runtimeVariablesUnavailable} />
+                                  <HTTPResponseContentEvidence evidence={event.protocol_evidence} bodyState={event.snapshot?.response_body_state || event.response_body_state} unavailable={runtimeVariablesUnavailable} />
                                   <p>Response body: {(event.snapshot?.response_body_state || event.response_body_state)?.replace(/_/g, ' ') || 'Unknown capture state'}</p>
                                   {event.error_message && <p role="alert">{event.error_message}</p>}
                                   {event.snapshot?.response_body ? <button type="button" onClick={() => document.getElementById('debug-captured-response')?.scrollIntoView({ block: 'nearest' })}>View captured response below</button> : <p>{(event.snapshot?.response_body_state || event.response_body_state) === 'empty' ? 'The target returned an empty response body.' : (event.snapshot?.response_body_state || event.response_body_state) === 'redacted' ? 'Response body removed by the credential-redaction policy.' : (event.snapshot?.response_body_state || event.response_body_state) === 'expired' ? 'Response body expired under the retention policy.' : (event.snapshot?.response_body_state || event.response_body_state) === 'not_captured' ? 'Response body was not captured. Open Debug options and choose diagnostic capture before rerunning.' : event.response_body_state === 'not_retained' ? 'Response body was removed by the evidence-retention limit.' : 'Response body unavailable; the capture state is unknown. This does not establish that the response was empty.'}</p>}

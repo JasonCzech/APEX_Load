@@ -1085,7 +1085,7 @@ func projectRequest(request Request, overlay ActionOverlay, options ProjectOptio
 	}
 	headerList := make(dsl.HeaderList, 0, len(headers))
 	for _, header := range headers {
-		headerList = append(headerList, dsl.HeaderEntry{Name: header.Name, Value: header.Value})
+		headerList = append(headerList, dsl.HeaderEntry{Name: header.Name, Value: header.Value, Enabled: header.Enabled})
 	}
 	actionType := strings.TrimSpace(overlay.Type)
 	if actionType == "" {
@@ -1118,10 +1118,11 @@ func projectRequest(request Request, overlay ActionOverlay, options ProjectOptio
 		if action.Metadata == nil {
 			action.Metadata = make(map[string]any)
 		}
-		// HTTP version is currently a script-wide runtime setting. Preserve the
-		// per-request source value losslessly so an adapter or review workflow
-		// can reconcile mixed versions without silently discarding evidence.
+		// Preserve source provenance separately from the executable leaf policy.
 		action.Metadata["http_version"] = version
+		if policy, ok := sourceHTTPVersionPolicy(version); ok {
+			action.HTTPVersion, _ = dsl.NewHTTPVersionOverride(policy)
+		}
 	}
 	effectiveRequestAuth := effectiveAuth(request)
 	action.Auth, findings = projectAuth(effectiveRequestAuth, request, findings)
@@ -1640,7 +1641,7 @@ func projectBody(body Body) (string, string, error) {
 func validateHeaders(headers HeaderList, version string) error {
 	projected := make(protocol.HeaderList, 0, len(headers))
 	for _, header := range headers {
-		projected = append(projected, protocol.HeaderEntry{Name: header.Name, Value: header.Value})
+		projected = append(projected, protocol.HeaderEntry{Name: header.Name, Value: header.Value, Enabled: header.Enabled})
 	}
 	issues := httpprotocol.HeaderListIssuesForVersionWithUnresolvedTemplates(projected, version)
 	if len(issues) == 0 {

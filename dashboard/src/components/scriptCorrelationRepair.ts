@@ -72,9 +72,18 @@ function replaceRequestLocations(
   return { value: next, changed: next !== value, valid: true }
 }
 
+export function correlationRepairRequiresStructuralBodyReview(action: ScriptActionDefinition, repair: CorrelationExtractorRepair): boolean {
+  return Object.prototype.hasOwnProperty.call(action.metadata || {}, 'body_aura_template_contract') &&
+    (repair.requestLocations || []).some(location => location.field === 'request_body')
+}
+
 export function applyCorrelationRepairToAction(action: ScriptActionDefinition, repair: CorrelationExtractorRepair): ScriptActionDefinition {
   const locations = repair.requestLocations || []
   if (locations.length === 0) return action
+  // Aura contracts bind retained templates to decoded leaf occurrence indexes
+  // and hashes. Raw insertion can invalidate them even when replay preserved
+  // every body byte. Reject the whole transaction before editing any surface.
+  if (correlationRepairRequiresStructuralBodyReview(action, repair)) return action
 
   // Build and validate every prospective edit before committing any of them.
   // A server response can contain several spans across several request fields;

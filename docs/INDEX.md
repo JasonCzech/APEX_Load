@@ -16,6 +16,7 @@ kept for planning or audit context only.
 | [BASELINE_COMPARISON.md](BASELINE_COMPARISON.md) | Current | Pinned baseline selection, matched-load evidence, advisory policies and saved comparison exports |
 | [ADMIN_USER_GUIDE.md](ADMIN_USER_GUIDE.md) | Current | Administrator tasks, library assignments, and project secrets |
 | [API_USER_GUIDE.md](API_USER_GUIDE.md) | Current | API orientation, authentication, workflows, and automation |
+| [OBJECT_ACTIVITY.md](OBJECT_ACTIVITY.md) | Current | Project object history, disclosure-safe activity and archive workflows |
 | [HELP_DSL_OPERATOR_GUIDE.md](HELP_DSL_OPERATOR_GUIDE.md) | Current | DSL execution, examples, and migration guidance for LoadRunner and JMeter operators |
 | [recording-agent.md](recording-agent.md) | Current | Local browser Recording Agent |
 | [deployments/README.md](../deployments/README.md) | Current | Deployment chooser |

@@ -827,7 +827,7 @@ export function mergeReplayVariables(
   seed: Record<string, string> | undefined,
   events: ReplayActionEvent[],
 ): Record<string, string> {
-  const next: Record<string, string> = { ...(seed || {}) }
+  const next: Record<string, string> = Object.assign(Object.create(null), seed || {})
   events.forEach(event => {
     Object.entries(event.extractions || {}).forEach(([key, value]) => {
       next[key] = value

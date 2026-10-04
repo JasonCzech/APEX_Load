@@ -217,6 +217,16 @@ The follow-up review corrected five issues and added regression tests:
 
 Validation summary: the full Go suite, the unit/lint/build cycle and all seven LoadRunner browser workflows (dev-admin and local-auth, including guided repair preview/apply) passed at implementation time. The broader browser profiles were not fully green then; the failures were existing workspace-selector assertions unrelated to this work, and later reviews record a passing `npm run test:cycle`. The focused regression tests and the private-archive structural probe passed after the review fixes.
 
+## Aura capture outcomes and HTTP replay
+
+Salesforce HAR and archive review distinguishes captured Aura application results from HTTP status and replay readiness. The Aura outcomes panel reports request/response identity coverage, known action states, incomplete evidence, and retained-detail omissions. Its source button follows a unique existing action-path mapping; HAR entry numbers retain their original capture positions after filtering. The saved review retains this structural evidence without publishing action IDs, descriptors, payloads, tokens or server error messages.
+
+Native imports add the HTTP assertion `aura_actions_success` to structurally valid Aura POST envelopes. It matches every response action to the actual resolved outgoing request, independently of response order, and fails on unsuccessful/unknown states, malformed envelopes, duplicate identities or incomplete coverage. HTTP 200 remains the HTTP status even when an Aura action fails. The assertion accepts no value, expected, min, max or legacy HTML-check bypass. Malformed imported request envelopes retain an execution review gate through save/reopen; REST business fields named `descriptor` do not establish Aura traffic.
+
+Inspection is bounded to 8 MiB per envelope, 128 nesting levels, 256 actions, 131,072 JSON tokens and 4,096 form fields. Import review inspects at most 512 batches and 64 MiB of envelope work, retaining at most 2,048 outcome details and 2,048 findings shared across imported requests and captured responses. Runtime diagnostics retain at most 64 outcomes and 64 findings. Validation and inspected aggregate counts precede detail retention; failure outcomes take priority and omissions are explicit. Duplicate JSON members remain an incomplete-evidence diagnostic, including duplicates in nested payloads.
+
+Private offline acceptance inspected 409 Aura batches and 504 request actions, retaining 503 structurally matched responses and 25 captured ERROR actions under HTTP 200. One Login response remains incomplete because of duplicate members. These checks and synthetic local HTTP/browser tests establish implementation behavior; live Salesforce session, correlation and physical Chrome/iPad parity require separate qualification. See the [implementation and review record](qa/reviews/aura-record-replay-2026-10-03/implementation.md) and [safe capture counts](qa/reviews/aura-record-replay-2026-10-03/capture-check.json).
+
 ## Native archive compatibility
 
 Re-import an archive into a new review draft to use these mappings. Stored scripts and approved runtime overrides are not rewritten. The original source values and their selected-file provenance remain in import metadata.

@@ -34,6 +34,16 @@ func BuildProtocolEvidence(action *Action, result *Result) map[string]any {
 		"target":    evidenceTarget(action, result),
 		"status":    evidenceStatus(result),
 	}
+	if result.HTTPVersionPolicy != "" {
+		evidence["http_version_policy"] = result.HTTPVersionPolicy
+	}
+	if result.HTTPVersionNegotiated != "" {
+		evidence["http_version_negotiated"] = result.HTTPVersionNegotiated
+	}
+	if result.HTTPVersionSource != "" {
+		evidence["http_version_source"] = result.HTTPVersionSource
+	}
+	copyResponseContentReceipt(evidence, result.ProtocolEvidence)
 	if len(result.WarningCodes) > 0 {
 		evidence["warnings"] = result.WarningCodes
 	}
@@ -404,5 +414,28 @@ func boundEvidenceValue(value any, budget *evidenceBudget, depth int) (any, bool
 		return out, len(out) > 0
 	default:
 		return nil, false
+	}
+}
+
+// Only closed response-content enums cross wrapper protocols. Arbitrary native
+// evidence must not create a new generic payload projection or disclosure path.
+func copyResponseContentReceipt(destination, source map[string]any) {
+	if state, ok := source["response_content_state"].(string); ok {
+		switch state {
+		case "complete", "collection_window", "unavailable":
+			destination["response_content_state"] = state
+		}
+	}
+	if origin, ok := source["response_content_source"].(string); ok {
+		switch origin {
+		case "wire", "cache":
+			destination["response_content_source"] = origin
+		}
+	}
+	if basis, ok := source["response_content_basis"].(string); ok && destination["response_content_state"] != "unavailable" {
+		switch basis {
+		case "decoded", "identity":
+			destination["response_content_basis"] = basis
+		}
 	}
 }

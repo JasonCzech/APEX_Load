@@ -127,3 +127,52 @@ it('groups issue navigation by the review decision it supports', () => {
     container.remove()
   }
 })
+
+
+it('routes fixed response-content failures to source evidence before correlation or credential keywords', () => {
+  const reasons = [
+    'response_content_truncated', 'unsupported_response_content_encoding', 'invalid_response_content_encoding',
+    'response_content_decode_limit', 'response_content_decode_canceled', 'malformed_response_content_provenance',
+    'response_content_provenance_unavailable', 'invalid_har_content_storage', 'unsupported_har_content_storage',
+    'har_content_storage_limit',
+  ]
+  for (const code of reasons) {
+    const grouped = groupImportWorkspaceIssues([{
+      id: code, severity: 'blocker', title: 'Blocking conversion failure',
+      description: `Response content at log.entries[0].response.content [blocker]: ${code}; unavailable for faithful correlation.`,
+      source: 'synthetic.har:17',
+    }])
+    expect(grouped).toMatchObject([{ title: 'Review unavailable response content', targetTab: 'source', actionLabel: 'Inspect source evidence', severity: 'blocker' }])
+    expect(grouped[0].occurrences[0].description).toContain(code)
+    expect(grouped[0].occurrences[0].source).toBe('synthetic.har:17')
+  }
+  // Similar free text and future codes retain the existing general routing.
+  expect(groupImportWorkspaceIssues([{
+    id: 'ordinary-correlation', severity: 'warning', title: 'Response correlation', description: 'response_content_future_note requires a correlation extractor',
+  }])[0].targetTab).toBe('data')
+})
+
+it('opens the retained source for a response-content blocker without offering acknowledgement', () => {
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  const onNavigate = vi.fn()
+  try {
+    act(() => root.render(<ImportIssueWorkspace issues={[{
+      id: 'incomplete-response', severity: 'blocker', title: 'Blocking conversion failure',
+      description: 'response_content_truncated: captured response content is unavailable for faithful correlation; replace the incomplete behavior and remove its source gate before execution.',
+      source: 'log.entries[0].response.content',
+    }]} onNavigate={onNavigate} />))
+    const detail = container.querySelector('.shared-import-issue-detail')!
+    expect(detail.querySelector('[aria-label="Problem and impact"]')?.textContent).toContain('cannot supply faithful response correlations')
+    expect(detail.querySelector('[aria-label="Available resolution"]')?.textContent).toContain('cannot clear this execution blocker')
+    expect(Array.from(detail.querySelectorAll('button')).some(button => button.textContent?.includes('Mark reviewed'))).toBe(false)
+    const inspect = Array.from(detail.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Inspect source evidence')!
+    act(() => inspect.click())
+    expect(onNavigate).toHaveBeenCalledWith('source', expect.objectContaining({ severity: 'blocker', targetTab: 'source' }))
+    expect(detail.querySelector('details')?.textContent).toContain('log.entries[0].response.content')
+  } finally {
+    act(() => root.unmount())
+    container.remove()
+  }
+})

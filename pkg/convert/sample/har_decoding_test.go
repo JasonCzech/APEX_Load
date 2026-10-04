@@ -64,16 +64,16 @@ func TestHARDecodedResponsePreservesUTF8Whitespace(t *testing.T) {
 	}
 }
 
-func TestHARCorruptCompressedResponseStillWarns(t *testing.T) {
+func TestHARBinaryResourceMagicDoesNotImplyWireEncoding(t *testing.T) {
 	var diagnostics diag.Collector
 	encoded := base64.StdEncoding.EncodeToString([]byte{0x1f, 0x8b, 0x08, 0x00, 0xff})
 	got := decodeHARText(encoded, "base64", map[string]string{"Content-Encoding": "gzip"}, &diagnostics, "HAR entry 1", "response body")
-	if got != encoded {
-		t.Fatalf("corrupt compressed body changed: %q", got)
+	if got != string([]byte{0x1f, 0x8b, 0x08, 0x00, 0xff}) {
+		t.Fatal("binary HAR resource was wire decoded from its prefix")
 	}
 	items := diagnostics.Items()
-	if len(items) != 1 || items[0].Element != "HAR content-encoding" || items[0].Severity != diag.Warning {
-		t.Fatalf("diagnostics = %+v, want compression warning", items)
+	if len(items) != 0 {
+		t.Fatalf("binary storage produced a false wire-decoding warning: %+v", items)
 	}
 }
 
