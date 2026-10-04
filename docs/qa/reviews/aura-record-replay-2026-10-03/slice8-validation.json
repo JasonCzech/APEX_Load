@@ -1,0 +1,257 @@
+{
+  "slice": 8,
+  "status": "passed",
+  "source_review": "Production and fixture source passed root and independent peer re-review with zero remaining actionable findings.",
+  "evidence_scope": "offline supplied capture conversion and synthetic desktop/loopback; no live Salesforce or physical iPad claim",
+  "checks": {
+    "core_full": {
+      "result": "passed",
+      "passed_packages": 22,
+      "log": "/private/tmp/apex-aura-slice8-core-full-3.log"
+    },
+    "core_targeted_race": {
+      "result": "passed",
+      "packages": 7,
+      "shuffled_runs": 3,
+      "log": "/private/tmp/apex-aura-slice8-core-race-1.log"
+    },
+    "wrapper_final_race": {
+      "result": "passed",
+      "packages": 3,
+      "shuffled_runs": 3,
+      "log": "/private/tmp/apex-aura-slice8-core-race-2.log"
+    },
+    "engine_partial_retention_final": {
+      "result": "passed",
+      "full_seconds": 46.092,
+      "focused_repeated_race_seconds": 3.951,
+      "broad_race_fresh_processes": 3,
+      "fresh_process_seconds": [
+        3.388,
+        3.189,
+        3.27
+      ],
+      "log_prefix": "/private/tmp/apex-aura-slice8-engine-retention-",
+      "note": "An initial repeated broad race selection hit existing duplicate process-global protocol fixture registration; relevant repeated races and three broad fresh-process shuffled races passed without changing assertions."
+    },
+    "importer_recorder_full": {
+      "result": "passed",
+      "passed_packages": 35,
+      "log": "/private/tmp/apex-aura-slice8-importer-full-1.log"
+    },
+    "importer_final_focused": {
+      "result": "passed",
+      "packages": 3,
+      "log": "/private/tmp/apex-aura-slice8-importer-focused-3.log"
+    },
+    "importer_targeted_race": {
+      "result": "passed",
+      "packages": 2,
+      "shuffled_runs": 3,
+      "log": "/private/tmp/apex-aura-slice8-importer-race-1.log"
+    },
+    "recorder_targeted_race": {
+      "result": "passed",
+      "shuffled_runs": 3,
+      "log": "/private/tmp/apex-aura-slice8-recorder-race-2.log",
+      "additional_SSE_forwarding_log": "/private/tmp/apex-aura-slice8-recorder-sse-race.log",
+      "note": "Large instrumented recorder repetition was interrupted without a reported assertion failure; the 11MiB storage boundary passed normal tests and meaningful focused recorder/SSE races passed."
+    },
+    "dashboard_unit": {
+      "result": "passed",
+      "logs": [
+        "/private/tmp/slice8-ui-unit-source-final.log",
+        "/private/tmp/slice8-ui-retention-unit-source-final.log"
+      ],
+      "additional_responsive_tests": 57,
+      "additional_responsive_log": "/private/tmp/apex-slice8-ui-responsive-tests.log",
+      "note": "Reported executions/file runs from two focused selections, without claiming distinct test identities. The additional responsive selection overlaps previous checks and is not added as a distinct-test total. These initial unit gates precede the final narrow-layout repair, which has its own focused unit and browser gates.",
+      "reported_test_executions": 301,
+      "reported_file_runs": 13
+    },
+    "dashboard_typecheck": {
+      "result": "passed_final_source_two_completed_stages",
+      "configs": [
+        "tsconfig.json",
+        "tsconfig.node.json"
+      ],
+      "app_stage_log": "/private/tmp/apex-aura-slice8-dashboard-build-trace-layout-final.log",
+      "fixture_stage": "Corrected fixture type check preceded successful Vite, exit 0. The final two-line deadline repair then passed exact final fixture type checking, exit 0.",
+      "note": "The first build passed unchanged application source, then failed the new fixture NodeList iterator. Array.from repaired only that fixture; final fixture type checking and Vite completed with exit 0. The initial failed whole build is not counted as a pass."
+    },
+    "dashboard_global_lint": {
+      "result": "passed_final_source",
+      "command_exit_code": 0,
+      "log": "/private/tmp/apex-aura-slice8-ui-global-lint-trace-layout-final.log"
+    },
+    "dashboard_production_build": {
+      "result": "passed_final_source",
+      "seconds": 12.64,
+      "log": "/private/tmp/apex-aura-slice8-dashboard-vite-trace-layout-final.log",
+      "command_exit_code": 0
+    },
+    "generated_DSL_API_coverage": {
+      "result": "passed",
+      "log": "/private/tmp/apex-aura-slice8-generated-final.log"
+    },
+    "offline_import_counts": {
+      "result": "passed",
+      "coverage": "slice8-source-coverage.json",
+      "entries": 1079,
+      "http_leaves": 1001,
+      "CONNECT_tunnels": 78,
+      "complete": 912,
+      "text": 826,
+      "binary": 86,
+      "unavailable": 89,
+      "explicit_null_storage_gates": 23,
+      "ordinary_optional_absence": 66,
+      "aggregate_declared_decoded_bytes": 129139445,
+      "conversion_failures": 0,
+      "traffic_executed": false
+    },
+    "api_contract_replay": {
+      "result": "passed",
+      "seconds": 9.173,
+      "log": "/private/tmp/apex-aura-slice8-api-contract-replay-repair-final.log",
+      "fixture_repair": "Usable protected-recording credential fixtures now declare observed HTTP/1.1 proxy legs; assertions retain privacy, exact protected credentials, lineage, baseline persistence, save proof and tamper rejection. Missing-version gates remain covered separately."
+    },
+    "browser_both_auth_profiles": {
+      "result": "passed_all_affected_workflows_both_profiles_after_scoped_regates",
+      "dev_admin": {
+        "passed": 24,
+        "failed": 0,
+        "skipped": 0,
+        "retries": 0,
+        "reported_elapsed": "5.1m",
+        "log": "/private/tmp/apex-aura-slice8-browser-trace-layout-final-dev-admin.log"
+      },
+      "local_auth": {
+        "passed": 22,
+        "failed": 2,
+        "skipped": 0,
+        "retries": 0,
+        "reported_elapsed": "12.0m",
+        "log": "/private/tmp/apex-aura-slice8-browser-trace-layout-final-local-auth.log",
+        "failures": "The first full selection exceeded the default 30,000ms whole-test deadline in two long sidebar journeys. Both passed the final scoped rerun; all other workflows passed the full selection."
+      },
+      "scope": "Seven affected workflow files, real isolated controllers/stores, exact wire/import/export/privacy/geometry assertions",
+      "final_sidebar_regates": {
+        "dev_admin": {
+          "passed": 3,
+          "failed": 0,
+          "skipped": 0,
+          "retries": 0,
+          "reported_elapsed": "1.1m",
+          "log": "/private/tmp/apex-aura-slice8-browser-sidebar-budget-final-dev-admin.log"
+        },
+        "local_auth": {
+          "passed": 3,
+          "failed": 0,
+          "skipped": 0,
+          "retries": 0,
+          "reported_elapsed": "39.5s",
+          "log": "/private/tmp/apex-aura-slice8-browser-sidebar-budget-final-local-auth.log"
+        }
+      },
+      "note": "The union covers all 24 affected workflows per profile. The initial local-auth full selection is retained as 22 passed and 2 deadline failures, not represented as a clean single run. The final change affects only the two test deadlines; production assets and other assertions are unchanged."
+    },
+    "documentation_check": {
+      "result": "passed_final_evidence",
+      "active_markdown_files": 103,
+      "log": "/private/tmp/apex-aura-slice8-docs-final.log"
+    },
+    "qa_generated_freshness": {
+      "result": "passed_final_evidence",
+      "log": "/private/tmp/apex-aura-slice8-qa-final.log"
+    },
+    "recorder_legacy_version_guard": {
+      "result": "passed",
+      "seconds": 0.318,
+      "log": "/private/tmp/apex-aura-slice8-recorder-legacy-guard-final.log"
+    },
+    "dashboard_fixture_typecheck": {
+      "result": "passed_exact_final_source",
+      "log": "/private/tmp/apex-aura-slice8-fixture-types-sidebar-budget-final.log",
+      "command_exit_code": 0
+    },
+    "dashboard_fixture_lint": {
+      "result": "passed_final_source_in_global_lint",
+      "log": "/private/tmp/apex-aura-slice8-ui-global-lint-trace-layout-final.log"
+    },
+    "browser_review_repairs": [
+      "Stored-script route and responsive action-rail fixture corrected without changing wire/import assertions.",
+      "Parent partial-response retention enum repaired in engine and verified through live open compressed SSE report/JSON.",
+      "Usable legacy credential fixtures now include the observed supported proxy HTTP version.",
+      "Trace-aligned narrow import, header, and scroll repairs passed all three new flows in both profiles and all 24 image reviews. Both long sidebar journeys passed final case-specific deadline regates in both profiles.",
+      "Trace-proven nested tab wrappers now remove excessive review gutters; debugger column header resets its actual action flex basis and wrapping. Strict article/prose/control geometry guards and protocol/gate assertions are retained. Fixture NodeList compatibility uses Array.from."
+    ],
+    "dashboard_latest_layout_unit": {
+      "result": "passed",
+      "import_review_test_executions": 57,
+      "debugger_selected_test_executions": 4,
+      "debugger_unselected_cases": 165,
+      "logs": [
+        "/private/tmp/apex-slice8-ui-readable-tests-final.log",
+        "/private/tmp/apex-slice8-ui-readable-debugger-tests-final.log"
+      ],
+      "note": "Browser layout and viewport behavior are verified in real browser assertions, not inferred from jsdom."
+    },
+    "sidebar_deadline_repair": {
+      "source_review": "Root and independent API peer reported zero findings.",
+      "scope": "Two case-specific 120,000ms whole-test deadlines only; 15s action/expect and 30s navigation bounds plus every behavior and geometry assertion remain unchanged.",
+      "targeted_lint": "passed",
+      "lint_log": "/private/tmp/apex-slice8-ui-sidebar-budget-lint-final.log",
+      "trace_evidence": "Both fresh traces contain only a global 30,000ms timeout. Ordinary calls were at most 2.77/3.18 seconds and 25/86 expectations completed. The comparison journey expired at 1,100px mid-loop."
+    }
+  },
+  "visual_review": {
+    "result": "passed",
+    "reviewers": [
+      "root",
+      "independent_UI_peer"
+    ],
+    "reviewed_at_original_resolution": 24,
+    "remaining_actionable_findings": 0,
+    "manifest": "slice8-screenshots.json",
+    "evidence_scope": "synthetic desktop Chromium; narrow390px uses actual operator sidebar-collapse control; no physical iPad/live Salesforce claim",
+    "narrow_selected_article_pixels": [
+      258,
+      646
+    ],
+    "narrow_gzip_receipt_pixels": [
+      216,
+      165
+    ],
+    "narrow_partial_receipt_pixels": [
+      216,
+      209
+    ],
+    "narrow_viewports": [
+      [
+        390,
+        900
+      ],
+      [
+        390,
+        1204
+      ],
+      [
+        390,
+        1197
+      ]
+    ],
+    "unchanged_geometry_gates": {
+      "minimum_article_width": 220,
+      "minimum_prose_width": 180,
+      "maximum_viewport_height": 1400
+    }
+  },
+  "cache_cleanup": {
+    "final_shared_cache_cleanup": "deferred until all dependent session builds complete",
+    "obsolete_closed_slice8_bytes_reclaimed": 2666915398,
+    "shared_or_current_artifacts_removed": 0,
+    "inventory": "/private/tmp/apex-aura-slice8-obsolete-api-cache-inventory.json",
+    "closed_stat_verified_cleanup": "/private/tmp/apex-aura-slice8-obsolete-api-cache-cleanup.json"
+  }
+}

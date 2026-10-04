@@ -203,6 +203,11 @@ func (c *httpResponseCache) refresh(req *http.Request, stale *httpCacheEntry, re
 	}
 	header := stale.header.Clone()
 	for key, values := range resp.Header {
+		// Cached bodies use the decoded representation. A 304 carries no body,
+		// so its wire coding/length cannot qualify those retained bytes.
+		if strings.EqualFold(key, "Content-Encoding") || strings.EqualFold(key, "Content-Length") {
+			continue
+		}
 		header.Del(key)
 		for _, value := range values {
 			header.Add(key, value)

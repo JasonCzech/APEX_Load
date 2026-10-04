@@ -57192,6 +57192,10 @@ paths:
                           format: int64
                         response_body_truncated:
                           type: boolean
+                        response_content_capture:
+                          type: object
+                          description: 'Go type: requestimport.ResponseContentCapture'
+                          additionalProperties: true
                         response_headers:
                           type: object
                           additionalProperties:
@@ -57669,6 +57673,10 @@ paths:
                           format: int64
                         response_body_truncated:
                           type: boolean
+                        response_content_capture:
+                          type: object
+                          description: 'Go type: requestimport.ResponseContentCapture'
+                          additionalProperties: true
                         response_headers:
                           type: object
                           additionalProperties:
@@ -57881,6 +57889,10 @@ paths:
                     format: int64
                   response_body_truncated:
                     type: boolean
+                  response_content_capture:
+                    type: object
+                    description: 'Go type: requestimport.ResponseContentCapture'
+                    additionalProperties: true
                   response_headers:
                     type: object
                     additionalProperties:
@@ -58105,6 +58117,10 @@ paths:
                           format: int64
                         response_body_truncated:
                           type: boolean
+                        response_content_capture:
+                          type: object
+                          description: 'Go type: requestimport.ResponseContentCapture'
+                          additionalProperties: true
                         response_headers:
                           type: object
                           additionalProperties:
@@ -58340,6 +58356,10 @@ paths:
                           format: int64
                         response_body_truncated:
                           type: boolean
+                        response_content_capture:
+                          type: object
+                          description: 'Go type: requestimport.ResponseContentCapture'
+                          additionalProperties: true
                         response_headers:
                           type: object
                           additionalProperties:

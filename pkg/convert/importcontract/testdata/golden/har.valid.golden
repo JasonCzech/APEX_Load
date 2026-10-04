@@ -46,6 +46,14 @@
               "log.entries[0].request.httpVersion"
             ],
             "version": 1
+          },
+          "response_content_capture": {
+            "body_kind": "text",
+            "captured": "har_decoded",
+            "decoded_size_bytes": 2,
+            "state": "complete",
+            "stored": "decoded",
+            "version": 1
           }
         },
         "method": "GET",

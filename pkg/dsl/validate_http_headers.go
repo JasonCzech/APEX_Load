@@ -14,7 +14,9 @@ import (
 const (
 	importHeaderFidelityMetadataKey      = ImportHeaderFidelityMetadataKey
 	importHTTPVersionFidelityMetadataKey = "import_http_version_fidelity"
-	importReviewRequiredBlocker          = "import_review_required"
+	// ImportResponseContentFidelityMetadataKey retains a failed capture disposition.
+	ImportResponseContentFidelityMetadataKey = "import_response_content_fidelity"
+	importReviewRequiredBlocker              = "import_review_required"
 )
 
 // validateHTTPHeaderContractIssues applies the native transport's header
@@ -336,6 +338,31 @@ func validateImportFidelityMetadataIssues(label string, metadata map[string]any)
 			requiredReasons[reason] = struct{}{}
 		}
 	}
+	if raw, exists := metadata[ImportResponseContentFidelityMetadataKey]; exists {
+		reason, markerIssues := validateImportResponseContentFidelityMarker(label, raw)
+		issues = append(issues, markerIssues...)
+		if reason != "" {
+			requiredReasons[reason] = struct{}{}
+		}
+	}
+	if raw, exists := metadata["response_content_capture"]; exists {
+		capture, ok := raw.(map[string]any)
+		if !ok {
+			issues = append(issues, label+": response_content_capture must be an object")
+		} else if rawReason, present := capture["reason_code"]; present {
+			reason, reasonOK := rawReason.(string)
+			if reasonOK && reason == "response_content_unavailable" && capture["captured"] == "har_decoded" && capture["stored"] == "unavailable" && capture["state"] == "unavailable" {
+				// HAR permits optional response content to be absent. This does
+				// not establish a failed recorder capture or require a gate.
+			} else if reasonOK && supportedResponseContentFailureReason(reason) {
+				requiredReasons[reason] = struct{}{}
+			} else {
+				issues = append(issues, label+": response_content_capture.reason_code must be a supported response content fidelity reason")
+			}
+		} else if capture["state"] == "unavailable" || capture["stored"] == "unavailable" {
+			issues = append(issues, label+": unavailable response_content_capture requires a supported reason_code")
+		}
+	}
 	if len(requiredReasons) == 0 {
 		return issues
 	}
@@ -478,6 +505,38 @@ func validateImportHTTPVersionFidelityMarker(label string, raw any) (string, []s
 		))
 	}
 	return reason, issues
+}
+
+// Response-content failures remain gated after JSON persistence, even when the
+// ordinary import-review annotations are edited. Reasons are fixed enums; an
+// unknown source value must not enter a validation diagnostic.
+func validateImportResponseContentFidelityMarker(label string, raw any) (string, []string) {
+	marker, ok := raw.(map[string]any)
+	if !ok {
+		return "", []string{label + ": " + ImportResponseContentFidelityMetadataKey + " must be an object"}
+	}
+	var issues []string
+	if !metadataVersionIsOne(marker["version"]) {
+		issues = append(issues, label+": "+ImportResponseContentFidelityMetadataKey+".version must be 1")
+	}
+	reason, _ := marker["reason_code"].(string)
+	if supportedResponseContentFailureReason(reason) {
+		return reason, issues
+	}
+	issues = append(issues, label+": "+ImportResponseContentFidelityMetadataKey+".reason_code must be a supported response content fidelity reason")
+	return "", issues
+}
+
+func supportedResponseContentFailureReason(reason string) bool {
+	switch reason {
+	case "response_content_truncated", "unsupported_response_content_encoding",
+		"invalid_response_content_encoding", "response_content_decode_limit",
+		"response_content_decode_canceled", "malformed_response_content_provenance",
+		"response_content_provenance_unavailable", "invalid_har_content_storage",
+		"unsupported_har_content_storage", "har_content_storage_limit":
+		return true
+	}
+	return false
 }
 
 func metadataStringSet(metadata map[string]any, key string) map[string]struct{} {

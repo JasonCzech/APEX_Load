@@ -1233,11 +1233,11 @@ func TestRecordRequestCapturesBinaryBodiesAsBase64(t *testing.T) {
 	if !recorded.BodyTruncated {
 		t.Fatal("expected request body to be marked truncated")
 	}
-	if recorded.ResponseBodyEncoding != "base64" {
-		t.Fatalf("response body encoding = %q, want base64", recorded.ResponseBodyEncoding)
+	if recorded.ResponseBodyEncoding != "" {
+		t.Fatalf("response body encoding = %q, want unavailable omitted storage", recorded.ResponseBodyEncoding)
 	}
-	if recorded.ResponseBody != base64.StdEncoding.EncodeToString(respBody[:4]) {
-		t.Fatalf("response body = %q, want base64 of limited bytes", recorded.ResponseBody)
+	if recorded.ResponseBody != "" || recorded.ResponseContentCapture.ReasonCode != "response_content_decode_limit" {
+		t.Fatalf("response body/capture = %q/%+v, want unavailable content", recorded.ResponseBody, recorded.ResponseContentCapture)
 	}
 	if !recorded.ResponseBodyTruncated {
 		t.Fatal("expected response body to be marked truncated")
@@ -1383,8 +1383,8 @@ func TestProxyStreamsSSEWithoutWaitingForEOF(t *testing.T) {
 		session, _ := rec.GetSession("test")
 		if len(session.Requests) == 1 {
 			recorded := session.Requests[0]
-			if recorded.ResponseBody != "data: hello\n\n" {
-				t.Fatalf("captured SSE body = %q", recorded.ResponseBody)
+			if recorded.ResponseBody != "" || recorded.ResponseContentCapture.ReasonCode != "response_content_truncated" {
+				t.Fatalf("captured SSE body/capture = %q/%+v, want incomplete content omitted", recorded.ResponseBody, recorded.ResponseContentCapture)
 			}
 			if !recorded.ResponseBodyTruncated {
 				t.Fatal("expected streaming response to be marked truncated")
@@ -1468,8 +1468,8 @@ func TestProxyCapturesResponseToLimitWhileForwardingFullBody(t *testing.T) {
 		t.Fatalf("recorded requests = %d, want 1", len(session.Requests))
 	}
 	recorded := session.Requests[0]
-	if recorded.ResponseBody != payload[:8] {
-		t.Fatalf("recorded response body = %q, want capped prefix", recorded.ResponseBody)
+	if recorded.ResponseBody != "" || recorded.ResponseContentCapture.ReasonCode != "response_content_truncated" {
+		t.Fatalf("recorded response body/capture = %q/%+v, want omitted incomplete capture", recorded.ResponseBody, recorded.ResponseContentCapture)
 	}
 	if !recorded.ResponseBodyTruncated {
 		t.Fatal("expected recorded response body to be marked truncated")
@@ -1653,11 +1653,11 @@ func TestRecordRequestDecompressesResponseBody(t *testing.T) {
 		if recorded.ResponseBodySizeBytes != len(tc.body) {
 			t.Fatalf("%s: expected raw size %d, got %d", tc.name, len(tc.body), recorded.ResponseBodySizeBytes)
 		}
-		if _, ok := recorded.ResponseHeaders["Content-Encoding"]; ok {
-			t.Fatalf("%s: expected Content-Encoding header to be stripped", tc.name)
+		if recorded.ResponseHeaders["Content-Encoding"] != tc.encoding {
+			t.Fatalf("%s: captured wire Content-Encoding was not retained", tc.name)
 		}
-		if _, ok := recorded.ResponseHeaders["Content-Length"]; ok {
-			t.Fatalf("%s: expected Content-Length header to be stripped", tc.name)
+		if recorded.ResponseHeaders["Content-Length"] != fmt.Sprintf("%d", len(tc.body)) {
+			t.Fatalf("%s: captured wire Content-Length was not retained", tc.name)
 		}
 	}
 }

@@ -56,6 +56,9 @@ export interface ReplayArtifactManifest {
 }
 
 export interface ProtocolEvidence {
+  response_content_state?: 'complete' | 'collection_window' | 'unavailable'
+  response_content_basis?: 'decoded' | 'identity'
+  response_content_source?: 'wire' | 'cache'
   http_version_policy?: HTTPActionVersion
   http_version_negotiated?: '1.1' | '2'
   http_version_source?: 'wire' | 'cache'
@@ -104,7 +107,7 @@ export interface ReplayDiagnosisSummary {
 export interface BrowserReplaySnapshot {
   resources?: import('./scripts').ScriptResourceSnapshot[]
   omitted_resources?: number
-  response_body_state?: 'captured' | 'empty' | 'redacted' | 'not_captured' | 'expired'
+  response_body_state?: 'captured' | 'partial' | 'empty' | 'redacted' | 'not_captured' | 'expired'
   request_method?: string
   request_url?: string
   request_headers?: Record<string, string>

@@ -8240,3 +8240,16 @@ button.debugger-problem-row:hover {
 .author-insert-dialog input:focus-visible, .author-insert-dialog select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .script-action-navigator > label { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+
+/* A column toolbar must not retain a desktop-sized vertical flex basis. */
+@media (max-width: 520px) {
+  .main-content:has(.editor-body.workspace-debug) > .main-topbar {
+    flex-wrap: nowrap;
+  }
+  .main-content:has(.editor-body.workspace-debug) > .main-topbar .main-topbar-actions {
+    flex: 0 1 auto;
+  }
+  .main-content:has(.editor-body.workspace-debug) > .main-topbar .topbar-action-group {
+    flex-wrap: wrap;
+  }
+}

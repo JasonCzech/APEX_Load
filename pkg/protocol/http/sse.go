@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/internal/contentdecode"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -212,6 +213,8 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 				return result, fmt.Errorf("SSE stream timed out after %s", timeout)
 			case ctx.Err() != nil:
 				return result, ctx.Err()
+			case contentdecode.Kind(err) != "":
+				return result, err // A malformed compressed trailer is not a collection window.
 			default:
 				// A premature CLIENT/transport read timeout (http.Client.Timeout, a
 				// read deadline, a mid-stream connection reset) is NOT the intended

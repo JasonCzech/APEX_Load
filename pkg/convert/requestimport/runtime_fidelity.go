@@ -663,6 +663,16 @@ func ApplyRuntimeFidelityReview(
 		}
 		visitedRequests++
 		source := runtimeSurfaceSource(ref, options.Source, sourceProfile)
+		if rawCapture, present := ref.Metadata()["response_content_capture"]; present {
+			captureAction := ref.Action
+			if captureAction == nil {
+				captureAction = &dsl.Action{Metadata: ref.Metadata()}
+			}
+			ApplyResponseContentCapture(captureAction, ReviewResponseContentMetadata(rawCapture), source)
+			if ref.Action == nil {
+				ref.SetMetadata(captureAction.Metadata)
+			}
+		}
 		declaration := declarations[ref.Path]
 		// Legacy per-request source provenance is promoted to a leaf only when
 		// the adapter did not already choose one. Source-wide LR declarations

@@ -1,7 +1,7 @@
 package http
 
 import (
-	"bytes"
+	bytebuffer "bytes"
 	"context"
 	"fmt"
 	"io"
@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"github.com/jasonczech/apexload/pkg/internal/contentdecode"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -51,9 +52,9 @@ const (
 	// from the parent step. Size it above your expected concurrent-page count if
 	// you need page time to reflect only the target.
 	defaultMaxProcessResourceConcurrency = 256
-	// maxResourceCountedBytes stops counting/draining a single resource body
-	// beyond this point. Bodies up to httpCacheMaxBodyBytes are buffered for
-	// the cache; the remainder is drained (and counted) up to this ceiling.
+	// maxResourceCountedBytes bounds both wire and decoded resource bytes.
+	// Bodies up to httpCacheMaxBodyBytes are retained for cache/CSS; larger
+	// bodies must still reach validated decoder EOF within this ceiling.
 	maxResourceCountedBytes = 8 * 1024 * 1024
 )
 
@@ -546,6 +547,9 @@ func (h *HTTP) fetchResource(
 	}
 	defer resp.Body.Close()
 	captureResponse = resp.Header
+	wireHeaders := resp.Header.Clone()
+	responseView := *resp
+	responseView.Header = resp.Header.Clone()
 
 	if staleEntry != nil && resp.StatusCode == http.StatusNotModified {
 		h.cache.refresh(req, staleEntry, resp, time.Now())
@@ -559,10 +563,10 @@ func (h *HTTP) fetchResource(
 	}
 
 	entry.StatusCode = resp.StatusCode
-	// Buffer up to the cache's per-body cap so the response can be stored, then
-	// drain (counting) up to the overall ceiling.
-	buffered := make([]byte, 0, 32*1024)
-	limited := io.LimitReader(resp.Body, int64(httpCacheMaxBodyBytes)+1)
+	// Validate the whole finite decoded stream. Retain only the cache-sized
+	// logical representation; larger valid resources remain network successes
+	// without claiming complete snapshot/cache/CSS input.
+	var captured bytebuffer.Buffer
 	chunkSize := 32 * 1024
 	if h.receiveBufferBytes > 0 {
 		chunkSize = h.receiveBufferBytes
@@ -574,56 +578,56 @@ func (h *HTTP) fetchResource(
 		failed = true
 		return
 	}
+	encodings := resp.Header.Values("Content-Encoding")
+	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotModified {
+		encodings = nil
+	}
+	decoder, decodeErr := contentdecode.NewReader(ctx, resp.Body, encodings, contentdecode.DefaultLimits(maxResourceCountedBytes))
+	if decodeErr != nil {
+		entry.FailureKind = "content_decode"
+		failed = true
+		return
+	}
+	defer decoder.Close()
 	chunk := make([]byte, chunkSize)
 	for {
-		n, readErr := limited.Read(chunk)
+		n, readErr := decoder.Read(chunk)
 		if n > 0 {
-			buffered = append(buffered, chunk[:n]...)
+			remaining := httpCacheMaxBodyBytes - captured.Len()
+			retain := n
+			if retain > remaining {
+				retain = remaining
+			}
+			if retain > 0 {
+				if _, writeErr := (&responseCaptureWriter{buffer: &captured, lease: receiveLease}).Write(chunk[:retain]); writeErr != nil {
+					entry.FailureKind = "body_limit"
+					failed = true
+					break
+				}
+			}
 		}
 		if readErr != nil {
-			if readErr != io.EOF {
-				entry.FailureKind = resourceFailureKind(readErr)
+			if readErr != io.EOF || !decoder.Complete() {
+				entry.FailureKind = "content_decode"
 				failed = true
 			}
 			break
 		}
 	}
-	bytes = int64(len(buffered))
-	if bytes > int64(httpCacheMaxBodyBytes) {
-		drained, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, maxResourceCountedBytes-bytes))
-		bytes += drained
+	bytes = decoder.EncodedBytes()
+	logicalSize := decoder.DecodedBytes()
+	buffered := captured.Bytes()
+	if !failed && decoder.Decoding() {
+		responseView.Header.Del("Content-Encoding")
+		responseView.Header.Del("Content-Length")
+		responseView.ContentLength = -1
 	}
-	if !failed && bytes <= int64(httpCacheMaxBodyBytes) {
-		hadEncodedBody := false
-		for _, encoding := range responseContentEncodings(resp.Header) {
-			if encoding != "identity" {
-				hadEncodedBody = true
-				break
-			}
-		}
-		decoded, _, decodeErr := decodeHTTPResponseContent(
-			buffered,
-			resp.Header,
-			cloneHTTPHeaders(resp.Header),
-			int64(httpCacheMaxBodyBytes),
-		)
-		if decodeErr != nil {
-			failed = true
-		} else {
-			buffered = decoded
-			bytes = int64(len(decoded))
-			if hadEncodedBody {
-				// Match net/http's former transparent-decompression view so
-				// cache entries and CSS parsing never retain stale wire
-				// metadata for an already-decoded body.
-				resp.Header.Del("Content-Encoding")
-				resp.Header.Del("Content-Length")
-				resp.ContentLength = -1
-			}
-		}
+	if failed {
+		buffered = nil
 	}
-	captureBody, captureComplete = buffered, !failed && bytes <= int64(httpCacheMaxBodyBytes)
-	observeVerification(ctx, resp.Header, buffered, true, !failed && bytes <= int64(httpCacheMaxBodyBytes))
+	captureResponse = responseView.Header
+	captureBody, captureComplete = buffered, !failed && logicalSize <= int64(httpCacheMaxBodyBytes)
+	observeVerification(ctx, wireHeaders, buffered, true, !failed && logicalSize <= int64(httpCacheMaxBodyBytes))
 	if resp.StatusCode >= 400 {
 		if !failed {
 			entry.FailureKind = "http"
@@ -631,12 +635,12 @@ func (h *HTTP) fetchResource(
 		failed = true
 	}
 
-	if !failed && h.cache != nil && bytes <= int64(httpCacheMaxBodyBytes) {
+	if !failed && h.cache != nil && logicalSize <= int64(httpCacheMaxBodyBytes) {
 		if !h.cacheContentURLsOnly || isContentBearingResponse(resp.Header) {
-			h.cache.store(req, resp, buffered, time.Now())
+			h.cache.store(req, &responseView, buffered, time.Now())
 		}
 	}
-	if !failed && bytes <= int64(httpCacheMaxBodyBytes) {
+	if !failed && logicalSize <= int64(httpCacheMaxBodyBytes) {
 		if mediaType, _, mimeErr := mime.ParseMediaType(resp.Header.Get("Content-Type")); mimeErr == nil && mediaType == "text/css" {
 			cssBase := ref.url
 			if resp.Request != nil && resp.Request.URL != nil {
@@ -695,9 +699,9 @@ const maxExtractedRefs = 4096
 // resolved against base; unresolvable or non-http(s) refs are dropped later by
 // filterResourceRefs.
 func extractResourceRefs(body []byte, base *neturl.URL) (resources, prefetch []resourceRef) {
-	// bytes.NewReader, not strings.NewReader(string(body)): the string conversion
+	// bytebuffer.NewReader, not strings.NewReader(string(body)): the string conversion
 	// copied every HTML body on a per-page, per-VUser path.
-	tokenizer := html.NewTokenizer(bytes.NewReader(body))
+	tokenizer := html.NewTokenizer(bytebuffer.NewReader(body))
 	resolve := func(raw string) string {
 		raw = strings.TrimSpace(raw)
 		if raw == "" || strings.HasPrefix(raw, "#") || strings.HasPrefix(strings.ToLower(raw), "data:") || strings.HasPrefix(strings.ToLower(raw), "javascript:") {

@@ -35,16 +35,17 @@ type harPage struct {
 }
 
 type harEntry struct {
-	StartedDateTime       time.Time             `json:"startedDateTime"`
-	Time                  float64               `json:"time"`
-	Request               harRequest            `json:"request"`
-	Response              harResponse           `json:"response"`
-	Cache                 struct{}              `json:"cache"`
-	Timings               harTiming             `json:"timings"`
-	PageRef               string                `json:"pageref,omitempty"`
-	Comment               string                `json:"comment,omitempty"`
-	WebSocketMessages     []harWebSocketMessage `json:"_webSocketMessages,omitempty"`
-	HTTPVersionProvenance map[string]any        `json:"_apexload_http_version,omitempty"`
+	StartedDateTime           time.Time                            `json:"startedDateTime"`
+	Time                      float64                              `json:"time"`
+	Request                   harRequest                           `json:"request"`
+	Response                  harResponse                          `json:"response"`
+	Cache                     struct{}                             `json:"cache"`
+	Timings                   harTiming                            `json:"timings"`
+	PageRef                   string                               `json:"pageref,omitempty"`
+	Comment                   string                               `json:"comment,omitempty"`
+	WebSocketMessages         []harWebSocketMessage                `json:"_webSocketMessages,omitempty"`
+	ResponseContentProvenance requestimport.ResponseContentCapture `json:"_apexload_response_content"`
+	HTTPVersionProvenance     map[string]any                       `json:"_apexload_http_version,omitempty"`
 }
 
 type harRequest struct {
@@ -72,11 +73,11 @@ type harResponse struct {
 }
 
 type harContent struct {
-	Size     int    `json:"size"`
-	MimeType string `json:"mimeType"`
-	Text     string `json:"text,omitempty"`
-	Encoding string `json:"encoding,omitempty"`
-	Comment  string `json:"comment,omitempty"`
+	Size     int     `json:"size"`
+	MimeType string  `json:"mimeType"`
+	Text     *string `json:"text,omitempty"`
+	Encoding string  `json:"encoding,omitempty"`
+	Comment  string  `json:"comment,omitempty"`
 }
 
 type harPostData struct {
@@ -143,6 +144,15 @@ func ExportHAR(session *Session, includeExcluded bool) ([]byte, error) {
 }
 
 func exportHAREntry(req RecordedRequest, pageID string) harEntry {
+	capture := effectiveRecordedResponseContent(req)
+	body, encoding, decodedSize := req.ResponseBody, req.ResponseBodyEncoding, capture.DecodedSizeBytes
+	var storedBody *string
+	if capture.Complete() {
+		storedBody = &body
+	}
+	if !capture.Complete() {
+		body, encoding, decodedSize = "", "", -1
+	}
 	entry := harEntry{
 		StartedDateTime: req.Timestamp,
 		Time:            req.ResponseTimeMs,
@@ -163,10 +173,10 @@ func exportHAREntry(req RecordedRequest, pageID string) harEntry {
 			Cookies:     responseCookies(req.ResponseHeadersMulti),
 			Headers:     harHeaders(req.ResponseHeadersMulti),
 			Content: harContent{
-				Size:     req.ResponseBodySizeBytes,
+				Size:     decodedSize,
 				MimeType: req.responseMimeType(),
-				Text:     req.ResponseBody,
-				Encoding: req.ResponseBodyEncoding,
+				Text:     storedBody,
+				Encoding: encoding,
 			},
 			RedirectURL: firstHeaderValue(req.ResponseHeadersMulti, "Location"),
 			HeadersSize: -1,
@@ -177,9 +187,10 @@ func exportHAREntry(req RecordedRequest, pageID string) harEntry {
 			Wait:    req.ResponseTimeMs,
 			Receive: 0,
 		},
-		PageRef:               pageID,
-		Comment:               req.Note,
-		HTTPVersionProvenance: requestimport.ProxyHTTPVersionProvenance(),
+		PageRef:                   pageID,
+		Comment:                   req.Note,
+		HTTPVersionProvenance:     requestimport.ProxyHTTPVersionProvenance(),
+		ResponseContentProvenance: capture,
 	}
 	for _, msg := range req.WebSocketMessages {
 		entry.WebSocketMessages = append(entry.WebSocketMessages, harWebSocketMessage{

@@ -2528,7 +2528,7 @@ func TestHTTP_Execute_BoundsResponseBodySize(t *testing.T) {
 	defer ts.Close()
 	h := initHTTP(t, map[string]any{"base_url": ts.URL})
 
-	// Cap below the body size → failed sample, body truncated to the cap.
+	// Cap below the body size → failed sample with no partial response body.
 	capped, _ := h.Execute(context.Background(), &protocol.Action{
 		Name:   "capped",
 		Method: http.MethodGet,
@@ -2538,8 +2538,12 @@ func TestHTTP_Execute_BoundsResponseBodySize(t *testing.T) {
 	if capped.Success {
 		t.Fatal("expected oversized response to fail the sample")
 	}
-	if capped.BytesReceived != 4096 {
-		t.Fatalf("BytesReceived = %d, want 4096", capped.BytesReceived)
+	// The lookahead byte proves the wire stream exceeds the authored cap.
+	if capped.BytesReceived != 4097 {
+		t.Fatalf("BytesReceived = %d, want measured 4097", capped.BytesReceived)
+	}
+	if capped.ResponseBody != "" || capped.Snapshot == nil || capped.Snapshot.ResponseBodyState != "not_captured" {
+		t.Fatal("oversized finite response retained a partial body")
 	}
 	if !strings.Contains(capped.ErrorMessage, "exceeded") {
 		t.Fatalf("ErrorMessage = %q, want limit error", capped.ErrorMessage)

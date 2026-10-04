@@ -703,3 +703,14 @@
     flex-direction: column;
   }
 }
+
+/* The review supplies its own panel gutters inside a narrow import result. */
+@container sample-import (max-width: 420px) {
+  .sample-import-result:has(> .script-import-review),
+  .sample-import-result:has(> .import-review-layout > .import-review-panel > .script-import-review) {
+    padding: 0;
+  }
+  .sample-import-result > .import-review-layout > .import-review-panel:has(> .script-import-review) {
+    padding: 12px 8px;
+  }
+}

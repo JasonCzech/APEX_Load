@@ -180,6 +180,12 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 			result.Warnings = append(result.Warnings, "Captured HTTP version evidence requires review before replay ("+capture.ReasonCode+").")
 		}
 
+		responseCapture := effectiveRecordedResponseContent(req)
+		requestimport.ApplyResponseContentCapture(&action, responseCapture, requestimport.SourceRef{Format: "recording", ItemID: fmt.Sprintf("request-%d", req.Seq), Pointer: "response_content"})
+		if responseCapture.ReasonCode != "" {
+			result.Warnings = append(result.Warnings, "Captured response content requires review before correlation ("+responseCapture.ReasonCode+").")
+		}
+
 		if shouldAssertRecordedStatus(req.StatusCode) {
 			action.Assertions = append(action.Assertions, dsl.Assertion{
 				Type:     "status_code",
@@ -240,6 +246,7 @@ func convertibleCorrelationRequests(requests []RecordedRequest) []RecordedReques
 		}
 		req.Headers = requestHeadersForBaseline(req)
 		req.ResponseHeaders = responseHeadersForBaseline(req)
+		req.ResponseBody = recordedResponseBodyForBaseline(req)
 		filtered = append(filtered, req)
 	}
 	return filtered
@@ -497,7 +504,7 @@ func SessionBaseline(session *Session) []correlate.Observation {
 			RequestBody:            req.Body,
 			RequestBodyTransformed: req.BodyEncoding != "",
 			RequestHeaders:         requestHeadersForBaseline(req),
-			ResponseBody:           req.ResponseBody,
+			ResponseBody:           recordedResponseBodyForBaseline(req),
 			ResponseHeaders:        responseHeadersForBaseline(req),
 		})
 		actionIdx++
@@ -519,6 +526,10 @@ func requestHeadersForBaseline(req RecordedRequest) map[string]string {
 }
 
 func responseHeadersForBaseline(req RecordedRequest) map[string]string {
+	return requestimport.ResponseContentBaselineHeaders(recordedResponseHeaders(req), effectiveRecordedResponseContent(req))
+}
+
+func recordedResponseHeaders(req RecordedRequest) map[string]string {
 	if len(req.RawResponseHeadersMulti) > 0 {
 		return multiHeadersForBaseline(req.RawResponseHeadersMulti)
 	}
@@ -850,7 +861,7 @@ func detectCorrelationsChecked(requests []RecordedRequest) ([]Correlation, error
 			RequestBody:            req.Body,
 			RequestBodyTransformed: req.BodyEncoding != "",
 			RequestHeaders:         requestHeadersForBaseline(req),
-			ResponseBody:           req.ResponseBody,
+			ResponseBody:           recordedResponseBodyForBaseline(req),
 			ResponseHeaders:        responseHeadersForBaseline(req),
 		})
 	}

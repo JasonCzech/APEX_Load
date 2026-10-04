@@ -62,7 +62,7 @@ func TestBaselineNormalizedContracts(t *testing.T) {
 // converter's complete JSON-visible ConvertResult plus shared validation and
 // accounting. Any update must be reviewed as an intentional importer delta.
 var frozenImportContractHashes = map[string]string{
-	"har":      "d7594934e11e3bdbfb6bba0cfab08b84282c7b94df9ea977f7f12096f26ed5bc",
+	"har":      "4b14e330aa2283f3c065df37f74206534d9858071f3801239eb32fe84d1d402a",
 	"jmeter":   "80b9eb2a7b751512db19bcefcee3416afb25480635e4baf4163b42d21d85b3c3",
 	"k6":       "83fa7df58e867e39d7544c6b4c0a5124ede5ae3b4a3ebcfb51de6a7736b69c59",
 	"openapi":  "282ad40974d2d7ecc3dda22a77b490e2a36149cb0584e7dc43722639c8780041",
@@ -95,6 +95,7 @@ func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
 				requireIntentionalDelta(t, "har_request_http_version_fidelity")
 				requireIntentionalDelta(t, "per_leaf_http_version_policy")
 				requireIntentionalDelta(t, "har_capture_version_provenance")
+				requireIntentionalDelta(t, "har_response_content_storage_provenance")
 			}
 			if importer.name == "postman" {
 				requireIntentionalDelta(t, "postman_source_file_provenance")
@@ -589,6 +590,7 @@ var intentionalDeltaAllowlist = map[string]string{
 	"har_request_http_version_fidelity":              "HAR request protocol versions now reach the shared request model and select an exact script-wide native version when every request agrees.",
 	"per_leaf_http_version_policy":                   "Supported request observations select presence-aware exact leaf transport policies, preserving mixed HTTP/1.1 and HTTP/2 captures without changing sibling inheritance.",
 	"har_capture_version_provenance":                 "HAR drafts retain bounded request/response observation states and canonical supported versions; unavailable, malformed, unsupported, or untrusted proxy-leg captures retain durable source review gates.",
+	"har_response_content_storage_provenance":        "HAR content is admitted as already-decoded logical storage, with exact bounded text/binary size provenance and durable gates for malformed explicit recorder envelopes or invalid storage; captured wire headers never trigger a second content decode.",
 	"http_imports_disable_implicit_traceparent":      "HTTP-producing imports without an explicit source choice persist traceparent=false so runtime defaults cannot add an unauthored wire header.",
 	"jmeter_normalized_review_evidence":              "JMeter returns source-qualified structured diagnostics and separate behavior-level review counts, restricts unsupported elements to unrepresentable behavior, and retains normalized evidence in new draft provenance.",
 	"jmeter_stable_source_identity":                  "JMeter provenance retains content-addressed plan and source group identities, stable source mapping IDs, and separate workload and contributor counts for regeneration and scoped compatibility behavior.",

@@ -3,6 +3,7 @@ import ResourceSnapshotList from './ResourceSnapshotList'
 import { executionLabel, eventLocation, type DebugRunRecord } from './debuggerExperience'
 import { DebugProfiles, DebugVariableWatches, DebugTimeline, DebugRunHistory, DebugBreakpointControls } from './DebuggerSessionTools'
 import { HTTPVersionReplayEvidence } from './HTTPVersionReplayEvidence'
+import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
 import { debugOverrideCount, sessionVariablesError, handleOutlineKeys } from './scriptSidebarModel'
 import { DEFAULT_REPLAY_OPTIONS } from './scriptEditorState'
 import { DebugParameterInspector } from './DebugParameterInspector'
@@ -1040,6 +1041,7 @@ export function ScriptReplayDebuggerView({
                                       {!isBrowserScript && <section aria-label="Response evidence">
                                   <strong>Actual response: {event.status_code || 'No protocol status'}</strong>
                                   <HTTPVersionReplayEvidence evidence={event.protocol_evidence} unavailable={runtimeVariablesUnavailable} />
+                                  <HTTPResponseContentEvidence evidence={event.protocol_evidence} bodyState={event.snapshot?.response_body_state || event.response_body_state} unavailable={runtimeVariablesUnavailable} />
                                   <p>Response body: {(event.snapshot?.response_body_state || event.response_body_state)?.replace(/_/g, ' ') || 'Unknown capture state'}</p>
                                   {event.error_message && <p role="alert">{event.error_message}</p>}
                                   {event.snapshot?.response_body ? <button type="button" onClick={() => document.getElementById('debug-captured-response')?.scrollIntoView({ block: 'nearest' })}>View captured response below</button> : <p>{(event.snapshot?.response_body_state || event.response_body_state) === 'empty' ? 'The target returned an empty response body.' : (event.snapshot?.response_body_state || event.response_body_state) === 'redacted' ? 'Response body removed by the credential-redaction policy.' : (event.snapshot?.response_body_state || event.response_body_state) === 'expired' ? 'Response body expired under the retention policy.' : (event.snapshot?.response_body_state || event.response_body_state) === 'not_captured' ? 'Response body was not captured. Open Debug options and choose diagnostic capture before rerunning.' : event.response_body_state === 'not_retained' ? 'Response body was removed by the evidence-retention limit.' : 'Response body unavailable; the capture state is unknown. This does not establish that the response was empty.'}</p>}

@@ -974,7 +974,7 @@ export interface ScriptResourceSnapshot {
 export interface ScriptReplaySnapshot {
   resources?: ScriptResourceSnapshot[]
   omitted_resources?: number
-  response_body_state?: 'captured' | 'empty' | 'redacted' | 'not_captured' | 'expired'
+  response_body_state?: 'captured' | 'partial' | 'empty' | 'redacted' | 'not_captured' | 'expired'
   request_method?: string
   request_url?: string
   request_headers?: Record<string, string>

@@ -51503,6 +51503,7 @@ export interface operations {
               "response_body_encoding"?: string;
               "response_body_size_bytes"?: number;
               "response_body_truncated"?: boolean;
+              "response_content_capture"?: Record<string, unknown>;
               "response_headers"?: Record<string, string>;
               "response_headers_multi"?: Record<string, Array<string>>;
               "response_http_version"?: string;
@@ -78014,6 +78015,7 @@ export interface operations {
               "response_body_encoding"?: string;
               "response_body_size_bytes"?: number;
               "response_body_truncated"?: boolean;
+              "response_content_capture"?: Record<string, unknown>;
               "response_headers"?: Record<string, string>;
               "response_headers_multi"?: Record<string, Array<string>>;
               "response_http_version"?: string;
@@ -101208,6 +101210,7 @@ export interface operations {
               "response_body_encoding"?: string;
               "response_body_size_bytes"?: number;
               "response_body_truncated"?: boolean;
+              "response_content_capture"?: Record<string, unknown>;
               "response_headers"?: Record<string, string>;
               "response_headers_multi"?: Record<string, Array<string>>;
               "response_http_version"?: string;
@@ -116396,6 +116399,7 @@ export interface operations {
               "response_body_encoding"?: string;
               "response_body_size_bytes"?: number;
               "response_body_truncated"?: boolean;
+              "response_content_capture"?: Record<string, unknown>;
               "response_headers"?: Record<string, string>;
               "response_headers_multi"?: Record<string, Array<string>>;
               "response_http_version"?: string;
@@ -125343,6 +125347,7 @@ export interface operations {
             "response_body_encoding"?: string;
             "response_body_size_bytes"?: number;
             "response_body_truncated"?: boolean;
+            "response_content_capture"?: Record<string, unknown>;
             "response_headers"?: Record<string, string>;
             "response_headers_multi"?: Record<string, Array<string>>;
             "response_http_version"?: string;

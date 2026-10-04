@@ -14,7 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 )
 
-func TestHARCompressedExporterCompatibility(t *testing.T) {
+func TestHARBinaryResourceNeverImplicitlyWireDecoded(t *testing.T) {
 	body := []byte(`{"csrf_token":"compressed-export-abcdef123456","label":"日本語"}`)
 	writers := map[string]func(io.Writer) io.WriteCloser{
 		"gzip":    func(w io.Writer) io.WriteCloser { return gzip.NewWriter(w) },
@@ -44,8 +44,8 @@ func TestHARCompressedExporterCompatibility(t *testing.T) {
 			}
 			var diagnostics diag.Collector
 			got := decodeHARText(base64.StdEncoding.EncodeToString(encoded.Bytes()), "base64", map[string]string{"Content-Encoding": wireEncoding}, &diagnostics, "HAR entry 1", "response body")
-			if got != string(body) {
-				t.Fatalf("compressed resource was not decoded: %q", got)
+			if got != encoded.String() {
+				t.Fatal("HAR storage bytes changed because of a wire encoding header")
 			}
 			for _, d := range diagnostics.Items() {
 				if d.Severity == diag.Warning {
@@ -56,15 +56,19 @@ func TestHARCompressedExporterCompatibility(t *testing.T) {
 	}
 }
 
-func TestHARCompressedResponseKeepsExpansionLimit(t *testing.T) {
+func TestHARCompressedResourceDoesNotExpandFromWireHeader(t *testing.T) {
 	encoded := gzipBase64(t, []byte(strings.Repeat("x", maxHARDecodedContentBytes+1)))
 	var diagnostics diag.Collector
 	got := decodeHARText(encoded, "base64", map[string]string{"Content-Encoding": "gzip"}, &diagnostics, "HAR entry 1", "response body")
-	if got != encoded {
-		t.Fatal("oversized decoded response escaped the expansion limit")
+	stored, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != string(stored) {
+		t.Fatal("HAR resource bytes were expanded implicitly")
 	}
 	items := diagnostics.Items()
-	if len(items) != 1 || items[0].Severity != diag.Warning || items[0].Element != "HAR content-encoding" {
-		t.Fatalf("limit warning missing: %+v", items)
+	if len(items) != 0 {
+		t.Fatalf("HAR storage was mistaken for encoded wire content: %+v", items)
 	}
 }

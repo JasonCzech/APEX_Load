@@ -2,8 +2,6 @@ package http
 
 import (
 	"bytes"
-	"compress/flate"
-	"compress/zlib"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -20,10 +18,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/andybalholm/brotli"
 	"github.com/jasonczech/apexload/pkg/credential"
+	"github.com/jasonczech/apexload/pkg/internal/contentdecode"
 	"github.com/jasonczech/apexload/pkg/protocol"
-	"github.com/klauspost/compress/zstd"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -614,30 +611,85 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	)
 	maxBody := httpMaxBodyBytes(action.Params)
 	isEventStream := shouldReadSSE(resp.Header.Get("Content-Type"), action.Params)
-	if isEventStream {
-		sseResult, err := readSSEResponse(ctx, resp.Body, action.Params, result.StartTime, captureLease)
+	decoderLimit := maxBody
+	if isEventStream && sseMaxBodyBytes(action.Params) < decoderLimit {
+		decoderLimit = sseMaxBodyBytes(action.Params)
+	}
+	encodings := resp.Header.Values("Content-Encoding")
+	if method == http.MethodHead || resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotModified {
+		encodings = nil // These wire responses cannot carry representation bytes.
+	}
+	decoder, decodeErr := contentdecode.NewReader(ctx, resp.Body, encodings, contentdecode.DefaultLimits(decoderLimit))
+	if decodeErr != nil {
+		bodyReadErr = decodeErr
+	} else if isEventStream {
+		sseResult, err := readSSEResponse(ctx, decoder, action.Params, result.StartTime, captureLease)
 		_, writeErr := (&responseCaptureWriter{buffer: buf, lease: captureLease}).Write(sseResult.Body)
-		n = sseResult.BytesRead
 		sseFirstEvent = sseResult.FirstEvent
 		sseEventCount = sseResult.EventCount
 		bodyReadErr = err
 		if bodyReadErr == nil {
 			bodyReadErr = writeErr
 		}
-	} else if maxBody > 0 {
-		// Bound the buffered body so a giant (or pathologically compressible)
-		// response becomes a failed sample instead of OOM-ing the generator.
-		n, bodyReadErr = copyResponse(&responseCaptureWriter{buffer: buf, lease: captureLease}, io.LimitReader(resp.Body, maxBody+1), h.receiveBufferBytes)
-		if bodyReadErr == nil && n > maxBody {
-			buf.Truncate(int(maxBody))
-			n = maxBody
-			bodyReadErr = fmt.Errorf("response body exceeded %d-byte limit", maxBody)
-		}
 	} else {
-		n, bodyReadErr = copyResponse(buf, resp.Body, h.receiveBufferBytes)
+		_, bodyReadErr = copyResponse(&responseCaptureWriter{buffer: buf, lease: captureLease}, decoder, h.receiveBufferBytes)
 	}
 	bodyReadDuration := time.Since(bodyReadStart)
-	resp.Body.Close()
+	contentComplete, contentDecoded := false, false
+	if decoder != nil {
+		n = decoder.EncodedBytes()
+		contentComplete, contentDecoded = decoder.Complete(), decoder.Decoding()
+		_ = decoder.Close()
+	} else {
+		_ = resp.Body.Close()
+	}
+	if bodyReadErr == nil && !isEventStream && !contentComplete {
+		bodyReadErr = &contentdecode.Error{Kind: contentdecode.Truncated}
+	}
+	defer func() {
+		if !contentComplete && isEventStream && bodyReadErr == nil && result.Snapshot != nil && result.Snapshot.ResponseBody != "" && result.Snapshot.ResponseBodyState != "not_captured" && result.ProtocolEvidence["response_content_state"] == "collection_window" {
+			result.Snapshot.ResponseBodyState = "partial"
+		}
+	}()
+	contentState := "complete"
+	if bodyReadErr != nil {
+		contentState = "unavailable"
+	} else if !contentComplete {
+		contentState = "collection_window"
+	}
+	contentBasis := "identity"
+	if contentDecoded {
+		contentBasis = "decoded"
+	}
+	addResponseContentReceipt(result, contentState, contentBasis)
+	if cacheHit {
+		result.ProtocolEvidence["response_content_source"] = "cache"
+	} else {
+		result.ProtocolEvidence["response_content_source"] = "wire"
+	}
+	if bodyReadErr != nil {
+		buf.Reset()
+		result.Duration = time.Since(result.StartTime)
+		result.StatusCode = resp.StatusCode
+		result.BytesReceived = n
+		reused, rCount, rDur := applyTraceTelemetry()
+		result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
+		result.Success = false
+		result.ErrorMessage = fixedResponseReadError(bodyReadErr)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), nil)
+		result.Snapshot.ResponseBodyState = "not_captured"
+		h.unavailableResponseContentEvidence(result, false)
+		return result, nil
+	}
+	responseHeaders := cloneHTTPHeaders(resp.Header)
+	responseView := *resp
+	responseView.Header = resp.Header.Clone()
+	if contentDecoded {
+		responseHeaders = decodedResponseHeaders(responseHeaders)
+		responseView.Header.Del("Content-Encoding")
+		responseView.Header.Del("Content-Length")
+		responseView.ContentLength = -1
+	}
 
 	if delay := h.streaming.responseDelay(resp, action, targetURL, n, bodyReadDuration); !isEventStream && delay > 0 {
 		if err := h.streaming.wait(ctx, delay); err != nil {
@@ -647,8 +699,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			reused, rCount, rDur := applyTraceTelemetry()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
 			result.ErrorMessage = err.Error()
-			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), buf.Bytes())
-			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, buf.Bytes(), false)
+			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, nil)
+			result.Snapshot.ResponseBodyState = "not_captured"
+			h.unavailableResponseContentEvidence(result, false)
 			return result, nil
 		}
 	}
@@ -678,37 +731,28 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if result.CorrelationID == "" {
 		result.CorrelationID = generatedTraceparent
 	}
-	responseHeaders := cloneHTTPHeaders(resp.Header)
-
 	rawResponseBody := buf.Bytes()
-	if h.cache != nil && !cacheHit && bodyReadErr == nil {
-		// "Cache URLs requiring content" restricts storage to content-bearing
-		// (HTML) responses, matching the LR checkbox semantics.
-		if !h.cacheContentURLsOnly || isContentBearingResponse(resp.Header) {
-			h.cache.store(req, resp, rawResponseBody, time.Now())
-		}
-	}
 	respBody := rawResponseBody
-	respBody, responseHeaders, err = decodeHTTPResponseContent(respBody, resp.Header, responseHeaders, maxBody, captureLease)
-	if err != nil {
-		result.Duration = time.Since(result.StartTime)
-		result.Success = false
-		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, buf.Bytes())
-		h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, buf.Bytes(), false)
-		return result, nil
-	}
 	formattedBody, err := applyDataFormattingChain(respBody, h.dataFormattingAutoDetect, h.dataFormattingChain, maxBody)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
 		result.Success = false
 		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
-		h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, respBody, false)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, nil)
+		result.Snapshot.ResponseBodyState = "not_captured"
+		addResponseContentReceipt(result, "unavailable", contentBasis)
+		h.unavailableResponseContentEvidence(result, false)
 		return result, nil
 	}
+	if h.cache != nil && !cacheHit && contentComplete && !isEventStream {
+		// "Cache URLs requiring content" restricts storage to content-bearing
+		// (HTML) responses, matching the LR checkbox semantics.
+		if !h.cacheContentURLsOnly || isContentBearingResponse(resp.Header) {
+			h.cache.store(req, &responseView, rawResponseBody, time.Now())
+		}
+	}
 	respBody = formattedBody
-	if bodyReadErr == nil {
+	if contentComplete {
 		if refreshed, ok := h.followMetaRefresh(ctx, action, req, resp, respBody, result); ok {
 			return refreshed, nil
 		}
@@ -718,7 +762,11 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	// Snapshot the response/transport outcome before extractors, content checks,
 	// and non-status assertions can change the overall action outcome.
-	h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, respBody, result.Success)
+	if contentComplete {
+		h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, respBody, result.Success)
+	} else {
+		h.unavailableResponseContentEvidence(result, result.Success)
+	}
 	extractorWork := newExtractorInputWorkBudget(resp.Header, respBody)
 extractors:
 	for _, ext := range action.Extractors {
@@ -881,7 +929,7 @@ extractors:
 	// page's embedded resources after the main sample. Gated on the transport
 	// outcome (not result.Success, which extractors/assertions may have
 	// flipped) — a real browser fetches resources for any rendered page.
-	observeVerification(ctx, resp.Header, respBody, false, bodyReadErr == nil)
+	observeVerification(ctx, resp.Header, respBody, false, contentComplete)
 	var resourceEvidence *resourceCapture
 	resourceCtx := ctx
 	if action.CaptureResourceDetails {
@@ -894,7 +942,7 @@ extractors:
 	if fetcher == nil && len(explicit) > 0 {
 		fetcher = &resourceFetcher{h: h}
 	}
-	if fetcher != nil && bodyReadErr == nil && resp.StatusCode >= 200 && resp.StatusCode < 400 {
+	if fetcher != nil && contentComplete && resp.StatusCode >= 200 && resp.StatusCode < 400 {
 		finalURL := req.URL
 		if resp.Request != nil && resp.Request.URL != nil {
 			finalURL = resp.Request.URL
@@ -1038,101 +1086,32 @@ func readAllLimitedWithLease(r io.Reader, maxBytes int64, lease *responseCapture
 }
 
 func decodeHTTPResponseContent(body []byte, headers http.Header, snapshotHeaders map[string]string, maxBytes int64, leases ...*responseCaptureLease) ([]byte, map[string]string, error) {
-	if len(body) == 0 {
-		return body, snapshotHeaders, nil
+	return decodeHTTPResponseContentContext(context.Background(), body, headers, snapshotHeaders, maxBytes, leases...)
+}
+func decodeHTTPResponseContentContext(ctx context.Context, body []byte, headers http.Header, snapshotHeaders map[string]string, maxBytes int64, leases ...*responseCaptureLease) ([]byte, map[string]string, error) {
+	decoded, err := contentdecode.Decode(ctx, body, headers.Values("Content-Encoding"), contentdecode.DefaultLimits(maxBytes))
+	if err != nil {
+		return nil, snapshotHeaders, err
 	}
-	encodings := responseContentEncodings(headers)
-	if len(encodings) == 0 {
-		return body, snapshotHeaders, nil
+	if len(leases) > 0 && !leases[0].reserve(int64(len(decoded))) {
+		return nil, snapshotHeaders, leases[0].exhaustedError()
 	}
-
-	decoded := body
-	decodedAny := false
-	var lease *responseCaptureLease
-	if len(leases) > 0 {
-		lease = leases[0]
-	}
-	for i := len(encodings) - 1; i >= 0; i-- {
-		encoding := encodings[i]
-		if encoding == "identity" {
-			continue
+	for _, encoding := range responseContentEncodings(headers) {
+		if encoding != "identity" {
+			return decoded, decodedResponseHeaders(snapshotHeaders), nil
 		}
-		var err error
-		switch encoding {
-		case "gzip", "x-gzip":
-			decoded, err = decodeGzipBody(decoded, maxBytes, lease)
-		case "deflate":
-			decoded, err = decodeDeflateBody(decoded, maxBytes, lease)
-		case "br":
-			decoded, err = decodeBrotliBody(decoded, maxBytes, lease)
-		case "zstd", "zstandard":
-			decoded, err = decodeZstdBody(decoded, maxBytes, lease)
-		default:
-			return body, snapshotHeaders, fmt.Errorf("unsupported response content encoding %q", encoding)
-		}
-		if err != nil {
-			return body, snapshotHeaders, fmt.Errorf("decode response content encoding %q: %w", encoding, err)
-		}
-		decodedAny = true
-	}
-	if decodedAny {
-		snapshotHeaders = decodedResponseHeaders(snapshotHeaders)
 	}
 	return decoded, snapshotHeaders, nil
 }
 
 func responseContentEncodings(headers http.Header) []string {
-	if len(headers) == 0 {
-		return nil
-	}
-	values := headers.Values("Content-Encoding")
-	encodings := make([]string, 0, len(values))
-	for _, value := range values {
+	var encodings []string
+	for _, value := range headers.Values("Content-Encoding") {
 		for _, part := range strings.Split(value, ",") {
-			encoding := strings.ToLower(strings.TrimSpace(part))
-			if encoding != "" {
-				encodings = append(encodings, encoding)
-			}
+			encodings = append(encodings, strings.ToLower(strings.TrimSpace(part)))
 		}
 	}
 	return encodings
-}
-
-func decodeDeflateBody(body []byte, maxBytes int64, leases ...*responseCaptureLease) ([]byte, error) {
-	var lease *responseCaptureLease
-	if len(leases) > 0 {
-		lease = leases[0]
-	}
-	zlibReader, err := zlib.NewReader(bytes.NewReader(body))
-	if err == nil {
-		defer zlibReader.Close()
-		return readAllLimitedWithLease(zlibReader, maxBytes, lease)
-	}
-
-	flateReader := flate.NewReader(bytes.NewReader(body))
-	defer flateReader.Close()
-	return readAllLimitedWithLease(flateReader, maxBytes, lease)
-}
-
-func decodeBrotliBody(body []byte, maxBytes int64, leases ...*responseCaptureLease) ([]byte, error) {
-	var lease *responseCaptureLease
-	if len(leases) > 0 {
-		lease = leases[0]
-	}
-	return readAllLimitedWithLease(brotli.NewReader(bytes.NewReader(body)), maxBytes, lease)
-}
-
-func decodeZstdBody(body []byte, maxBytes int64, leases ...*responseCaptureLease) ([]byte, error) {
-	var lease *responseCaptureLease
-	if len(leases) > 0 {
-		lease = leases[0]
-	}
-	reader, err := zstd.NewReader(bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
-	return readAllLimitedWithLease(reader, maxBytes, lease)
 }
 
 func decodedResponseHeaders(headers map[string]string) map[string]string {
