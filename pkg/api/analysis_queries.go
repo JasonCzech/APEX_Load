@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -210,6 +209,30 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 		if !ok {
 			return nil, "", errors.New("monitor storage unavailable")
 		}
+		job, jobErr := store.GetRunMonitorJob(project, selection.RunID+":"+selection.SourceID)
+		if jobErr == nil && job.Source.Pack == "appdynamics" {
+			after := ""
+			for n := 0; n < 100; n++ {
+				page, err := loadCanonicalMonitorData(ctx, store, project, selection.RunID, selection.SourceID, "point", after, 999)
+				if err != nil {
+					return nil, "", err
+				}
+				for _, p := range page.Points {
+					if p.MetricName == selection.Metric && matchesAnalysisDimensions(p, selection) {
+						p.RelativeTimeMS = nil
+						if err := appendPoint(p); err != nil {
+							return nil, "", err
+						}
+					}
+				}
+				if !page.HasMore {
+					result, err := analysis.BucketSeries(points, q.From, q.To, q.BucketSeconds, selection.Aggregation)
+					return result, selection.RunID, err
+				}
+				after = page.AfterKey
+			}
+			return nil, "", errors.New("monitor scan exceeds canonical budget")
+		}
 		afterJob, afterSequence := "", int64(-1)
 		for page := 0; ; page++ {
 			if err := ctx.Err(); err != nil {
@@ -230,11 +253,11 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 				if err != nil {
 					return nil, "", errors.New("monitor artifact unavailable")
 				}
-				var batch []analysis.MetricPoint
-				if json.Unmarshal(body, &batch) != nil {
+				decoded, decodeErr := decodeMonitorArtifact(body)
+				if decodeErr != nil {
 					return nil, "", errors.New("invalid monitor evidence")
 				}
-				for _, p := range batch {
+				for _, p := range decoded.Points {
 					if p.Source == selection.SourceID && p.MetricName == selection.Metric && matchesAnalysisDimensions(p, selection) {
 						p.ReceivedAt = receipt.ReceivedAt
 						p.Quality = monitorPointQuality(p, receipt.ReceivedAt)

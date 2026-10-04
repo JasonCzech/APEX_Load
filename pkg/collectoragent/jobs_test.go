@@ -151,3 +151,99 @@ func TestCloudEmptyWindowRetainsCollectionInterval(t *testing.T) {
 		t.Fatal("cloud interval below provider bound accepted")
 	}
 }
+
+func TestCollectorJobPagesRetainRetriesUntilCompleteScan(t *testing.T) {
+	pub, key, _ := ed25519.GenerateKey(rand.Reader)
+	now := time.Now().UTC()
+	job := RunJob{ID: "a", ProjectID: "p", RunID: "r-a", CollectorID: "c", SourceID: "s", SourceRevision: 1, IntervalSeconds: 60, Pack: "go-runtime", StartedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour), LeaseExpiresAt: now.Add(time.Minute)}
+	first, _ := SignRunJob(job, key)
+	job.ID, job.RunID = "b", "r-b"
+	second, _ := SignRunJob(job, key)
+	cancelFirst := false
+	var posted []RunSampleBatch
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/jobs") {
+			if r.Header.Get("X-APEX-Monitor-Readiness") == "" || r.URL.Query().Get("page_size") != "32" {
+				t.Error("page omitted readiness or bounded size")
+			}
+			w.Header().Set("X-APEX-Monitor-Page", "1")
+			if r.URL.Query().Get("after_key") == "" {
+				if cancelFirst {
+					w.Header().Set("X-APEX-Monitor-Next-Key", "b")
+					json.NewEncoder(w).Encode([]SignedRunJob{second})
+				} else {
+					w.Header().Set("X-APEX-Monitor-Next-Key", "a")
+					json.NewEncoder(w).Encode([]SignedRunJob{first})
+				}
+			} else if !cancelFirst {
+				json.NewEncoder(w).Encode([]SignedRunJob{second})
+			} else {
+				json.NewEncoder(w).Encode([]SignedRunJob{})
+			}
+			return
+		}
+		var batch RunSampleBatch
+		if err := json.NewDecoder(r.Body).Decode(&batch); err != nil {
+			t.Error(err)
+		}
+		posted = append(posted, batch)
+		w.WriteHeader(503)
+	}))
+	defer controller.Close()
+	agent, err := New(Config{ControllerURL: controller.URL, CollectorID: "c", Token: "token", ControllerPublicKey: pub, Packs: []string{"go-runtime"}, SpoolDirectory: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err = agent.runJobTick(context.Background()); err == nil {
+			t.Fatal("upload failure not surfaced")
+		}
+	}
+	if len(agent.pendingBatches) != 2 || agent.pendingBatches["a"] == nil || agent.jobPollAfterKey != "" {
+		t.Fatal("second page discarded the first page's durable retry")
+	}
+	original, _ := json.Marshal(agent.pendingBatches["a"].Points)
+	if err = agent.runJobTick(context.Background()); err == nil {
+		t.Fatal("retry failure not surfaced")
+	}
+	retried, _ := json.Marshal(posted[len(posted)-1].Points)
+	if string(original) != string(retried) {
+		t.Fatal("page continuation regenerated unacknowledged observations")
+	}
+	// Finish this scan, then verify a stopped job is removed only when the
+	// following complete scan proves it absent.
+	_ = agent.runJobTick(context.Background())
+	cancelFirst = true
+	_ = agent.runJobTick(context.Background())
+	if agent.pendingBatches["a"] == nil {
+		t.Fatal("partial scan treated an unvisited job as cancelled")
+	}
+	_ = agent.runJobTick(context.Background())
+	if agent.pendingBatches["a"] != nil || agent.pendingBatches["b"] == nil {
+		t.Fatal("completed scan failed to prune only the stopped job")
+	}
+}
+
+func TestCollectorExpiredSpoolIsNotRenewedByPagination(t *testing.T) {
+	pub, key, _ := ed25519.GenerateKey(rand.Reader)
+	now := time.Now().UTC()
+	job := RunJob{ID: "expired", ProjectID: "p", RunID: "r", CollectorID: "c", SourceID: "s", SourceRevision: 1, IntervalSeconds: 1, Pack: "go-runtime", StartedAt: now.Add(-time.Hour), ExpiresAt: now.Add(-time.Second), LeaseExpiresAt: now.Add(-2 * time.Second)}
+	expired, _ := SignRunJob(job, key)
+	agent, err := New(Config{ControllerURL: "http://localhost:8080", CollectorID: "c", Token: "token", ControllerPublicKey: pub, Packs: []string{"go-runtime"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent.pendingBatches[job.ID] = &RunSampleBatch{Job: expired}
+	agent.providerBacklog[job.ID] = []*RunSampleBatch{{Job: expired}}
+	agent.discardExpiredMonitorSpool(now)
+	if len(agent.pendingBatches) != 0 || len(agent.providerBacklog) != 0 {
+		t.Fatal("expired signed lifetime retained observations for resurrection")
+	}
+	job.ID, job.ExpiresAt = "lease-ended", now.Add(time.Hour)
+	leaseEnded, _ := SignRunJob(job, key)
+	agent.pendingBatches[job.ID] = &RunSampleBatch{Job: leaseEnded}
+	agent.discardExpiredMonitorSpool(now)
+	if agent.pendingBatches[job.ID] == nil {
+		t.Fatal("renewable collection lease erased unacknowledged observations")
+	}
+}

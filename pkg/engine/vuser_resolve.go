@@ -658,7 +658,7 @@ func scriptUsesHTTPDefaultHeaders(script *dsl.Script) bool {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(script.Protocol)) {
-	case "", "http", "soap", "java_http":
+	case "", "http", "http/1.1", "http/2", "soap", "java_http":
 		return true
 	default:
 		return false

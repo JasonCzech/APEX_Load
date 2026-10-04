@@ -461,3 +461,14 @@ describe('scenarioDraftUtils', () => {
 		expect(added.groups[1].revisionNewGroup).toBe(true)
 	})
 })
+
+it('preserves explicit run monitor overrides when revising a queued test without aliasing bindings', () => {
+  const bindings = [{ source_id: 'appd-source', required: true }]
+  const draft = buildScenarioDraftFromTest({ id: 'run', name: 'Run', duration: '1m', groups: [], monitor_bindings: { sources: bindings } } as never)
+  expect(draft.revisionContext?.monitorBindings).toEqual(bindings)
+  bindings[0].required = false
+  expect(draft.revisionContext?.monitorBindings?.[0].required).toBe(true)
+  const cloned = buildInitialScenarioDraft(draft, [])
+  draft.revisionContext!.monitorBindings![0].required = false
+  expect(cloned.revisionContext?.monitorBindings?.[0].required).toBe(true)
+})

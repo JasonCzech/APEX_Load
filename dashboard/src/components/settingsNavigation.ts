@@ -24,6 +24,7 @@ export const SETTINGS_DESTINATIONS: readonly SettingsDestination[] = [
   { id: 'github', group: 'Connections', title: 'GitHub', section: 'integrations', subsection: 'github', scope: 'deployment' },
   { id: 'elk-capture', group: 'Connections', title: 'Elastic test capture', section: 'integrations', subsection: 'elk-capture', scope: 'project' },
   { id: 'dynatrace-capture', group: 'Connections', title: 'Dynatrace test capture', section: 'integrations', subsection: 'dynatrace-capture', scope: 'project' },
+  { id: 'appdynamics-capture', group: 'Connections', title: 'AppDynamics test capture', section: 'integrations', subsection: 'appdynamics-capture', scope: 'project' },
   { id: 'prometheus', group: 'Connections', title: 'Prometheus', section: 'integrations', subsection: 'prometheus', scope: 'deployment' },
   { id: 'opensearch', group: 'Connections', title: 'OpenSearch', section: 'integrations', subsection: 'opensearch', scope: 'deployment' },
   { id: 'grafana', group: 'Connections', title: 'Grafana', section: 'integrations', subsection: 'grafana', scope: 'deployment' },

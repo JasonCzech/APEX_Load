@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -48,24 +49,27 @@ type ciRunExecutionRequest struct {
 }
 
 type ciRunGoalsRequest struct {
-	P95LatencyMs             *float64 `json:"p95_latency_ms,omitempty"`
-	MaxErrorPct              *float64 `json:"max_error_pct,omitempty"`
-	MaxAvgServerProcessingMs *float64 `json:"max_avg_server_processing_ms,omitempty"`
-	MaxAvgTransferMs         *float64 `json:"max_avg_transfer_ms,omitempty"`
-	MaxErrorCount            *int     `json:"max_error_count,omitempty"`
-	RequireSLA               bool     `json:"require_sla"`
-	RequireResults           bool     `json:"require_results"`
+	MonitorRules             []analysis.MonitorRule `json:"monitor_rules,omitempty"`
+	P95LatencyMs             *float64               `json:"p95_latency_ms,omitempty"`
+	MaxErrorPct              *float64               `json:"max_error_pct,omitempty"`
+	MaxAvgServerProcessingMs *float64               `json:"max_avg_server_processing_ms,omitempty"`
+	MaxAvgTransferMs         *float64               `json:"max_avg_transfer_ms,omitempty"`
+	MaxErrorCount            *int                   `json:"max_error_count,omitempty"`
+	RequireSLA               bool                   `json:"require_sla"`
+	RequireResults           bool                   `json:"require_results"`
 }
 
-func (g ciRunGoalsRequest) evaluated() bool {
+func (g ciRunGoalsRequest) loadGoalsEvaluated() bool {
 	return g.P95LatencyMs != nil || g.MaxErrorPct != nil || g.MaxAvgServerProcessingMs != nil || g.MaxAvgTransferMs != nil || g.MaxErrorCount != nil
 }
+
+func (g ciRunGoalsRequest) evaluated() bool { return g.loadGoalsEvaluated() || len(g.MonitorRules) > 0 }
 
 func (g ciRunGoalsRequest) goalConfig() *GoalConfig {
 	if !g.evaluated() {
 		return nil
 	}
-	return &GoalConfig{P95LatencyMs: g.P95LatencyMs, MaxErrorPct: g.MaxErrorPct, MaxAvgServerProcessingMs: g.MaxAvgServerProcessingMs, MaxAvgTransferMs: g.MaxAvgTransferMs, MaxErrorCount: g.MaxErrorCount}
+	return cloneGoalConfig(&GoalConfig{MonitorRules: g.MonitorRules, P95LatencyMs: g.P95LatencyMs, MaxErrorPct: g.MaxErrorPct, MaxAvgServerProcessingMs: g.MaxAvgServerProcessingMs, MaxAvgTransferMs: g.MaxAvgTransferMs, MaxErrorCount: g.MaxErrorCount})
 }
 
 type ciRunSource struct {
@@ -92,16 +96,17 @@ type ciRunSource struct {
 }
 
 type ciRunCreateRequest struct {
-	ProjectID    string                `json:"project_id"`
-	Name         string                `json:"name,omitempty"`
-	ReleaseID    string                `json:"release_id,omitempty"`
-	ScriptPath   string                `json:"script_path,omitempty"`
-	ScriptID     string                `json:"script_id,omitempty"`
-	Script       json.RawMessage       `json:"script,omitempty"`
-	Execution    ciRunExecutionRequest `json:"execution"`
-	Goals        ciRunGoalsRequest     `json:"goals"`
-	Source       ciRunSource           `json:"source"`
-	PublishCheck *bool                 `json:"publish_check,omitempty"`
+	MonitorBindings *[]storage.MonitorBinding `json:"monitor_bindings,omitempty"`
+	ProjectID       string                    `json:"project_id"`
+	Name            string                    `json:"name,omitempty"`
+	ReleaseID       string                    `json:"release_id,omitempty"`
+	ScriptPath      string                    `json:"script_path,omitempty"`
+	ScriptID        string                    `json:"script_id,omitempty"`
+	Script          json.RawMessage           `json:"script,omitempty"`
+	Execution       ciRunExecutionRequest     `json:"execution"`
+	Goals           ciRunGoalsRequest         `json:"goals"`
+	Source          ciRunSource               `json:"source"`
+	PublishCheck    *bool                     `json:"publish_check,omitempty"`
 }
 
 func (r ciRunCreateRequest) shouldPublishCheck() bool {
@@ -109,40 +114,44 @@ func (r ciRunCreateRequest) shouldPublishCheck() bool {
 }
 
 type ciRunMetadata struct {
-	SchemaVersion           int                   `json:"schema_version"`
-	Source                  ciRunSource           `json:"source"`
-	Name                    string                `json:"name,omitempty"`
-	ReleaseID               string                `json:"release_id,omitempty"`
-	ScriptPath              string                `json:"script_path,omitempty"`
-	ScriptIdentity          string                `json:"script_identity"`
-	Execution               ciRunExecutionRequest `json:"execution"`
-	Goals                   ciRunGoalsRequest     `json:"goals"`
-	RequireSLA              bool                  `json:"require_sla"`
-	RequireResults          bool                  `json:"require_results"`
-	PublishCheck            bool                  `json:"publish_check"`
-	CheckInstallationID     int64                 `json:"check_installation_id,omitempty"`
-	PolicyRevision          int64                 `json:"policy_revision"`
-	IdempotencySHA          string                `json:"idempotency_sha256"`
-	DeploymentLeaseTokenSHA string                `json:"deployment_lease_token_sha256,omitempty"`
+	MonitorBindings         *[]storage.MonitorBinding `json:"monitor_bindings,omitempty"`
+	SchemaVersion           int                       `json:"schema_version"`
+	Source                  ciRunSource               `json:"source"`
+	Name                    string                    `json:"name,omitempty"`
+	ReleaseID               string                    `json:"release_id,omitempty"`
+	ScriptPath              string                    `json:"script_path,omitempty"`
+	ScriptIdentity          string                    `json:"script_identity"`
+	Execution               ciRunExecutionRequest     `json:"execution"`
+	Goals                   ciRunGoalsRequest         `json:"goals"`
+	RequireSLA              bool                      `json:"require_sla"`
+	RequireResults          bool                      `json:"require_results"`
+	PublishCheck            bool                      `json:"publish_check"`
+	CheckInstallationID     int64                     `json:"check_installation_id,omitempty"`
+	PolicyRevision          int64                     `json:"policy_revision"`
+	IdempotencySHA          string                    `json:"idempotency_sha256"`
+	DeploymentLeaseTokenSHA string                    `json:"deployment_lease_token_sha256,omitempty"`
 }
 
 type ciRunResponse struct {
-	SchemaVersion  int      `json:"schema_version"`
-	TestID         string   `json:"test_id"`
-	Status         string   `json:"status"`
-	Outcome        string   `json:"outcome"`
-	SLAEvaluated   bool     `json:"sla_evaluated"`
-	SLABreached    bool     `json:"sla_breached"`
-	SLADetails     []string `json:"sla_details,omitempty"`
-	Transactions   int64    `json:"transactions"`
-	Errors         int64    `json:"errors"`
-	TPS            float64  `json:"tps"`
-	DurationMs     int64    `json:"duration_ms"`
-	ResultsPresent bool     `json:"results_present"`
-	StatusURL      string   `json:"status_url"`
-	ReportURL      string   `json:"report_url"`
-	CheckURL       string   `json:"check_url,omitempty"`
-	Error          string   `json:"error,omitempty"`
+	MonitoringStatus     string                       `json:"monitoring_status,omitempty"`
+	MonitorRuleResults   []analysis.MonitorRuleResult `json:"monitor_rule_results,omitempty"`
+	MonitoringIncomplete bool                         `json:"-"`
+	SchemaVersion        int                          `json:"schema_version"`
+	TestID               string                       `json:"test_id"`
+	Status               string                       `json:"status"`
+	Outcome              string                       `json:"outcome"`
+	SLAEvaluated         bool                         `json:"sla_evaluated"`
+	SLABreached          bool                         `json:"sla_breached"`
+	SLADetails           []string                     `json:"sla_details,omitempty"`
+	Transactions         int64                        `json:"transactions"`
+	Errors               int64                        `json:"errors"`
+	TPS                  float64                      `json:"tps"`
+	DurationMs           int64                        `json:"duration_ms"`
+	ResultsPresent       bool                         `json:"results_present"`
+	StatusURL            string                       `json:"status_url"`
+	ReportURL            string                       `json:"report_url"`
+	CheckURL             string                       `json:"check_url,omitempty"`
+	Error                string                       `json:"error,omitempty"`
 
 	terminalEvidenceChecked  bool `json:"-"`
 	terminalEvidenceVerified bool `json:"-"`
@@ -236,7 +245,7 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 	if deploymentLeaseToken != "" {
 		deploymentLeaseTokenSHA = deploymentLeaseTokenHash(deploymentLeaseToken)
 	}
-	metadata := ciRunMetadata{SchemaVersion: ciRunSchemaVersion, Source: req.Source, Name: strings.TrimSpace(req.Name), ReleaseID: strings.TrimSpace(req.ReleaseID), ScriptPath: firstNonEmpty(req.ScriptPath, req.Source.ScriptPath), ScriptIdentity: scriptIdentity, Execution: req.Execution, Goals: req.Goals, RequireSLA: req.Goals.RequireSLA, RequireResults: req.Goals.RequireResults, PublishCheck: req.shouldPublishCheck(), CheckInstallationID: githubPolicy.AppInstallationID, PolicyRevision: policy.Revision, IdempotencySHA: sha256String(idempotencyKey), DeploymentLeaseTokenSHA: deploymentLeaseTokenSHA}
+	metadata := ciRunMetadata{MonitorBindings: req.MonitorBindings, SchemaVersion: ciRunSchemaVersion, Source: req.Source, Name: strings.TrimSpace(req.Name), ReleaseID: strings.TrimSpace(req.ReleaseID), ScriptPath: firstNonEmpty(req.ScriptPath, req.Source.ScriptPath), ScriptIdentity: scriptIdentity, Execution: req.Execution, Goals: req.Goals, RequireSLA: req.Goals.RequireSLA, RequireResults: req.Goals.RequireResults, PublishCheck: req.shouldPublishCheck(), CheckInstallationID: githubPolicy.AppInstallationID, PolicyRevision: policy.Revision, IdempotencySHA: sha256String(idempotencyKey), DeploymentLeaseTokenSHA: deploymentLeaseTokenSHA}
 	existing, existingOK := s.runner.GetTest(testID)
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	runActor := testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
@@ -278,6 +287,29 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		if err := validateCIRunRequest(req, policy, script, resolver); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
+		}
+	}
+	if !existingOK {
+		bindings := requestMonitorBindings(req.MonitorBindings)
+		if err := s.runner.validateTestMonitorBindings(req.ProjectID, bindings, req.Goals.goalConfig()); err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		if len(req.Goals.MonitorRules) > 0 {
+			monitors, ok := s.store.(storage.RunMonitorStore)
+			if !ok || bindings == nil {
+				writeError(w, 400, "CI monitoring rules require explicit approved source bindings")
+				return
+			}
+			sources, err := monitors.ListMonitorSources(req.ProjectID)
+			if err != nil {
+				writeError(w, 503, "monitoring selections unavailable")
+				return
+			}
+			if err = validateSelectedMonitorRules(bindings, sources, req.Goals.goalConfig()); err != nil {
+				writeError(w, 400, err.Error())
+				return
+			}
 		}
 	}
 	var checkClient *githubClient
@@ -362,11 +394,12 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 	}
 	goalConfig := req.Goals.goalConfig()
 	scenarioMode := ""
-	if goalConfig != nil {
+	if req.Goals.loadGoalsEvaluated() {
 		scenarioMode = "goal_oriented"
 	}
 	create := CreateTestRequest{
-		Name: firstNonEmpty(strings.TrimSpace(req.Name), defaultCIRunName(req.Source, script)), RequestedTestID: testID, MaterializationKey: materializationKey,
+		MonitorBindings: req.MonitorBindings,
+		Name:            firstNonEmpty(strings.TrimSpace(req.Name), defaultCIRunName(req.Source, script)), RequestedTestID: testID, MaterializationKey: materializationKey,
 		Duration: strings.TrimSpace(req.Execution.Duration), ReleaseID: strings.TrimSpace(req.ReleaseID), ProjectID: req.ProjectID,
 		ScriptID: effectiveScriptID, VUsers: req.Execution.VUsers, RampUp: strings.TrimSpace(req.Execution.RampUp), ScenarioMode: scenarioMode, GoalConfig: goalConfig,
 		RuntimeSettings: &RuntimeSettingsOverride{BaseURL: strings.TrimSpace(req.Execution.BaseURL), Env: cloneCIStringMap(req.Execution.Variables)},
@@ -876,6 +909,14 @@ func (s *Server) validateCIRunnerServiceAccount(account *AuthenticatedServiceAcc
 }
 
 func validateCIGoals(goals ciRunGoalsRequest) error {
+	if len(goals.MonitorRules) > 128 {
+		return fmt.Errorf("goals.monitor_rules exceeds 128 rules")
+	}
+	for _, rule := range goals.MonitorRules {
+		if err := rule.Validate(); err != nil {
+			return err
+		}
+	}
 	if goals.P95LatencyMs != nil && *goals.P95LatencyMs <= 0 {
 		return fmt.Errorf("goals.p95_latency_ms must be greater than zero")
 	}
@@ -1962,8 +2003,14 @@ func (s *Server) buildCIRunResponse(ctx context.Context, test *ManagedTest) (ciR
 	response.Error = sanitizeCIExternalText(response.Error, ciExternalErrorMaxBytes)
 	response.SLADetails = sanitizeCIExternalDetails(response.SLADetails)
 	response.ResultsPresent = response.Transactions > 0
-	if !strings.EqualFold(response.Status, "COMPLETE") || response.terminalEvidenceVerified {
+	if response.Outcome != "monitoring_pending" && (!strings.EqualFold(response.Status, "COMPLETE") || response.terminalEvidenceVerified) {
 		response.Outcome = ciRunOutcome(response.Status, response.SLABreached, response.SLAEvaluated, response.ResultsPresent, metadata, response.Error)
+		if strings.EqualFold(response.Status, "COMPLETE") && response.MonitoringIncomplete && !response.SLABreached {
+			response.Outcome = "monitoring_incomplete"
+			if response.Error == "" {
+				response.Error = "Required monitoring evidence or configured monitoring criteria were incomplete"
+			}
+		}
 	}
 	checkURL, syncErr := s.syncCIGitHubCheck(ctx, test, metadata, response)
 	response.CheckURL = checkURL

@@ -76,9 +76,15 @@ func testReservesRuntimeCapacity(test *ManagedTest) bool {
 	switch test.Status {
 	case "SHAKEOUT", "STARTING", "INITIALIZING", "RUNNING", "PAUSED", "STOPPING":
 		return true
+	case "QUEUED":
+		return testHasShakeoutAdmissionReservation(test)
 	default:
 		return false
 	}
+}
+
+func testHasShakeoutAdmissionReservation(test *ManagedTest) bool {
+	return test != nil && test.shakeoutAdmissionReservation != nil && test.shakeoutAdmissionReservation.ctx != nil && test.shakeoutAdmissionReservation.ctx.Err() == nil
 }
 
 // testAssignedPoolID returns the fleet pool a test is pinned to (via its

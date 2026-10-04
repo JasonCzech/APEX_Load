@@ -270,7 +270,7 @@ describe('ProjectSecretsPanel', () => {
         usage_revision: 'shared-usage-1',
         consumer_count: 2,
         reference_count: 3,
-        consumers: [{ script_id: 'script-2', script_name: 'Billing', reference_count: 1 }],
+        consumers: [{ script_id: 'script-1', script_name: 'Billing AppDynamics', resource_type: 'appdynamics_connection', resource_id: 'connection-1', reference_count: 1 }],
         limit: 1,
         offset: 1,
         has_more: false,
@@ -293,7 +293,8 @@ describe('ProjectSecretsPanel', () => {
       limit: 1,
       offset: 1,
     })
-    expect(details.textContent).toContain('Billing · 1')
+    expect(details.textContent).toContain('Billing AppDynamics (appdynamics connection) · 1')
+    expect(details.textContent).toContain('Checkout · 2')
     expect(details.textContent).not.toContain('Load more consumers')
   })
 

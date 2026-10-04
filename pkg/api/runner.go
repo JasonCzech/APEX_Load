@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
@@ -184,6 +185,7 @@ type runtimeSecretRecoveryState struct {
 }
 
 type TestRunner struct {
+	appDynamicsPrepare    func(context.Context, storage.MonitorSource, *storage.AppDynamicsConnectionSnapshot) error
 	thresholdJournal      *thresholdJournalWriter
 	tests                 map[string]*ManagedTest
 	scripts               map[string]*StoredScript
@@ -468,8 +470,9 @@ func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
 }
 
 type ManagedTest struct {
-	Activity      *ObjectActivitySummary `json:"activity,omitempty"`
-	preparationID string
+	MonitorBindings *storage.MonitorBindings `json:"monitor_bindings,omitempty"`
+	Activity        *ObjectActivitySummary   `json:"activity,omitempty"`
+	preparationID   string
 	// Protected by tr.mu; checks only generator control-plane reservations.
 	preparationPeerCheck func(context.Context) error
 	// Protected by tr.mu; retained through terminal persistence retries.
@@ -566,10 +569,13 @@ type ManagedTest struct {
 	// checkpoint, appended on adoption, written into every re-arm. It is the
 	// single source for RunContinuityStatus, so a failed re-arm cannot hide a
 	// failover the run survived.
-	continuityFailovers           []RunFailover
-	pendingScriptShakeoutOutcome  *pendingScriptShakeoutOutcome
-	validatedScriptShakeoutPass   string
-	validatedScriptShakeoutTerm   executionLeaseTerm
+	continuityFailovers          []RunFailover
+	pendingScriptShakeoutOutcome *pendingScriptShakeoutOutcome
+	validatedScriptShakeoutPass  string
+	validatedScriptShakeoutTerm  executionLeaseTerm
+	// shakeoutAdmissionReservation belongs to one active start operation. Its
+	// context retires the private handoff reservation on leadership loss.
+	shakeoutAdmissionReservation  *shakeoutAdmissionReservation
 	durationAdjustmentPrevious    time.Duration
 	scaleAdjustmentPrevious       map[string]int
 	cancel                        context.CancelFunc
@@ -1887,8 +1893,9 @@ const (
 // Helper to convert map back to LiveMetrics (since GetHistory returns any)
 
 type CreateTestRequest struct {
-	TerminationMode string `json:"termination_mode,omitempty"`
-	Name            string `json:"name"`
+	MonitorBindings *[]storage.MonitorBinding `json:"monitor_bindings,omitempty"`
+	TerminationMode string                    `json:"termination_mode,omitempty"`
+	Name            string                    `json:"name"`
 	// RequestedTestID is used by controller-to-controller run creation to make
 	// the remote side effect recoverable across a lost response. It must be a
 	// UUID and is always persisted through the create-only test path.
@@ -1962,14 +1969,15 @@ type CreateScenarioRequest struct {
 }
 
 type GoalConfig struct {
-	TargetAverageTPS         *float64 `json:"target_average_tps,omitempty"`
-	P95LatencyMs             *float64 `json:"p95_latency_ms,omitempty"`
-	MaxErrorPct              *float64 `json:"max_error_pct,omitempty"`
-	MaxAvgServerProcessingMs *float64 `json:"max_avg_server_processing_ms,omitempty"`
-	MaxAvgTransferMs         *float64 `json:"max_avg_transfer_ms,omitempty"`
-	MaxErrorCount            *int     `json:"max_error_count,omitempty"`
-	MinVUsers                *int     `json:"min_vusers,omitempty"`
-	MaxVUsers                *int     `json:"max_vusers,omitempty"`
+	MonitorRules             []analysis.MonitorRule `json:"monitor_rules,omitempty"`
+	TargetAverageTPS         *float64               `json:"target_average_tps,omitempty"`
+	P95LatencyMs             *float64               `json:"p95_latency_ms,omitempty"`
+	MaxErrorPct              *float64               `json:"max_error_pct,omitempty"`
+	MaxAvgServerProcessingMs *float64               `json:"max_avg_server_processing_ms,omitempty"`
+	MaxAvgTransferMs         *float64               `json:"max_avg_transfer_ms,omitempty"`
+	MaxErrorCount            *int                   `json:"max_error_count,omitempty"`
+	MinVUsers                *int                   `json:"min_vusers,omitempty"`
+	MaxVUsers                *int                   `json:"max_vusers,omitempty"`
 	// Web Vitals experience thresholds, evaluated against the aggregated
 	// browser metrics emitted by browser VUsers and experience canaries.
 	MaxLCPMs *float64 `json:"max_lcp_ms,omitempty"`
@@ -2169,12 +2177,13 @@ type CreateGroupEntry struct {
 }
 
 type StartTestOptions struct {
-	PreparationID               string `json:"preparation_id,omitempty"`
-	ExpectedPreparationRevision string `json:"expected_preparation_revision,omitempty"`
-	prepareOnly                 bool
-	OverrideCapacityShortfall   bool `json:"override_capacity_shortfall,omitempty"`
-	OverrideScriptShakeoutError bool `json:"override_script_shakeout_failure,omitempty"`
-	SkipLaunchWindowPreflight   bool `json:"-"`
+	PreparationID                string `json:"preparation_id,omitempty"`
+	ExpectedPreparationRevision  string `json:"expected_preparation_revision,omitempty"`
+	prepareOnly                  bool
+	shakeoutAdmissionReservation *shakeoutAdmissionReservation
+	OverrideCapacityShortfall    bool `json:"override_capacity_shortfall,omitempty"`
+	OverrideScriptShakeoutError  bool `json:"override_script_shakeout_failure,omitempty"`
+	SkipLaunchWindowPreflight    bool `json:"-"`
 	// deferPostShakeoutRecoveryEnqueue lets recurring schedules durably publish
 	// their occurrence and parent-schedule projections before the shared
 	// recovery coordinator is allowed to launch the prepared run.
@@ -2186,6 +2195,10 @@ type StartTestOptions struct {
 	// traceContext carries only a detached SpanContext from an inbound request.
 	// It never carries request cancellation, credentials, or arbitrary values.
 	traceContext context.Context
+}
+
+type shakeoutAdmissionReservation struct {
+	ctx context.Context
 }
 
 // QueuedStartAuthorization is the durable provenance for explicit start-gate

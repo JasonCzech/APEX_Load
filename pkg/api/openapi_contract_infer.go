@@ -172,6 +172,7 @@ func applyGenericImportBatchContract(route discoveredRoute, contract *inferredRo
 var openAPICrossPackageDirectories = map[string]string{
 	"analysis":       "analysis",
 	"analytics":      "analysis/duckdb",
+	"appdynamics":    "appdynamics",
 	"collectoragent": "collectoragent",
 	"dsl":            "dsl",
 	"engine":         "engine",
@@ -250,6 +251,17 @@ var explicitRouteContractTypes = map[string]struct {
 	"POST /api/v1/scenarios/{id}/restore": {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScenario"}},
 	"POST /api/v1/auth/ci/github/exchange": {
 		requestType: "githubCIExchangeRequest",
+	},
+	// These handlers use the shared bounded decoder, so the local AST walker
+	// cannot see their request types without an explicit contract.
+	"POST /api/v1/projects/{id}/monitoring/appdynamics-connections": {
+		requestType: "AppDynamicsConnectionRequest",
+	},
+	"PUT /api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}": {
+		requestType: "AppDynamicsConnectionRequest",
+	},
+	"POST /api/v1/monitoring/collectors/{id}/inspections/{operation_id}/result": {
+		requestType: "collectoragent.InspectionResult",
 	},
 	// Cluster registry and host allocation. The request types are named so the
 	// published contract documents the credential fields as write-only inputs
@@ -1230,14 +1242,17 @@ func deprecatedCompatibilityInput(route discoveredRoute, name string) (string, b
 
 func explicitRequestRequiredFields(method, path string, properties map[string]oasSchema) ([]string, bool) {
 	declared := map[string][]string{
-		"POST /api/v1/auth/login":                            {"password", "username"},
-		"POST /api/v1/auth/ci/github/exchange":               {"id_token", "project_id"},
-		"POST /api/v1/correlations/diff":                     {"recording_a", "recording_b"},
-		"POST /api/v1/scenarios":                             {"name", "duration", "groups"},
-		"PUT /api/v1/scenarios/{id}":                         {"name", "duration", "groups"},
-		"POST /api/v1/scenarios/{id}/schedules":              {"name", "cron_expr"},
-		"PUT /api/v1/scenarios/{id}/schedules/{schedule_id}": {"name", "cron_expr"},
-		"POST /api/v1/scenarios/{id}/schedules/preview":      {"cron_expr"},
+		"POST /api/v1/auth/login":                                                                       {"password", "username"},
+		"POST /api/v1/auth/ci/github/exchange":                                                          {"id_token", "project_id"},
+		"POST /api/v1/projects/{id}/monitoring/appdynamics-connections":                                 {"name"},
+		"PUT /api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}":                  {"name", "revision"},
+		"POST /api/v1/monitoring/collectors/{id}/inspections/{operation_id}/result":                     {"job"},
+		"POST /api/v1/correlations/diff":                                                                {"recording_a", "recording_b"},
+		"POST /api/v1/scenarios":                                                                        {"name", "duration", "groups"},
+		"PUT /api/v1/scenarios/{id}":                                                                    {"name", "duration", "groups"},
+		"POST /api/v1/scenarios/{id}/schedules":                                                         {"name", "cron_expr"},
+		"PUT /api/v1/scenarios/{id}/schedules/{schedule_id}":                                            {"name", "cron_expr"},
+		"POST /api/v1/scenarios/{id}/schedules/preview":                                                 {"cron_expr"},
 		"POST /api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve":       {"action"},
 		"POST /api/v1/execution-plans/{id}/schedules":                                                   {"cron_expr"},
 		"PUT /api/v1/execution-plans/{id}/schedules/{schedule_id}":                                      {"cron_expr"},

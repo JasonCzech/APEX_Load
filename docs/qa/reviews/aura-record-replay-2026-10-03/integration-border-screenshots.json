@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "scope": "Two current corrected-border sequence-card views from cycle2 passed real runtime-state browser cases; the cycle as a whole failed at two unrelated obsolete debug POST fixtures. Source boundary precedes their test-only migration.",
+  "production_css_sha256": "b61dcec887528ebff89950bc369c043e1cde33558b4d480158e85607ace16170",
+  "images": [
+    {
+      "profile": "dev-admin",
+      "path": "screenshots/integration-parameter-receipt-dev-admin.png",
+      "source_path": "/private/tmp/apex-aura-integrated-dashboard-cycle2/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-1-narrow.png",
+      "width": 390,
+      "height": 1342,
+      "bytes": 162640,
+      "sha256": "be1b4551afe7351d9bae2b56c1168da6988518c563630c63c36f58db58de1e90"
+    },
+    {
+      "profile": "local-auth",
+      "path": "screenshots/integration-parameter-receipt-local-auth.png",
+      "source_path": "/private/tmp/apex-aura-integrated-dashboard-cycle2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-1-narrow.png",
+      "width": 390,
+      "height": 1342,
+      "bytes": 162420,
+      "sha256": "647add3d1c2f91677f628f9529113b679987762a353926965021239e4255298a"
+    }
+  ],
+  "review": {
+    "root": "Original-resolution visual inspection: zero actionable sequence-card border or readability findings",
+    "independent_ui_peer": "Original-resolution visual inspection: zero actionable border/readability findings"
+  },
+  "qualification": "Actual synthetic desktop Chromium390px, operator-collapsed sidebar and genuine held before-action receipt with last actual value44/each-occurrence policy. The sequence card is wholly visible; other offscreen cards and qualifiers are established by browser assertions, not claimed visible here. No physical iPad or live Salesforce qualification.",
+  "copy_verification": "Both PNG copies byte-identical; historical36-image manifest and source images unchanged"
+}

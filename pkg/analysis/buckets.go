@@ -17,6 +17,9 @@ func BucketSeries(points []MetricPoint, from, to time.Time, seconds int, aggrega
 	if len(points) == 0 {
 		return []MetricPoint{}, nil
 	}
+	if points[0].Provider != nil {
+		return bucketProviderSeries(points, from, to, seconds, aggregation)
+	}
 	kind := points[0].Kind
 	if kind != KindCounter && kind != KindGauge && kind != KindObservation {
 		return nil, errors.New("bucket aggregation requires raw scalar measurements")

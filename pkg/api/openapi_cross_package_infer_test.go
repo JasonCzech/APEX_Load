@@ -309,6 +309,78 @@ func TestExplicitJSONRequestContractsRemainTypedAndPreserveBodyOptionality(t *te
 	}
 }
 
+func TestGeneratedOpenAPIAppDynamicsRequestContracts(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document oasDoc
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range []struct {
+		method, path string
+		update       bool
+	}{
+		{"post", "/api/v1/projects/{id}/monitoring/appdynamics-connections", false},
+		{"put", "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}", true},
+	} {
+		t.Run(route.method+" connection", func(t *testing.T) {
+			body := document.Paths[route.path][route.method].RequestBody
+			if body == nil || !body.Required {
+				t.Fatal("connection mutation must require a JSON body")
+			}
+			schema := body.Content["application/json"].Schema
+			if schema.Properties["name"].Type != "string" || schema.Properties["revision"].Type != "integer" || !containsOpenAPIField(schema.Required, "name") || containsOpenAPIField(schema.Required, "revision") != route.update {
+				t.Fatalf("connection identity/revision contract is inaccurate: %#v", schema)
+			}
+			config := schema.Properties["config"]
+			if config.Properties["endpoint"].Type != "string" || config.Properties["auth_type"].Type != "string" || config.Properties["events_endpoint"].Type != "string" {
+				t.Fatalf("Controller and independent Analytics settings are opaque: %#v", config)
+			}
+			cidrs := config.Properties["approved_cidrs"]
+			if cidrs.Type != "array" || cidrs.Items == nil || cidrs.Items.Type != "string" {
+				t.Fatalf("private network policy is opaque: %#v", cidrs)
+			}
+			for _, field := range []string{"client_id_secret", "client_secret_secret", "username_secret", "password_secret", "events_api_key_secret"} {
+				property := schema.Properties[field]
+				if property.Type != "string" || !property.Nullable || containsOpenAPIField(schema.Required, field) {
+					t.Fatalf("optional credential reference %s lost its typed nullable contract: %#v", field, property)
+				}
+			}
+			for _, field := range []string{"config", "enabled", "collection_mode", "collector_agent_id"} {
+				if containsOpenAPIField(schema.Required, field) {
+					t.Fatalf("disabled name-only drafts cannot omit %s", field)
+				}
+			}
+		})
+	}
+	body := document.Paths["/api/v1/monitoring/collectors/{id}/inspections/{operation_id}/result"]["post"].RequestBody
+	if body == nil || !body.Required {
+		t.Fatal("collector inspection result must require a JSON body")
+	}
+	schema := body.Content["application/json"].Schema
+	job := schema.Properties["job"]
+	if !containsOpenAPIField(schema.Required, "job") || job.Properties["payload"].Type != "string" || job.Properties["signature"].Type != "string" {
+		t.Fatalf("signed inspection authorization is opaque: %#v", job)
+	}
+	capabilities := schema.Properties["capabilities"]
+	for _, field := range []string{"metrics", "events", "violations", "snapshots", "analytics"} {
+		if capabilities.Properties[field].Type != "boolean" {
+			t.Fatalf("inspection capability %s is opaque: %#v", field, capabilities)
+		}
+	}
+	entities := schema.Properties["entities"]
+	if entities.Type != "array" || entities.Items == nil || entities.Items.Properties["name"].Type != "string" || entities.Items.Properties["parent_id"].Type != "string" {
+		t.Fatalf("discovery entities are opaque: %#v", entities)
+	}
+	for _, field := range []string{"entities", "message", "truncated"} {
+		if containsOpenAPIField(schema.Required, field) {
+			t.Fatalf("empty successful inspection cannot omit %s", field)
+		}
+	}
+}
+
 func containsOpenAPIField(fields []string, want string) bool {
 	for _, field := range fields {
 		if field == want {

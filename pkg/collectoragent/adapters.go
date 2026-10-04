@@ -16,12 +16,17 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/appdynamics"
 )
 
 // AdapterTarget is a local operator approval. A signed job cannot add a remote
 // identity, executable, driver, command, query, or credential destination.
 type AdapterTarget struct {
 	Cloud           *CloudQuery `json:"cloud,omitempty"`
+	ApprovedCIDRs   []string    `json:"approved_cidrs,omitempty"`
+	CAPEM           string      `json:"ca_pem,omitempty"`
+	EventsEndpoint  string      `json:"events_endpoint,omitempty"`
+	Applications    []string    `json:"applications,omitempty"`
 	Pack            string      `json:"pack"`
 	Destination     string      `json:"destination"`
 	HostKey         string      `json:"host_key,omitempty"`
@@ -111,7 +116,7 @@ func (a *Agent) approvedDestinations() []string {
 	}
 	for _, target := range a.cfg.AdapterTargets {
 		destination := target.Destination
-		if target.Pack == "ssh-linux" || target.Pack == "jmx" || target.Pack == "jdbc" {
+		if target.Pack == "ssh-linux" || target.Pack == "jmx" || target.Pack == "jdbc" || target.Pack == "appdynamics" {
 			if key, err := ecdh.X25519().NewPrivateKey(a.cfg.CredentialPrivateKey); err == nil {
 				destination += "#" + base64.StdEncoding.EncodeToString(key.PublicKey().Bytes())
 			}
@@ -128,9 +133,9 @@ func validateAdapterTargets(cfg Config) error {
 	}
 	seen := map[string]bool{}
 	for _, target := range cfg.AdapterTargets {
-		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[target.Pack]
+		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "appdynamics": "https", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[target.Pack]
 		endpoint, err := url.Parse(target.Destination)
-		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && endpoint.Path != "" {
+		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && endpoint.Path != "" && !(target.Pack == "appdynamics" && endpoint.Path == "/") {
 			return errors.New("invalid approved monitor destination")
 		}
 		if seen[target.Pack+"\x00"+target.Destination] {
@@ -138,6 +143,14 @@ func validateAdapterTargets(cfg Config) error {
 		}
 		seen[target.Pack+"\x00"+target.Destination] = true
 		switch target.Pack {
+		case "appdynamics":
+			cfg := appdynamics.Config{Endpoint: target.Destination, AccountName: "validation", ApprovedCIDRs: target.ApprovedCIDRs, CAPEM: target.CAPEM, EventsEndpoint: target.EventsEndpoint}
+			if err := cfg.Validate(); err != nil {
+				return err
+			}
+			if len(target.Applications) > 32 {
+				return errors.New("application approval exceeds bound")
+			}
 		case "cloudwatch", "azure-monitor":
 			if endpoint.Port() != "" {
 				return errors.New("cloud destination is an alias, not an endpoint")

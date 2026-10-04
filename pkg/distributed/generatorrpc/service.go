@@ -26,6 +26,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/javasidecar"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -34,6 +35,7 @@ import (
 )
 
 const FeatureIterationTerminationV1 = "iteration_termination_v1"
+const FeatureRunCorrelationV1 = "run_correlation_v1"
 
 type assignedTest struct {
 	sourcePlan                *pb.SourcePlanManifest
@@ -151,6 +153,9 @@ func validateGeneratorFieldBytes(value string, field string, limit int) error {
 }
 
 func validateAssignmentMetadataBounds(assignment *pb.WorkAssignment) error {
+	if err := httpprotocol.ValidateManagedRunCorrelationOrigins(assignment.GetTestId(), assignment.GetRunCorrelationOrigins()); err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
 	if err := validateJavaHostSelection(assignment); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -1391,7 +1396,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
 		activeTestIDs := s.activeTestIDs()
-		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1)
+		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1, FeatureRunCorrelationV1)
 		javaHosts := s.javaHostCapabilities()
 		if javaHosts != nil {
 			compatibleFeatures = append(compatibleFeatures, FeatureJavaHostBrokerV1, FeatureJavaHostPreparedPopulationV1)

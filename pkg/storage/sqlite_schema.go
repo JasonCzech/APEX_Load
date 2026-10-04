@@ -20,6 +20,29 @@ import (
 func schemaCreateTableStatements() []string {
 	return []string{
 		schemaMigrationLedgerDDL,
+		`CREATE TABLE IF NOT EXISTS appdynamics_quota_pools (resource_key TEXT PRIMARY KEY,updated_at DATETIME NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS appdynamics_quota_leases (
+ resource_key TEXT NOT NULL REFERENCES appdynamics_quota_pools(resource_key) ON DELETE CASCADE,
+ executor_id TEXT NOT NULL,expires_at DATETIME NOT NULL,PRIMARY KEY(resource_key,executor_id))`,
+		`CREATE TABLE IF NOT EXISTS appdynamics_connections (
+ id TEXT PRIMARY KEY,
+ project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+ name TEXT NOT NULL, revision BIGINT NOT NULL, verified_revision BIGINT NOT NULL DEFAULT 0,
+ payload_json TEXT NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS appdynamics_inspections (
+ id TEXT PRIMARY KEY,
+ project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+ connection_id TEXT NOT NULL,connection_revision BIGINT NOT NULL,collector_id TEXT NOT NULL DEFAULT '',kind TEXT NOT NULL,state TEXT NOT NULL,payload_json TEXT NOT NULL,result_json TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '',owner_token TEXT NOT NULL DEFAULT '',lease_expires_at DATETIME,created_at DATETIME NOT NULL,expires_at DATETIME NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS run_monitor_observation_heads (
+ job_id TEXT NOT NULL REFERENCES run_monitor_jobs(id) ON DELETE CASCADE,
+ record_key TEXT NOT NULL,
+ sequence BIGINT NOT NULL,
+ record_index INTEGER NOT NULL,
+ record_kind TEXT NOT NULL,
+ content_digest TEXT NOT NULL,
+ series_key TEXT NOT NULL DEFAULT '',
+ diagnostic_kind TEXT NOT NULL DEFAULT '',
+ PRIMARY KEY(job_id,record_key))`,
 		`CREATE TABLE IF NOT EXISTS run_annotations (
             test_id TEXT PRIMARY KEY REFERENCES tests(id) ON DELETE CASCADE,
             project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -619,6 +642,7 @@ func schemaCreateTableStatements() []string {
 			traffic_profile_json TEXT,
 			elk_capture_json TEXT,
 			dynatrace_capture_json TEXT,
+			monitor_bindings_json TEXT,
 			start_authorization_json TEXT,
 			execution_plan_approval_json TEXT,
 			initial_provenance_json TEXT,
@@ -1708,6 +1732,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.traffic_profile_json", query: `ALTER TABLE tests ADD COLUMN traffic_profile_json TEXT`},
 		{name: "tests.elk_capture_json", query: `ALTER TABLE tests ADD COLUMN elk_capture_json TEXT`},
 		{name: "tests.dynatrace_capture_json", query: `ALTER TABLE tests ADD COLUMN dynatrace_capture_json TEXT`},
+		{name: "tests.monitor_bindings_json", query: `ALTER TABLE tests ADD COLUMN monitor_bindings_json TEXT`},
 		{name: "tests.start_authorization_json", query: `ALTER TABLE tests ADD COLUMN start_authorization_json TEXT`},
 		{name: "tests.timeslot_id", query: `ALTER TABLE tests ADD COLUMN timeslot_id TEXT`},
 		{name: "tests.shakeout_enabled", query: `ALTER TABLE tests ADD COLUMN shakeout_enabled INTEGER DEFAULT 0`},
@@ -1938,6 +1963,7 @@ var dataPoolRowsPageIndex = schemaIndex{
 // migrations. Unique indexes guard against duplicate reference keys; partial
 // indexes skip NULL/empty values so legacy rows awaiting backfill do not collide.
 var schemaIndexes = []schemaIndex{
+	{`CREATE INDEX IF NOT EXISTS idx_appdynamics_quota_expiry ON appdynamics_quota_leases(resource_key,expires_at)`, "idx_appdynamics_quota_expiry"},
 	{`CREATE INDEX IF NOT EXISTS idx_object_activity_scope_time ON object_activity_events(project_id,created_at,id)`, "idx_object_activity_scope_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_object_activity_resource_time ON object_activity_events(project_id,resource_type,resource_id,created_at)`, "idx_object_activity_resource_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_preparations_test ON preparations(test_id, expires_at)`, "idx_preparations_test"},

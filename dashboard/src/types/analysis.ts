@@ -9,7 +9,13 @@ export interface AnalysisImport {
   rejections?: { file: number; measure: number; count: number; rows: number[] }[]; rejection_artifacts?: string[];
   mapping?: AnalysisMapping; accepted: number; rejected: number; error?: string; run_id?: string
 }
-export interface AnalysisPoint { kind?: string; host?: string; dimensions?: Record<string, string>; timestamp_utc: string; metric_name: string; value?: number; unit: string; quality: string }
+export interface AnalysisProviderMeasurement {
+  name: 'appdynamics'; metric_id: string; catalog_path?: string; entity_ids?: Record<string, string>
+  bucket_start: string; bucket_end: string; resolution_seconds: number; statistic: string
+  count?: number; sum?: number; min?: number; max?: number; settled: boolean; aggregation_eligible: boolean
+  query_window?: boolean
+}
+export interface AnalysisPoint { source?: string; run_id?: string; provider?: AnalysisProviderMeasurement; kind?: string; host?: string; dimensions?: Record<string, string>; timestamp_utc: string; metric_name: string; value?: number; unit: string; quality: string }
 export interface Preparation { capacity?: PreparationCapacityPolicy; id: string; revision: number; state: string; execution_revision: string; expires_at: string; failure?: string }
 
 export interface PreparationCapacityPolicy { selection?: 'existing' | 'ephemeral'; spot?: 'off' | 'preferred' | 'required'; on_demand_floor?: number; spot_ceiling_percent?: number }

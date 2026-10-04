@@ -1,3 +1,5 @@
+import MonitorRuleResults from './MonitorRuleResults'
+import AppDynamicsArchiveEvidence from './AppDynamicsArchiveEvidence'
 import BrowserResourceEvidence from './BrowserResourceEvidence'
 import { grpcDiagnosticLines } from '../utils/grpcDiagnostics'
 import { websocketDiagnosticLines } from '../utils/websocketDiagnostics'
@@ -1144,6 +1146,8 @@ export default function TestExecutionArchive({
                       </div>
                     ))}
                   </div>
+                  <MonitorRuleResults results={archiveReport.manifest.monitor_rule_results} />
+                  <AppDynamicsArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} />
                   <CaptureArchiveSummary report={archiveReport} />
                   {(archiveReport.elk_samples?.length || 0) > 0 && (
                     <div className="advanced-group-table-wrap">
@@ -1324,6 +1328,7 @@ export default function TestExecutionArchive({
             </div>
           )}
 
+          {view === 'report-summary-timeline' && archiveReport && <AppDynamicsArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} />}
           {showReportSummaryTimelineView && (
             summaryTimelineEntriesAll.length > 0 ? (
               <div className="tx-section archive-summary-section">

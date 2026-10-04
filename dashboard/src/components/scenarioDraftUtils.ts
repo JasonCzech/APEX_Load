@@ -249,6 +249,7 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
     revisionContext: initialScenario?.revisionContext
       ? {
         ...initialScenario.revisionContext,
+        ...(initialScenario.revisionContext.monitorBindings !== undefined ? { monitorBindings: initialScenario.revisionContext.monitorBindings.map(binding => ({ ...binding })) } : {}),
         dataPools: initialScenario.revisionContext.dataPools.map(binding => ({ ...binding })),
       }
       : undefined,
@@ -316,6 +317,7 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
     runtimeSettings: buildRuntimeSettingsDraft(test.runtime_settings),
     groups,
     revisionContext: {
+      ...(test.monitor_bindings ? { monitorBindings: test.monitor_bindings.sources.map(binding => ({ ...binding })) } : {}),
       sourceTestId: test.id,
       applicationId: test.application_id,
       releaseId: test.release_id,

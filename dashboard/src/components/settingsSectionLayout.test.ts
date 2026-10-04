@@ -118,7 +118,7 @@ describe('settingsSectionLayout', () => {
       'library',
       'github',
       'elk-capture',
-      'dynatrace-capture',
+      'dynatrace-capture', 'appdynamics-capture',
       'prometheus',
       'opensearch',
       'grafana',

@@ -1,3 +1,4 @@
+import type { MonitorBinding, MonitorRule } from '../types/appdynamics'
 import type { GroupRunOverride, RunDefaultOverrides } from './newTestRunModel'
 
 export type ScheduleWindowDraft = {
@@ -39,6 +40,8 @@ export interface NewTestDraft {
   selectedTimeslotId: string
   elkConnectionId?: string
   dynatraceConnectionId?: string
+  monitorBindings?: MonitorBinding[]
+  monitorRules?: MonitorRule[]
   newReleaseName: string
   showNewRelease: boolean
   scheduleDraft: ScheduleDraft
@@ -52,6 +55,8 @@ function validDraft(value: unknown): value is NewTestDraft {
   if (!['projectId', 'applicationId', 'scenarioId', 'scenarioUpdatedAt', 'runName', 'releaseId', 'scheduledStartLocal', 'selectedTimeslotId', 'newReleaseName'].every(field => typeof value[field] === 'string')) return false
   if (value.elkConnectionId !== undefined && typeof value.elkConnectionId !== 'string') return false
   if (value.dynatraceConnectionId !== undefined && typeof value.dynatraceConnectionId !== 'string') return false
+  if (value.monitorBindings !== undefined && (!Array.isArray(value.monitorBindings) || value.monitorBindings.length > 32 || !value.monitorBindings.every(binding => record(binding) && typeof binding.source_id === 'string' && typeof binding.required === 'boolean'))) return false
+  if (value.monitorRules !== undefined && (!Array.isArray(value.monitorRules) || value.monitorRules.length > 32 || !value.monitorRules.every(rule => record(rule) && typeof rule.source_id === 'string' && typeof rule.metric === 'string' && typeof rule.threshold === 'number'))) return false
   if (typeof value.showNewRelease !== 'boolean') return false
   if (!['launch', 'schedules'].includes(String(value.pageMode))) return false
   if (value.editingScheduleId !== null && typeof value.editingScheduleId !== 'string') return false

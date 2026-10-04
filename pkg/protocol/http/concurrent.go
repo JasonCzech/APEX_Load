@@ -47,6 +47,12 @@ func (h *HTTP) ValidateSharedSessionAction(action *protocol.Action) error {
 	if err := protocol.ValidateTargetURL(req.URL.String(), h.allowedTargetHosts); err != nil {
 		return fmt.Errorf("HTTP target is not allowed")
 	}
+	for _, header := range headers {
+		addRequestHeader(req, header.Name, header.Value)
+	}
+	if err := h.runCorrelation.apply(req); err != nil {
+		return err
+	}
 	if strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") {
 		if _, err := io.Copy(io.Discard, base64.NewDecoder(base64.StdEncoding, strings.NewReader(strings.TrimSpace(string(action.Body))))); err != nil {
 			return fmt.Errorf("HTTP base64 body is invalid")

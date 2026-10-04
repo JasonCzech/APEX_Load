@@ -41,6 +41,7 @@ type Assignment struct {
 	TestID                       string
 	ExecutionGeneration          uint64
 	ScenarioID                   string
+	RunCorrelationOrigins        []string
 	RequireTestExecutionLease    bool
 	GroupName                    string
 	TargetDuration               time.Duration
@@ -1574,6 +1575,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 		TestId:                    assignment.TestID,
 		ExecutionGeneration:       assignment.ExecutionGeneration,
 		ScenarioId:                assignment.ScenarioID,
+		RunCorrelationOrigins:     append([]string(nil), assignment.RunCorrelationOrigins...),
 		RequireTestExecutionLease: assignment.RequireTestExecutionLease,
 		AdoptionGrace:             preciseDurationProto(assignment.AdoptionGrace, 0),
 		GroupName:                 assignment.GroupName,

@@ -1,7 +1,12 @@
 import { test, expect } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
+import type { ScriptDebugRuntimeState } from '../src/types/replay'
+import { login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
-test('operator edits the failed nested browser assertion and reruns without losing source fields', async ({ page, request }, testInfo) => {
+test('operator edits the failed nested browser assertion and reruns without losing source fields', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
   const workspace = await createWorkspace(request)
   const leaf = { name: 'Check greeting', type: 'browser_wait', target: '#result', wait_for: { type: 'selector', value: '#result', timeout_ms: 10000 }, metadata: { audit_marker: 'preserve' }, assertions: [{ type: 'element_text_contains', value: '#result', expected: 'Welcome' }] }
   const script = { name: 'Nested greeting', version: '1.0.0', protocol: 'browser', config: {}, actions: [{ name: 'Repeat journey', type: 'control_loop', control: { count: 1, steps: [leaf] } }] }
@@ -19,10 +24,17 @@ test('operator edits the failed nested browser assertion and reruns without losi
     // Go omits the zero action index in JSON. Repair must still find the first root.
     const event = { phase: 'action', step_path: ['loop[0]'], iteration: 0, action_name: 'Check greeting', action_type: 'browser_wait', target: '#result', success: passed, duration_ms: 1, started_at: now, completed_at: now, error_message: passed ? '' : 'Greeting mismatch', protocol_evidence: passed ? {} : { assertion_failure: { type: 'element_text_contains', expected: 'Welcome', actual: 'Hello' } } }
     const report = { replay_session_id: body.replay_session_id, group: 'Nested greeting', protocol: 'browser', started_at: now, completed_at: now, success: passed, events: [event] }
-    await route.fulfill({ json: { debug_session_id: body.replay_session_id, replay_session_id: body.replay_session_id, session: { id: body.replay_session_id, status: passed ? 'completed' : 'failed', completed_at: now, report } } })
+    const sessionIncarnation = randomUUID()
+    const runtimeState = { version: 1, kind: 'full', session_id: body.replay_session_id,
+      session_incarnation: sessionIncarnation, state_revision: '1', state: 'unavailable',
+      reason: 'session_terminal', snapshot: null } satisfies ScriptDebugRuntimeState
+    await route.fulfill({ json: { debug_session_id: body.replay_session_id, replay_session_id: body.replay_session_id,
+      session: { id: body.replay_session_id, session_incarnation: sessionIncarnation, state_revision: '1',
+        runtime_state: runtimeState, status: passed ? 'completed' : 'failed', completed_at: now, report } } })
   })
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.locator('.topbar-debug-action-run').click()
   await expect(page.getByRole('button', { name: 'Edit this assertion' })).toBeVisible()
   await expect(page.locator('.script-browser-evidence')).toHaveCount(1)
