@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -649,47 +650,53 @@ func TestSourceTransactionExcludesEnclosedThinkTimeInLoadAndReplay(t *testing.T)
 }
 
 func TestLoadCanceledThinkTimeAccountsActualElapsedAndStops(t *testing.T) {
-	protoStub := &sourceSemanticsProtocol{delays: map[string]time.Duration{"inside": 30 * time.Millisecond}}
-	sink := &sequenceCaptureSink{}
-	vu := &VUser{
-		ID:         1,
-		Proto:      protoStub,
-		Metrics:    NewMetricsCollector(16),
-		ResultSink: sink,
-		Script: &dsl.Script{
-			Name:     "canceled-load-think-time",
-			Protocol: "http",
-			Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
-			Actions: []dsl.Action{
-				sourceTransactionAction("lr_start_transaction", ""),
-				{
-					Name:           "inside",
-					Type:           "GET",
-					Method:         "GET",
-					Target:         "https://example.test/inside",
-					Metadata:       map[string]any{"source_transaction": "ACME_ISBA"},
-					ThinkTime:      dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 500},
-					ThinkTimeAfter: true,
+	// The protocol and cancellation use one isolated clock. Host scheduling can
+	// oversleep request work beyond an 80ms deadline; that is valid request
+	// duration, not leaked think time. Keep the original accounting bounds while
+	// making the intended 30ms request / 50ms partial wait deterministic.
+	synctest.Test(t, func(t *testing.T) {
+		protoStub := &sourceSemanticsProtocol{delays: map[string]time.Duration{"inside": 30 * time.Millisecond}}
+		sink := &sequenceCaptureSink{}
+		vu := &VUser{
+			ID:         1,
+			Proto:      protoStub,
+			Metrics:    NewMetricsCollector(16),
+			ResultSink: sink,
+			Script: &dsl.Script{
+				Name:     "canceled-load-think-time",
+				Protocol: "http",
+				Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+				Actions: []dsl.Action{
+					sourceTransactionAction("lr_start_transaction", ""),
+					{
+						Name:           "inside",
+						Type:           "GET",
+						Method:         "GET",
+						Target:         "https://example.test/inside",
+						Metadata:       map[string]any{"source_transaction": "ACME_ISBA"},
+						ThinkTime:      dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 500},
+						ThinkTimeAfter: true,
+					},
+					{Name: "after", Type: "GET", Method: "GET", Target: "https://example.test/after"},
 				},
-				{Name: "after", Type: "GET", Method: "GET", Target: "https://example.test/after"},
+				Teardown: []dsl.Action{sourceTransactionAction("lr_end_transaction", "LR_PASS")},
 			},
-			Teardown: []dsl.Action{sourceTransactionAction("lr_end_transaction", "LR_PASS")},
-		},
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
-	defer cancel()
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
+		defer cancel()
 
-	vu.Run(ctx)
+		vu.Run(ctx)
 
-	if len(protoStub.executed) != 1 || protoStub.executed[0] != "inside" {
-		t.Fatalf("executed = %v, load continued after canceled think time", protoStub.executed)
-	}
-	if len(sink.transactions) != 1 {
-		t.Fatalf("transactions = %#v, want teardown to close the source transaction", sink.transactions)
-	}
-	if duration := sink.transactions[0].Duration; duration < 15*time.Millisecond || duration >= 70*time.Millisecond {
-		t.Fatalf("transaction duration = %v, want request work preserved after subtracting only the completed wait", duration)
-	}
+		if len(protoStub.executed) != 1 || protoStub.executed[0] != "inside" {
+			t.Fatalf("executed = %v, load continued after canceled think time", protoStub.executed)
+		}
+		if len(sink.transactions) != 1 {
+			t.Fatalf("transactions = %#v, want teardown to close the source transaction", sink.transactions)
+		}
+		if duration := sink.transactions[0].Duration; duration < 15*time.Millisecond || duration >= 70*time.Millisecond {
+			t.Fatalf("transaction duration = %v, want request work preserved after subtracting only the completed wait", duration)
+		}
+	})
 }
 
 func TestLoadThinkTimeAccountsActiveElapsed(t *testing.T) {

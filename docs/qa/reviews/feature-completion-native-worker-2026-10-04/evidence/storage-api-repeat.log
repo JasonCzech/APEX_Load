@@ -1,0 +1,102 @@
+ok  	github.com/jasonczech/apexload/pkg/storage	6.013s
+2026/10/04 05:36:47 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:47 ERROR internal server error ref=7872fafc4eee0d27 status=503 detail="analytical storage configuration changed; restore its recorded backend or complete an offline evidence migration"
+2026/10/04 05:36:47 INFO http request method=DELETE path=/api/v1/analysis/imports/00000000-0000-0000-0000-000000000002 status=503 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:47 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:47 INFO http request method=GET path=/api/v1/analysis/imports status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:47 INFO http request method=GET path=/api/v1/analysis/imports/00000000-0000-0000-0000-000000000001 status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:47 ERROR internal server error ref=31acb8075220d36c status=503 detail="dataset cleanup pending physical writer completion"
+2026/10/04 05:36:47 INFO http request method=DELETE path=/api/v1/analysis/imports/00000000-0000-0000-0000-000000000001 status=503 duration_ms=0 remote=192.0.2.1:1234
+--- FAIL: TestAnalysisMetadataAndCancellationWithoutNativeCapability (0.10s)
+    analysis_backend_test.go:68: cancel: 503 {"error":"internal server error","ref":"31acb8075220d36c"}
+2026/10/04 05:36:47 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:47 INFO http request method=GET path=/api/v1/analysis/capabilities status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:48 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:48 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:48 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+--- FAIL: TestAnalysisCleanupRetriesMetadataReadFailure (0.07s)
+    analysis_cleanup_test.go:75: metadata failure lost retry: completed=1 error=temporary metadata read failure
+2026/10/04 05:36:48 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:49 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/analysis/mappings status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/analysis/mappings/7b816bc4-63ae-411b-959f-5a7965b1e966 status=404 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=DELETE path=/api/v1/analysis/mappings/7b816bc4-63ae-411b-959f-5a7965b1e966 status=409 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=DELETE path=/api/v1/analysis/mappings/7b816bc4-63ae-411b-959f-5a7965b1e966 status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/analysis/mappings/7b816bc4-63ae-411b-959f-5a7965b1e966 status=404 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/analysis/mappings/7b816bc4-63ae-411b-959f-5a7965b1e966 status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/analysis/compare status=422 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/analysis/compare status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=200 duration_ms=38 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/tests/management-run-a/monitor-management status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/tests/management-run-b/monitor-management status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=409 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/tests/management-run-a/monitor-management status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=200 duration_ms=22 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/tests/management-run-a/monitor-management status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/tests/management-run-b/monitor-management status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=409 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/tests/management-run-a/monitor-management status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=403 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=401 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=200 duration_ms=25 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/tests/management-run-a/monitor-management status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/tests/management-run-a/monitor-management status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/tests/management-run-a/monitor-management status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/tests/management-run-a/monitor-management status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/tests/management-run-a/monitor-management status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/tests/management-run-b/monitor-management status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=403 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:49 ERROR internal server error ref=5ca9c4e3724146bd status=503 detail="management signing unavailable"
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=503 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=200 duration_ms=29 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=GET path=/api/v1/projects/proj-a/monitor-sources/management-source/management-state status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/projects/proj-a/monitor-sources/management-source/management-state status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/projects/proj-a/monitor-sources/management-source/management-state status=409 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/projects/proj-a/monitor-sources/management-source/management-state status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=409 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:49 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=200 duration_ms=30 remote=192.0.2.1:1234
+2026/10/04 05:36:49 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 05:36:49 ERROR internal server error ref=4029023752c102d2 status=503 detail="management artifact persistence failed"
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=503 duration_ms=11 remote=192.0.2.1:1234
+2026/10/04 05:36:49 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=200 duration_ms=18 remote=192.0.2.1:1234
+2026/10/04 05:36:50 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:50 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:50 ERROR internal server error ref=db7f724ec65429a6 status=503 detail="management artifact persistence failed"
+2026/10/04 05:36:50 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/samples status=503 duration_ms=2 remote=192.0.2.1:1234
+2026/10/04 05:36:50 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:50 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=401 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:50 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=401 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:50 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=401 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:50 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=200 duration_ms=2 remote=192.0.2.1:1234
+2026/10/04 05:36:50 INFO http request method=POST path=/api/v1/monitoring/collectors/management-collector/jobs/management-run-a:management-source/management-polls status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 05:36:50 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 05:36:50 INFO http request method=POST path=/api/v1/tests/run/native-series status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 05:36:50 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/api	7.361s
+FAIL

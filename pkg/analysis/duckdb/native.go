@@ -65,7 +65,11 @@ func (e *Engine) withDB(ctx context.Context, operation func(context.Context, *sq
 		return err
 	}
 	defer os.RemoveAll(spill)
-	db, err := sql.Open("duckdb", ":memory:?threads=2&autoload_known_extensions=false&autoinstall_known_extensions=false&allow_unsigned_extensions=false&allow_community_extensions=false")
+	threads := e.workerThreads
+	if threads < 1 || threads > 2 {
+		return errWorkerProtocol
+	}
+	db, err := sql.Open("duckdb", ":memory:?threads="+strconv.Itoa(threads)+"&autoload_known_extensions=false&autoinstall_known_extensions=false&allow_unsigned_extensions=false&allow_community_extensions=false")
 	if err != nil {
 		return err
 	}
@@ -134,7 +138,7 @@ func analyticsHeadroom(root string) error {
 	return nil
 }
 
-func (e *Engine) Preview(ctx context.Context, path string) (Preview, error) {
+func (e *Engine) childNativePreview(ctx context.Context, path string) (Preview, error) {
 	path, err := e.authorizedPath(path)
 	if err != nil {
 		return Preview{}, err
@@ -226,7 +230,7 @@ func timestampExpression(mapping Mapping) string {
 	return "TRY(to_timestamp(try_cast(" + c + " AS DOUBLE)/" + scale + "))"
 }
 
-func (e *Engine) Normalize(ctx context.Context, request NormalizeRequest) (result NormalizeResult, err error) {
+func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequest) (result NormalizeResult, err error) {
 	if request.ProjectID == "" || len(request.ProjectID) > 256 || request.DatasetID == "" || len(request.DatasetID) > 256 || len(request.Files) == 0 || len(request.Files) > 1024 || len(request.Files)*len(request.Mapping.Measures) > 1024 {
 		return result, errors.New("invalid normalization identity or file count")
 	}
@@ -330,7 +334,7 @@ func (e *Engine) Normalize(ctx context.Context, request NormalizeRequest) (resul
 	return result, err
 }
 
-func (e *Engine) Series(ctx context.Context, files []string, q SeriesQuery) (points []analysis.MetricPoint, err error) {
+func (e *Engine) childNativeSeries(ctx context.Context, files []string, q SeriesQuery) (points []analysis.MetricPoint, err error) {
 	if err = q.Validate(); err != nil {
 		return nil, err
 	}

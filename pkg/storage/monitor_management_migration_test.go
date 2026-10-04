@@ -47,7 +47,7 @@ func seedLegacyMonitorReceipt(t *testing.T, s *SQLiteStore) MonitorSource {
 func assertManagementLegacyUpgrade(t *testing.T, s *SQLiteStore, m MonitorSource) {
 	t.Helper()
 	status, e := s.SchemaStatus()
-	if e != nil || status.AppliedVersion != 28 {
+	if e != nil || status.AppliedVersion != currentSchemaRelease().Version {
 		t.Fatalf("release28 migration: %#v %v", status, e)
 	}
 	r, e := s.ListMonitorBatchReceipts(m.ProjectID, "monitor-run", "", -1, 10)

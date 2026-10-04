@@ -5,15 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
-	"gocloud.dev/blob"
-	"gocloud.dev/gcerrors"
 )
 
 func (s *Server) retryAnalysisCleanup(ctx context.Context) error {
@@ -31,57 +27,120 @@ func (s *Server) retryAnalysisCleanup(ctx context.Context) error {
 		}
 	}
 	for _, j := range jobs {
-		if j.Kind == "monitor-object" {
-			management, ok := s.store.(storage.ManagementMonitorStore)
-			if !ok {
-				return errors.New("management object reference storage unavailable")
-			}
-			if len(j.ResourceID) > 4096 {
-				return errors.New("invalid monitor object cleanup reference")
-			}
-			var reference storage.MonitorObjectCleanupReference
-			if json.Unmarshal([]byte(j.ResourceID), &reference) != nil || !validMonitorArtifactKey(reference.ArtifactKey) {
-				return errors.New("invalid monitor object cleanup reference")
-			}
-			owner, _ := monitorArtifactKey(j.ProjectID, reference.RunID, nil)
-			if reference.RunID == "" || filepath.Dir(owner) != filepath.Dir(reference.ArtifactKey) {
-				return errors.New("monitor object cleanup ownership mismatch")
-			}
-			referenced, err := management.IsMonitorArtifactReferenced(j.ProjectID, reference.ArtifactKey)
-			if err != nil {
-				return err
-			}
-			if !referenced {
-				if err = deleteMonitorObject(ctx, reference.ArtifactKey); err != nil {
-					return err
-				}
-			}
-			if err = store.CompleteAnalysisCleanupJob(j); err != nil {
+		err := s.retryAnalysisCleanupJob(ctx, store, j)
+		if errors.Is(err, errAnalysisCleanupPhysical) {
+			if err = deferBlockedAnalysisCleanup(s.store, j); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := deleteAnalysisNamespace(ctx, j); err != nil {
-			return err
-		}
-		if j.Kind == "dataset" {
-			if imports, ok := s.store.(storage.AnalysisImportStore); ok {
-				in, err := imports.GetAnalysisImport(j.ResourceID)
-				if err != nil && !errors.Is(err, sql.ErrNoRows) {
-					return err
-				}
-				if err == nil && in.State == "deleting" {
-					in.State = "deleted"
-					if _, err = imports.SaveAnalysisImport(*in, in.Revision); err != nil {
-						return err
-					}
-				}
-			}
-		}
-		if err := store.CompleteAnalysisCleanupJob(j); err != nil {
+		if err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+// Logical cleanup jobs retire only after the exact deletion operation and
+// every parent descriptor supply actual nil closure proof. An unjoined owner
+// remains queued and is moved out of the bounded first page for fair retries.
+func (s *Server) retryAnalysisCleanupJob(ctx context.Context, store storage.AnalysisCleanupStore, j storage.AnalysisCleanupJob) error {
+	if j.Kind == "monitor-object" {
+		management, ok := s.store.(storage.ManagementMonitorStore)
+		if !ok {
+			return errors.New("management object reference storage unavailable")
+		}
+		if len(j.ResourceID) > 4096 {
+			return errors.New("invalid monitor object cleanup reference")
+		}
+		var reference storage.MonitorObjectCleanupReference
+		if json.Unmarshal([]byte(j.ResourceID), &reference) != nil || !validMonitorArtifactKey(reference.ArtifactKey) {
+			return errors.New("invalid monitor object cleanup reference")
+		}
+		owner, _ := monitorArtifactKey(j.ProjectID, reference.RunID, nil)
+		if reference.RunID == "" || filepath.Dir(owner) != filepath.Dir(reference.ArtifactKey) {
+			return errors.New("monitor object cleanup ownership mismatch")
+		}
+		referenced, err := management.IsMonitorArtifactReferenced(j.ProjectID, reference.ArtifactKey)
+		if err != nil {
+			return err
+		}
+		if !referenced {
+			if err = deleteMonitorObject(ctx, reference.ArtifactKey); err != nil {
+				return err
+			}
+		}
+		if err = store.CompleteAnalysisCleanupJob(j); err != nil {
+			return err
+		}
+		return nil
+	}
+	if j.Kind == "attempt" {
+		attempts, ok := s.store.(interface {
+			AnalysisAttemptCleanupPlan(context.Context, storage.AnalysisCleanupJob) (storage.AnalysisAttemptCleanupPlan, error)
+		})
+		if !ok {
+			return errors.New("analytical attempt cleanup proof unavailable")
+		}
+		plan, err := attempts.AnalysisAttemptCleanupPlan(ctx, j)
+		if err != nil {
+			return err
+		}
+		for _, key := range plan.Keys {
+			if err = analysisObjectDelete(ctx, key); err != nil {
+				return err
+			}
+		}
+		if plan.Blocked {
+			if err = deferBlockedAnalysisCleanup(s.store, j); err != nil {
+				return err
+			}
+			return nil
+		}
+		if err = store.CompleteAnalysisCleanupJob(j); err != nil {
+			return err
+		}
+		return nil
+	}
+	if j.Kind == "dataset" {
+		attempts, ok := s.store.(interface {
+			AnalysisDatasetCleanupReady(context.Context, string, string) (bool, error)
+		})
+		if !ok {
+			return errors.New("dataset physical writer cleanup proof unavailable")
+		}
+		ready, err := attempts.AnalysisDatasetCleanupReady(ctx, j.ProjectID, j.ResourceID)
+		if err != nil {
+			return err
+		}
+		if !ready {
+			if err = deferBlockedAnalysisCleanup(s.store, j); err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+	if err := deleteAnalysisNamespace(ctx, j); err != nil {
+		return err
+	}
+	if j.Kind == "dataset" {
+		if imports, ok := s.store.(storage.AnalysisImportStore); ok {
+			in, err := imports.GetAnalysisImport(j.ResourceID)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+			if err == nil && in.State == "deleting" {
+				in.State = "deleted"
+				if _, err = imports.SaveAnalysisImport(*in, in.Revision); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if err := store.CompleteAnalysisCleanupJob(j); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -96,48 +155,14 @@ func deleteAnalysisNamespace(ctx context.Context, j storage.AnalysisCleanupJob) 
 		prefix = filepath.Dir(key)
 	case "monitor":
 		key, _ := monitorArtifactKey(j.ProjectID, j.ResourceID, nil)
+		if !validMonitorArtifactKey(key) {
+			return errors.New("invalid monitor cleanup namespace")
+		}
 		prefix = filepath.Dir(key)
 	default:
 		return errors.New("invalid analytical cleanup kind")
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	backend := currentArchiveBackend()
-	if backend.Backend == archiveBackendFilesystem {
-		root, err := os.OpenRoot(filepath.Join(backend.LocalRoot, "_analysis"))
-		if os.IsNotExist(err) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		defer root.Close()
-		return root.RemoveAll(prefix)
-	}
-	bucket, err := backend.openBucket(ctx)
-	if err != nil {
-		return err
-	}
-	defer bucket.Close()
-	prefix = filepath.ToSlash(filepath.Join(backend.Prefix, "_analysis", prefix)) + "/"
-	iterator := bucket.List(&blob.ListOptions{Prefix: prefix})
-	for i := 0; i < 40000; i++ {
-		item, err := iterator.Next(ctx)
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if item.IsDir {
-			continue
-		}
-		if err = bucket.Delete(ctx, item.Key); err != nil && gcerrors.Code(err) != gcerrors.NotFound {
-			return err
-		}
-	}
-	return errors.New("analytical cleanup will continue on next sweep")
+	return deleteAnalysisNamespacePhysical(ctx, currentArchiveBackend(), prefix)
 }
 
 // A single orphan is reclaimed after the durable writer grace. A receipt
@@ -146,33 +171,15 @@ func deleteMonitorObject(ctx context.Context, key string) error {
 	if !validMonitorArtifactKey(key) || strings.Contains(key, "\\") {
 		return errors.New("invalid monitor cleanup key")
 	}
-	if err := ctx.Err(); err != nil {
-		return err
+	return deleteAnalysisObjectPhysical(ctx, currentArchiveBackend(), key)
+}
+
+func deferBlockedAnalysisCleanup(store any, j storage.AnalysisCleanupJob) error {
+	deferred, ok := store.(interface {
+		DeferAnalysisCleanupJob(storage.AnalysisCleanupJob, time.Time) error
+	})
+	if !ok {
+		return errors.New("analysis cleanup bounded retry unavailable")
 	}
-	backend := currentArchiveBackend()
-	if backend.Backend == archiveBackendFilesystem {
-		root, err := os.OpenRoot(filepath.Join(backend.LocalRoot, "_analysis"))
-		if os.IsNotExist(err) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		defer root.Close()
-		err = root.Remove(key)
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	bucket, err := backend.openBucket(ctx)
-	if err != nil {
-		return err
-	}
-	defer bucket.Close()
-	err = bucket.Delete(ctx, filepath.ToSlash(filepath.Join(backend.Prefix, "_analysis", key)))
-	if gcerrors.Code(err) == gcerrors.NotFound {
-		return nil
-	}
-	return err
+	return deferred.DeferAnalysisCleanupJob(j, time.Now().UTC().Add(time.Minute))
 }

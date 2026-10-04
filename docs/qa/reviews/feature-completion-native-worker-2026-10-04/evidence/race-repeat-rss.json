@@ -1,0 +1,3107 @@
+{
+  "exit_code": 1,
+  "elapsed_seconds": 86.53,
+  "peak_observed_current_ancestry_rss_kib": 215728,
+  "samples": [
+    {
+      "seconds": 0.02,
+      "rss_kib": 7504,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 7504
+        }
+      ]
+    },
+    {
+      "seconds": 0.535,
+      "rss_kib": 118592,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 33904
+        },
+        {
+          "pid": 49116,
+          "ppid": 49110,
+          "rss_kib": 84688
+        }
+      ]
+    },
+    {
+      "seconds": 1.055,
+      "rss_kib": 191584,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 33936
+        },
+        {
+          "pid": 49128,
+          "ppid": 49110,
+          "rss_kib": 157648
+        }
+      ]
+    },
+    {
+      "seconds": 1.581,
+      "rss_kib": 43632,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43632
+        }
+      ]
+    },
+    {
+      "seconds": 2.102,
+      "rss_kib": 43936,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 2.626,
+      "rss_kib": 104976,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 61040
+        },
+        {
+          "pid": 49147,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 3.148,
+      "rss_kib": 165840,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 63472
+        },
+        {
+          "pid": 49147,
+          "ppid": 49145,
+          "rss_kib": 58464
+        }
+      ]
+    },
+    {
+      "seconds": 3.674,
+      "rss_kib": 165952,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 63584
+        },
+        {
+          "pid": 49147,
+          "ppid": 49145,
+          "rss_kib": 58464
+        }
+      ]
+    },
+    {
+      "seconds": 4.189,
+      "rss_kib": 109456,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 65520
+        },
+        {
+          "pid": 49154,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 4.704,
+      "rss_kib": 172848,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 66048
+        },
+        {
+          "pid": 49154,
+          "ppid": 49145,
+          "rss_kib": 62896
+        }
+      ]
+    },
+    {
+      "seconds": 5.229,
+      "rss_kib": 172864,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 66064
+        },
+        {
+          "pid": 49154,
+          "ppid": 49145,
+          "rss_kib": 62896
+        }
+      ]
+    },
+    {
+      "seconds": 5.744,
+      "rss_kib": 112208,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 68304
+        }
+      ]
+    },
+    {
+      "seconds": 6.264,
+      "rss_kib": 113648,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 68352
+        },
+        {
+          "pid": 49161,
+          "ppid": 49145,
+          "rss_kib": 1392
+        }
+      ]
+    },
+    {
+      "seconds": 6.79,
+      "rss_kib": 176480,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 68416
+        },
+        {
+          "pid": 49161,
+          "ppid": 49145,
+          "rss_kib": 64160
+        }
+      ]
+    },
+    {
+      "seconds": 7.315,
+      "rss_kib": 176496,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 68432
+        },
+        {
+          "pid": 49161,
+          "ppid": 49145,
+          "rss_kib": 64160
+        }
+      ]
+    },
+    {
+      "seconds": 7.849,
+      "rss_kib": 112928,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 68992
+        },
+        {
+          "pid": 49166,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 8.373,
+      "rss_kib": 170688,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 69152
+        },
+        {
+          "pid": 49166,
+          "ppid": 49145,
+          "rss_kib": 57632
+        }
+      ]
+    },
+    {
+      "seconds": 8.902,
+      "rss_kib": 170720,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 69184
+        },
+        {
+          "pid": 49166,
+          "ppid": 49145,
+          "rss_kib": 57632
+        }
+      ]
+    },
+    {
+      "seconds": 9.434,
+      "rss_kib": 114688,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 70752
+        },
+        {
+          "pid": 49170,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 9.969,
+      "rss_kib": 175232,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 70752
+        },
+        {
+          "pid": 49170,
+          "ppid": 49145,
+          "rss_kib": 60576
+        }
+      ]
+    },
+    {
+      "seconds": 10.503,
+      "rss_kib": 175232,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 70752
+        },
+        {
+          "pid": 49170,
+          "ppid": 49145,
+          "rss_kib": 60576
+        }
+      ]
+    },
+    {
+      "seconds": 11.036,
+      "rss_kib": 114784,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 70848
+        },
+        {
+          "pid": 49177,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 11.561,
+      "rss_kib": 178512,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 70912
+        },
+        {
+          "pid": 49177,
+          "ppid": 49145,
+          "rss_kib": 63696
+        }
+      ]
+    },
+    {
+      "seconds": 12.096,
+      "rss_kib": 178560,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 70960
+        },
+        {
+          "pid": 49177,
+          "ppid": 49145,
+          "rss_kib": 63696
+        }
+      ]
+    },
+    {
+      "seconds": 12.612,
+      "rss_kib": 115280,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 71344
+        },
+        {
+          "pid": 49181,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 13.135,
+      "rss_kib": 177552,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 71344
+        },
+        {
+          "pid": 49181,
+          "ppid": 49145,
+          "rss_kib": 62304
+        }
+      ]
+    },
+    {
+      "seconds": 13.67,
+      "rss_kib": 177552,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 71344
+        },
+        {
+          "pid": 49181,
+          "ppid": 49145,
+          "rss_kib": 62304
+        }
+      ]
+    },
+    {
+      "seconds": 14.185,
+      "rss_kib": 116544,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 72608
+        },
+        {
+          "pid": 49189,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 14.7,
+      "rss_kib": 176416,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 72608
+        },
+        {
+          "pid": 49189,
+          "ppid": 49145,
+          "rss_kib": 59904
+        }
+      ]
+    },
+    {
+      "seconds": 15.234,
+      "rss_kib": 176416,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 72608
+        },
+        {
+          "pid": 49189,
+          "ppid": 49145,
+          "rss_kib": 59904
+        }
+      ]
+    },
+    {
+      "seconds": 15.748,
+      "rss_kib": 116624,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 72720
+        }
+      ]
+    },
+    {
+      "seconds": 16.273,
+      "rss_kib": 152480,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 72736
+        },
+        {
+          "pid": 49197,
+          "ppid": 49145,
+          "rss_kib": 35840
+        }
+      ]
+    },
+    {
+      "seconds": 16.807,
+      "rss_kib": 179040,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 72848
+        },
+        {
+          "pid": 49197,
+          "ppid": 49145,
+          "rss_kib": 62288
+        }
+      ]
+    },
+    {
+      "seconds": 17.338,
+      "rss_kib": 179056,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 72864
+        },
+        {
+          "pid": 49197,
+          "ppid": 49145,
+          "rss_kib": 62288
+        }
+      ]
+    },
+    {
+      "seconds": 17.866,
+      "rss_kib": 116896,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 72960
+        },
+        {
+          "pid": 49203,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 18.4,
+      "rss_kib": 186912,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 74016
+        },
+        {
+          "pid": 49203,
+          "ppid": 49145,
+          "rss_kib": 68992
+        }
+      ]
+    },
+    {
+      "seconds": 18.934,
+      "rss_kib": 186912,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 74016
+        },
+        {
+          "pid": 49203,
+          "ppid": 49145,
+          "rss_kib": 68992
+        }
+      ]
+    },
+    {
+      "seconds": 19.469,
+      "rss_kib": 118624,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 74688
+        },
+        {
+          "pid": 49208,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 20.003,
+      "rss_kib": 181248,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 74688
+        },
+        {
+          "pid": 49208,
+          "ppid": 49145,
+          "rss_kib": 62656
+        }
+      ]
+    },
+    {
+      "seconds": 20.527,
+      "rss_kib": 181264,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 74704
+        },
+        {
+          "pid": 49208,
+          "ppid": 49145,
+          "rss_kib": 62656
+        }
+      ]
+    },
+    {
+      "seconds": 21.054,
+      "rss_kib": 118736,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 74800
+        },
+        {
+          "pid": 49212,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 21.588,
+      "rss_kib": 184576,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 74800
+        },
+        {
+          "pid": 49212,
+          "ppid": 49145,
+          "rss_kib": 65872
+        }
+      ]
+    },
+    {
+      "seconds": 22.117,
+      "rss_kib": 184576,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 74800
+        },
+        {
+          "pid": 49212,
+          "ppid": 49145,
+          "rss_kib": 65872
+        }
+      ]
+    },
+    {
+      "seconds": 22.634,
+      "rss_kib": 118864,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 74960
+        }
+      ]
+    },
+    {
+      "seconds": 23.157,
+      "rss_kib": 177296,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 74960
+        },
+        {
+          "pid": 49217,
+          "ppid": 49145,
+          "rss_kib": 58432
+        }
+      ]
+    },
+    {
+      "seconds": 23.689,
+      "rss_kib": 177648,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 74976
+        },
+        {
+          "pid": 49217,
+          "ppid": 49145,
+          "rss_kib": 58768
+        }
+      ]
+    },
+    {
+      "seconds": 24.206,
+      "rss_kib": 119056,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75152
+        }
+      ]
+    },
+    {
+      "seconds": 24.728,
+      "rss_kib": 120240,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75152
+        },
+        {
+          "pid": 49221,
+          "ppid": 49145,
+          "rss_kib": 1184
+        }
+      ]
+    },
+    {
+      "seconds": 25.242,
+      "rss_kib": 180912,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75168
+        },
+        {
+          "pid": 49221,
+          "ppid": 49145,
+          "rss_kib": 61840
+        }
+      ]
+    },
+    {
+      "seconds": 25.775,
+      "rss_kib": 180912,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75168
+        },
+        {
+          "pid": 49221,
+          "ppid": 49145,
+          "rss_kib": 61840
+        }
+      ]
+    },
+    {
+      "seconds": 26.299,
+      "rss_kib": 119168,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75232
+        },
+        {
+          "pid": 49233,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 26.824,
+      "rss_kib": 183856,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75248
+        },
+        {
+          "pid": 49233,
+          "ppid": 49145,
+          "rss_kib": 64704
+        }
+      ]
+    },
+    {
+      "seconds": 27.356,
+      "rss_kib": 183856,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75248
+        },
+        {
+          "pid": 49233,
+          "ppid": 49145,
+          "rss_kib": 64704
+        }
+      ]
+    },
+    {
+      "seconds": 27.89,
+      "rss_kib": 119200,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75264
+        },
+        {
+          "pid": 49242,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 28.424,
+      "rss_kib": 184448,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75264
+        },
+        {
+          "pid": 49242,
+          "ppid": 49145,
+          "rss_kib": 65280
+        }
+      ]
+    },
+    {
+      "seconds": 28.949,
+      "rss_kib": 184448,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75264
+        },
+        {
+          "pid": 49242,
+          "ppid": 49145,
+          "rss_kib": 65280
+        }
+      ]
+    },
+    {
+      "seconds": 29.475,
+      "rss_kib": 119440,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75504
+        },
+        {
+          "pid": 49247,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 30.003,
+      "rss_kib": 181280,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75520
+        },
+        {
+          "pid": 49247,
+          "ppid": 49145,
+          "rss_kib": 61856
+        }
+      ]
+    },
+    {
+      "seconds": 30.536,
+      "rss_kib": 181280,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75520
+        },
+        {
+          "pid": 49247,
+          "ppid": 49145,
+          "rss_kib": 61856
+        }
+      ]
+    },
+    {
+      "seconds": 31.055,
+      "rss_kib": 119552,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75616
+        },
+        {
+          "pid": 49251,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 31.586,
+      "rss_kib": 185520,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75616
+        },
+        {
+          "pid": 49251,
+          "ppid": 49145,
+          "rss_kib": 66000
+        }
+      ]
+    },
+    {
+      "seconds": 32.105,
+      "rss_kib": 185520,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75616
+        },
+        {
+          "pid": 49251,
+          "ppid": 49145,
+          "rss_kib": 66000
+        }
+      ]
+    },
+    {
+      "seconds": 32.634,
+      "rss_kib": 119664,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75760
+        }
+      ]
+    },
+    {
+      "seconds": 33.167,
+      "rss_kib": 119664,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75760
+        }
+      ]
+    },
+    {
+      "seconds": 33.697,
+      "rss_kib": 119712,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75808
+        }
+      ]
+    },
+    {
+      "seconds": 34.224,
+      "rss_kib": 119712,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75808
+        }
+      ]
+    },
+    {
+      "seconds": 34.744,
+      "rss_kib": 158928,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75920
+        },
+        {
+          "pid": 49265,
+          "ppid": 49145,
+          "rss_kib": 39104
+        }
+      ]
+    },
+    {
+      "seconds": 35.277,
+      "rss_kib": 158928,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75920
+        },
+        {
+          "pid": 49265,
+          "ppid": 49145,
+          "rss_kib": 39104
+        }
+      ]
+    },
+    {
+      "seconds": 35.801,
+      "rss_kib": 158352,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75952
+        },
+        {
+          "pid": 49268,
+          "ppid": 49145,
+          "rss_kib": 38496
+        }
+      ]
+    },
+    {
+      "seconds": 36.315,
+      "rss_kib": 158352,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75952
+        },
+        {
+          "pid": 49268,
+          "ppid": 49145,
+          "rss_kib": 38496
+        }
+      ]
+    },
+    {
+      "seconds": 36.856,
+      "rss_kib": 119872,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75968
+        }
+      ]
+    },
+    {
+      "seconds": 37.379,
+      "rss_kib": 159056,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75984
+        },
+        {
+          "pid": 49280,
+          "ppid": 49145,
+          "rss_kib": 39168
+        }
+      ]
+    },
+    {
+      "seconds": 37.914,
+      "rss_kib": 159056,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75984
+        },
+        {
+          "pid": 49280,
+          "ppid": 49145,
+          "rss_kib": 39168
+        }
+      ]
+    },
+    {
+      "seconds": 38.435,
+      "rss_kib": 158192,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75984
+        },
+        {
+          "pid": 49287,
+          "ppid": 49145,
+          "rss_kib": 38304
+        }
+      ]
+    },
+    {
+      "seconds": 38.961,
+      "rss_kib": 158192,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75984
+        },
+        {
+          "pid": 49287,
+          "ppid": 49145,
+          "rss_kib": 38304
+        }
+      ]
+    },
+    {
+      "seconds": 39.496,
+      "rss_kib": 119888,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75984
+        }
+      ]
+    },
+    {
+      "seconds": 40.029,
+      "rss_kib": 119888,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75984
+        }
+      ]
+    },
+    {
+      "seconds": 40.563,
+      "rss_kib": 119888,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75984
+        }
+      ]
+    },
+    {
+      "seconds": 41.092,
+      "rss_kib": 119888,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75984
+        }
+      ]
+    },
+    {
+      "seconds": 41.626,
+      "rss_kib": 119888,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75984
+        }
+      ]
+    },
+    {
+      "seconds": 42.161,
+      "rss_kib": 119888,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75984
+        }
+      ]
+    },
+    {
+      "seconds": 42.685,
+      "rss_kib": 119888,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 75984
+        }
+      ]
+    },
+    {
+      "seconds": 43.219,
+      "rss_kib": 119904,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 76000
+        }
+      ]
+    },
+    {
+      "seconds": 43.743,
+      "rss_kib": 152336,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 108432
+        }
+      ]
+    },
+    {
+      "seconds": 44.257,
+      "rss_kib": 154016,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110080
+        },
+        {
+          "pid": 49301,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 44.781,
+      "rss_kib": 215728,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110080
+        },
+        {
+          "pid": 49301,
+          "ppid": 49145,
+          "rss_kib": 61744
+        }
+      ]
+    },
+    {
+      "seconds": 45.315,
+      "rss_kib": 215728,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110080
+        },
+        {
+          "pid": 49301,
+          "ppid": 49145,
+          "rss_kib": 61744
+        }
+      ]
+    },
+    {
+      "seconds": 45.85,
+      "rss_kib": 154048,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110144
+        }
+      ]
+    },
+    {
+      "seconds": 46.376,
+      "rss_kib": 154048,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110144
+        }
+      ]
+    },
+    {
+      "seconds": 46.902,
+      "rss_kib": 154480,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110576
+        }
+      ]
+    },
+    {
+      "seconds": 47.434,
+      "rss_kib": 154480,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110576
+        }
+      ]
+    },
+    {
+      "seconds": 47.96,
+      "rss_kib": 154512,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110608
+        }
+      ]
+    },
+    {
+      "seconds": 48.494,
+      "rss_kib": 154512,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110608
+        }
+      ]
+    },
+    {
+      "seconds": 49.021,
+      "rss_kib": 154640,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110736
+        }
+      ]
+    },
+    {
+      "seconds": 49.548,
+      "rss_kib": 154640,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110736
+        }
+      ]
+    },
+    {
+      "seconds": 50.081,
+      "rss_kib": 154640,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110736
+        }
+      ]
+    },
+    {
+      "seconds": 50.607,
+      "rss_kib": 154640,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110736
+        }
+      ]
+    },
+    {
+      "seconds": 51.135,
+      "rss_kib": 154656,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110752
+        }
+      ]
+    },
+    {
+      "seconds": 51.663,
+      "rss_kib": 154656,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110752
+        }
+      ]
+    },
+    {
+      "seconds": 52.206,
+      "rss_kib": 154688,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110784
+        }
+      ]
+    },
+    {
+      "seconds": 52.731,
+      "rss_kib": 154688,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110784
+        }
+      ]
+    },
+    {
+      "seconds": 53.257,
+      "rss_kib": 154752,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110848
+        }
+      ]
+    },
+    {
+      "seconds": 53.783,
+      "rss_kib": 154768,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110864
+        }
+      ]
+    },
+    {
+      "seconds": 54.303,
+      "rss_kib": 154784,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110880
+        }
+      ]
+    },
+    {
+      "seconds": 54.829,
+      "rss_kib": 154784,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110880
+        }
+      ]
+    },
+    {
+      "seconds": 55.353,
+      "rss_kib": 154784,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110880
+        }
+      ]
+    },
+    {
+      "seconds": 55.878,
+      "rss_kib": 154784,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110880
+        }
+      ]
+    },
+    {
+      "seconds": 56.399,
+      "rss_kib": 154784,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110880
+        }
+      ]
+    },
+    {
+      "seconds": 56.933,
+      "rss_kib": 154784,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110880
+        }
+      ]
+    },
+    {
+      "seconds": 57.461,
+      "rss_kib": 154784,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110880
+        }
+      ]
+    },
+    {
+      "seconds": 57.99,
+      "rss_kib": 154784,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110880
+        }
+      ]
+    },
+    {
+      "seconds": 58.524,
+      "rss_kib": 154784,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110880
+        }
+      ]
+    },
+    {
+      "seconds": 59.052,
+      "rss_kib": 154784,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110880
+        }
+      ]
+    },
+    {
+      "seconds": 59.576,
+      "rss_kib": 194848,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110880
+        },
+        {
+          "pid": 49340,
+          "ppid": 49145,
+          "rss_kib": 40064
+        }
+      ]
+    },
+    {
+      "seconds": 60.108,
+      "rss_kib": 194848,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110880
+        },
+        {
+          "pid": 49340,
+          "ppid": 49145,
+          "rss_kib": 40064
+        }
+      ]
+    },
+    {
+      "seconds": 60.632,
+      "rss_kib": 154880,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110976
+        }
+      ]
+    },
+    {
+      "seconds": 61.159,
+      "rss_kib": 194400,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110976
+        },
+        {
+          "pid": 49346,
+          "ppid": 49145,
+          "rss_kib": 39520
+        }
+      ]
+    },
+    {
+      "seconds": 61.694,
+      "rss_kib": 194400,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110976
+        },
+        {
+          "pid": 49346,
+          "ppid": 49145,
+          "rss_kib": 39520
+        }
+      ]
+    },
+    {
+      "seconds": 62.228,
+      "rss_kib": 154880,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110976
+        }
+      ]
+    },
+    {
+      "seconds": 62.754,
+      "rss_kib": 154880,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110976
+        }
+      ]
+    },
+    {
+      "seconds": 63.289,
+      "rss_kib": 154880,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110976
+        }
+      ]
+    },
+    {
+      "seconds": 63.82,
+      "rss_kib": 154880,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110976
+        }
+      ]
+    },
+    {
+      "seconds": 64.354,
+      "rss_kib": 154880,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110976
+        }
+      ]
+    },
+    {
+      "seconds": 64.878,
+      "rss_kib": 154880,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110976
+        }
+      ]
+    },
+    {
+      "seconds": 65.413,
+      "rss_kib": 154880,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110976
+        }
+      ]
+    },
+    {
+      "seconds": 65.94,
+      "rss_kib": 154880,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 110976
+        }
+      ]
+    },
+    {
+      "seconds": 66.469,
+      "rss_kib": 193472,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111008
+        },
+        {
+          "pid": 49361,
+          "ppid": 49145,
+          "rss_kib": 38560
+        }
+      ]
+    },
+    {
+      "seconds": 67.005,
+      "rss_kib": 193472,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111008
+        },
+        {
+          "pid": 49361,
+          "ppid": 49145,
+          "rss_kib": 38560
+        }
+      ]
+    },
+    {
+      "seconds": 67.528,
+      "rss_kib": 194688,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49364,
+          "ppid": 49145,
+          "rss_kib": 39760
+        }
+      ]
+    },
+    {
+      "seconds": 68.052,
+      "rss_kib": 194688,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49364,
+          "ppid": 49145,
+          "rss_kib": 39760
+        }
+      ]
+    },
+    {
+      "seconds": 68.578,
+      "rss_kib": 194688,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49364,
+          "ppid": 49145,
+          "rss_kib": 39760
+        }
+      ]
+    },
+    {
+      "seconds": 69.105,
+      "rss_kib": 194688,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49364,
+          "ppid": 49145,
+          "rss_kib": 39760
+        }
+      ]
+    },
+    {
+      "seconds": 69.639,
+      "rss_kib": 194688,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49364,
+          "ppid": 49145,
+          "rss_kib": 39760
+        }
+      ]
+    },
+    {
+      "seconds": 70.165,
+      "rss_kib": 194688,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49364,
+          "ppid": 49145,
+          "rss_kib": 39760
+        }
+      ]
+    },
+    {
+      "seconds": 70.7,
+      "rss_kib": 194688,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49364,
+          "ppid": 49145,
+          "rss_kib": 39760
+        }
+      ]
+    },
+    {
+      "seconds": 71.233,
+      "rss_kib": 194688,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49364,
+          "ppid": 49145,
+          "rss_kib": 39760
+        }
+      ]
+    },
+    {
+      "seconds": 71.767,
+      "rss_kib": 194688,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49364,
+          "ppid": 49145,
+          "rss_kib": 39760
+        }
+      ]
+    },
+    {
+      "seconds": 72.298,
+      "rss_kib": 194688,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49364,
+          "ppid": 49145,
+          "rss_kib": 39760
+        }
+      ]
+    },
+    {
+      "seconds": 72.823,
+      "rss_kib": 193776,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49375,
+          "ppid": 49145,
+          "rss_kib": 38848
+        }
+      ]
+    },
+    {
+      "seconds": 73.35,
+      "rss_kib": 193776,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49375,
+          "ppid": 49145,
+          "rss_kib": 38848
+        }
+      ]
+    },
+    {
+      "seconds": 73.877,
+      "rss_kib": 193776,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49375,
+          "ppid": 49145,
+          "rss_kib": 38848
+        }
+      ]
+    },
+    {
+      "seconds": 74.412,
+      "rss_kib": 193776,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49375,
+          "ppid": 49145,
+          "rss_kib": 38848
+        }
+      ]
+    },
+    {
+      "seconds": 74.939,
+      "rss_kib": 193856,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        },
+        {
+          "pid": 49375,
+          "ppid": 49145,
+          "rss_kib": 38928
+        }
+      ]
+    },
+    {
+      "seconds": 75.473,
+      "rss_kib": 154928,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111024
+        }
+      ]
+    },
+    {
+      "seconds": 75.997,
+      "rss_kib": 155040,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111104
+        },
+        {
+          "pid": 49387,
+          "ppid": 49145,
+          "rss_kib": 32
+        }
+      ]
+    },
+    {
+      "seconds": 76.512,
+      "rss_kib": 194704,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111104
+        },
+        {
+          "pid": 49387,
+          "ppid": 49145,
+          "rss_kib": 39696
+        }
+      ]
+    },
+    {
+      "seconds": 77.047,
+      "rss_kib": 194704,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111104
+        },
+        {
+          "pid": 49387,
+          "ppid": 49145,
+          "rss_kib": 39696
+        }
+      ]
+    },
+    {
+      "seconds": 77.575,
+      "rss_kib": 155008,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111104
+        }
+      ]
+    },
+    {
+      "seconds": 78.11,
+      "rss_kib": 194448,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111136
+        },
+        {
+          "pid": 49392,
+          "ppid": 49145,
+          "rss_kib": 39408
+        }
+      ]
+    },
+    {
+      "seconds": 78.643,
+      "rss_kib": 194448,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111136
+        },
+        {
+          "pid": 49392,
+          "ppid": 49145,
+          "rss_kib": 39408
+        }
+      ]
+    },
+    {
+      "seconds": 79.159,
+      "rss_kib": 194448,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111136
+        },
+        {
+          "pid": 49392,
+          "ppid": 49145,
+          "rss_kib": 39408
+        }
+      ]
+    },
+    {
+      "seconds": 79.692,
+      "rss_kib": 194448,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111136
+        },
+        {
+          "pid": 49392,
+          "ppid": 49145,
+          "rss_kib": 39408
+        }
+      ]
+    },
+    {
+      "seconds": 80.217,
+      "rss_kib": 194448,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111136
+        },
+        {
+          "pid": 49392,
+          "ppid": 49145,
+          "rss_kib": 39408
+        }
+      ]
+    },
+    {
+      "seconds": 80.751,
+      "rss_kib": 194448,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111136
+        },
+        {
+          "pid": 49392,
+          "ppid": 49145,
+          "rss_kib": 39408
+        }
+      ]
+    },
+    {
+      "seconds": 81.286,
+      "rss_kib": 194448,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111136
+        },
+        {
+          "pid": 49392,
+          "ppid": 49145,
+          "rss_kib": 39408
+        }
+      ]
+    },
+    {
+      "seconds": 81.817,
+      "rss_kib": 194448,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111136
+        },
+        {
+          "pid": 49392,
+          "ppid": 49145,
+          "rss_kib": 39408
+        }
+      ]
+    },
+    {
+      "seconds": 82.352,
+      "rss_kib": 194448,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111136
+        },
+        {
+          "pid": 49392,
+          "ppid": 49145,
+          "rss_kib": 39408
+        }
+      ]
+    },
+    {
+      "seconds": 82.886,
+      "rss_kib": 194448,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111136
+        },
+        {
+          "pid": 49392,
+          "ppid": 49145,
+          "rss_kib": 39408
+        }
+      ]
+    },
+    {
+      "seconds": 83.409,
+      "rss_kib": 155056,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111152
+        }
+      ]
+    },
+    {
+      "seconds": 83.933,
+      "rss_kib": 155056,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111152
+        }
+      ]
+    },
+    {
+      "seconds": 84.451,
+      "rss_kib": 155072,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111168
+        }
+      ]
+    },
+    {
+      "seconds": 84.979,
+      "rss_kib": 155072,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111168
+        }
+      ]
+    },
+    {
+      "seconds": 85.501,
+      "rss_kib": 155168,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43904
+        },
+        {
+          "pid": 49145,
+          "ppid": 49110,
+          "rss_kib": 111264
+        }
+      ]
+    },
+    {
+      "seconds": 86.024,
+      "rss_kib": 43920,
+      "processes": [
+        {
+          "pid": 49110,
+          "ppid": 49108,
+          "rss_kib": 43920
+        }
+      ]
+    }
+  ],
+  "qualification": "Read-only sampled Go/build/test/child ancestry, not complete orphan/native allocation attribution or release proof"
+}

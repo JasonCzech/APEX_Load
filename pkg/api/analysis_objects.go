@@ -11,7 +11,7 @@ import (
 	"regexp"
 
 	"github.com/google/uuid"
-	"gocloud.dev/gcerrors"
+	analytics "github.com/jasonczech/apexload/pkg/analysis/duckdb"
 )
 
 var analysisObjectPattern = regexp.MustCompile(`^datasets/v1/[a-f0-9]{64}/[a-f0-9-]{36}/[a-z0-9][a-z0-9_.-]{0,159}$`)
@@ -21,11 +21,19 @@ func analysisObjectKey(project, id, name string) string {
 	return "datasets/v1/" + hex.EncodeToString(hash[:]) + "/" + id + "/" + name
 }
 
-func analysisObjectWrite(ctx context.Context, key string, input io.Reader) (string, error) {
+func analysisObjectWrite(ctx context.Context, key string, input io.Reader) (retDigest string, retErr error) {
 	if !analysisObjectPattern.MatchString(key) {
 		return "", errors.New("invalid analytical object")
 	}
-	backend := currentArchiveBackend()
+	lease, err := analytics.NativePipelineIO(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer lease.Joined()
+	backend, err := nativeAnalysisArtifactBackend(ctx)
+	if err != nil {
+		return "", err
+	}
 	if err := backend.validate(); err != nil {
 		return "", err
 	}
@@ -36,13 +44,15 @@ func analysisObjectWrite(ctx context.Context, key string, input io.Reader) (stri
 		if err != nil {
 			return "", err
 		}
-		defer bucket.Close()
+		lease.TrackOwner(bucket)
+		defer func() { retErr = errors.Join(retErr, analysisCloseNativeOwner(lease, bucket)) }()
 		writer, err := bucket.NewWriter(ctx, filepath.ToSlash(filepath.Join(backend.Prefix, "_analysis", key)), nil)
 		if err != nil {
 			return "", err
 		}
+		lease.TrackOwner(writer)
 		_, copyErr := io.Copy(writer, input)
-		closeErr := writer.Close()
+		closeErr := analysisCloseNativeOwner(lease, writer)
 		if err = errors.Join(copyErr, closeErr); err != nil {
 			return "", err
 		}
@@ -56,7 +66,8 @@ func analysisObjectWrite(ctx context.Context, key string, input io.Reader) (stri
 	if err != nil {
 		return "", err
 	}
-	defer root.Close()
+	lease.TrackOwner(root)
+	defer func() { retErr = errors.Join(retErr, analysisCloseNativeOwner(lease, root)) }()
 	if err = root.MkdirAll(filepath.Dir(key), 0700); err != nil {
 		return "", err
 	}
@@ -65,11 +76,21 @@ func analysisObjectWrite(ctx context.Context, key string, input io.Reader) (stri
 	if err != nil {
 		return "", err
 	}
-	defer root.Remove(tmp)
+	lease.TrackOwner(file)
+	tempClosed := false
+	defer func() {
+		if tempClosed {
+			_ = root.Remove(tmp)
+		}
+	}()
 	_, copyErr := io.Copy(file, &contextReader{ctx: ctx, reader: input})
 	syncErr := file.Sync()
-	closeErr := file.Close()
+	closeErr := analysisCloseNativeOwner(lease, file)
+	tempClosed = closeErr == nil
 	if err = errors.Join(copyErr, syncErr, closeErr); err != nil {
+		return "", err
+	}
+	if err = ctx.Err(); err != nil {
 		return "", err
 	}
 	if err = root.Rename(tmp, key); err != nil {
@@ -79,8 +100,9 @@ func analysisObjectWrite(ctx context.Context, key string, input io.Reader) (stri
 	if err != nil {
 		return "", err
 	}
+	lease.TrackOwner(dir)
 	syncErr = dir.Sync()
-	closeErr = dir.Close()
+	closeErr = analysisCloseNativeOwner(lease, dir)
 	if isIgnorableArchiveDirectorySyncError(syncErr) {
 		syncErr = nil
 	}
@@ -102,18 +124,27 @@ func (r *contextReader) Read(p []byte) (int, error) {
 	return r.reader.Read(p)
 }
 
-func analysisObjectRead(ctx context.Context, key string, output io.Writer, maxBytes int64) (string, error) {
+func analysisObjectRead(ctx context.Context, key string, output io.Writer, maxBytes int64) (retDigest string, retErr error) {
 	if !analysisObjectPattern.MatchString(key) || maxBytes < 0 {
 		return "", errors.New("invalid analytical object read")
 	}
-	backend := currentArchiveBackend()
+	lease, err := analytics.NativePipelineIO(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer lease.Joined()
+	backend, err := nativeAnalysisArtifactBackend(ctx)
+	if err != nil {
+		return "", err
+	}
 	var reader io.ReadCloser
 	if backend.Backend != archiveBackendFilesystem {
 		bucket, err := backend.openBucket(ctx)
 		if err != nil {
 			return "", err
 		}
-		defer bucket.Close()
+		lease.TrackOwner(bucket)
+		defer func() { retErr = errors.Join(retErr, analysisCloseNativeOwner(lease, bucket)) }()
 		reader, err = bucket.NewReader(ctx, filepath.ToSlash(filepath.Join(backend.Prefix, "_analysis", key)), nil)
 		if err != nil {
 			return "", err
@@ -123,13 +154,15 @@ func analysisObjectRead(ctx context.Context, key string, output io.Writer, maxBy
 		if err != nil {
 			return "", err
 		}
-		defer root.Close()
+		lease.TrackOwner(root)
+		defer func() { retErr = errors.Join(retErr, analysisCloseNativeOwner(lease, root)) }()
 		reader, err = root.Open(key)
 		if err != nil {
 			return "", err
 		}
 	}
-	defer reader.Close()
+	lease.TrackOwner(reader)
+	defer func() { retErr = errors.Join(retErr, analysisCloseNativeOwner(lease, reader)) }()
 	hash := sha256.New()
 	n, err := io.Copy(io.MultiWriter(output, hash), io.LimitReader(&contextReader{ctx: ctx, reader: reader}, maxBytes+1))
 	if err != nil {
@@ -145,30 +178,12 @@ func analysisObjectDelete(ctx context.Context, key string) error {
 	if !analysisObjectPattern.MatchString(key) {
 		return errors.New("invalid analytical object deletion")
 	}
-	backend := currentArchiveBackend()
-	if backend.Backend != archiveBackendFilesystem {
-		bucket, err := backend.openBucket(ctx)
-		if err != nil {
-			return err
-		}
-		defer bucket.Close()
-		err = bucket.Delete(ctx, filepath.ToSlash(filepath.Join(backend.Prefix, "_analysis", key)))
-		if gcerrors.Code(err) == gcerrors.NotFound {
-			return nil
-		}
-		return err
+	return deleteAnalysisObjectPhysical(ctx, currentArchiveBackend(), key)
+}
+
+func analysisCloseNativeOwner(lease *analytics.NativeIOLease, descriptor io.Closer) error {
+	if lease == nil {
+		return descriptor.Close()
 	}
-	root, err := os.OpenRoot(filepath.Join(backend.LocalRoot, "_analysis"))
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-	err = root.Remove(key)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	return err
+	return lease.CloseOwner(descriptor)
 }

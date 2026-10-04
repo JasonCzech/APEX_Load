@@ -29,6 +29,10 @@ func schemaCreateTableStatements() []string {
             kind TEXT NOT NULL, project_id TEXT NOT NULL, resource_id TEXT NOT NULL,
             not_before DATETIME NOT NULL, PRIMARY KEY(kind,resource_id)
         )`,
+		`CREATE TABLE IF NOT EXISTS analysis_attempt_journal (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+            import_id TEXT NOT NULL, payload TEXT NOT NULL
+        )`,
 		`CREATE TABLE IF NOT EXISTS analysis_definitions (
             id TEXT NOT NULL,
             project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -1965,6 +1969,7 @@ var dataPoolRowsPageIndex = schemaIndex{
 // indexes skip NULL/empty values so legacy rows awaiting backfill do not collide.
 var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_preparations_test ON preparations(test_id, expires_at)`, "idx_preparations_test"},
+	{`CREATE INDEX IF NOT EXISTS idx_analysis_attempt_project_import ON analysis_attempt_journal(project_id,import_id)`, "idx_analysis_attempt_project_import"},
 	{`CREATE INDEX IF NOT EXISTS idx_analysis_imports_project ON analysis_imports(project_id, state)`, "idx_analysis_imports_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_monitor_jobs_source ON run_monitor_jobs(project_id,source_id,state)`, "idx_monitor_jobs_source"},
 	{`CREATE INDEX IF NOT EXISTS idx_monitor_jobs_management ON run_monitor_jobs(project_id,source_id,management_config_key,state,expires_at)`, "idx_monitor_jobs_management"},

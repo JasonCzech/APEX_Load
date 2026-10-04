@@ -32,6 +32,10 @@ const analysisImportMaxBytes = int64(20 << 30)
 var analysisPipelineJobs = make(chan struct{}, 1)
 
 func admitAnalysisPipeline(w http.ResponseWriter) bool {
+	if analytics.NativeBusy() {
+		writeError(w, 503, "native analytical ownership is retained; retry after completion")
+		return false
+	}
 	select {
 	case analysisPipelineJobs <- struct{}{}:
 		return true
@@ -123,29 +127,32 @@ func (s *Server) loadAnalysisImportMetadata(w http.ResponseWriter, r *http.Reque
 // of runtime capture and query availability. A catalog entry alone does not
 // advertise a generator, dataset or provider capability.
 type AnalysisCapabilitiesResponse struct {
-	DiagnosticsEnabled         bool                   `json:"diagnostics_enabled"`
-	MessagingManagementEnabled bool                   `json:"messaging_management_enabled"`
-	MessagingManagementVersion uint32                 `json:"messaging_management_version"`
-	MessagingManagementPacks   []string               `json:"messaging_management_packs"`
-	MonitoringEnabled          bool                   `json:"monitoring_enabled"`
-	PreparationEnabled         bool                   `json:"preparation_enabled"`
-	NativeParquet              bool                   `json:"native_parquet"`
-	Enabled                    bool                   `json:"enabled"`
-	ChunkBytes                 int64                  `json:"chunk_bytes"`
-	MaxImportBytes             int64                  `json:"max_import_bytes"`
-	HeavyJobs                  int                    `json:"heavy_jobs"`
-	Threads                    int                    `json:"threads"`
-	MemoryLimit                string                 `json:"memory_limit"`
-	MetricCatalog              analysis.MetricCatalog `json:"metric_catalog"`
+	DiagnosticsEnabled            bool                   `json:"diagnostics_enabled"`
+	MessagingManagementEnabled    bool                   `json:"messaging_management_enabled"`
+	MessagingManagementVersion    uint32                 `json:"messaging_management_version"`
+	MessagingManagementPacks      []string               `json:"messaging_management_packs"`
+	MonitoringEnabled             bool                   `json:"monitoring_enabled"`
+	PreparationEnabled            bool                   `json:"preparation_enabled"`
+	NativeParquet                 bool                   `json:"native_parquet"`
+	Enabled                       bool                   `json:"enabled"`
+	ChunkBytes                    int64                  `json:"chunk_bytes"`
+	MaxImportBytes                int64                  `json:"max_import_bytes"`
+	HeavyJobs                     int                    `json:"heavy_jobs"`
+	Threads                       int                    `json:"threads"`
+	MemoryLimit                   string                 `json:"memory_limit"`
+	SpillLimit                    string                 `json:"spill_limit"`
+	ResourceConfigurationAccepted bool                   `json:"resource_configuration_accepted"`
+	MetricCatalog                 analysis.MetricCatalog `json:"metric_catalog"`
 }
 
 func (s *Server) handleAnalysisCapabilities(w http.ResponseWriter, r *http.Request) {
 	project := r.URL.Query().Get("project_id")
+	memory, spill, accepted := nativeAnalysisResourceCapability()
 	writeJSON(w, 200, AnalysisCapabilitiesResponse{
 		MessagingManagementEnabled: messagingManagementEnabled(project), MessagingManagementVersion: analysis.MessagingManagementVersion, MessagingManagementPacks: collectoragent.ManagementPacks(),
 		DiagnosticsEnabled: diagnosticsProjectEnabled(project), MonitoringEnabled: runMonitoringEnabled(project), PreparationEnabled: preparationProjectEnabled(project),
 		NativeParquet: analytics.Available(), Enabled: analysisProjectEnabled(project), ChunkBytes: analysisUploadChunk, MaxImportBytes: analysisImportMaxBytes,
-		HeavyJobs: 1, Threads: 2, MemoryLimit: "2GiB", MetricCatalog: analysis.Catalog(),
+		HeavyJobs: 1, Threads: 2, MemoryLimit: memory, SpillLimit: spill, ResourceConfigurationAccepted: accepted, MetricCatalog: analysis.Catalog(),
 	})
 }
 
@@ -246,6 +253,18 @@ func (s *Server) handleAnalysisImport(w http.ResponseWriter, r *http.Request) {
 	}
 	// Cancellation invalidates the worker's revision immediately. Repeating
 	// DELETE retries any physical cleanup interrupted by a storage outage.
+	cleanup, ok := s.store.(interface {
+		AnalysisDatasetCleanupReady(context.Context, string, string) (bool, error)
+	})
+	if !ok {
+		writeError(w, 503, "dataset cleanup ownership unavailable")
+		return
+	}
+	ready, readyErr := cleanup.AnalysisDatasetCleanupReady(r.Context(), saved.ProjectID, saved.ID)
+	if readyErr != nil || !ready {
+		writeError(w, 503, "dataset cleanup pending physical writer completion")
+		return
+	}
 	if err = deleteAnalysisObjects(r.Context(), saved); err != nil {
 		writeError(w, 503, "dataset cleanup pending; retry DELETE")
 		return
@@ -348,16 +367,22 @@ func (s *Server) handleAnalysisUpload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"uploaded": file.Uploaded, "revision": saved.Revision})
 }
 
-func materializeAnalysisOriginal(ctx context.Context, in *storage.AnalysisImport, file storage.AnalysisImportFile, dir string) (string, string, error) {
+func materializeAnalysisOriginal(ctx context.Context, in *storage.AnalysisImport, file storage.AnalysisImportFile, dir string) (retPath string, retDigest string, retErr error) {
 	if file.Uploaded != file.Size {
 		return "", "", errors.New("file upload incomplete")
 	}
+	lease, err := analytics.NativePipelineIO(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	defer lease.Joined()
 	local := filepath.Join(dir, file.ID+".parquet")
 	out, err := os.OpenFile(local, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return "", "", err
 	}
-	defer out.Close()
+	lease.TrackOwner(out)
+	defer func() { retErr = errors.Join(retErr, analysisCloseNativeOwner(lease, out)) }()
 	hash := sha256.New()
 	remaining := file.Size
 	staging := &analysisStagingWriter{out: out, dir: dir, remaining: &remaining}
@@ -389,9 +414,6 @@ func analysisScratch() (string, error) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return "", err
 	}
-	if err := reclaimAnalysisScratch(root, time.Now().UTC()); err != nil {
-		return "", err
-	}
 	return os.MkdirTemp(root, "job-")
 }
 
@@ -404,7 +426,7 @@ func (s *Server) handleAnalysisPreview(w http.ResponseWriter, r *http.Request) {
 	if in == nil {
 		return
 	}
-	if in.State == "cancelled" || in.State == "deleted" || in.State == "deleting" {
+	if !nativePreviewStateAvailable(in.State) {
 		writeError(w, 409, "import is not available")
 		return
 	}
@@ -419,28 +441,28 @@ func (s *Server) handleAnalysisPreview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "import file not found")
 		return
 	}
-	dir, err := analysisScratch()
+	ctx, pipeline, dir, err := beginNativeAnalysisPipeline(r.Context(), selected.Size, 12)
 	if err != nil {
 		writeError(w, 503, "analysis staging unavailable")
 		return
 	}
-	defer os.RemoveAll(dir)
-	file, _, err := materializeAnalysisOriginal(r.Context(), in, *selected, dir)
+	defer closeNativeAnalysisPipeline(pipeline, dir)
+	file, _, err := materializeAnalysisOriginal(ctx, in, *selected, dir)
 	if err != nil {
 		writeError(w, 409, err.Error())
 		return
 	}
-	engine, err := analytics.New(dir)
+	engine, err := analytics.NewForNativePipeline(ctx, dir)
 	if err != nil {
 		writeError(w, 503, err.Error())
 		return
 	}
-	preview, err := engine.Preview(r.Context(), file)
+	preview, err := engine.Preview(ctx, file)
 	if err != nil {
 		writeError(w, 422, "Cannot inspect Parquet: invalid file, unsupported schema, or analytical resource limit.")
 		return
 	}
-	writeJSON(w, 200, preview)
+	s.writeNativeAnalysisPreview(w, r, in, preview)
 }
 
 func (s *Server) handleAnalysisMapping(w http.ResponseWriter, r *http.Request) {
@@ -529,175 +551,54 @@ func (s *Server) handleAnalysisCommit(w http.ResponseWriter, r *http.Request) {
 			<-analysisPipelineJobs
 		}
 	}()
-	// Claim ownership before reclaiming an earlier attempt. A stale request
-	// must never delete artifacts that another worker has just published.
-	in.ObsoleteObjects = append(in.ObsoleteObjects, in.Normalized...)
-	in.ObsoleteObjects = append(in.ObsoleteObjects, in.RejectionArtifacts...)
-	if len(in.ObsoleteObjects) > 4096 {
-		writeError(w, 409, "reclaim prior analytical outputs before another retry")
+	attempts, ok := s.store.(storage.AnalysisAttemptStore)
+	if !ok {
+		writeError(w, 503, "native attempt authority unavailable")
 		return
 	}
-	in.State = "normalizing"
-	in.Owner = uuid.NewString()
-	in.Normalized = nil
-	in.NormalizedSHA256 = nil
-	in.Rejections = nil
-	in.RejectionArtifacts = nil
-	in.RejectionSHA256 = nil
-	for i := range in.Files {
-		for j := range in.Mapping.Measures {
-			in.Normalized = append(in.Normalized, analysisObjectKey(in.ProjectID, in.ID, fmt.Sprintf("normalized-%s-part-%04d-%02d.parquet", in.Owner, i, j)))
-			if in.AllowRejected {
-				in.RejectionArtifacts = append(in.RejectionArtifacts, analysisObjectKey(in.ProjectID, in.ID, fmt.Sprintf("normalized-%s-reject-%04d-%02d.parquet", in.Owner, i, j)))
-			}
+	var inputBytes int64
+	for _, file := range in.Files {
+		if file.Size < 12 || file.Size > analysisImportMaxBytes-inputBytes {
+			writeError(w, 422, "invalid analytical resource geometry")
+			return
 		}
+		inputBytes += file.Size
 	}
-	in.LeaseExpiresAt = time.Now().UTC().Add(16 * time.Minute)
-	in.Error = ""
-	saved, err := store.SaveAnalysisImport(*in, in.Revision)
+	slots := int64(len(in.Files) * len(in.Mapping.Measures))
+	if in.AllowRejected {
+		slots *= 2
+	}
+	outputBytes, err := nativeNormalizationGeometry(slots, inputBytes)
 	if err != nil {
-		writeError(w, 409, err.Error())
+		writeError(w, 422, err.Error())
+		return
+	}
+	parent, stop := s.runner.archiveOperationContext(s.startupContext)
+	ctx, pipeline, dir, err := beginNativeAnalysisPipeline(parent, inputBytes, outputBytes)
+	if err != nil {
+		stop()
+		writeError(w, 503, "analytical admission unavailable")
+		return
+	}
+	claimed, _, err := attempts.ClaimAnalysisImportAttempt(r.Context(), in.ID, in.ProjectID, in.Revision, time.Minute)
+	if err != nil {
+		stop()
+		_ = closeNativeAnalysisPipeline(pipeline, dir)
+		writeError(w, 409, "analytical claim changed or requires reconciliation")
 		return
 	}
 	launched = s.launchBackground(func() {
 		defer func() { <-analysisPipelineJobs }()
-		ctx, cancel := s.runner.archiveOperationContext(s.startupContext)
-		defer cancel()
-		normalizeAnalysisImport(ctx, store, *saved)
+		defer stop()
+		s.normalizeAnalysisImportOwned(ctx, store, attempts, *claimed, pipeline, dir)
 	})
 	if !launched {
-		saved.State, saved.Owner, saved.Error = "failed", "", "Controller is shutting down; retry commit."
-		saved.LeaseExpiresAt = time.Time{}
-		_, _ = store.SaveAnalysisImport(*saved, saved.Revision)
+		s.failUnlaunchedAnalysisImport(ctx, r.Context(), attempts, *claimed, pipeline, dir, stop)
 		writeError(w, 503, "controller is shutting down")
 		return
 	}
 	s.recordAuditEvent(r, "analysis.import.commit", "started", "analysis_import", in.ID, in.ProjectID, nil)
-	writeJSON(w, 202, saved)
-}
-
-func normalizeAnalysisImport(parent context.Context, store storage.AnalysisImportStore, in storage.AnalysisImport) {
-	ctx, cancel := context.WithTimeout(parent, 15*time.Minute)
-	defer cancel()
-	planned := append([]string(nil), in.Normalized...)
-	planned = append(planned, in.RejectionArtifacts...)
-	published := false
-	defer func() {
-		if !published {
-			cleanupCtx, stop := context.WithTimeout(context.Background(), time.Minute)
-			defer stop()
-			for _, key := range planned {
-				_ = analysisObjectDelete(cleanupCtx, key)
-			}
-			if current, err := store.GetAnalysisImport(in.ID); err == nil && (current.State == "cancelled" || current.State == "deleted" || current.State == "deleting") {
-				_ = deleteAnalysisObjects(cleanupCtx, &in)
-			}
-
-		}
-	}()
-	watchID, watchRevision, watchOwner := in.ID, in.Revision, in.Owner
-	watchDone := make(chan struct{})
-	defer func() { cancel(); <-watchDone }()
-	go func() {
-		defer close(watchDone)
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				current, err := store.GetAnalysisImport(watchID)
-				if err != nil || current.Revision != watchRevision || current.Owner != watchOwner {
-					cancel()
-					return
-				}
-			}
-		}
-	}()
-	run := func() error {
-		for _, key := range in.ObsoleteObjects {
-			if err := analysisObjectDelete(ctx, key); err != nil {
-				return errors.New("previous attempt cleanup pending")
-			}
-		}
-		in.ObsoleteObjects = nil
-		dir, err := analysisScratch()
-		if err != nil {
-			return err
-		}
-		defer os.RemoveAll(dir)
-		engine, err := analytics.New(dir)
-		if err != nil {
-			return err
-		}
-		paths := []string{}
-		seen := map[string]bool{}
-		for i, file := range in.Files {
-			local, digest, err := materializeAnalysisOriginal(ctx, &in, file, dir)
-			if err != nil {
-				return err
-			}
-			if seen[digest] {
-				return errors.New("duplicate original files in import")
-			}
-			seen[digest] = true
-			in.Files[i].SHA256 = digest
-			reader, err := os.Open(local)
-			if err != nil {
-				return err
-			}
-			_, writeErr := analysisObjectWrite(ctx, analysisObjectKey(in.ProjectID, in.ID, "original-"+file.ID+".parquet"), reader)
-			closeErr := reader.Close()
-			if err = errors.Join(writeErr, closeErr); err != nil {
-				return err
-			}
-			paths = append(paths, local)
-		}
-		result, err := engine.Normalize(ctx, analytics.NormalizeRequest{ProjectID: in.ProjectID, DatasetID: in.ID, Files: paths, Mapping: *in.Mapping, AllowRejected: in.AllowRejected})
-		in.Accepted, in.Rejected = result.Accepted, result.Rejected
-		in.Rejections = result.Rejections
-		if err != nil {
-			return err
-		}
-		in.NormalizedSHA256 = make(map[string]string)
-		in.RejectionSHA256 = make(map[string]string)
-		in.RejectionArtifacts = nil
-		for _, file := range append(result.Files, result.RejectionFiles...) {
-			key := analysisObjectKey(in.ProjectID, in.ID, "normalized-"+in.Owner+"-"+filepath.Base(file))
-			reader, err := os.Open(file)
-			if err != nil {
-				return err
-			}
-			digest, writeErr := analysisObjectWrite(ctx, key, reader)
-			closeErr := reader.Close()
-			if err = errors.Join(writeErr, closeErr); err != nil {
-				return err
-			}
-			if strings.HasPrefix(filepath.Base(file), "reject-") {
-				in.RejectionArtifacts = append(in.RejectionArtifacts, key)
-				in.RejectionSHA256[key] = digest
-			} else {
-				in.NormalizedSHA256[key] = digest
-			}
-		}
-		in.State = "ready"
-		in.Owner = ""
-		in.LeaseExpiresAt = time.Time{}
-		_, err = store.SaveAnalysisImport(in, in.Revision)
-		published = err == nil
-		return err
-	}
-	if err := run(); err != nil {
-		in.State = "failed"
-		in.Error = "Normalization failed. Check mapping, schema compatibility, rejected measurement counts, and controller resource limits."
-		if len(in.Error) > 1024 {
-			in.Error = in.Error[:1024]
-		}
-		in.Owner = ""
-		in.LeaseExpiresAt = time.Time{}
-		_, _ = store.SaveAnalysisImport(in, in.Revision)
-	}
+	writeJSON(w, 202, claimed)
 }
 
 func deleteAnalysisObjects(ctx context.Context, in *storage.AnalysisImport) error {
@@ -747,5 +648,5 @@ func (s *Server) handleAnalysisDatasetSeries(w http.ResponseWriter, r *http.Requ
 		writeError(w, 422, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"points": points, "dataset_id": in.ID, "rejected_rows": in.Rejected})
+	s.writeNativeDatasetSeries(w, r, in, points)
 }

@@ -115,9 +115,13 @@ acknowledged chunks against the selected original. Multi-file imports preserve
 validated relative paths and byte-for-byte original files. Metadata publication
 is atomic after all normalized artifacts are durable. Cancel invalidates the
 worker's revision; an expired worker can be retried idempotently with fresh output
-ownership. Dataset deletion removes originals, upload chunks and normalized
-objects; a durable cleanup queue also handles project/test deletion and late
-cancelled writers.
+ownership. Dataset cancellation immediately hides the dataset and queues
+originals, upload chunks and normalized objects for cleanup. Physical deletion
+requires durable proof that every writer has stopped. Uploads created through
+the legacy writer path have no such proof: DELETE returns pending status 503,
+retains their bytes and keeps the cleanup job. A timeout, expired lease or
+completed HTTP request cannot establish physical closure. The durable upload
+writer successor and qualified restart recovery remain separate completion work.
 
 Rejected measurements fail publication by default. Explicitly accepting them retains a complete rejected-row Parquet artifact with file/measure identity and zero-based source row ordinals, plus bounded metadata summaries. Rejected source values are never copied into error reports. The dashboard caps artifact downloads at 64 MiB; larger artifacts remain accessible through the authenticated API.
 
@@ -160,12 +164,27 @@ apexctl analysis comparisons --project PROJECT_ID
 
 ## Resource and acceptance limits
 
-One heavy analytical pipeline runs per controller process, including staging
-and publication. DuckDB defaults to two threads, a 2 GiB memory setting and an
-8 GiB spill quota. Queries/imports have deadlines; disk headroom and total process
-RSS and container memory usage are monitored because native allocations are not bounded by Go's heap limit
-or DuckDB's configured memory setting. Concurrent requests receive explicit busy,
-resource, cancellation or size-limit errors.
+One heavy analytical pipeline runs per controller process, including staging,
+query execution, publication and physical cleanup. Native operations execute in
+a supervised child of the same executable through bounded typed messages;
+worker startup precedes controller or desktop initialization. Only approved
+operations and private staged files cross that boundary. DuckDB defaults to two
+threads, a 2 GiB engine setting and an 8 GiB spill quota. Smaller profiles use
+`APEXLOAD_ANALYSIS_MEMORY_LIMIT` and `APEXLOAD_ANALYSIS_SPILL_LIMIT`, with integer
+`B`, `KiB`, `MiB` or `GiB` units and the same maximum settings. Invalid profiles
+are reported as unavailable configuration before analytical filesystem work.
+
+Admission includes API staging, worker input/output, executable copy and spill
+reserves. Controller and worker RSS, container usage and disk headroom remain
+separate safeguards; the engine setting is not a total native-memory bound.
+Cancellation deadlines do not release an unresolved process, descriptor or
+publication owner. The watchdog retains uncertainty until actual closure and
+SQL acknowledgement; platform hard containment and restart qualification remain
+separate gates. Concurrent requests receive explicit busy, resource,
+cancellation or size-limit errors. SQLite/PostgreSQL schema 29 records exact
+attempt ownership, sealed publication and cleanup. Process-local retry records
+bind the immutable SQL and artifact namespaces and retain ambiguous outcomes;
+they are not proof of cross-process or cross-host writer termination.
 
 The requested **10 GB compressed-input benchmark was skipped at the user's
 direction**. No 10 GB duration, peak RSS, spill-volume or telemetry-lag result is

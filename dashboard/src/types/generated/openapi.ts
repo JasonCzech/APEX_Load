@@ -7235,6 +7235,8 @@ export interface operations {
             "monitoring_enabled": boolean;
             "native_parquet": boolean;
             "preparation_enabled": boolean;
+            "resource_configuration_accepted": boolean;
+            "spill_limit": string;
             "threads": number;
           };
         };

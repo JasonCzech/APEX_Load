@@ -51,7 +51,9 @@ func (s *analysisCleanupReadFailureStore) GetAnalysisImport(id string) (*storage
 	return s.SQLiteStore.GetAnalysisImport(id)
 }
 func (s *analysisCleanupReadFailureStore) CompleteAnalysisCleanupJob(job storage.AnalysisCleanupJob) error {
-	s.completed++
+	if job.Kind == "dataset" {
+		s.completed++
+	}
 	return s.SQLiteStore.CompleteAnalysisCleanupJob(job)
 }
 
@@ -59,16 +61,15 @@ func TestAnalysisCleanupRetriesMetadataReadFailure(t *testing.T) {
 	_, durable := newTimeslotServer(t)
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	store := &analysisCleanupReadFailureStore{SQLiteStore: durable.(*storage.SQLiteStore)}
-	in, err := store.SaveAnalysisImport(storage.AnalysisImport{ID: "00000000-0000-0000-0000-000000000003", ProjectID: "proj-a", Name: "data", State: "uploading", Files: []storage.AnalysisImportFile{{ID: "f", RelativePath: "f.parquet", Size: 12}}}, 0)
+	in, err := store.SaveAnalysisImport(storage.AnalysisImport{ID: "00000000-0000-0000-0000-000000000003", ProjectID: "proj-a", Name: "data", State: "uploading", Files: []storage.AnalysisImportFile{{ID: "f", RelativePath: "f.parquet", Size: 12, Uploaded: 12}}}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, state := range []string{"mapped", "normalizing", "ready", "deleting"} {
-		in.State = state
-		in, err = store.SaveAnalysisImport(*in, in.Revision)
-		if err != nil {
-			t.Fatal(err)
-		}
+	in = publishAnalysisAPIFixture(t, store, in, nil)
+	in.State = "deleting"
+	in, err = store.SaveAnalysisImport(*in, in.Revision)
+	if err != nil {
+		t.Fatal(err)
 	}
 	server := &Server{store: store}
 	store.failRead = true

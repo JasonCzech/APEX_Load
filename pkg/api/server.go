@@ -108,6 +108,10 @@ type Server struct {
 	browserInstall            *browserInstallState
 	recorder                  *recorder.Recorder
 	store                     storage.Store
+	// nativeReconciliationStore is the immutable startup SQL authority. Recovery
+	// never reads the request/fixture store field; changing this authority requires
+	// a new Server, whose configured namespace must match retained receipts.
+	nativeReconciliationStore storage.Store
 	importAssets              storage.ImportAssetStore
 	cache                     CacheBackend
 	controllerID              string
@@ -560,6 +564,7 @@ func NewServer(cfg ServerConfig) *Server {
 		browserInstall:              newBrowserInstallState(),
 		recorder:                    rec,
 		store:                       cfg.Store,
+		nativeReconciliationStore:   cfg.Store,
 		cache:                       cache,
 		controllerID:                controllerID,
 		haExecution:                 cfg.HAExecutionLeadership,
@@ -776,6 +781,7 @@ func NewServer(cfg ServerConfig) *Server {
 		MaxHeaderBytes: 1 << 20, // 1 MiB
 	}
 
+	s.startNativeAnalysisReconciliation()
 	return s
 }
 

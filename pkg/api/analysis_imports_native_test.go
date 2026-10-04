@@ -161,11 +161,39 @@ func TestAnalysisNativeImportLifecycle(t *testing.T) {
 	if r = timeslotRequest(t, server, "PUT", dataset+"/association", map[string]any{"revision": updated.Revision, "run_id": "unknown"}); r.Code != 404 {
 		t.Fatal("associated unowned run")
 	}
+	// This schema29 fixture used the legacy uploader: its completed HTTP call
+	// cannot establish durable physical-writer proof. Cancellation must retain
+	// the source and queue cleanup. The upload30 lifecycle replaces this branch
+	// with the full 204 deletion acceptance through its durable writer journal.
 	for range 2 {
 		r = timeslotRequest(t, server, "DELETE", path, nil)
-		if r.Code != 204 {
-			t.Fatalf("delete: %d %s", r.Code, r.Body.String())
+		if r.Code != 503 {
+			t.Fatalf("legacy writer cleanup must remain pending: %d %s", r.Code, r.Body.String())
 		}
+	}
+	retained, err := store.(storage.AnalysisImportStore).GetAnalysisImport(in.ID)
+	if err != nil || retained == nil || retained.State != "deleting" || len(retained.Files) != 1 || len(retained.Files[0].Chunks) != 1 || len(retained.Normalized) == 0 {
+		t.Fatalf("pending cancellation lost durable evidence: %+v %v", retained, err)
+	}
+	ready, err := store.(interface {
+		AnalysisDatasetCleanupReady(context.Context, string, string) (bool, error)
+	}).AnalysisDatasetCleanupReady(context.Background(), in.ProjectID, in.ID)
+	if err != nil || ready {
+		t.Fatalf("legacy uploader unexpectedly granted namespace cleanup: %v %v", ready, err)
+	}
+	jobs, err := store.(storage.AnalysisCleanupStore).ListAnalysisCleanupJobs(time.Now().Add(time.Hour), 50)
+	queued := false
+	for _, job := range jobs {
+		queued = queued || job.ProjectID == in.ProjectID && job.ResourceID == in.ID && job.Kind == "dataset"
+	}
+	if err != nil || !queued {
+		t.Fatalf("pending cleanup was not durably retained: %+v %v", jobs, err)
+	}
+	chunk := retained.Files[0].Chunks[0]
+	key := analysisObjectKey(in.ProjectID, in.ID, analysisChunkName(retained.Files[0], chunk.Offset, chunk.SHA256))
+	var source bytes.Buffer
+	if _, err = analysisObjectRead(context.Background(), key, &source, int64(len(data))); err != nil || !bytes.Equal(source.Bytes(), data) {
+		t.Fatalf("cleanup deleted legacy source before physical proof: %v", err)
 	}
 	if r := timeslotRequest(t, server, "GET", dataset, nil); r.Code != 404 {
 		t.Fatal("deleted dataset visible")
@@ -176,25 +204,23 @@ func TestAnalysisRejectionDownloadIsDurableAndBounded(t *testing.T) {
 	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "proj-a")
 	server, durable := newTimeslotServer(t)
 	store := durable.(storage.AnalysisImportStore)
-	in, err := store.SaveAnalysisImport(storage.AnalysisImport{ID: "00000000-0000-0000-0000-000000000001", ProjectID: "proj-a", Name: "rejections", State: "uploading", Files: []storage.AnalysisImportFile{{ID: "f", RelativePath: "part.parquet", Size: 16}}}, 0)
+	in, err := store.SaveAnalysisImport(storage.AnalysisImport{ID: "00000000-0000-0000-0000-000000000001", ProjectID: "proj-a", Name: "rejections", State: "uploading", Files: []storage.AnalysisImportFile{{ID: "f", RelativePath: "part.parquet", Size: 16, Uploaded: 16}}}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	body := []byte("protected-rejection-fixture")
-	key := analysisObjectKey(in.ProjectID, in.ID, "reject.parquet")
-	digest, err := analysisObjectWrite(context.Background(), key, bytes.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	in.RejectionArtifacts = []string{key}
-	in.RejectionSHA256 = map[string]string{key: digest}
-	for _, state := range []string{"mapped", "normalizing", "ready"} {
-		in.State = state
-		in, err = store.SaveAnalysisImport(*in, in.Revision)
-		if err != nil {
-			t.Fatal(err)
+	var key string
+	in.AllowRejected = true
+	in = publishAnalysisAPIFixture(t, store, in, func(claimed *storage.AnalysisImport, attempt *storage.AnalysisAttempt) {
+		claimed.Rejected = 1
+		key = attempt.Rejections[0]
+		digest, writeErr := analysisObjectWrite(context.Background(), key, bytes.NewReader(body))
+		if writeErr != nil {
+			t.Fatal(writeErr)
 		}
-	}
+		claimed.RejectionArtifacts = []string{key}
+		claimed.RejectionSHA256 = map[string]string{key: digest}
+	})
 	path := "/api/v1/analysis/datasets/" + in.ID + "/rejections/0"
 	r := timeslotRequest(t, server, "GET", path, nil)
 	if r.Code != 200 || !bytes.Equal(r.Body.Bytes(), body) || r.Header().Get("Cache-Control") != "no-store" {

@@ -1,0 +1,8 @@
+{
+  "path": "/private/tmp/apexload-native-schema29-packaged-controller-2026-10-04/controller",
+  "bytes": 184977362,
+  "sha256": "74c99925d379eb6f3a83163a77e7c63ce31c5750315ffbb178e90c05148bec16",
+  "platform": "darwin/arm64",
+  "startup_qualification": "invalid-mode-early-dispatch-only",
+  "debugger_qualification": false
+}

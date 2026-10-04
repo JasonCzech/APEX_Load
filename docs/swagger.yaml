@@ -18445,6 +18445,10 @@ paths:
                     type: boolean
                   preparation_enabled:
                     type: boolean
+                  resource_configuration_accepted:
+                    type: boolean
+                  spill_limit:
+                    type: string
                   threads:
                     type: integer
                     format: int64
@@ -18462,6 +18466,8 @@ paths:
                   - monitoring_enabled
                   - native_parquet
                   - preparation_enabled
+                  - resource_configuration_accepted
+                  - spill_limit
                   - threads
         "401":
           description: Authentication required or invalid.

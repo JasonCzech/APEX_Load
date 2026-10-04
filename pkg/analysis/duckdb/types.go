@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
@@ -54,10 +55,17 @@ type Preview struct {
 }
 
 type Engine struct {
-	root        string
-	MemoryLimit string
-	SpillLimit  string
-	Timeout     time.Duration
+	root             string
+	MemoryLimit      string
+	SpillLimit       string
+	Timeout          time.Duration
+	workerBeforeHash func()
+	workerThreads    int
+	workerProfile    workerProcessProfile
+	borrowedParent   *NativePipeline
+	workerMu         sync.Mutex
+	workerResult     *workerRunResult
+	workerOutput     map[string]workerOutput
 }
 
 func New(root string) (*Engine, error) {
