@@ -573,6 +573,7 @@ func (tr *TestRunner) managedTestBuildSnapshotLocked(req CreateTestRequest) (*Te
 		hub:                     nil,
 		maxTests:                tr.maxTests,
 		settings:                cloneSystemSettings(tr.settings),
+		testStore:               tr.testStore,
 		scriptStore:             tr.scriptStore,
 		dataPoolStore:           tr.dataPoolStore,
 		projectStore:            tr.projectStore,
@@ -1334,7 +1335,9 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
-	if dynatraceCapture != nil {
+	// Without the project run-monitoring gate, legacy capture keeps its original
+	// runtime unchanged. With the gate, it becomes an immutable native binding.
+	if dynatraceCapture != nil && runMonitoringEnabled(projectID) {
 		bindings, err := tr.translateLegacyDynatraceBindings(projectID, req.ScenarioID, req.MonitorBindings, dynatraceCapture.ConnectionID)
 		if err != nil {
 			return nil, err

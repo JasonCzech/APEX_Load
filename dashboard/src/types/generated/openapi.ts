@@ -27049,6 +27049,7 @@ export interface operations {
             "last_check_message"?: string;
             "last_check_status"?: string;
             "last_checked_at"?: (string) | null;
+            "legacy_capture_status": string;
             "log_base_filter"?: string;
             "log_message_field"?: string;
             "log_status_field"?: string;
@@ -44998,6 +44999,7 @@ export interface operations {
               "query_cost_known"?: boolean;
               "scan_reservation_bytes"?: number;
               "scan_reservation_ids"?: Array<string>;
+              "scan_settlements"?: Array<Record<string, unknown>>;
               "scanned_bytes"?: number;
               "total_queries"?: number;
             };
@@ -51329,6 +51331,7 @@ export interface operations {
             "last_check_message"?: string;
             "last_check_status"?: string;
             "last_checked_at"?: (string) | null;
+            "legacy_capture_status": string;
             "log_base_filter"?: string;
             "log_message_field"?: string;
             "log_status_field"?: string;
@@ -106832,6 +106835,10 @@ export interface operations {
             "query_cost_known"?: boolean;
             "scan_reservation_bytes"?: number;
             "scan_reservation_ids"?: Array<string>;
+            "scan_settlements"?: Array<{
+              "attempt_id"?: string;
+              "scanned_bytes"?: number;
+            }>;
             "scanned_bytes"?: number;
             "total_queries"?: number;
           }) | null;
@@ -127471,6 +127478,7 @@ export interface operations {
             "last_check_message"?: string;
             "last_check_status"?: string;
             "last_checked_at"?: (string) | null;
+            "legacy_capture_status": string;
             "log_base_filter"?: string;
             "log_message_field"?: string;
             "log_status_field"?: string;

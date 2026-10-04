@@ -55,3 +55,19 @@ it('drops completed discovery cursors when the connection or query scope changes
   await select('Discovery type', 'entities')
   expect(container.querySelector('[aria-label="Dynatrace operation"]')).toBeNull()
 })
+
+it('lets an unverified connection be enabled for per-test capture and shows both readiness states', async () => {
+  const unverified: DynatraceConnection = { ...saved, enabled: true, status: 'unverified', legacy_capture_status: 'ready', verified_revision: 0, collection_mode: 'direct', collector_agent_id: '' }
+  api.listDynatraceConnections.mockResolvedValue({ connections: [unverified] })
+  api.updateDynatraceConnection.mockResolvedValue(unverified)
+  await render()
+  expect(container.textContent).toContain('Test capture ready')
+  expect(container.textContent).toContain('Native monitoring unverified')
+  await click('Edit')
+  const enable = [...container.querySelectorAll('label')].find(node => node.textContent?.startsWith('Enable for new tests'))!.querySelector('input')!
+  expect(enable.disabled).toBe(false)
+  expect(enable.checked).toBe(true)
+  expect(container.textContent).toContain('Native monitor sources also need the saved revision verified')
+  await click('Save connection')
+  expect(api.updateDynatraceConnection).toHaveBeenCalledWith('p', 'a', expect.objectContaining({ enabled: true }))
+})

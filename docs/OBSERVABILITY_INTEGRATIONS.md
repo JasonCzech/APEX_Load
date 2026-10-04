@@ -313,7 +313,7 @@ Typed observations preserve source bucket times, dimensions, descriptor units an
 
 Follow [Dynatrace setup, permissions and troubleshooting](DYNATRACE.md) and [the native monitoring contract](DYNATRACE_SPEC.md). The generated [OpenAPI specification](swagger.yaml) defines connection/operation/source/binding/evidence interfaces. Qualification is fixture-first; real SaaS tenant, licensed Grail and Smartscape compatibility remains unqualified until exact environments are tested.
 
-Existing `dynatrace_capture` selection and archived scalar/evidence readers remain compatibility surfaces. Future legacy selections resolve to reviewed native sources without automatic opt-in. Historical scalar reductions remain historical aggregates rather than fabricated bucket timelines. Outbound lifecycle notifications below remain separate from read-side monitoring.
+Existing `dynatrace_capture` selection and archived scalar/evidence readers remain compatibility surfaces. Projects outside the run-monitoring gate keep legacy per-test capture; in gated projects, future legacy selections resolve to reviewed, verified native sources without automatic opt-in. Historical scalar reductions remain historical aggregates rather than fabricated bucket timelines. Outbound lifecycle notifications below remain separate from read-side monitoring.
 
 ### Dynatrace lifecycle webhooks
 

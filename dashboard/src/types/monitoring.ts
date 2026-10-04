@@ -116,7 +116,10 @@ export interface DynatraceConnection {
   name: string
   description?: string
   enabled: boolean
-  status: 'unconfigured' | 'ready' | 'disabled'
+  /** Native monitoring readiness; native sources also require a verified revision. */
+  status: 'unconfigured' | 'unverified' | 'ready' | 'disabled'
+  /** Legacy per-test capture readiness: enabled and fully configured. */
+  legacy_capture_status?: 'unconfigured' | 'ready' | 'disabled'
   environment_url?: string
   platform_url?: string
   metrics_enabled: boolean

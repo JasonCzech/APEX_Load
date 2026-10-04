@@ -49790,6 +49790,11 @@ paths:
                           type: array
                           items:
                             type: string
+                        scan_settlements:
+                          type: array
+                          items:
+                            type: object
+                            additionalProperties: true
                         scanned_bytes:
                           type: integer
                           format: int64
@@ -50457,6 +50462,16 @@ paths:
                       type: array
                       items:
                         type: string
+                    scan_settlements:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          attempt_id:
+                            type: string
+                          scanned_bytes:
+                            type: integer
+                            format: int64
                     scanned_bytes:
                       type: integer
                       format: int64
@@ -58842,6 +58857,8 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  legacy_capture_status:
+                    type: string
                   log_base_filter:
                     type: string
                   log_message_field:
@@ -58938,6 +58955,7 @@ paths:
                   - has_oauth_client_secret
                   - has_platform_token
                   - id
+                  - legacy_capture_status
                   - logs_enabled
                   - metric_queries
                   - metrics_enabled
@@ -59172,6 +59190,8 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  legacy_capture_status:
+                    type: string
                   log_base_filter:
                     type: string
                   log_message_field:
@@ -59268,6 +59288,7 @@ paths:
                   - has_oauth_client_secret
                   - has_platform_token
                   - id
+                  - legacy_capture_status
                   - logs_enabled
                   - metric_queries
                   - metrics_enabled
@@ -59532,6 +59553,8 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  legacy_capture_status:
+                    type: string
                   log_base_filter:
                     type: string
                   log_message_field:
@@ -59628,6 +59651,7 @@ paths:
                   - has_oauth_client_secret
                   - has_platform_token
                   - id
+                  - legacy_capture_status
                   - logs_enabled
                   - metric_queries
                   - metrics_enabled

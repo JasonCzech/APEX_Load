@@ -173,6 +173,8 @@ type DynatraceConnectionRequest struct {
 	UpdatedAt                 time.Time                      `json:"updated_at"`
 }
 
+const dynatraceIncompleteEnableMessage = "complete the Dynatrace connection configuration before enabling it"
+
 type DynatraceConnectionResponse struct {
 	Capabilities              dynatrace.Capabilities                       `json:"capabilities"`
 	Revision                  int64                                        `json:"revision"`
@@ -195,6 +197,7 @@ type DynatraceConnectionResponse struct {
 	Description               string                                       `json:"description,omitempty"`
 	Enabled                   bool                                         `json:"enabled"`
 	Status                    string                                       `json:"status"`
+	LegacyCaptureStatus       string                                       `json:"legacy_capture_status"`
 	EnvironmentURL            string                                       `json:"environment_url,omitempty"`
 	PlatformURL               string                                       `json:"platform_url,omitempty"`
 	MetricsEnabled            bool                                         `json:"metrics_enabled"`
@@ -230,7 +233,7 @@ func dynatraceConnectionResponse(c *storage.DynatraceConnection) DynatraceConnec
 		Revision: c.Revision, VerifiedRevision: c.VerifiedRevision, CollectionMode: c.CollectionMode, CollectorAgentID: c.CollectorAgentID,
 		EventsEnabled: c.EventsEnabled, SpansEnabled: c.SpansEnabled, GrailMetricsEnabled: c.GrailMetricsEnabled, GrailEventsEnabled: c.GrailEventsEnabled, TopologyMode: c.TopologyMode,
 		RequestsPerMinute: c.RequestsPerMinute, PlatformRequestsPerMinute: c.PlatformRequestsPerMinute, MaxScanBytes: c.MaxScanBytes, MaxRunScanBytes: c.MaxRunScanBytes, DrainReserveBytes: c.DrainReserveBytes,
-		Capabilities: c.Capabilities, Status: c.Readiness(), EnvironmentURL: c.EnvironmentURL, PlatformURL: c.PlatformURL, MetricsEnabled: c.MetricsEnabled,
+		Capabilities: c.Capabilities, Status: c.Readiness(), LegacyCaptureStatus: c.ConfigurationStatus(), EnvironmentURL: c.EnvironmentURL, PlatformURL: c.PlatformURL, MetricsEnabled: c.MetricsEnabled,
 		ProblemsEnabled: c.ProblemsEnabled, LogsEnabled: c.LogsEnabled, HasEnvironmentToken: c.EnvironmentTokenSecret != "",
 		PlatformAuthType: c.PlatformAuthType, HasPlatformToken: c.PlatformTokenSecret != "", HasOAuthClientID: c.OAuthClientIDSecret != "",
 		HasOAuthClientSecret: c.OAuthClientSecretSecret != "", OAuthResource: c.OAuthResource, OAuthScopes: append([]string(nil), c.OAuthScopes...),
@@ -320,14 +323,17 @@ func (s *Server) handleCreateDynatraceConnection(w http.ResponseWriter, r *http.
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if req.Enabled {
-		writeError(w, 409, "save the connection disabled and verify it before enabling")
-		return
-	}
+	// Enabled admits legacy test capture, as before native monitoring existed,
+	// so it requires a complete configuration. Native sources additionally
+	// require a verified revision (Readiness).
 	c := &storage.DynatraceConnection{ID: uuid.NewString(), ProjectID: strings.TrimSpace(r.PathValue("id"))}
 	applyDynatraceConnectionRequest(c, req)
 	if err := c.Validate(); err != nil {
 		writeError(w, 400, err.Error())
+		return
+	}
+	if c.Enabled && c.ConfigurationStatus() != "ready" {
+		writeError(w, 409, dynatraceIncompleteEnableMessage)
 		return
 	}
 	if err := validateDynatraceSecretReferences(c); err != nil {
@@ -365,7 +371,7 @@ func (s *Server) handleListDynatraceConnections(w http.ResponseWriter, r *http.R
 	}
 	responses := make([]map[string]any, 0, len(items))
 	for _, item := range items {
-		responses = append(responses, map[string]any{"id": item.ID, "project_id": item.ProjectID, "name": item.Name, "status": item.Readiness(), "revision": item.Revision, "enabled": item.Enabled, "collection_mode": item.CollectionMode, "collector_agent_id": item.CollectorAgentID, "capabilities": item.Capabilities})
+		responses = append(responses, map[string]any{"id": item.ID, "project_id": item.ProjectID, "name": item.Name, "status": item.Readiness(), "legacy_capture_status": item.ConfigurationStatus(), "revision": item.Revision, "enabled": item.Enabled, "collection_mode": item.CollectionMode, "collector_agent_id": item.CollectorAgentID, "capabilities": item.Capabilities})
 	}
 	writeJSON(w, 200, map[string]any{"connections": responses, "count": len(responses)})
 }
@@ -412,15 +418,13 @@ func (s *Server) handleUpdateDynatraceConnection(w http.ResponseWriter, r *http.
 		writeError(w, 428, "expected_revision or updated_at is required")
 		return
 	}
-	previous := *c
-	previousVerified := c.VerifiedRevision == c.Revision && c.LastCheckStatus == "connected"
 	applyDynatraceConnectionRequest(c, req)
 	if err := c.Validate(); err != nil {
 		writeError(w, 400, err.Error())
 		return
 	}
-	if c.Enabled && (!previousVerified || !storage.SameDynatraceIdentity(&previous, c)) {
-		writeError(w, 409, "save configuration disabled and verify the selected execution location before enabling")
+	if c.Enabled && c.ConfigurationStatus() != "ready" {
+		writeError(w, 409, dynatraceIncompleteEnableMessage)
 		return
 	}
 	if err := validateDynatraceSecretReferences(c); err != nil {

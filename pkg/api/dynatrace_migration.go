@@ -9,6 +9,13 @@ func (tr *TestRunner) translateLegacyDynatraceBindings(project, scenario string,
 	if !runMonitoringEnabled(project) {
 		return nil, errors.New("native Dynatrace collection requires the project run-monitoring gate")
 	}
+	// Legacy capture never required verification; native collection does.
+	if tr.dynatraceStore == nil {
+		return nil, errors.New("Dynatrace connections are unavailable")
+	}
+	if c, err := tr.dynatraceStore.GetDynatraceConnection(connection); err != nil || c == nil || c.ProjectID != project || c.Readiness() != "ready" {
+		return nil, errors.New("this project uses native Dynatrace monitoring: verify the saved connection with Test saved connection before selecting it for a test")
+	}
 	store, ok := tr.testStore.(interface {
 		storage.RunMonitorStore
 		EnsureLegacyDynatraceMonitorSource(string, string) (*storage.MonitorSource, error)
