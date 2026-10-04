@@ -182,9 +182,11 @@ func TestReaderCancellationUnblocksCodecInputAndReleasesWorkspace(t *testing.T) 
 }
 func TestReaderAggregateMemoryFailsFastAndCanBeReused(t *testing.T) {
 	body := encoded(t, []byte("sample"), "gzip")
-	budget := NewMemoryBudget((1 << 20) + chunkBytes)
+	// Room for exactly one gzip reader; zero AdmissionWait fails fast.
+	budget := NewMemoryBudget(chunkBytes + flateWorkspaceBytes)
 	limits := DefaultLimits(1024)
 	limits.MemoryBudget = budget
+	limits.AdmissionWait = 0
 	first, err := NewReader(context.Background(), io.NopCloser(bytes.NewReader(body)), []string{"gzip"}, limits)
 	if err != nil {
 		t.Fatal(err)

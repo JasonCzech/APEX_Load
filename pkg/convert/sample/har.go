@@ -142,7 +142,10 @@ func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collec
 		if provenancePresent && capture.ReasonCode != "malformed_http_version_provenance" {
 			ex.Metadata["har.http_version_provenance"] = requestimport.ProxyHTTPVersionProvenance()
 		}
-		if capture.ReasonCode != "" {
+		switch {
+		case requestimport.HTTPVersionCaptureQualityOnly(capture.ReasonCode):
+			diagnostics.Add(diag.Warning, "HTTP version", fmt.Sprintf("HAR entry %d", index+1), "The capture does not record a replayable HTTP version ("+capture.ReasonCode+"); replay uses the script's inherited HTTP version policy.")
+		case capture.ReasonCode != "":
 			diagnostics.Add(diag.Blocker, "HTTP version", fmt.Sprintf("HAR entry %d", index+1), "Captured HTTP version evidence requires review before replay ("+capture.ReasonCode+").")
 		}
 		exchanges = append(exchanges, ex)
@@ -309,6 +312,7 @@ func parseHARItemWithProvenance(item map[string]any, diagnostics *diag.Collector
 		}
 	}
 	normalizeHARContentLength(&ex, diagnostics, location)
+	normalizeHARPseudoHeaders(&ex, diagnostics, location)
 	return ex, nil
 }
 
@@ -377,6 +381,97 @@ func normalizeHARContentLength(ex *exchange, diagnostics *diag.Collector, locati
 	}
 	ex.Metadata["har.request.content_length"] = length
 	diagnostics.Add(diag.Info, "HAR Content-Length regenerated", location, "recorded Content-Length matched the captured request bytes; Go regenerates framing after template expansion")
+}
+
+// HTTP/2 pseudo-headers (RFC 9113 section 8.3.1) restate the request line.
+// Chrome and LoadRunner export them as ordinary HAR headers. When every
+// occurrence agrees with the entry's method and URL they add nothing and the
+// native transport regenerates them, so they are dropped. Unknown or
+// disagreeing pseudo-headers stay in the shared fidelity pipeline, which still
+// requires explicit review for them.
+func normalizeHARPseudoHeaders(ex *exchange, diagnostics *diag.Collector, location string) {
+	target, ok := harRequestTarget(ex.URL)
+	if !ok {
+		return
+	}
+	found := false
+	for _, header := range ex.HeaderList {
+		if !strings.HasPrefix(header.Name, ":") {
+			continue
+		}
+		if !harPseudoHeaderAgrees(header, ex.Method, target) {
+			return
+		}
+		found = true
+	}
+	if !found {
+		return
+	}
+	kept := make(dsl.HeaderList, 0, len(ex.HeaderList))
+	for _, header := range ex.HeaderList {
+		if !strings.HasPrefix(header.Name, ":") {
+			kept = append(kept, header)
+		}
+	}
+	ex.HeaderList = kept
+	for name := range ex.Headers {
+		if strings.HasPrefix(name, ":") {
+			delete(ex.Headers, name)
+		}
+	}
+	diagnostics.Add(diag.Info, "HAR HTTP/2 pseudo-headers", location, "recorded :method/:scheme/:authority/:path matched the request line; the native transport regenerates them")
+}
+
+type harTarget struct {
+	scheme, authority, requestTarget string
+}
+
+// harRequestTarget keeps the raw path and query spelling from the HAR URL so
+// :path is compared byte-for-byte rather than after re-encoding.
+func harRequestTarget(rawURL string) (harTarget, bool) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return harTarget{}, false
+	}
+	rest := rawURL[strings.Index(rawURL, "://")+3:]
+	if index := strings.IndexByte(rest, '#'); index >= 0 {
+		rest = rest[:index]
+	}
+	requestTarget := "/"
+	if index := strings.IndexAny(rest, "/?"); index >= 0 {
+		requestTarget = rest[index:]
+		if strings.HasPrefix(requestTarget, "?") {
+			requestTarget = "/" + requestTarget
+		}
+	}
+	return harTarget{scheme: strings.ToLower(parsed.Scheme), authority: harCanonicalAuthority(parsed.Scheme, parsed.Host), requestTarget: requestTarget}, true
+}
+
+func harCanonicalAuthority(scheme, authority string) string {
+	authority = strings.ToLower(strings.TrimSpace(authority))
+	switch {
+	case scheme == "https" && strings.HasSuffix(authority, ":443"):
+		return strings.TrimSuffix(authority, ":443")
+	case scheme == "http" && strings.HasSuffix(authority, ":80"):
+		return strings.TrimSuffix(authority, ":80")
+	}
+	return authority
+}
+
+func harPseudoHeaderAgrees(header dsl.HeaderEntry, method string, target harTarget) bool {
+	value := strings.TrimSpace(header.Value)
+	switch strings.ToLower(header.Name) {
+	case ":method":
+		return value != "" && strings.EqualFold(value, method)
+	case ":scheme":
+		return strings.EqualFold(value, target.scheme)
+	case ":authority":
+		return value != "" && harCanonicalAuthority(target.scheme, value) == target.authority
+	case ":path":
+		return value == target.requestTarget
+	default:
+		return false
+	}
 }
 
 func harEntryMetadata(item map[string]any, requestData map[string]any, responseData map[string]any) map[string]any {
@@ -591,7 +686,9 @@ func harResponseContent(item, responseData map[string]any, method string, header
 		return body, capture
 	}
 	if !contentOK {
-		if _, present := responseData["content"]; present {
+		// An explicit null is the exporter's way of saying it kept no content,
+		// the same as an omitted field. Other shapes are malformed storage.
+		if raw, present := responseData["content"]; present && raw != nil {
 			return "", requestimport.UnavailableResponseContent("har_decoded", "invalid_har_content_storage")
 		}
 		if bodyless {
@@ -620,7 +717,7 @@ func harHeaderPresent(raw any, name string) bool {
 
 func harResponseContentStorage(content map[string]any, bodyless bool) (string, requestimport.ResponseContentCapture) {
 	rawText, present := content["text"]
-	if !present {
+	if !present || rawText == nil {
 		if bodyless {
 			return "", requestimport.CompleteResponseContent("har_decoded", 0)
 		}

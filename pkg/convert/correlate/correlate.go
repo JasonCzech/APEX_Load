@@ -152,7 +152,7 @@ var (
 	// must return the ViewState value as capture group 1.
 	visualforcePattern    = regexp.MustCompile(`(?i)<input[^>]*\bname="(?:(?:com\.salesforce\.visualforce\.)?ViewState(?:MAC|Version|CSRF)?)"[^>]*\bvalue="([^"]{4,})"`)
 	confirmationPattern   = regexp.MustCompile(`(?i)(?:^|[&{,"\s])_CONFIRMATIONTOKEN["']?\s*[:=]\s*["']?([^"&',}\s]{6,})`)
-	frontdoorSIDPattern   = regexp.MustCompile(`(?i)(?:^|[?&{,"\s])sid(?:_Client(?:_id)?)?["']?\s*[:=]\s*["']?([A-Za-z0-9!._-]{8,})`)
+	frontdoorSIDPattern   = regexp.MustCompile(`(?i)(?:^|[?&{,"\s])sid(?:_Client(?:_id)?)?["']?\s*[:=]\s*["']?([A-Za-z0-9!._%-]{8,})`) // '%' keeps percent-encoded sids (00D...%21AQ...) whole, not the org prefix
 	salesforceCSHCPattern = regexp.MustCompile(`(?i)(?:^|[?&{,"\s])cshc["']?\s*[:=]\s*["']?([^"&',}\s]{6,})`)
 	// salesforceNextRecordsURLPattern matches the SOQL REST Query API pagination
 	// cursor: the response carries {"done":false,"nextRecordsUrl":"/services/data/
@@ -2408,7 +2408,10 @@ func setCookieCandidates(headerName string, value string, occurrences map[string
 		return nil
 	}
 	ruleID, base := RuleSetCookieOther, 0.55
-	if isSessionCookieName(cookieName) {
+	switch {
+	case isSalesforceAuraTokenCookieName(cookieName):
+		ruleID, base = RuleSalesforceAuraTokenCookie, 0.95
+	case isSessionCookieName(cookieName):
 		ruleID, base = RuleSetCookieSession, 0.8
 	}
 	// Cookie names are case-sensitive. In particular, SID and sid can coexist
@@ -2569,6 +2572,13 @@ func locationHeaderQueryRegex(headerName, queryKey string, headerOrdinal, header
 	}
 	fmt.Fprintf(&expression, `(?:[^&#\r\n]*&)*?%s=([^&#\s]+)`, key)
 	return expression.String(), true
+}
+
+// isSalesforceAuraTokenCookieName recognizes the Lightning bootstrap cookie
+// (__Host-ERIC_PROD-<n>) whose value is sent back as the aura.token form field.
+// Cookie names are case-sensitive.
+func isSalesforceAuraTokenCookieName(name string) bool {
+	return strings.HasPrefix(name, "__Host-ERIC_") || strings.HasPrefix(name, "ERIC_")
 }
 
 func isSessionCookieName(name string) bool {

@@ -41,6 +41,7 @@ const (
 	RuleSalesforceBulkQueryLocator   = "salesforce.bulk_query_locator"
 	RuleSalesforceCompositeReference = "salesforce.composite_reference"
 	RuleSalesforceCometdClientID     = "salesforce.cometd_client_id"
+	RuleSalesforceAuraTokenCookie    = "salesforce.aura_token_cookie"
 )
 
 // ResponseFamily groups rules by the kind of response they inspect.
@@ -86,6 +87,7 @@ func RuleCatalog() []RuleInfo {
 		{RuleSalesforceBulkContentURL, FamilyForm, "Salesforce Bulk contentUrl", "Bulk API 2.0 ingest job contentUrl — the relative path the CSV batch is PUT to.", 0.9},
 		{RuleSalesforceBulkQueryLocator, FamilyHeader, "Salesforce Bulk query locator", "Bulk API 2.0 query result pagination cursor returned in the Sforce-Locator response header and reused as the next locator query parameter.", 0.9},
 		{RuleSalesforceCompositeReference, FamilyForm, "Salesforce composite referenceId", "Server-assigned record ids from a /composite subrequest, addressed by referenceId, reused in later requests.", 0.85},
+		{RuleSalesforceAuraTokenCookie, FamilyCookie, "Salesforce aura.token cookie", "__Host-ERIC_* cookie set by the Lightning bootstrap whose value later /aura requests echo as the aura.token form field.", 0.95},
 		{RuleSalesforceCometdClientID, FamilyForm, "Salesforce CometD clientId", "Bayeux clientId from a /cometd /meta/handshake response (a JSON array) reused in every later /meta/connect and /meta/subscribe request.", 0.95},
 		{RuleASPNetState, FamilyHTML, "ASP.NET state field", "WebForms __VIEWSTATE / __EVENTVALIDATION style hidden fields that change every request.", 0.95},
 		{RuleHTMLHiddenToken, FamilyHTML, "Hidden anti-CSRF/state token", "Hidden form inputs named like csrf, xsrf, token, nonce, state, viewstate, authenticity.", 0.9},
@@ -228,6 +230,8 @@ func FamilyForRule(ruleID string) ResponseFamily {
 	switch {
 	case ruleID == RuleSalesforceBulkQueryLocator:
 		return FamilyHeader
+	case ruleID == RuleSalesforceAuraTokenCookie:
+		return FamilyCookie
 	case strings.HasPrefix(ruleID, "json."):
 		return FamilyJSON
 	case strings.HasPrefix(ruleID, "html."):

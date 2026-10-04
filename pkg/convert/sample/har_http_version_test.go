@@ -24,7 +24,7 @@ func TestHARPerLeafHTTPVersionStrictCaptureAdmission(t *testing.T) {
 		{name: "empty", raw: "", present: true, wantReason: "http_version_unavailable"},
 		{name: "numeric", raw: 2, present: true, wantReason: "malformed_http_version"},
 		{name: "boolean", raw: true, present: true, wantReason: "malformed_http_version"},
-		{name: "null", present: true, wantReason: "malformed_http_version"},
+		{name: "null", present: true, wantReason: "http_version_unavailable"},
 		{name: "object", raw: map[string]any{"token": "synthetic-version-canary"}, present: true, wantReason: "malformed_http_version"},
 		{name: "H3", raw: "HTTP/3", present: true, wantReason: "unsupported_http_version"},
 		{name: "unsupported arbitrary text", raw: "synthetic-version-canary", present: true, wantReason: "unsupported_http_version"},
@@ -43,10 +43,17 @@ func TestHARPerLeafHTTPVersionStrictCaptureAdmission(t *testing.T) {
 			if action.HTTPVersion.Value() != tc.wantVersion || action.HTTPVersion.IsPresent() != (tc.wantVersion != "") {
 				t.Fatalf("leaf override=%v", action.HTTPVersion)
 			}
+			// Capture gaps keep the inherited policy and stay executable; only
+			// malformed observations carry the durable review gate.
+			gated := tc.wantReason != "" && !requestimport.HTTPVersionCaptureQualityOnly(tc.wantReason)
 			if tc.wantReason != "" {
-				marker := action.Metadata[requestimport.ImportHTTPVersionFidelityMetadataKey].(map[string]any)
-				if marker["reason_code"] != tc.wantReason {
+				marker, hasMarker := action.Metadata[requestimport.ImportHTTPVersionFidelityMetadataKey].(map[string]any)
+				observation, _ := action.Metadata["http_version_capture"].(map[string]any)
+				switch {
+				case gated && marker["reason_code"] != tc.wantReason:
 					t.Fatalf("marker=%v", marker)
+				case !gated && (hasMarker || observation["reason_code"] != tc.wantReason):
+					t.Fatalf("capture gap gated or unrecorded: marker=%v observation=%v", marker, observation)
 				}
 			}
 			for pass := 0; pass < 2; pass++ {
@@ -66,7 +73,7 @@ func TestHARPerLeafHTTPVersionStrictCaptureAdmission(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if (len(findings) > 0) != (tc.wantReason != "") {
+				if (len(findings) > 0) != gated {
 					t.Fatal("reopen changed capture gate")
 				}
 				result.Script = finalized.Script
@@ -106,9 +113,14 @@ func TestHARRecorderVersionProvenanceAdmission(t *testing.T) {
 				t.Fatal(err)
 			}
 			action := result.Script.Actions[0]
-			marker, _ := action.Metadata[requestimport.ImportHTTPVersionFidelityMetadataKey].(map[string]any)
-			if action.HTTPVersion.Value() != tc.wantVersion || tc.wantReason != "" && marker["reason_code"] != tc.wantReason {
+			marker, hasMarker := action.Metadata[requestimport.ImportHTTPVersionFidelityMetadataKey].(map[string]any)
+			observation, _ := action.Metadata["http_version_capture"].(map[string]any)
+			gated := tc.wantReason != "" && !requestimport.HTTPVersionCaptureQualityOnly(tc.wantReason)
+			if action.HTTPVersion.Value() != tc.wantVersion || gated && marker["reason_code"] != tc.wantReason {
 				t.Fatalf("capture=%+v", action)
+			}
+			if tc.wantReason != "" && !gated && (hasMarker || observation["reason_code"] != tc.wantReason) {
+				t.Fatalf("capture gap gated or unrecorded: marker=%v observation=%v", marker, observation)
 			}
 			if tc.name == "legacy synthesized version" || strings.Contains(tc.name, "envelope") {
 				capture := action.Metadata["http_version_capture"].(map[string]any)

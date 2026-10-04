@@ -26,6 +26,9 @@ func TestHARResponseContentAdmissionAndNoDoubleDecode(t *testing.T) {
 		{"decoded base64", map[string]any{"text": base64.StdEncoding.EncodeToString([]byte(`{"token":"decoded-source"}`)), "encoding": "base64"}, nil, false, `{"token":"decoded-source"}`, ""},
 		{"binary resource", map[string]any{"text": base64.StdEncoding.EncodeToString([]byte{0x1f, 0x8b, 0, 0xff}), "encoding": "base64"}, nil, false, "", ""},
 		{"missing optional text", map[string]any{}, nil, false, "", "response_content_unavailable"},
+		// Exporters write null for content they did not keep; that is absence, not corruption.
+		{"explicit null text", map[string]any{"text": nil}, nil, false, "", "response_content_unavailable"},
+		{"explicit null content", nil, nil, false, "", "response_content_unavailable"},
 		{"malformed text", map[string]any{"text": 42}, nil, false, "", "invalid_har_content_storage"},
 		{"malformed content", []any{}, nil, false, "", "invalid_har_content_storage"},
 		{"malformed base64", map[string]any{"text": "source-private-canary!", "encoding": "base64"}, nil, false, "", "invalid_har_content_storage"},

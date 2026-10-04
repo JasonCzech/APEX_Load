@@ -25,7 +25,7 @@ func TestReviewHTTPVersionCapture(t *testing.T) {
 		{name: "unknown", request: " Unknown ", present: true, reason: "http_version_unavailable"},
 		{name: "empty", request: "", present: true, reason: "http_version_unavailable"},
 		{name: "numeric", request: 2, present: true, reason: "malformed_http_version"},
-		{name: "null", present: true, reason: "malformed_http_version"},
+		{name: "null", present: true, reason: "http_version_unavailable"},
 		{name: "object", request: map[string]any{"secret": "synthetic-canary"}, present: true, reason: "malformed_http_version"},
 		{name: "oversized", request: strings.Repeat("x", 257), present: true, reason: "malformed_http_version"},
 		{name: "H3", request: "HTTP/3", present: true, reason: "unsupported_http_version"},
@@ -43,6 +43,9 @@ func TestReviewHTTPVersionCapture(t *testing.T) {
 			}
 			action := dsl.Action{}
 			ApplyHTTPVersionCapture(&action, got, SourceRef{Format: "har", Pointer: "log.entries[0].request.httpVersion"})
+			if gated := action.Metadata["execution_blocker"] != nil; gated != (tc.reason != "" && !HTTPVersionCaptureQualityOnly(tc.reason)) {
+				t.Fatalf("reason %q gated=%v", tc.reason, gated)
+			}
 			encoded, _ := json.Marshal(action.Metadata)
 			if strings.Contains(string(encoded), "synthetic-canary") {
 				t.Fatal("source payload reached public capture evidence")
@@ -167,7 +170,14 @@ func TestLeafHTTPVersionNestedPrecedenceAndDurableGate(t *testing.T) {
 	if leaf.HTTPVersion.IsPresent() || leaf.Metadata["execution_blocker"] != nil || result.Script.Config.HTTP.UserAgent != "" || result.Script.Config.HTTP.DefaultHeaders["user-agent"] != "authored-winner" {
 		t.Fatalf("protocol alias inheritance or authored header precedence was changed: leaf=%+v config=%+v", leaf, result.Script.Config.HTTP)
 	}
-	ApplyHTTPVersionCapture(&leaf, ReviewHTTPVersionCapture(nil, false, nil, false, nil, false, false), SourceRef{Format: "har", Pointer: "log.entries[0].request.httpVersion"})
+	// A missing observation is a capture-quality gap and never gates.
+	missing := leaf
+	ApplyHTTPVersionCapture(&missing, ReviewHTTPVersionCapture(nil, false, nil, false, nil, false, false), SourceRef{Format: "har", Pointer: "log.entries[0].request.httpVersion"})
+	if missing.Metadata["execution_blocker"] != nil {
+		t.Fatal("missing HTTP version observation gated execution")
+	}
+	// A malformed observation keeps its durable gate after a policy is added.
+	ApplyHTTPVersionCapture(&leaf, ReviewHTTPVersionCapture(42, true, nil, false, nil, false, false), SourceRef{Format: "har", Pointer: "log.entries[0].request.httpVersion"})
 	leaf.HTTPVersion, _ = dsl.NewHTTPVersionOverride("1.1")
 	result.Script.Actions[0].Control.Steps[0] = leaf
 	reopened, err := FinalizeScript(result.Script, nil, FinalizeOptions{})

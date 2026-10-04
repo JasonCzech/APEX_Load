@@ -63,7 +63,9 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 	case "source_metric":
 		vu.handleSourceMetricAction(ctx, action)
 		return true, nil
-	case "source_parameter", "source_json", "source_xml", "source_database", "source_secret":
+	case "source_json", "source_xml":
+		return true, sourceDocumentActionUnsupported(action)
+	case "source_parameter", "source_database", "source_secret":
 		vu.handleSourceStateAction(ctx, action)
 		return true, nil
 	case "source_external", "source_review", "custom_call":
@@ -994,8 +996,6 @@ func (vu *VUser) handleSourceStateAction(ctx context.Context, action dsl.Action)
 	switch action.Type {
 	case "source_parameter":
 		vu.handleSourceParameterAction(function, action)
-	case "source_json", "source_xml":
-		vu.handleSourceDocumentAction(function, action)
 	case "source_secret":
 		vu.handleSourceSecretAction(function, action)
 	default:
@@ -1166,22 +1166,18 @@ func sourceActionParamString(action dsl.Action, name string, args []string) stri
 	return ""
 }
 
-func (vu *VUser) handleSourceDocumentAction(function string, action dsl.Action) {
-	args := sourceActionArgs(action)
-	vu.ensureVariables()
-	saveName := saveParamNameFromAction(action)
-	if saveName == "" && len(args) > 0 {
-		saveName = args[len(args)-1]
+// sourceDocumentActionUnsupported fails LoadRunner JSON/XML document helpers
+// (lr_eval_json, lr_json_get_values, lr_xml_find, ...). APEX does not evaluate
+// their queries yet; the former handler stored an unrelated argument literal
+// under a guessed variable name and reported success, so dependent requests
+// silently sent wrong values. Current imports convert these calls to gated
+// source_review steps; this covers drafts saved before that change.
+func sourceDocumentActionUnsupported(action dsl.Action) error {
+	function := strings.TrimSpace(sourceActionFunction(action))
+	if function == "" {
+		function = action.Type
 	}
-	if saveName == "" {
-		return
-	}
-	switch {
-	case strings.Contains(function, "find"):
-		vu.setSourceVariable(saveName, "0")
-	case strings.Contains(function, "get_values"), strings.Contains(function, "extract"), strings.Contains(function, "stringify"), strings.Contains(function, "eval"):
-		vu.setSourceVariable(saveName, firstEngineValue("", args...))
-	}
+	return fmt.Errorf("LoadRunner %s is not executable in APEX yet; replace this step with an extractor on the producing request, or remove it", function)
 }
 
 func (vu *VUser) handleSourceSecretAction(function string, action dsl.Action) {

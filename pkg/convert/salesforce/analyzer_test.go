@@ -136,7 +136,7 @@ func TestNativeCorrelationCollisionsFlagPartialOverlapWithMergedOccurrence(t *te
 	// The suffix/prefix merge "abcdefghi" really occurs on a rewrite-target
 	// surface, so single-pass replacement would corrupt the merged region.
 	surfaces := "https://example.test/use?v=abcdefghi\x00"
-	ambiguousLiterals, ambiguousPlans := nativeCorrelationReplacementCollisions(plans, surfaces)
+	ambiguousLiterals, ambiguousPlans, _ := nativeCorrelationReplacementCollisions(plans, surfaces)
 	if !ambiguousLiterals["abcdef"] || !ambiguousLiterals["defghi"] {
 		t.Fatalf("ambiguous literals = %#v, want both partially-overlapping literals flagged", ambiguousLiterals)
 	}
@@ -153,7 +153,7 @@ func TestNativeCorrelationCollisionsKeepDisjointOverlapCandidatesAutomatic(t *te
 	// The literals share suffix/prefix characters but only occur disjointly, so
 	// single-pass replacement rewrites both correctly and must stay automatic.
 	surfaces := "https://example.test/use?a=abcdef&b=defghi\x00"
-	ambiguousLiterals, ambiguousPlans := nativeCorrelationReplacementCollisions(plans, surfaces)
+	ambiguousLiterals, ambiguousPlans, _ := nativeCorrelationReplacementCollisions(plans, surfaces)
 	if len(ambiguousLiterals) != 0 || len(ambiguousPlans) != 0 {
 		t.Fatalf("disjoint usage flagged as ambiguous: literals %#v plans %#v", ambiguousLiterals, ambiguousPlans)
 	}
@@ -770,7 +770,10 @@ func TestBuildNativePreviewEncodedSourceRequiresExactConsumerSpelling(t *testing
 	}
 }
 
-func TestBuildNativePreviewRejectsEncodedRawLiteralCollision(t *testing.T) {
+// When one correlation's encoded spelling equals another's raw value, both
+// produce the same wire bytes; the consumer uses the closest preceding producer
+// and the unused one gets no extractor.
+func TestBuildNativePreviewSharesIdenticalEncodedRawSpelling(t *testing.T) {
 	const rawValue = "opaque token/123456"
 	encodedValue := url.QueryEscape(rawValue)
 	script := &dsl.Script{
@@ -818,25 +821,30 @@ func TestBuildNativePreviewRejectsEncodedRawLiteralCollision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildNativePreview returned error: %v", err)
 	}
-	if got := preview.Script.Actions[2].Target; got != "/use?token="+encodedValue {
-		t.Fatalf("collision target = %q, want ambiguous literal preserved", got)
+	if got := preview.Script.Actions[2].Target; got != "/use?token={{var.corr_b}}" {
+		t.Fatalf("shared spelling target = %q, want the closest preceding producer", got)
 	}
-	for index := 0; index < 2; index++ {
-		if len(preview.Script.Actions[index].Extractors) != 0 {
-			t.Fatalf("source %d extractors = %#v, want none for ambiguous collision", index, preview.Script.Actions[index].Extractors)
-		}
+	if len(preview.Script.Actions[0].Extractors) != 0 {
+		t.Fatalf("unused producer extractors = %#v, want none", preview.Script.Actions[0].Extractors)
+	}
+	if extractors := preview.Script.Actions[1].Extractors; len(extractors) != 1 || extractors[0].Name != "corr_b" {
+		t.Fatalf("closest producer extractors = %#v, want corr_b", extractors)
 	}
 	if len(preview.Correlations) != 2 {
 		t.Fatalf("correlation summaries = %#v, want both owners retained for review", preview.Correlations)
 	}
 	for _, correlation := range preview.Correlations {
-		if correlation.PreApplied || correlation.ReviewAction != "manual_value_replacement_required" {
-			t.Fatalf("collision correlation = %#v, want manual and not pre-applied", correlation)
+		if (correlation.Name == "corr_b") != correlation.PreApplied {
+			t.Fatalf("shared spelling correlation = %#v, want only corr_b applied", correlation)
 		}
 	}
 }
 
-func TestBuildNativePreviewRejectsSubstringEncodedRawLiteralCollision(t *testing.T) {
+// An encoded spelling contained in a longer correlated literal is safe under
+// longest-first replacement: the container is rewritten and the contained
+// value, having no standalone consumer, gets no extractor and no replacement
+// demand.
+func TestBuildNativePreviewPrefersContainingLiteralForSubstringEncodedRawCollision(t *testing.T) {
 	const rawValue = "opaque token/123456"
 	encodedValue := url.QueryEscape(rawValue)
 	containingRawValue := "prefix-" + encodedValue + "-suffix"
@@ -885,20 +893,29 @@ func TestBuildNativePreviewRejectsSubstringEncodedRawLiteralCollision(t *testing
 	if err != nil {
 		t.Fatalf("buildNativePreview returned error: %v", err)
 	}
-	if got := preview.Script.Actions[2].Target; got != "/use?token="+containingRawValue {
-		t.Fatalf("substring collision target = %q, want ambiguous literal preserved", got)
+	if got := preview.Script.Actions[2].Target; got != "/use?token={{var.corr_b}}" {
+		t.Fatalf("substring collision target = %q, want the containing literal rewritten whole", got)
 	}
-	for index := 0; index < 2; index++ {
-		if len(preview.Script.Actions[index].Extractors) != 0 {
-			t.Fatalf("source %d extractors = %#v, want none for ambiguous substring collision", index, preview.Script.Actions[index].Extractors)
-		}
+	if len(preview.Script.Actions[0].Extractors) != 0 {
+		t.Fatalf("contained source extractors = %#v, want none without a substituted consumer", preview.Script.Actions[0].Extractors)
+	}
+	if extractors := preview.Script.Actions[1].Extractors; len(extractors) != 1 || extractors[0].Name != "corr_b" {
+		t.Fatalf("containing source extractors = %#v, want corr_b", extractors)
 	}
 	if len(preview.Correlations) != 2 {
 		t.Fatalf("correlation summaries = %#v, want both substring owners retained for review", preview.Correlations)
 	}
 	for _, correlation := range preview.Correlations {
-		if correlation.PreApplied || correlation.ReviewAction != "manual_value_replacement_required" {
-			t.Fatalf("substring collision correlation = %#v, want manual and not pre-applied", correlation)
+		switch correlation.Name {
+		case "corr_b":
+			if !correlation.PreApplied || correlation.ReviewAction != "" {
+				t.Fatalf("containing correlation = %#v, want applied", correlation)
+			}
+		case "corr_a":
+			// Nothing literal remains to replace; the summary asks for review only.
+			if correlation.PreApplied || correlation.ReviewAction != "manual_review_required" {
+				t.Fatalf("subsumed correlation = %#v, want unapplied and review-only", correlation)
+			}
 		}
 	}
 }
@@ -940,9 +957,12 @@ func TestBuildNativePreviewIncludesReviewOnlyOwnersInCollisionCheck(t *testing.T
 			t.Fatalf("source %d extractors = %#v, want no partial automatic owner", index, preview.Script.Actions[index].Extractors)
 		}
 	}
+	// The short value only occurs inside the review-only literal, which stays
+	// intact, so it still needs manual replacement; the long one needs review.
 	for _, correlation := range preview.Correlations {
-		if correlation.PreApplied || correlation.ReviewAction != "manual_value_replacement_required" {
-			t.Fatalf("mixed-confidence correlation = %#v, want manual value replacement", correlation)
+		want := map[string]string{"corr_short": "manual_value_replacement_required", "corr_long": "manual_review_required"}[correlation.Name]
+		if correlation.PreApplied || correlation.ReviewAction != want {
+			t.Fatalf("mixed-confidence correlation = %#v, want %s", correlation, want)
 		}
 	}
 }

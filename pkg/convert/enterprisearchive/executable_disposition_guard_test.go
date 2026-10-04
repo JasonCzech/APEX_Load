@@ -297,8 +297,11 @@ func TestExecutableSourceFunctionsEmitExecutableArtifacts(t *testing.T) {
 			assertExecutableDisposition(t, def, call)
 		})
 	}
-	if checked < 60 {
-		t.Fatalf("guard walked %d executable C/VUser functions, want the documented executable baseline (>=60) — the registry walk is not wired up", checked)
+	// The floor only proves the registry walk is wired up. The JSON/XML
+	// document helpers left the executable set because the runtime does not
+	// evaluate their queries.
+	if checked < 50 {
+		t.Fatalf("guard walked %d executable C/VUser functions, want the documented executable baseline (>=50) — the registry walk is not wired up", checked)
 	}
 }
 
