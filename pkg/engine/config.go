@@ -36,6 +36,17 @@ func buildGroupProtoConfig(group GroupConfig, runMode string) map[string]any {
 	if len(group.RunCorrelationOrigins) > 0 {
 		cfg["apexload_run_correlation_id"] = group.RunID
 		cfg["apexload_run_correlation_origins"] = append([]string(nil), group.RunCorrelationOrigins...)
+		if len(group.CorrelationCarriers) > 0 {
+			cfg["apexload_correlation_carriers"] = append([]string(nil), group.CorrelationCarriers...)
+		}
+		if name := strings.TrimSpace(group.CorrelationTestName); name != "" {
+			cfg["apexload_correlation_test_name"] = name
+		}
+		if group.Script != nil {
+			if name := strings.TrimSpace(group.Script.Name); name != "" {
+				cfg["apexload_correlation_script_name"] = name
+			}
+		}
 	}
 	return cfg
 }

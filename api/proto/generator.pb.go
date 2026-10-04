@@ -822,8 +822,14 @@ type WorkAssignment struct {
 	// Controller-approved HTTP/SOAP origins for the opt-in X-Apex-Test-Run marker.
 	// Omission keeps run correlation disabled.
 	RunCorrelationOrigins []string `protobuf:"bytes,43,rep,name=run_correlation_origins,json=runCorrelationOrigins,proto3" json:"run_correlation_origins,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// What the run may add at run_correlation_origins: run_marker, traceparent,
+	// transaction_marker. Omission keeps the run marker only. Send carriers
+	// other than run_marker only to correlation_policy_v2 peers.
+	CorrelationCarriers []string `protobuf:"bytes,44,rep,name=correlation_carriers,json=correlationCarriers,proto3" json:"correlation_carriers,omitempty"`
+	// Test name used in transaction markers; the run ID is used when empty.
+	CorrelationTestName string `protobuf:"bytes,45,opt,name=correlation_test_name,json=correlationTestName,proto3" json:"correlation_test_name,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *WorkAssignment) Reset() {
@@ -1155,6 +1161,20 @@ func (x *WorkAssignment) GetRunCorrelationOrigins() []string {
 		return x.RunCorrelationOrigins
 	}
 	return nil
+}
+
+func (x *WorkAssignment) GetCorrelationCarriers() []string {
+	if x != nil {
+		return x.CorrelationCarriers
+	}
+	return nil
+}
+
+func (x *WorkAssignment) GetCorrelationTestName() string {
+	if x != nil {
+		return x.CorrelationTestName
+	}
+	return ""
 }
 
 // Operator approval binds immutable source and the complete placement profile.
@@ -6209,7 +6229,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0fsource_group_id\x18\x02 \x01(\tR\rsourceGroupId\x12\x1f\n" +
 	"\vscript_hash\x18\x03 \x01(\tR\n" +
 	"scriptHash\x12\x16\n" +
-	"\x06vusers\x18\x04 \x01(\x05R\x06vusers\"\xb0\x12\n" +
+	"\x06vusers\x18\x04 \x01(\x05R\x06vusers\"\x97\x13\n" +
 	"\x0eWorkAssignment\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x1d\n" +
 	"\n" +
@@ -6260,7 +6280,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x15archive_source_target\x18( \x01(\tR\x13archiveSourceTarget\x12;\n" +
 	"\tjava_host\x18) \x01(\v2\x1e.apexload.v1.JavaHostSelectionR\bjavaHost\x12!\n" +
 	"\fprepare_only\x18* \x01(\bR\vprepareOnly\x126\n" +
-	"\x17run_correlation_origins\x18+ \x03(\tR\x15runCorrelationOrigins\x1a>\n" +
+	"\x17run_correlation_origins\x18+ \x03(\tR\x15runCorrelationOrigins\x121\n" +
+	"\x14correlation_carriers\x18, \x03(\tR\x13correlationCarriers\x122\n" +
+	"\x15correlation_test_name\x18- \x01(\tR\x13correlationTestName\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a?\n" +

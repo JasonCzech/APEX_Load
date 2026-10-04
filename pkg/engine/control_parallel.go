@@ -158,6 +158,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		variables = make(map[string]string)
 	}
 	branchVU := &VUser{
+		correlation:                  vu.correlation,
 		ID:                           vu.ID,
 		sourceSamplers:               vu.sourceSamplers,
 		sourceParameters:             vu.sourceParameters,

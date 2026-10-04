@@ -939,6 +939,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		ELKCapture:               decodeStoredELKCapture(record.ELKCapture),
 		DynatraceCapture:         decodeStoredDynatraceCapture(record.DynatraceCapture),
 		MonitorBindings:          cloneMonitorBindings(record.MonitorBindings),
+		TraceContext:             decodeStoredRunTraceContext(record.TraceContext),
 		TotalVUsers:              record.TotalVUsers,
 		Duration:                 time.Duration(record.Duration),
 		DurationStr:              persistedDurationString(record.Duration, record.TerminationMode),
@@ -1844,6 +1845,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		ELKCapture:                     elkCaptureForStorage(test.ELKCapture),
 		DynatraceCapture:               dynatraceCaptureForStorage(test.DynatraceCapture),
 		MonitorBindings:                cloneMonitorBindings(test.MonitorBindings),
+		TraceContext:                   runTraceContextForStorage(test.TraceContext),
 	}
 }
 

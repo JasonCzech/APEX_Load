@@ -29180,6 +29180,11 @@ export interface operations {
             "start_delay"?: string;
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
+            "trace_context"?: ({
+              "enabled"?: boolean;
+              "origins"?: Array<string>;
+              "transaction_marker"?: boolean;
+            }) | null;
             "traffic_profile"?: ({
               "amplitude"?: {
                 "mode"?: string;
@@ -29236,6 +29241,11 @@ export interface operations {
             "vusers"?: number;
           }) | null;
           "timeslot_id"?: (string) | null;
+          "trace_context"?: ({
+            "enabled"?: boolean;
+            "origins"?: Array<string>;
+            "transaction_marker"?: boolean;
+          }) | null;
           "traffic_profile"?: ({
             "amplitude"?: {
               "mode"?: string;
@@ -30703,6 +30713,11 @@ export interface operations {
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
+              "trace_context"?: ({
+                "enabled": boolean;
+                "origins"?: Array<string>;
+                "transaction_marker"?: boolean;
+              }) | null;
               "traffic_profile"?: ({
                 "amplitude"?: {
                   "mode"?: string;
@@ -35433,6 +35448,11 @@ export interface operations {
           "start_delay"?: string;
           "termination_mode"?: string;
           "timeslot_id"?: (string) | null;
+          "trace_context"?: ({
+            "enabled"?: boolean;
+            "origins"?: Array<string>;
+            "transaction_marker"?: boolean;
+          }) | null;
           "traffic_profile"?: ({
             "amplitude"?: {
               "mode"?: string;
@@ -38900,6 +38920,11 @@ export interface operations {
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
+            "trace_context"?: ({
+              "enabled": boolean;
+              "origins"?: Array<string>;
+              "transaction_marker"?: boolean;
+            }) | null;
             "traffic_profile"?: ({
               "amplitude"?: {
                 "mode"?: string;
@@ -45381,6 +45406,11 @@ export interface operations {
           "start_delay"?: string;
           "termination_mode"?: string;
           "timeslot_id"?: (string) | null;
+          "trace_context"?: ({
+            "enabled"?: boolean;
+            "origins"?: Array<string>;
+            "transaction_marker"?: boolean;
+          }) | null;
           "traffic_profile"?: ({
             "amplitude"?: {
               "mode"?: string;
@@ -54080,6 +54110,11 @@ export interface operations {
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
+              "trace_context"?: ({
+                "enabled": boolean;
+                "origins"?: Array<string>;
+                "transaction_marker"?: boolean;
+              }) | null;
               "traffic_profile"?: ({
                 "amplitude"?: {
                   "mode"?: string;
@@ -66345,6 +66380,11 @@ export interface operations {
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
+            "trace_context"?: ({
+              "enabled": boolean;
+              "origins"?: Array<string>;
+              "transaction_marker"?: boolean;
+            }) | null;
             "traffic_profile"?: ({
               "amplitude"?: {
                 "mode"?: string;
@@ -73359,6 +73399,7 @@ export interface operations {
                   "termination_mode"?: string;
                   "timeslot_id"?: (string) | null;
                   "total_vusers": number;
+                  "trace_context"?: (Record<string, unknown>) | null;
                   "traffic_profile"?: (Record<string, unknown>) | null;
                   "vuser_ramps"?: Record<string, Record<string, unknown>>;
                 }) | null;
@@ -84042,6 +84083,11 @@ export interface operations {
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
+            "trace_context"?: ({
+              "enabled": boolean;
+              "origins"?: Array<string>;
+              "transaction_marker"?: boolean;
+            }) | null;
             "traffic_profile"?: ({
               "amplitude"?: {
                 "mode"?: string;
@@ -84719,6 +84765,11 @@ export interface operations {
           "start_delay"?: string;
           "termination_mode"?: string;
           "timeslot_id"?: (string) | null;
+          "trace_context"?: ({
+            "enabled"?: boolean;
+            "origins"?: Array<string>;
+            "transaction_marker"?: boolean;
+          }) | null;
           "traffic_profile"?: ({
             "amplitude"?: {
               "mode"?: string;
@@ -94908,6 +94959,11 @@ export interface operations {
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
+              "trace_context"?: ({
+                "enabled": boolean;
+                "origins"?: Array<string>;
+                "transaction_marker"?: boolean;
+              }) | null;
               "traffic_profile"?: ({
                 "amplitude"?: {
                   "mode"?: string;
@@ -96435,6 +96491,11 @@ export interface operations {
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
+              "trace_context"?: ({
+                "enabled": boolean;
+                "origins"?: Array<string>;
+                "transaction_marker"?: boolean;
+              }) | null;
               "traffic_profile"?: ({
                 "amplitude"?: {
                   "mode"?: string;
@@ -97962,6 +98023,11 @@ export interface operations {
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
+              "trace_context"?: ({
+                "enabled": boolean;
+                "origins"?: Array<string>;
+                "transaction_marker"?: boolean;
+              }) | null;
               "traffic_profile"?: ({
                 "amplitude"?: {
                   "mode"?: string;
@@ -99489,6 +99555,11 @@ export interface operations {
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
+              "trace_context"?: ({
+                "enabled": boolean;
+                "origins"?: Array<string>;
+                "transaction_marker"?: boolean;
+              }) | null;
               "traffic_profile"?: ({
                 "amplitude"?: {
                   "mode"?: string;
@@ -101016,6 +101087,11 @@ export interface operations {
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
+              "trace_context"?: ({
+                "enabled": boolean;
+                "origins"?: Array<string>;
+                "transaction_marker"?: boolean;
+              }) | null;
               "traffic_profile"?: ({
                 "amplitude"?: {
                   "mode"?: string;
@@ -123908,6 +123984,11 @@ export interface operations {
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
+            "trace_context"?: ({
+              "enabled": boolean;
+              "origins"?: Array<string>;
+              "transaction_marker"?: boolean;
+            }) | null;
             "traffic_profile"?: ({
               "amplitude"?: {
                 "mode"?: string;

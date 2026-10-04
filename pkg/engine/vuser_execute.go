@@ -689,6 +689,8 @@ func (vu *VUser) executeWithRetryStream(
 
 func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Action, errCfg dsl.ErrorHandlingConfig, emit func(*protocol.Result) error, classification *httpRetryClassificationHistory) (finalResult *protocol.Result, finalErr error) {
 	prepared := classification != nil
+	ctx, endTransactionRoot := vu.correlationContext(ctx, action)
+	defer endTransactionRoot()
 	var actionSpan trace.Span
 	attemptCount := 0
 	if apptelemetry.ShouldStartActionSpan(ctx) {
@@ -955,6 +957,9 @@ func boundedRetryBackoff(base time.Duration, attempt int) time.Duration {
 }
 
 func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Action, errCfg dsl.ErrorHandlingConfig) (*protocol.Result, error) {
+	// A sequence is one logical transaction, so its children share one trace.
+	ctx, endTransactionRoot := vu.correlationContext(ctx, &protocol.Action{Name: action.Name})
+	defer endTransactionRoot()
 	mode, _, modeErr := dsl.HTTPSequenceExecutionSettings(action)
 	if modeErr == nil && mode == dsl.HTTPSequenceConcurrent {
 		return vu.executeConcurrentHTTPSequence(ctx, action, errCfg)

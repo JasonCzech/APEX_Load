@@ -1165,10 +1165,17 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				discoveryFatal = fmt.Errorf("generator %s lacks iteration_termination_v1; no traffic was started", result.target)
 				continue
 			}
-			if len(tr.runMonitorCorrelationOrigins(test.ID)) > 0 && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeatureRunCorrelationV1) {
-				_ = result.client.Close()
-				discoveryFatal = fmt.Errorf("generator %s lacks run_correlation_v1; no traffic was started", result.target)
-				continue
+			if correlation := tr.runCorrelationAssignment(test.ID); len(correlation.Origins) > 0 {
+				if !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeatureRunCorrelationV1) {
+					_ = result.client.Close()
+					discoveryFatal = fmt.Errorf("generator %s lacks run_correlation_v1; no traffic was started", result.target)
+					continue
+				}
+				if correlation.requiresPolicyV2() && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeatureCorrelationPolicyV2) {
+					_ = result.client.Close()
+					discoveryFatal = fmt.Errorf("generator %s lacks correlation_policy_v2; no traffic was started", result.target)
+					continue
+				}
 			}
 			if b.requireRunSupervision && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeatureRunSupervisionV1) {
 				_ = result.client.Close()
@@ -1336,6 +1343,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		if len(secretBundle) > 0 {
 			secretBundleID = uuid.NewString()
 		}
+		correlation := tr.runCorrelationAssignment(test.ID)
 		for _, shard := range shards {
 			if strings.TrimSpace(shard.Target) == "" {
 				continue
@@ -1403,7 +1411,9 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				TestID:                     test.ID,
 				ExecutionGeneration:        executionGeneration,
 				ScenarioID:                 test.ScenarioID,
-				RunCorrelationOrigins:      tr.runMonitorCorrelationOrigins(test.ID),
+				RunCorrelationOrigins:      correlation.Origins,
+				CorrelationCarriers:        correlation.Carriers,
+				CorrelationTestName:        correlation.TestName,
 				RequireTestExecutionLease:  requireTestExecutionLease,
 				GroupName:                  group.Name,
 				ParameterPopulation:        uint32(allocationByGroup[group.Name].Population),

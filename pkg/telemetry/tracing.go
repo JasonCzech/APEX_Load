@@ -5,6 +5,7 @@ package telemetry
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
 	"math"
@@ -354,6 +355,12 @@ func ShouldStartActionSpan(ctx context.Context) bool {
 	if !spanContext.IsValid() || !spanContext.IsSampled() {
 		return false
 	}
+	return admitHighVolumeSpan()
+}
+
+// admitHighVolumeSpan applies the action sampler shared by action spans and
+// transaction roots.
+func admitHighVolumeSpan() bool {
 	if !actionSpanSampling.configured.Load() {
 		// Embedders/tests that install an SDK directly retain ordinary OTel
 		// behavior. APEX Load processes always configure the explicit sampler.
@@ -371,4 +378,60 @@ func ShouldStartActionSpan(ctx context.Context) bool {
 	// counters before the modulo, avoiding a retained burst at process startup.
 	mixed := sequence * uint64(0x9e3779b97f4a7c15)
 	return mixed%actionSampleScale < threshold
+}
+
+// NewTransactionRoot starts a new trace for one top-level business transaction
+// instance, linked to the run's trace rather than parented by it, so every
+// transaction instance has its own trace ID. The root is a real span only when
+// the action sampler admits it and a tracer provider records it. Otherwise a
+// fresh, non-recording root still propagates: trace context never depends on
+// export. sampledWhenUnexported sets the W3C sampled flag on such a root when
+// APEX Load is not exporting traces; while exporting, an unadmitted root stays
+// unsampled so action spans are never exported under a parent that was not.
+func NewTransactionRoot(ctx context.Context, name string, sampledWhenUnexported bool) (context.Context, func()) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var links []trace.Link
+	if parent := trace.SpanContextFromContext(ctx); parent.IsValid() {
+		links = append(links, trace.Link{SpanContext: parent})
+	}
+	if admitHighVolumeSpan() {
+		rootCtx, span := otel.Tracer("github.com/jasonczech/apexload/pkg/engine").Start(
+			ctx,
+			"apexload.transaction",
+			trace.WithNewRoot(),
+			trace.WithLinks(links...),
+			trace.WithSpanKind(trace.SpanKindInternal),
+			trace.WithAttributes(attribute.String("apexload.transaction", BoundedIdentifier(name))),
+		)
+		// Only a recording span is a new, exported root. A no-op tracer ignores
+		// WithNewRoot and returns the parent's context, and an unsampled SDK span
+		// is never exported; both fall through to a fresh propagated root.
+		if span.IsRecording() {
+			return rootCtx, func() { span.End() }
+		}
+		span.End()
+	}
+	config := trace.SpanContextConfig{TraceID: newRootTraceID(), SpanID: newRootSpanID()}
+	if sampledWhenUnexported && !actionSpanSampling.configured.Load() {
+		config.TraceFlags = trace.FlagsSampled
+	}
+	return trace.ContextWithSpanContext(ctx, trace.NewSpanContext(config)), func() {}
+}
+
+func newRootTraceID() trace.TraceID {
+	var id trace.TraceID
+	if _, err := cryptorand.Read(id[:]); err != nil || !id.IsValid() {
+		id[len(id)-1] = 1
+	}
+	return id
+}
+
+func newRootSpanID() trace.SpanID {
+	var id trace.SpanID
+	if _, err := cryptorand.Read(id[:]); err != nil || !id.IsValid() {
+		id[len(id)-1] = 1
+	}
+	return id
 }

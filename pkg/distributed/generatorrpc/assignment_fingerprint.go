@@ -103,6 +103,16 @@ func workAssignmentFingerprint(assignment *pb.WorkAssignment) [sha256.Size]byte 
 	for _, origin := range assignment.GetRunCorrelationOrigins() {
 		fingerprintWriteString(h, origin)
 	}
+	// Carriers are written only when present so assignments without them keep
+	// the fingerprint older controllers and generators compute.
+	if carriers := assignment.GetCorrelationCarriers(); len(carriers) > 0 || assignment.GetCorrelationTestName() != "" {
+		fingerprintWriteString(h, "correlation_policy_v2")
+		fingerprintWriteUint64(h, uint64(len(carriers)))
+		for _, carrier := range carriers {
+			fingerprintWriteString(h, carrier)
+		}
+		fingerprintWriteString(h, assignment.GetCorrelationTestName())
+	}
 	fingerprintWriteBool(h, assignment.GetRequireTestExecutionLease())
 	fingerprintWriteBytes(h, assignment.GetRunSupervisionToken())
 	return fingerprintDigest(h)

@@ -37,6 +37,10 @@ import (
 const FeatureIterationTerminationV1 = "iteration_termination_v1"
 const FeatureRunCorrelationV1 = "run_correlation_v1"
 
+// FeatureCorrelationPolicyV2 accepts correlation carriers beyond the run
+// marker (traceparent, transaction_marker) for the approved origins.
+const FeatureCorrelationPolicyV2 = "correlation_policy_v2"
+
 type assignedTest struct {
 	sourcePlan                *pb.SourcePlanManifest
 	terminationMode           string
@@ -153,8 +157,11 @@ func validateGeneratorFieldBytes(value string, field string, limit int) error {
 }
 
 func validateAssignmentMetadataBounds(assignment *pb.WorkAssignment) error {
-	if err := httpprotocol.ValidateManagedRunCorrelationOrigins(assignment.GetTestId(), assignment.GetRunCorrelationOrigins()); err != nil {
+	if err := httpprotocol.ValidateManagedRunCorrelation(assignment.GetTestId(), assignment.GetRunCorrelationOrigins(), assignment.GetCorrelationCarriers()); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	if err := validateGeneratorFieldBytes(assignment.GetCorrelationTestName(), "correlation_test_name", 256); err != nil {
+		return err
 	}
 	if err := validateJavaHostSelection(assignment); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
@@ -1396,7 +1403,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
 		activeTestIDs := s.activeTestIDs()
-		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1, FeatureRunCorrelationV1)
+		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1, FeatureRunCorrelationV1, FeatureCorrelationPolicyV2)
 		javaHosts := s.javaHostCapabilities()
 		if javaHosts != nil {
 			compatibleFeatures = append(compatibleFeatures, FeatureJavaHostBrokerV1, FeatureJavaHostPreparedPopulationV1)

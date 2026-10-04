@@ -19,6 +19,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	protocolhttp "github.com/jasonczech/apexload/pkg/protocol/http"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (bool, error) {
@@ -322,6 +323,16 @@ type sourceTransactionRuntimeState struct {
 	// entering the enclosed SUT work without soft-cancelling this owner before
 	// the matching end marker can record the logical transaction.
 	goalReserved bool
+	// trace is this transaction's own trace when it opened with no other
+	// transaction open and the run enabled trace context. It is a pointer so
+	// the state stays comparable.
+	trace *sourceTransactionTrace
+}
+
+type sourceTransactionTrace struct {
+	root trace.SpanContext
+	// end ends an exported root span; it runs at most once.
+	end func()
 }
 
 // sourceTransactionEndNeedsGoalClaim reports whether an end marker will record
@@ -396,6 +407,7 @@ func (vu *VUser) finalizeSourceTransaction(key, reason string) *protocol.Result 
 		return nil
 	}
 	delete(vu.sourceTransactions, key)
+	state.endTrace()
 	if state.goalReserved && vu.ExecutionGoals != nil {
 		vu.ExecutionGoals.CommitTransactionReservation()
 		state.goalReserved = false
@@ -775,6 +787,7 @@ func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, actio
 			status:    sourceTransactionPass,
 			parent:    parentKey,
 		}
+		vu.startSourceTransactionTraceRoot(ctx, vu.sourceTransactions[key])
 		return nil
 	case "lr_end_transaction", "lr_end_sub_transaction", "lr_end_sub_trans":
 		endName, requestedStatus, ok := sourceTransactionEndArguments(action)
@@ -802,6 +815,7 @@ func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, actio
 			state.goalClaimed = true
 		}
 		delete(vu.sourceTransactions, key)
+		state.endTrace()
 		// The end marker consumes both authoritative state and its legacy mirror.
 		// Keeping the mirror would let a later orphan end reuse this start time.
 		delete(vu.Variables, sourceTransactionStartKey(endName))

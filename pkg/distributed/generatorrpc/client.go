@@ -42,6 +42,8 @@ type Assignment struct {
 	ExecutionGeneration          uint64
 	ScenarioID                   string
 	RunCorrelationOrigins        []string
+	CorrelationCarriers          []string
+	CorrelationTestName          string
 	RequireTestExecutionLease    bool
 	GroupName                    string
 	TargetDuration               time.Duration
@@ -1576,6 +1578,8 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 		ExecutionGeneration:       assignment.ExecutionGeneration,
 		ScenarioId:                assignment.ScenarioID,
 		RunCorrelationOrigins:     append([]string(nil), assignment.RunCorrelationOrigins...),
+		CorrelationCarriers:       append([]string(nil), assignment.CorrelationCarriers...),
+		CorrelationTestName:       assignment.CorrelationTestName,
 		RequireTestExecutionLease: assignment.RequireTestExecutionLease,
 		AdoptionGrace:             preciseDurationProto(assignment.AdoptionGrace, 0),
 		GroupName:                 assignment.GroupName,

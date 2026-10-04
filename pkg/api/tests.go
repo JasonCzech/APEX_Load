@@ -1018,6 +1018,7 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.ELKCapture = cloneELKCaptureConfig(test.ELKCapture)
 	cloned.DynatraceCapture = cloneDynatraceCaptureConfig(test.DynatraceCapture)
 	cloned.MonitorBindings = cloneMonitorBindings(test.MonitorBindings)
+	cloned.TraceContext = cloneRunTraceContext(test.TraceContext)
 	cloned.GeneratorShards = cloneGeneratorShardSummaries(test.GeneratorShards)
 	cloned.ScheduledStartAt = cloneTimePtr(test.ScheduledStartAt)
 	cloned.TimeslotID = cloneStringPtr(test.TimeslotID)

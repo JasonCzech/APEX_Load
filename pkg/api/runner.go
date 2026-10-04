@@ -471,6 +471,7 @@ func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
 
 type ManagedTest struct {
 	MonitorBindings *storage.MonitorBindings `json:"monitor_bindings,omitempty"`
+	TraceContext    *RunTraceContextSettings `json:"trace_context,omitempty"`
 	Activity        *ObjectActivitySummary   `json:"activity,omitempty"`
 	preparationID   string
 	// Protected by tr.mu; checks only generator control-plane reservations.
@@ -1894,6 +1895,7 @@ const (
 
 type CreateTestRequest struct {
 	MonitorBindings *[]storage.MonitorBinding `json:"monitor_bindings,omitempty"`
+	TraceContext    *RunTraceContextSettings  `json:"trace_context,omitempty"`
 	TerminationMode string                    `json:"termination_mode,omitempty"`
 	Name            string                    `json:"name"`
 	// RequestedTestID is used by controller-to-controller run creation to make

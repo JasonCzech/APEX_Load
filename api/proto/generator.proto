@@ -216,6 +216,12 @@ message WorkAssignment {
   // Controller-approved HTTP/SOAP origins for the opt-in X-Apex-Test-Run marker.
   // Omission keeps run correlation disabled.
   repeated string run_correlation_origins = 43;
+  // What the run may add at run_correlation_origins: run_marker, traceparent,
+  // transaction_marker. Omission keeps the run marker only. Send carriers
+  // other than run_marker only to correlation_policy_v2 peers.
+  repeated string correlation_carriers = 44;
+  // Test name used in transaction markers; the run ID is used when empty.
+  string correlation_test_name = 45;
 }
 
 // Operator approval binds immutable source and the complete placement profile.

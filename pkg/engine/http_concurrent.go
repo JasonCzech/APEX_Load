@@ -297,6 +297,10 @@ func (vu *VUser) runConcurrentHTTP(ctx context.Context, action dsl.Action, errCf
 		group.completed = time.Now()
 		return group, fmt.Errorf("concurrent HTTP group requires at least one child")
 	}
+	// Children run on detached executors without transaction state, so the
+	// group resolves its correlation context once and every child shares it.
+	ctx, endTransactionRoot := vu.correlationContext(ctx, &protocol.Action{Name: action.Name})
+	defer endTransactionRoot()
 	var wg sync.WaitGroup
 	jobs := make(chan int)
 	for worker := 0; worker < concurrency; worker++ {

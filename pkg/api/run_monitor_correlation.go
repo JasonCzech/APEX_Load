@@ -68,7 +68,7 @@ func (tr *TestRunner) runMonitorCorrelationOrigins(id string) []string {
 	return out
 }
 func (tr *TestRunner) validateRunMonitorCorrelation(id string) error {
-	origins := tr.runMonitorCorrelationOrigins(id)
+	origins := tr.runCorrelationAssignment(id).Origins
 	if len(origins) == 0 {
 		return nil
 	}

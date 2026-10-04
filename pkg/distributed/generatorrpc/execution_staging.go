@@ -1152,6 +1152,8 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			RunID:                        request.GetTestId(),
 			ScenarioID:                   request.GetScenarioId(),
 			RunCorrelationOrigins:        append([]string(nil), request.GetRunCorrelationOrigins()...),
+			CorrelationCarriers:          append([]string(nil), request.GetCorrelationCarriers()...),
+			CorrelationTestName:          request.GetCorrelationTestName(),
 			Script:                       &script,
 			VUsers:                       int(request.GetVuserCount()),
 			RampUp:                       plan.validated.rampUp,

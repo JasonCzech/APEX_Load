@@ -1268,12 +1268,16 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 					return fail(fmt.Errorf("prepare evacuation secrets for group %q: %w", groupName, err))
 				}
 				secretBundleID := runSecrets.ID
-				if len(tr.runMonitorCorrelationOrigins(testID)) > 0 {
+				correlation := tr.runCorrelationAssignment(testID)
+				if len(correlation.Origins) > 0 {
 					ctx, cancel := context.WithTimeout(parent, b.timeout)
 					snapshot := b.probeGeneratorLoad(ctx, shard.Target, client)
 					cancel()
 					if !stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureRunCorrelationV1) {
 						return fail(fmt.Errorf("generator %q lacks run_correlation_v1 for evacuation", shard.Target))
+					}
+					if correlation.requiresPolicyV2() && !stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureCorrelationPolicyV2) {
+						return fail(fmt.Errorf("generator %q lacks correlation_policy_v2 for evacuation", shard.Target))
 					}
 				}
 				if len(secretBundle) > 0 {
@@ -1317,7 +1321,9 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 					TestID:                     testID,
 					ExecutionGeneration:        executionGeneration,
 					ScenarioID:                 scenarioID,
-					RunCorrelationOrigins:      tr.runMonitorCorrelationOrigins(testID),
+					RunCorrelationOrigins:      correlation.Origins,
+					CorrelationCarriers:        correlation.Carriers,
+					CorrelationTestName:        correlation.TestName,
 					RequireTestExecutionLease:  requireTestExecutionLease,
 					GroupName:                  groupName,
 					TargetDuration:             remainingDuration,

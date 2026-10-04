@@ -38,6 +38,11 @@ type GroupConfig struct {
 	// RunCorrelationOrigins permits the managed run header only at these origins.
 	// This controller-owned setting is never derived from executable script data.
 	RunCorrelationOrigins []string
+	// CorrelationCarriers lists what the run may add at RunCorrelationOrigins:
+	// run_marker, traceparent, transaction_marker. Empty means run_marker only.
+	CorrelationCarriers []string
+	// CorrelationTestName names the test in transaction markers.
+	CorrelationTestName string
 	// ScenarioID is the managed execution identity exposed to protocol
 	// runtimes. Direct/library callers may leave it empty to fall back to the
 	// script artifact ID.
@@ -1817,6 +1822,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 		entitledBoundaryCtx = mge.gracefulCtx
 	}
 	vu = &VUser{
+		correlation:                  groupVUserCorrelation(group),
 		ID:                           -1,
 		TotalVUsers:                  group.VUsers,
 		ParameterAllocation:          groupParameterAllocation(group, 0),
@@ -2075,6 +2081,7 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 		defer mge.finishPreparedVUser(prepared, redaction)
 
 		vu = &VUser{
+			correlation:                  groupVUserCorrelation(prepared.group),
 			ID:                           prepared.runtimeID,
 			TotalVUsers:                  prepared.group.VUsers,
 			ParameterAllocation:          groupParameterAllocation(prepared.group, prepared.identity.local),
@@ -2591,6 +2598,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		}()
 
 		vu = &VUser{
+			correlation:                  groupVUserCorrelation(group),
 			ID:                           runtimeVUserID,
 			Group:                        group.Name,
 			Region:                       group.Region,

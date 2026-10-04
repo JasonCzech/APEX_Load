@@ -126,6 +126,8 @@ type VUser struct {
 	// variable map for the lifetime of a long run.
 	extractedVariables     map[string]int
 	extractedVariableBytes int
+	// correlation is the run's controller-approved correlation behaviour.
+	correlation vuserCorrelation
 	// sourceTransactions tracks open LoadRunner transaction scopes separately
 	// from Variables so action-local waits can be excluded from response time.
 	sourceTransactions map[string]*sourceTransactionRuntimeState

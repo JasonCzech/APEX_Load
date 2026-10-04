@@ -384,6 +384,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		addRequestHeader(req, header.Name, header.Value)
 	}
 	mergeRequestCookieHeaders(req)
+	req = h.runCorrelation.markCorrelationAuthorship(req)
 	if err := h.runCorrelation.apply(req); err != nil {
 		return nil, err
 	}
@@ -413,7 +414,13 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if strings.TrimSpace(req.Header.Get("Traceparent")) != "" {
 		traceSource = protocol.TraceSourceAuthored
 	}
-	if h.traceparentEnabled {
+	// A run that opted into trace context sends generated context to its
+	// approved origins only, whatever the script's own traceparent setting.
+	injectTraceparent := h.traceparentEnabled
+	if h.runCorrelation.scopesTraceparent() {
+		injectTraceparent = h.runCorrelation.approved(req.URL)
+	}
+	if injectTraceparent {
 		if traceSource == "" && injectActiveTraceContext(req.Context(), req.Header) != "" {
 			traceSource = protocol.TraceSourcePropagated
 		}
@@ -1172,8 +1179,21 @@ func injectActiveTraceContext(ctx context.Context, headers http.Header) string {
 	if existing := strings.TrimSpace(headers.Get("Traceparent")); existing != "" {
 		return existing
 	}
-	if spanContext := trace.SpanContextFromContext(ctx); !spanContext.IsValid() {
+	spanContext := trace.SpanContextFromContext(ctx)
+	if !spanContext.IsValid() {
 		return ""
+	}
+	if !trace.SpanFromContext(ctx).IsRecording() {
+		// A non-recording context, such as an unexported transaction root or an
+		// unsampled span, is continued with a fresh span ID per request so two
+		// requests never claim the same parent span.
+		ctx = trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    spanContext.TraceID(),
+			SpanID:     newSpanID(),
+			TraceFlags: spanContext.TraceFlags(),
+			TraceState: spanContext.TraceState(),
+			Remote:     spanContext.IsRemote(),
+		}))
 	}
 	carrier := propagation.HeaderCarrier(headers)
 	otel.GetTextMapPropagator().Inject(ctx, carrier)
@@ -1192,6 +1212,14 @@ func (h *HTTP) OAuthHTTPClient() *http.Client {
 	}
 	client := *h.oauthClient
 	return &client
+}
+
+func newSpanID() trace.SpanID {
+	var spanID trace.SpanID
+	if _, err := rand.Read(spanID[:]); err != nil || !spanID.IsValid() {
+		spanID[len(spanID)-1] = 1
+	}
+	return spanID
 }
 
 func newTraceparent(sampled bool) string {

@@ -5519,10 +5519,13 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 	if err := validateEngineGroupBounds(groups); err != nil {
 		return nil, err
 	}
+	correlation := tr.runCorrelationAssignment(test.ID)
 	for index := range groups {
 		groups[index].ScenarioID = strings.TrimSpace(test.ScenarioID)
 		groups[index].RunID = test.ID
-		groups[index].RunCorrelationOrigins = tr.runMonitorCorrelationOrigins(test.ID)
+		groups[index].RunCorrelationOrigins = append([]string(nil), correlation.Origins...)
+		groups[index].CorrelationCarriers = append([]string(nil), correlation.Carriers...)
+		groups[index].CorrelationTestName = correlation.TestName
 		projectID := test.ProjectID
 		if groups[index].Script != nil && strings.TrimSpace(groups[index].Script.ProjectID) != "" {
 			projectID = groups[index].Script.ProjectID

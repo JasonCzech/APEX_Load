@@ -47238,6 +47238,11 @@ paths:
                                 total_vusers:
                                   type: integer
                                   format: int64
+                                trace_context:
+                                  type: object
+                                  description: 'Go type: RunTraceContextSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 traffic_profile:
                                   type: object
                                   description: 'Go type: TrafficProfile'
@@ -64030,6 +64035,18 @@ paths:
                     timeslot_id:
                       type: string
                       nullable: true
+                    trace_context:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        origins:
+                          type: array
+                          items:
+                            type: string
+                        transaction_marker:
+                          type: boolean
+                      nullable: true
                     traffic_profile:
                       type: object
                       properties:
@@ -64174,6 +64191,18 @@ paths:
                   nullable: true
                 timeslot_id:
                   type: string
+                  nullable: true
+                trace_context:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    origins:
+                      type: array
+                      items:
+                        type: string
+                    transaction_marker:
+                      type: boolean
                   nullable: true
                 traffic_profile:
                   type: object
@@ -68708,6 +68737,20 @@ paths:
                       total_vusers:
                         type: integer
                         format: int64
+                      trace_context:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                          origins:
+                            type: array
+                            items:
+                              type: string
+                          transaction_marker:
+                            type: boolean
+                        required:
+                          - enabled
+                        nullable: true
                       traffic_profile:
                         type: object
                         properties:
@@ -73363,6 +73406,20 @@ paths:
                       total_vusers:
                         type: integer
                         format: int64
+                      trace_context:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                          origins:
+                            type: array
+                            items:
+                              type: string
+                          transaction_marker:
+                            type: boolean
+                        required:
+                          - enabled
+                        nullable: true
                       traffic_profile:
                         type: object
                         properties:
@@ -78019,6 +78076,20 @@ paths:
                       total_vusers:
                         type: integer
                         format: int64
+                      trace_context:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                          origins:
+                            type: array
+                            items:
+                              type: string
+                          transaction_marker:
+                            type: boolean
+                        required:
+                          - enabled
+                        nullable: true
                       traffic_profile:
                         type: object
                         properties:
@@ -82687,6 +82758,20 @@ paths:
                       total_vusers:
                         type: integer
                         format: int64
+                      trace_context:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                          origins:
+                            type: array
+                            items:
+                              type: string
+                          transaction_marker:
+                            type: boolean
+                        required:
+                          - enabled
+                        nullable: true
                       traffic_profile:
                         type: object
                         properties:
@@ -87355,6 +87440,20 @@ paths:
                       total_vusers:
                         type: integer
                         format: int64
+                      trace_context:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                          origins:
+                            type: array
+                            items:
+                              type: string
+                          transaction_marker:
+                            type: boolean
+                        required:
+                          - enabled
+                        nullable: true
                       traffic_profile:
                         type: object
                         properties:
@@ -92023,6 +92122,20 @@ paths:
                       total_vusers:
                         type: integer
                         format: int64
+                      trace_context:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                          origins:
+                            type: array
+                            items:
+                              type: string
+                          transaction_marker:
+                            type: boolean
+                        required:
+                          - enabled
+                        nullable: true
                       traffic_profile:
                         type: object
                         properties:
@@ -96691,6 +96804,20 @@ paths:
                       total_vusers:
                         type: integer
                         format: int64
+                      trace_context:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                          origins:
+                            type: array
+                            items:
+                              type: string
+                          transaction_marker:
+                            type: boolean
+                        required:
+                          - enabled
+                        nullable: true
                       traffic_profile:
                         type: object
                         properties:
@@ -269245,6 +269372,18 @@ paths:
                 timeslot_id:
                   type: string
                   nullable: true
+                trace_context:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    origins:
+                      type: array
+                      items:
+                        type: string
+                    transaction_marker:
+                      type: boolean
+                  nullable: true
                 traffic_profile:
                   type: object
                   properties:
@@ -280476,6 +280615,20 @@ paths:
                   total_vusers:
                     type: integer
                     format: int64
+                  trace_context:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                      origins:
+                        type: array
+                        items:
+                          type: string
+                      transaction_marker:
+                        type: boolean
+                    required:
+                      - enabled
+                    nullable: true
                   traffic_profile:
                     type: object
                     properties:
@@ -291886,6 +292039,20 @@ paths:
                   total_vusers:
                     type: integer
                     format: int64
+                  trace_context:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                      origins:
+                        type: array
+                        items:
+                          type: string
+                      transaction_marker:
+                        type: boolean
+                    required:
+                      - enabled
+                    nullable: true
                   traffic_profile:
                     type: object
                     properties:
@@ -324613,6 +324780,20 @@ paths:
                   total_vusers:
                     type: integer
                     format: int64
+                  trace_context:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                      origins:
+                        type: array
+                        items:
+                          type: string
+                      transaction_marker:
+                        type: boolean
+                    required:
+                      - enabled
+                    nullable: true
                   traffic_profile:
                     type: object
                     properties:
@@ -335967,6 +336148,20 @@ paths:
                   total_vusers:
                     type: integer
                     format: int64
+                  trace_context:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                      origins:
+                        type: array
+                        items:
+                          type: string
+                      transaction_marker:
+                        type: boolean
+                    required:
+                      - enabled
+                    nullable: true
                   traffic_profile:
                     type: object
                     properties:
@@ -351831,6 +352026,18 @@ paths:
                 timeslot_id:
                   type: string
                   nullable: true
+                trace_context:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    origins:
+                      type: array
+                      items:
+                        type: string
+                    transaction_marker:
+                      type: boolean
+                  nullable: true
                 traffic_profile:
                   type: object
                   properties:
@@ -354501,6 +354708,18 @@ paths:
                   type: string
                 timeslot_id:
                   type: string
+                  nullable: true
+                trace_context:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    origins:
+                      type: array
+                      items:
+                        type: string
+                    transaction_marker:
+                      type: boolean
                   nullable: true
                 traffic_profile:
                   type: object

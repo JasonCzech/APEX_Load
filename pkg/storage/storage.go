@@ -1371,6 +1371,7 @@ type TestRecord struct {
 	TrafficProfile        any                       `json:"traffic_profile,omitempty"`  // JSON blob
 	ELKCapture            any                       `json:"elk_capture,omitempty"`      // JSON blob
 	MonitorBindings       *MonitorBindings          `json:"monitor_bindings,omitempty"`
+	TraceContext          any                       `json:"trace_context,omitempty"`           // JSON blob
 	DynatraceCapture      any                       `json:"dynatrace_capture,omitempty"`       // JSON blob
 	StartAuthorization    any                       `json:"start_authorization,omitempty"`     // JSON blob
 	ExecutionPlanApproval any                       `json:"execution_plan_approval,omitempty"` // JSON blob

@@ -286,6 +286,7 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 		ELKCapture:                   cloneELKCaptureConfig(test.ELKCapture),
 		DynatraceCapture:             cloneDynatraceCaptureConfig(test.DynatraceCapture),
 		MonitorBindings:              cloneMonitorBindings(test.MonitorBindings),
+		TraceContext:                 cloneRunTraceContext(test.TraceContext),
 		TotalVUsers:                  test.TotalVUsers,
 		Duration:                     test.Duration,
 		DurationStr:                  test.DurationStr,
@@ -1331,6 +1332,10 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	traceContext, err := normalizeRunTraceContext(req.TraceContext)
+	if err != nil {
+		return nil, err
+	}
 	dynatraceCapture, err := tr.resolveDynatraceCaptureForTest(projectID, req.DynatraceCapture)
 	if err != nil {
 		return nil, err
@@ -1454,6 +1459,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		ELKCapture:                   elkCapture,
 		DynatraceCapture:             dynatraceCapture,
 		MonitorBindings:              requestMonitorBindings(req.MonitorBindings),
+		TraceContext:                 traceContext,
 		TotalVUsers:                  totalVUsers,
 		Duration:                     dur,
 		DurationStr:                  req.Duration,

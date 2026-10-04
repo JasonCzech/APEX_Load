@@ -1,6 +1,7 @@
 package generatorrpc
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -39,3 +40,36 @@ func TestAssignmentRunCorrelationOriginsRetryIdentityAndBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestAssignmentCorrelationCarriersIdentityAndValidation(t *testing.T) {
+	legacy := &pb.WorkAssignment{TestId: "run", GroupName: "group", ScriptId: "script", RunCorrelationOrigins: []string{"https://app.example"}}
+	withCarriers := &pb.WorkAssignment{TestId: "run", GroupName: "group", ScriptId: "script", RunCorrelationOrigins: []string{"https://app.example"}, CorrelationCarriers: []string{"traceparent"}}
+	withMarker := &pb.WorkAssignment{TestId: "run", GroupName: "group", ScriptId: "script", RunCorrelationOrigins: []string{"https://app.example"}, CorrelationCarriers: []string{"traceparent", "transaction_marker"}, CorrelationTestName: "Peak"}
+	if workAssignmentFingerprint(legacy) == workAssignmentFingerprint(withCarriers) || workAssignmentFingerprint(withCarriers) == workAssignmentFingerprint(withMarker) {
+		t.Fatal("correlation carriers omitted from retry identity")
+	}
+	// Assignments without carriers keep the fingerprint older peers compute.
+	if got := fmt.Sprintf("%x", workAssignmentFingerprint(legacy)); got != legacyRunCorrelationFingerprint {
+		t.Fatalf("carrier-free fingerprint changed: %s", got)
+	}
+	encoded := toProtoAssignment(Assignment{TestID: "run", RunCorrelationOrigins: []string{"https://app.example"}, CorrelationCarriers: []string{"traceparent"}, CorrelationTestName: "Peak"})
+	if !reflect.DeepEqual(encoded.GetCorrelationCarriers(), []string{"traceparent"}) || encoded.GetCorrelationTestName() != "Peak" {
+		t.Fatalf("encoded carriers = %v test name = %q", encoded.GetCorrelationCarriers(), encoded.GetCorrelationTestName())
+	}
+	if err := validateAssignmentMetadataBounds(withMarker); err != nil {
+		t.Fatalf("valid carriers rejected: %v", err)
+	}
+	for _, invalid := range []*pb.WorkAssignment{
+		{TestId: "run", RunCorrelationOrigins: []string{"https://app.example"}, CorrelationCarriers: []string{"baggage"}},
+		{TestId: "run", CorrelationCarriers: []string{"traceparent"}},
+		{TestId: "run", RunCorrelationOrigins: []string{"https://app.example"}, CorrelationTestName: strings.Repeat("t", 257)},
+	} {
+		if err := validateAssignmentMetadataBounds(invalid); err == nil {
+			t.Fatalf("assignment %+v accepted", invalid)
+		}
+	}
+}
+
+// legacyRunCorrelationFingerprint was computed by the fingerprint algorithm
+// that predates correlation carriers, for the carrier-free assignment above.
+const legacyRunCorrelationFingerprint = "33b4241c11a54283c915b687c75696ed22c89579b8e4e3542cddf130cd462445"
