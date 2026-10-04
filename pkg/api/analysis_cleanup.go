@@ -75,6 +75,25 @@ func (s *Server) retryAnalysisCleanupJob(ctx context.Context, store storage.Anal
 		}
 		return nil
 	}
+	if j.Kind == "upload-writer" {
+		writers, ok := s.store.(storage.AnalysisUploadWriterStore)
+		if !ok {
+			return errors.New("upload writer cleanup proof unavailable")
+		}
+		plan, err := writers.AnalysisUploadWriterCleanupPlan(ctx, j)
+		if err != nil {
+			return err
+		}
+		if plan.Blocked {
+			return deferBlockedAnalysisCleanup(s.store, j)
+		}
+		for _, key := range plan.Keys {
+			if err = analysisObjectDelete(ctx, key); err != nil {
+				return err
+			}
+		}
+		return store.CompleteAnalysisCleanupJob(j)
+	}
 	if j.Kind == "attempt" {
 		attempts, ok := s.store.(interface {
 			AnalysisAttemptCleanupPlan(context.Context, storage.AnalysisCleanupJob) (storage.AnalysisAttemptCleanupPlan, error)

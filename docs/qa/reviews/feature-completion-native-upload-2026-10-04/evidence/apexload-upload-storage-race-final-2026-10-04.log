@@ -1,0 +1,4 @@
+=== RUN   TestAnalysisUploadWriterTwoSQLiteStoresExactCursorAndPhysicalSeal
+--- PASS: TestAnalysisUploadWriterTwoSQLiteStoresExactCursorAndPhysicalSeal (1.60s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/storage	3.332s

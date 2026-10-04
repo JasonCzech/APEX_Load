@@ -14,9 +14,10 @@ import (
 var ErrAnalysisRevision = errors.New("analysis import revision conflict")
 
 type AnalysisChunk struct {
-	Offset int64  `json:"offset"`
-	Size   int64  `json:"size"`
-	SHA256 string `json:"sha256"`
+	ObjectKey string `json:"object_key,omitempty"`
+	Offset    int64  `json:"offset"`
+	Size      int64  `json:"size"`
+	SHA256    string `json:"sha256"`
 }
 type AnalysisImportFile struct {
 	ID           string          `json:"id"`
@@ -27,30 +28,31 @@ type AnalysisImportFile struct {
 	Chunks       []AnalysisChunk `json:"chunks,omitempty"`
 }
 type AnalysisImport struct {
-	ID                 string                             `json:"id"`
-	ProjectID          string                             `json:"project_id"`
-	Name               string                             `json:"name"`
-	Revision           int64                              `json:"revision"`
-	State              string                             `json:"state"`
-	Files              []AnalysisImportFile               `json:"files"`
-	Mapping            *analysis.ParquetMapping           `json:"mapping,omitempty"`
-	AllowRejected      bool                               `json:"allow_rejected"`
-	Accepted           int64                              `json:"accepted"`
-	Rejected           int64                              `json:"rejected"`
-	Rejections         []analysis.ParquetRejectionSummary `json:"rejections,omitempty"`
-	RejectionArtifacts []string                           `json:"rejection_artifacts,omitempty"`
-	RejectionSHA256    map[string]string                  `json:"rejection_sha256,omitempty"`
-	Normalized         []string                           `json:"normalized,omitempty"`
-	NormalizedSHA256   map[string]string                  `json:"normalized_sha256,omitempty"`
-	ObsoleteObjects    []string                           `json:"obsolete_objects,omitempty"`
-	MappingID          string                             `json:"mapping_id,omitempty"`
-	MappingRevision    int64                              `json:"mapping_revision,omitempty"`
-	RunID              string                             `json:"run_id,omitempty"`
-	Error              string                             `json:"error,omitempty"`
-	Owner              string                             `json:"-"`
-	LeaseExpiresAt     time.Time                          `json:"-"`
-	CreatedAt          time.Time                          `json:"created_at"`
-	UpdatedAt          time.Time                          `json:"updated_at"`
+	UploadWriterVersion int                                `json:"upload_writer_version,omitempty"`
+	ID                  string                             `json:"id"`
+	ProjectID           string                             `json:"project_id"`
+	Name                string                             `json:"name"`
+	Revision            int64                              `json:"revision"`
+	State               string                             `json:"state"`
+	Files               []AnalysisImportFile               `json:"files"`
+	Mapping             *analysis.ParquetMapping           `json:"mapping,omitempty"`
+	AllowRejected       bool                               `json:"allow_rejected"`
+	Accepted            int64                              `json:"accepted"`
+	Rejected            int64                              `json:"rejected"`
+	Rejections          []analysis.ParquetRejectionSummary `json:"rejections,omitempty"`
+	RejectionArtifacts  []string                           `json:"rejection_artifacts,omitempty"`
+	RejectionSHA256     map[string]string                  `json:"rejection_sha256,omitempty"`
+	Normalized          []string                           `json:"normalized,omitempty"`
+	NormalizedSHA256    map[string]string                  `json:"normalized_sha256,omitempty"`
+	ObsoleteObjects     []string                           `json:"obsolete_objects,omitempty"`
+	MappingID           string                             `json:"mapping_id,omitempty"`
+	MappingRevision     int64                              `json:"mapping_revision,omitempty"`
+	RunID               string                             `json:"run_id,omitempty"`
+	Error               string                             `json:"error,omitempty"`
+	Owner               string                             `json:"-"`
+	LeaseExpiresAt      time.Time                          `json:"-"`
+	CreatedAt           time.Time                          `json:"created_at"`
+	UpdatedAt           time.Time                          `json:"updated_at"`
 }
 
 type AnalysisImportStore interface {
@@ -108,6 +110,16 @@ func (s *SQLiteStore) SaveAnalysisImport(in AnalysisImport, expected int64) (*An
 	if expected == 0 && (len(in.Normalized) != 0 || len(in.NormalizedSHA256) != 0 || len(in.RejectionArtifacts) != 0 || len(in.RejectionSHA256) != 0 || in.Accepted != 0 || in.Rejected != 0 || len(in.Rejections) != 0 || len(in.ObsoleteObjects) != 0) {
 		return nil, errors.New("unclaimed analytical output metadata")
 	}
+	if expected == 0 && in.UploadWriterVersion != 0 && in.UploadWriterVersion != AnalysisUploadWriterVersion {
+		return nil, ErrAnalysisAuthority
+	}
+	if expected == 0 && in.UploadWriterVersion == AnalysisUploadWriterVersion {
+		for _, file := range in.Files {
+			if file.Uploaded != 0 || file.SHA256 != "" || len(file.Chunks) != 0 {
+				return nil, ErrAnalysisAuthority
+			}
+		}
+	}
 	if expected == 0 && in.State != "uploading" {
 		return nil, errors.New("imports must begin in uploading state")
 	}
@@ -123,6 +135,12 @@ func (s *SQLiteStore) SaveAnalysisImport(in AnalysisImport, expected int64) (*An
 		var old AnalysisImport
 		if err = json.Unmarshal([]byte(oldBody), &old); err != nil {
 			return nil, err
+		}
+		if old.UploadWriterVersion != in.UploadWriterVersion {
+			return nil, ErrAnalysisAuthority
+		}
+		if old.UploadWriterVersion == AnalysisUploadWriterVersion && !reflect.DeepEqual(old.Files, in.Files) {
+			return nil, errors.New("upload cursors require physical writer publication")
 		}
 		allowed := map[string]string{"uploading": " uploading mapped cancelled", "mapped": " mapped cancelled", "normalizing": " cancelled", "failed": " mapped cancelled", "ready": " ready deleting", "cancelled": " cancelled", "deleting": " deleting deleted", "deleted": " deleted"}
 		if !strings.Contains(allowed[old.State]+" ", " "+in.State+" ") {

@@ -1,0 +1,14 @@
+[
+  {
+    "gate": "typecheck",
+    "exit_code": 0,
+    "seconds": 63.969,
+    "log": "/private/tmp/apexload-native-upload30-client-typecheck-2026-10-04.log"
+  },
+  {
+    "gate": "lint",
+    "exit_code": 0,
+    "seconds": 31.215,
+    "log": "/private/tmp/apexload-native-upload30-client-lint-2026-10-04.log"
+  }
+]

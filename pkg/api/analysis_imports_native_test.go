@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -161,39 +162,44 @@ func TestAnalysisNativeImportLifecycle(t *testing.T) {
 	if r = timeslotRequest(t, server, "PUT", dataset+"/association", map[string]any{"revision": updated.Revision, "run_id": "unknown"}); r.Code != 404 {
 		t.Fatal("associated unowned run")
 	}
-	// This schema29 fixture used the legacy uploader: its completed HTTP call
-	// cannot establish durable physical-writer proof. Cancellation must retain
-	// the source and queue cleanup. The upload30 lifecycle replaces this branch
-	// with the full 204 deletion acceptance through its durable writer journal.
-	for range 2 {
-		r = timeslotRequest(t, server, "DELETE", path, nil)
-		if r.Code != 503 {
-			t.Fatalf("legacy writer cleanup must remain pending: %d %s", r.Code, r.Body.String())
+	// The durable upload30 journal now carries actual body/artifact closure,
+	// so the complete native lifecycle must delete all source/normalized bytes.
+	sourceKeys := make([]string, 0, len(updated.Files[0].Chunks)+len(updated.Normalized))
+	for _, chunk := range updated.Files[0].Chunks {
+		key, keyErr := storage.AnalysisUploadChunkObjectKey(updated.ProjectID, updated.ID, updated.Files[0], chunk)
+		if keyErr != nil {
+			t.Fatal(keyErr)
 		}
+		sourceKeys = append(sourceKeys, key)
 	}
-	retained, err := store.(storage.AnalysisImportStore).GetAnalysisImport(in.ID)
-	if err != nil || retained == nil || retained.State != "deleting" || len(retained.Files) != 1 || len(retained.Files[0].Chunks) != 1 || len(retained.Normalized) == 0 {
-		t.Fatalf("pending cancellation lost durable evidence: %+v %v", retained, err)
-	}
+	sourceKeys = append(sourceKeys, updated.Normalized...)
 	ready, err := store.(interface {
 		AnalysisDatasetCleanupReady(context.Context, string, string) (bool, error)
 	}).AnalysisDatasetCleanupReady(context.Background(), in.ProjectID, in.ID)
 	if err != nil || ready {
-		t.Fatalf("legacy uploader unexpectedly granted namespace cleanup: %v %v", ready, err)
+		t.Fatalf("live dataset unexpectedly grants namespace deletion: %v %v", ready, err)
 	}
-	jobs, err := store.(storage.AnalysisCleanupStore).ListAnalysisCleanupJobs(time.Now().Add(time.Hour), 50)
-	queued := false
-	for _, job := range jobs {
-		queued = queued || job.ProjectID == in.ProjectID && job.ResourceID == in.ID && job.Kind == "dataset"
+	for range 2 {
+		r = timeslotRequest(t, server, "DELETE", path, nil)
+		if r.Code != 204 {
+			t.Fatalf("durable upload deletion: %d %s", r.Code, r.Body.String())
+		}
 	}
-	if err != nil || !queued {
-		t.Fatalf("pending cleanup was not durably retained: %+v %v", jobs, err)
+	deleted, err := store.(storage.AnalysisImportStore).GetAnalysisImport(in.ID)
+	if err != nil || deleted == nil || deleted.State != "deleted" {
+		t.Fatalf("physical deletion lost terminal metadata: %+v %v", deleted, err)
 	}
-	chunk := retained.Files[0].Chunks[0]
-	key := analysisObjectKey(in.ProjectID, in.ID, analysisChunkName(retained.Files[0], chunk.Offset, chunk.SHA256))
-	var source bytes.Buffer
-	if _, err = analysisObjectRead(context.Background(), key, &source, int64(len(data))); err != nil || !bytes.Equal(source.Bytes(), data) {
-		t.Fatalf("cleanup deleted legacy source before physical proof: %v", err)
+	ready, err = store.(interface {
+		AnalysisDatasetCleanupReady(context.Context, string, string) (bool, error)
+	}).AnalysisDatasetCleanupReady(context.Background(), in.ProjectID, in.ID)
+	if err != nil || !ready {
+		t.Fatalf("terminal joined upload failed cleanup readiness: %v %v", ready, err)
+	}
+	for _, key := range sourceKeys {
+		var retained bytes.Buffer
+		if _, readErr := analysisObjectRead(context.Background(), key, &retained, 1); !errors.Is(readErr, os.ErrNotExist) || retained.Len() != 0 {
+			t.Fatalf("204 retained analytical evidence: %v", readErr)
+		}
 	}
 	if r := timeslotRequest(t, server, "GET", dataset, nil); r.Code != 404 {
 		t.Fatal("deleted dataset visible")

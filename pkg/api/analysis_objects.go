@@ -25,11 +25,11 @@ func analysisObjectWrite(ctx context.Context, key string, input io.Reader) (retD
 	if !analysisObjectPattern.MatchString(key) {
 		return "", errors.New("invalid analytical object")
 	}
-	lease, err := analytics.NativePipelineIO(ctx)
+	owner, joined, err := analysisObjectIO(ctx)
 	if err != nil {
 		return "", err
 	}
-	defer lease.Joined()
+	defer joined()
 	backend, err := nativeAnalysisArtifactBackend(ctx)
 	if err != nil {
 		return "", err
@@ -44,15 +44,15 @@ func analysisObjectWrite(ctx context.Context, key string, input io.Reader) (retD
 		if err != nil {
 			return "", err
 		}
-		lease.TrackOwner(bucket)
-		defer func() { retErr = errors.Join(retErr, analysisCloseNativeOwner(lease, bucket)) }()
+		owner.TrackOwner(bucket)
+		defer func() { retErr = errors.Join(retErr, owner.CloseOwner(bucket)) }()
 		writer, err := bucket.NewWriter(ctx, filepath.ToSlash(filepath.Join(backend.Prefix, "_analysis", key)), nil)
 		if err != nil {
 			return "", err
 		}
-		lease.TrackOwner(writer)
+		owner.TrackOwner(writer)
 		_, copyErr := io.Copy(writer, input)
-		closeErr := analysisCloseNativeOwner(lease, writer)
+		closeErr := owner.CloseOwner(writer)
 		if err = errors.Join(copyErr, closeErr); err != nil {
 			return "", err
 		}
@@ -66,17 +66,20 @@ func analysisObjectWrite(ctx context.Context, key string, input io.Reader) (retD
 	if err != nil {
 		return "", err
 	}
-	lease.TrackOwner(root)
-	defer func() { retErr = errors.Join(retErr, analysisCloseNativeOwner(lease, root)) }()
+	owner.TrackOwner(root)
+	defer func() { retErr = errors.Join(retErr, owner.CloseOwner(root)) }()
 	if err = root.MkdirAll(filepath.Dir(key), 0700); err != nil {
 		return "", err
 	}
-	tmp := key + "." + uuid.NewString() + ".tmp"
+	tmp := analysisUploadTemporaryKey(ctx, key)
+	if tmp == "" {
+		tmp = key + "." + uuid.NewString() + ".tmp"
+	}
 	file, err := root.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return "", err
 	}
-	lease.TrackOwner(file)
+	owner.TrackOwner(file)
 	tempClosed := false
 	defer func() {
 		if tempClosed {
@@ -85,7 +88,7 @@ func analysisObjectWrite(ctx context.Context, key string, input io.Reader) (retD
 	}()
 	_, copyErr := io.Copy(file, &contextReader{ctx: ctx, reader: input})
 	syncErr := file.Sync()
-	closeErr := analysisCloseNativeOwner(lease, file)
+	closeErr := owner.CloseOwner(file)
 	tempClosed = closeErr == nil
 	if err = errors.Join(copyErr, syncErr, closeErr); err != nil {
 		return "", err
@@ -100,9 +103,9 @@ func analysisObjectWrite(ctx context.Context, key string, input io.Reader) (retD
 	if err != nil {
 		return "", err
 	}
-	lease.TrackOwner(dir)
+	owner.TrackOwner(dir)
 	syncErr = dir.Sync()
-	closeErr = analysisCloseNativeOwner(lease, dir)
+	closeErr = owner.CloseOwner(dir)
 	if isIgnorableArchiveDirectorySyncError(syncErr) {
 		syncErr = nil
 	}
@@ -128,11 +131,11 @@ func analysisObjectRead(ctx context.Context, key string, output io.Writer, maxBy
 	if !analysisObjectPattern.MatchString(key) || maxBytes < 0 {
 		return "", errors.New("invalid analytical object read")
 	}
-	lease, err := analytics.NativePipelineIO(ctx)
+	owner, joined, err := analysisObjectIO(ctx)
 	if err != nil {
 		return "", err
 	}
-	defer lease.Joined()
+	defer joined()
 	backend, err := nativeAnalysisArtifactBackend(ctx)
 	if err != nil {
 		return "", err
@@ -143,8 +146,8 @@ func analysisObjectRead(ctx context.Context, key string, output io.Writer, maxBy
 		if err != nil {
 			return "", err
 		}
-		lease.TrackOwner(bucket)
-		defer func() { retErr = errors.Join(retErr, analysisCloseNativeOwner(lease, bucket)) }()
+		owner.TrackOwner(bucket)
+		defer func() { retErr = errors.Join(retErr, owner.CloseOwner(bucket)) }()
 		reader, err = bucket.NewReader(ctx, filepath.ToSlash(filepath.Join(backend.Prefix, "_analysis", key)), nil)
 		if err != nil {
 			return "", err
@@ -154,15 +157,15 @@ func analysisObjectRead(ctx context.Context, key string, output io.Writer, maxBy
 		if err != nil {
 			return "", err
 		}
-		lease.TrackOwner(root)
-		defer func() { retErr = errors.Join(retErr, analysisCloseNativeOwner(lease, root)) }()
+		owner.TrackOwner(root)
+		defer func() { retErr = errors.Join(retErr, owner.CloseOwner(root)) }()
 		reader, err = root.Open(key)
 		if err != nil {
 			return "", err
 		}
 	}
-	lease.TrackOwner(reader)
-	defer func() { retErr = errors.Join(retErr, analysisCloseNativeOwner(lease, reader)) }()
+	owner.TrackOwner(reader)
+	defer func() { retErr = errors.Join(retErr, owner.CloseOwner(reader)) }()
 	hash := sha256.New()
 	n, err := io.Copy(io.MultiWriter(output, hash), io.LimitReader(&contextReader{ctx: ctx, reader: reader}, maxBytes+1))
 	if err != nil {
@@ -186,4 +189,48 @@ func analysisCloseNativeOwner(lease *analytics.NativeIOLease, descriptor io.Clos
 		return descriptor.Close()
 	}
 	return lease.CloseOwner(descriptor)
+}
+
+// Shared helper ownership selects one opaque admitted parent before Open.
+// A standalone non-native read preserves the historical synchronous contract.
+type analysisObjectPhysicalIO interface {
+	TrackOwner(io.Closer)
+	CloseOwner(io.Closer) error
+}
+type analysisPlainObjectIO struct{}
+
+func (analysisPlainObjectIO) TrackOwner(io.Closer)         {}
+func (analysisPlainObjectIO) CloseOwner(c io.Closer) error { return c.Close() }
+func analysisObjectIO(ctx context.Context) (analysisObjectPhysicalIO, func(), error) {
+	lease, err := analytics.NativePipelineIO(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	upload, _ := ctx.Value(analysisUploadOwnerKey{}).(*analysisUploadPhysicalOwner)
+	if upload != nil {
+		if err := analysisUploadContextError(ctx); err != nil {
+			return nil, nil, err
+		}
+		if lease != nil {
+			return nil, nil, errAnalysisUploadPhysical
+		}
+		end, err := upload.beginOperation()
+		return upload, end, err
+	}
+	if lease != nil {
+		return lease, lease.Joined, nil
+	}
+	return analysisPlainObjectIO{}, func() {}, nil
+}
+func analysisUploadTemporaryKey(ctx context.Context, key string) string {
+	owner, _ := ctx.Value(analysisUploadOwnerKey{}).(*analysisUploadPhysicalOwner)
+	if owner == nil {
+		return ""
+	}
+	owner.mu.Lock()
+	defer owner.mu.Unlock()
+	if owner.intent == nil || owner.intent.ObjectKey != key {
+		return ""
+	}
+	return owner.intent.TemporaryKey
 }

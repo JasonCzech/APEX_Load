@@ -19344,6 +19344,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              object_key:
+                                type: string
                               offset:
                                 type: integer
                                 format: int64
@@ -19485,6 +19487,9 @@ paths:
                   updated_at:
                     type: string
                     format: date-time
+                  upload_writer_version:
+                    type: integer
+                    format: int64
                 required:
                   - accepted
                   - allow_rejected
@@ -19969,6 +19974,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              object_key:
+                                type: string
                               offset:
                                 type: integer
                                 format: int64
@@ -20110,6 +20117,9 @@ paths:
                   updated_at:
                     type: string
                     format: date-time
+                  upload_writer_version:
+                    type: integer
+                    format: int64
                 required:
                   - accepted
                   - allow_rejected
@@ -20199,6 +20209,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              object_key:
+                                type: string
                               offset:
                                 type: integer
                                 format: int64
@@ -20340,6 +20352,9 @@ paths:
                   updated_at:
                     type: string
                     format: date-time
+                  upload_writer_version:
+                    type: integer
+                    format: int64
                 required:
                   - accepted
                   - allow_rejected
@@ -20430,6 +20445,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              object_key:
+                                type: string
                               offset:
                                 type: integer
                                 format: int64
@@ -20571,6 +20588,9 @@ paths:
                   updated_at:
                     type: string
                     format: date-time
+                  upload_writer_version:
+                    type: integer
+                    format: int64
                 required:
                   - accepted
                   - allow_rejected
@@ -20611,6 +20631,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              object_key:
+                                type: string
                               offset:
                                 type: integer
                                 format: int64
@@ -20752,6 +20774,9 @@ paths:
                   updated_at:
                     type: string
                     format: date-time
+                  upload_writer_version:
+                    type: integer
+                    format: int64
                 required:
                   - accepted
                   - allow_rejected
@@ -20812,13 +20837,6 @@ paths:
       summary: Analysis Upload
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleAnalysisUpload
-      requestBody:
-        required: true
-        content:
-          application/octet-stream:
-            schema:
-              type: string
-              format: binary
       responses:
         "200":
           description: OK
@@ -20859,6 +20877,18 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "413":
           description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "501":
+          description: Not Implemented
           content:
             application/json:
               schema:

@@ -5,8 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type AnalysisCleanupJob struct {
@@ -28,7 +29,7 @@ func queueAnalysisCleanupTx(tx *storeTx, kind, project, id string) error {
 }
 
 func queueProjectAnalysisCleanupTx(tx *storeTx, project string) error {
-	rows, err := tx.Query(`SELECT id FROM analysis_imports WHERE project_id=? UNION SELECT import_id FROM analysis_attempt_journal WHERE project_id=?`, project, project)
+	rows, err := tx.Query(`SELECT id FROM analysis_imports WHERE project_id=? UNION SELECT import_id FROM analysis_attempt_journal WHERE project_id=? UNION SELECT import_id FROM analysis_upload_writers WHERE project_id=?`, project, project, project)
 	if err != nil {
 		return err
 	}
@@ -77,7 +78,7 @@ func (s *SQLiteStore) ListAnalysisCleanupJobs(now time.Time, limit int) ([]Analy
 	rows, err := s.db.Query(`SELECT j.kind,j.project_id,j.resource_id,j.not_before FROM analysis_cleanup_jobs j
         LEFT JOIN analysis_imports d ON j.kind='dataset' AND d.id=j.resource_id
         LEFT JOIN tests t ON j.kind='monitor' AND t.id=j.resource_id
-        WHERE j.not_before<=? AND ((j.kind='dataset' AND (d.id IS NULL OR d.state IN ('cancelled','deleted','deleting'))) OR (j.kind='monitor' AND t.id IS NULL) OR j.kind IN ('monitor-object','attempt'))
+        WHERE j.not_before<=? AND ((j.kind='dataset' AND (d.id IS NULL OR d.state IN ('cancelled','deleted','deleting'))) OR (j.kind='monitor' AND t.id IS NULL) OR j.kind IN ('monitor-object','attempt','upload-writer'))
         ORDER BY j.not_before,j.resource_id LIMIT ?`, now.UTC(), limit)
 	if err != nil {
 		return nil, err
@@ -101,6 +102,9 @@ func (s *SQLiteStore) CompleteAnalysisCleanupJob(j AnalysisCleanupJob) error {
 // Caller already holds project ownership, then import ownership where present.
 // Journals outlive row/project deletion, so late physical writer proof is not lost.
 func queueAnalysisImportAttemptsCleanupTx(tx *storeTx, project, id string) error {
+	if err := analysisUploadQueueImportTx(tx, project, id); err != nil {
+		return err
+	}
 	rows, err := tx.Query(`SELECT payload FROM analysis_attempt_journal WHERE project_id=? AND import_id=? ORDER BY id`, project, id)
 	if err != nil {
 		return err
@@ -140,14 +144,15 @@ func queueAnalysisImportAttemptsCleanupTx(tx *storeTx, project, id string) error
 		if json.Unmarshal([]byte(legacyBody), &in) != nil || in.ProjectID != project || in.ID != id {
 			return ErrAnalysisAuthority
 		}
-		legacyUpload := state == "uploading"
+		legacyUpload := in.UploadWriterVersion != AnalysisUploadWriterVersion && state == "uploading"
 		for _, file := range in.Files {
-			if len(file.Chunks) > 0 {
+			if in.UploadWriterVersion != AnalysisUploadWriterVersion && len(file.Chunks) > 0 {
 				legacyUpload = true
 			}
 		}
-		// Interim fail-closed fence: the following upload-writer logical slice must
-		// replace this unknown sentinel with journalled per-write physical proof.
+		// Legacy uploads have no exact per-write journal or physical seal. Retain
+		// their unknown writer fence; only versioned journalled uploads can prove
+		// quiescence through their own durable physical-close receipts.
 		if state == "normalizing" || legacyUpload {
 			tracked, unknown := false, false
 			for _, a := range attempts {
@@ -250,6 +255,11 @@ func (s *SQLiteStore) AnalysisDatasetCleanupReady(ctx context.Context, project, 
 			}
 		}
 	}
+	uploadReady, uploadErr := analysisUploadQuiescedTx(ctx, tx, project, id)
+	if uploadErr != nil {
+		return false, uploadErr
+	}
+	ready = ready && uploadReady
 	if tx.Commit() != nil {
 		return false, ErrAnalysisPublicationUnknown
 	}

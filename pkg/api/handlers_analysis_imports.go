@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -195,7 +194,7 @@ func (s *Server) handleAnalysisImports(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "import requires 1-1024 files")
 		return
 	}
-	in := storage.AnalysisImport{ID: uuid.NewString(), ProjectID: project, Name: req.Name, State: "uploading"}
+	in := storage.AnalysisImport{ID: uuid.NewString(), ProjectID: project, Name: req.Name, State: "uploading", UploadWriterVersion: storage.AnalysisUploadWriterVersion}
 	var total int64
 	seen := map[string]bool{}
 	for _, file := range req.Files {
@@ -234,9 +233,19 @@ func (s *Server) handleAnalysisImport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, in)
 		return
 	}
-	if !s.requireAnalysisBackend(w) {
+	// Capture the approved immutable namespace before the first metadata
+	// mutation. A later environment edit must refuse cleanup rather than
+	// substitute another backend after durable ownership was checked.
+	backend, err := nativeAnalysisArtifactBackend(r.Context())
+	if err != nil || backend.validate() != nil {
+		writeError(w, 503, "dataset cleanup storage authority unavailable")
 		return
 	}
+	if err = ensureAnalysisBackendFor(s.store, backend); err != nil {
+		writeError(w, 503, "dataset cleanup storage authority unavailable")
+		return
+	}
+	r = r.WithContext(context.WithValue(r.Context(), nativeAnalysisArtifactBackendKey{}, backend))
 	if in.State == "deleted" {
 		w.WriteHeader(204)
 		return
@@ -285,8 +294,42 @@ func analysisChunkName(file storage.AnalysisImportFile, offset int64, digest str
 }
 
 func (s *Server) handleAnalysisUpload(w http.ResponseWriter, r *http.Request) {
-	store, in := s.loadAnalysisImport(w, r)
-	if store == nil {
+	// Pin SQL and immutable artifact namespace before body allocation/admission.
+	// A request-side Store replacement requires a newly configured Server.
+	if s == nil || !nativeSameStore(s.store, s.nativeReconciliationStore) {
+		writeError(w, 503, "upload storage authority unavailable")
+		return
+	}
+	writers, writerOK := s.nativeReconciliationStore.(storage.AnalysisUploadWriterStore)
+	store, storeOK := s.nativeReconciliationStore.(storage.AnalysisImportStore)
+	if !writerOK || !storeOK {
+		writeError(w, 503, "upload writer ownership unavailable")
+		return
+	}
+	bound, _, err := s.bindAnalysisUploadContext(r.Context(), writers)
+	if err != nil {
+		writeError(w, 503, "upload storage authority unavailable")
+		return
+	}
+	r = r.WithContext(bound)
+	in, err := store.GetAnalysisImport(r.PathValue("id"))
+	if err != nil || in == nil || !analysisQueryContextLive(r.Context()) {
+		writeError(w, 404, "analysis import not found")
+		return
+	}
+	if !requireAuthorizedProjectMatch(w, r, in.ProjectID) {
+		return
+	}
+	if !analysisProjectEnabled(in.ProjectID) {
+		writeError(w, 409, "Parquet analysis is not enabled for this project")
+		return
+	}
+	if !analytics.Available() {
+		writeError(w, 501, analytics.ErrUnavailable.Error())
+		return
+	}
+	if in.UploadWriterVersion != storage.AnalysisUploadWriterVersion {
+		writeError(w, 503, "upload writer ownership unavailable for this session")
 		return
 	}
 	if in.State != "uploading" {
@@ -310,9 +353,26 @@ func (s *Server) handleAnalysisUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "upload offset does not match durable cursor")
 		return
 	}
+	if !analysisQueryContextLive(r.Context()) {
+		writeError(w, 503, "upload request authority expired")
+		return
+	}
+	uploadOwner, admitted := acquireAnalysisUploadOwner()
+	if !admitted {
+		writeError(w, 429, "upload writer capacity unavailable")
+		return
+	}
+	defer uploadOwner.endRequest()
+	uploadCtx, cancelUpload := context.WithTimeout(r.Context(), analysisUploadOperationTimeout)
+	defer cancelUpload()
+	r = r.WithContext(context.WithValue(uploadCtx, analysisUploadOwnerKey{}, uploadOwner))
 	r.Body = http.MaxBytesReader(w, r.Body, analysisUploadChunk)
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
+	data, err := readAnalysisUploadBody(r.Context(), uploadOwner, r.Body)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, errAnalysisUploadPhysical) {
+		writeError(w, 503, "upload body ownership remains pending")
+		return
+	}
+	if err != nil || len(data) > analysisUploadChunk {
 		writeError(w, 413, "upload chunk exceeds 4 MiB")
 		return
 	}
@@ -325,7 +385,9 @@ func (s *Server) handleAnalysisUpload(w http.ResponseWriter, r *http.Request) {
 	if offset < file.Uploaded {
 		for _, chunk := range file.Chunks {
 			if chunk.Offset == offset && chunk.Size == int64(len(data)) && chunk.SHA256 == digest {
-				writeJSON(w, 200, map[string]any{"uploaded": file.Uploaded, "revision": in.Revision})
+				if err := s.writeAnalysisUploadCursor(w, r, *in, file.ID, file.Uploaded, in.Revision); err != nil {
+					writeAnalysisUploadCursorError(w, err)
+				}
 				return
 			}
 		}
@@ -336,35 +398,8 @@ func (s *Server) handleAnalysisUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "nonfinal chunks must contain exactly 4 MiB")
 		return
 	}
-	key := analysisObjectKey(in.ProjectID, in.ID, analysisChunkName(*file, offset, digest))
-	if _, err = analysisObjectWrite(r.Context(), key, bytes.NewReader(data)); err != nil {
-		writeError(w, 503, "chunk persistence failed")
-		return
-	}
-	file.Chunks = append(file.Chunks, storage.AnalysisChunk{Offset: offset, Size: int64(len(data)), SHA256: digest})
-	file.Uploaded += int64(len(data))
-	saved, err := store.SaveAnalysisImport(*in, in.Revision)
-	if err != nil {
-		// The content-addressed key cannot overwrite another upload. Remove an
-		// unreferenced losing write, retaining identical concurrently accepted retries.
-		current, readErr := store.GetAnalysisImport(in.ID)
-		if readErr == nil {
-			referenced := false
-			for _, f := range current.Files {
-				for _, c := range f.Chunks {
-					if analysisObjectKey(current.ProjectID, current.ID, analysisChunkName(f, c.Offset, c.SHA256)) == key {
-						referenced = true
-					}
-				}
-			}
-			if !referenced || current.State == "cancelled" || current.State == "deleting" || current.State == "deleted" {
-				_ = analysisObjectDelete(context.Background(), key)
-			}
-		}
-		writeError(w, 409, "upload changed concurrently; reload durable cursor")
-		return
-	}
-	writeJSON(w, 200, map[string]any{"uploaded": file.Uploaded, "revision": saved.Revision})
+	s.writeAnalysisUploadChunk(w, r, writers, *in, *file, offset, data, digest)
+
 }
 
 func materializeAnalysisOriginal(ctx context.Context, in *storage.AnalysisImport, file storage.AnalysisImportFile, dir string) (retPath string, retDigest string, retErr error) {
@@ -391,7 +426,11 @@ func materializeAnalysisOriginal(ctx context.Context, in *storage.AnalysisImport
 		if chunk.Offset != offset || chunk.Size < 1 {
 			return "", "", errors.New("invalid durable upload sequence")
 		}
-		digest, err := analysisObjectRead(ctx, analysisObjectKey(in.ProjectID, in.ID, analysisChunkName(file, chunk.Offset, chunk.SHA256)), io.MultiWriter(staging, hash), chunk.Size)
+		key, keyErr := storage.AnalysisUploadChunkObjectKey(in.ProjectID, in.ID, file, chunk)
+		if keyErr != nil {
+			return "", "", keyErr
+		}
+		digest, err := analysisObjectRead(ctx, key, io.MultiWriter(staging, hash), chunk.Size)
 		if err != nil {
 			return "", "", err
 		}
@@ -601,27 +640,95 @@ func (s *Server) handleAnalysisCommit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 202, claimed)
 }
 
-func deleteAnalysisObjects(ctx context.Context, in *storage.AnalysisImport) error {
+// Resolve the complete exact plan before physical I/O. New upload writers use
+// opaque durable chunk keys; historical chunks retain their validated content
+// key. A malformed/foreign later key cannot cause a partially deleted dataset.
+func analysisDatasetDeletionKeys(in *storage.AnalysisImport) ([]string, error) {
+	const maxKeys = 131072
+	if in == nil || len(in.ID) != 36 || len(in.ProjectID) > 128 || len(in.Files) < 1 || len(in.Files) > 1024 || len(in.Normalized) > 65536 || len(in.RejectionArtifacts) > 65536 || len(in.ObsoleteObjects) > 4096 {
+		return nil, storage.ErrAnalysisAuthority
+	}
+	total := len(in.Files) + len(in.Normalized) + len(in.RejectionArtifacts) + len(in.ObsoleteObjects)
 	for _, file := range in.Files {
+		if len(file.ID) != 36 || len(file.Chunks) > 16384 || len(file.Chunks) > maxKeys-total {
+			return nil, storage.ErrAnalysisAuthority
+		}
+		total += len(file.Chunks)
+	}
+	if total > maxKeys || strings.TrimSpace(in.ProjectID) == "" {
+		return nil, storage.ErrAnalysisAuthority
+	}
+	parsed, err := uuid.Parse(in.ID)
+	if err != nil || parsed.String() != in.ID {
+		return nil, storage.ErrAnalysisAuthority
+	}
+	for _, file := range in.Files {
+		parsed, err := uuid.Parse(file.ID)
+		if err != nil || parsed.String() != file.ID {
+			return nil, storage.ErrAnalysisAuthority
+		}
+	}
+	prefix := analysisObjectKey(in.ProjectID, in.ID, "")
+	keys := []string{}
+	seen := map[string]bool{}
+	add := func(key string) error {
+		if len(key) > 274 || !analysisObjectPattern.MatchString(key) || !strings.HasPrefix(key, prefix) {
+			return storage.ErrAnalysisAuthority
+		}
+		if !seen[key] {
+			if len(keys) == maxKeys {
+				return storage.ErrAnalysisAuthority
+			}
+			seen[key] = true
+			keys = append(keys, key)
+		}
+		return nil
+	}
+	for _, file := range in.Files {
+		if len(file.Chunks) > 16384 {
+			return nil, storage.ErrAnalysisAuthority
+		}
 		for _, chunk := range file.Chunks {
-			if err := analysisObjectDelete(ctx, analysisObjectKey(in.ProjectID, in.ID, analysisChunkName(file, chunk.Offset, chunk.SHA256))); err != nil {
-				return err
+			key, err := storage.AnalysisUploadChunkObjectKey(in.ProjectID, in.ID, file, chunk)
+			if err != nil {
+				return nil, err
+			}
+			if err = add(key); err != nil {
+				return nil, err
 			}
 		}
-		{
-			if err := analysisObjectDelete(ctx, analysisObjectKey(in.ProjectID, in.ID, "original-"+file.ID+".parquet")); err != nil {
-				return err
+		if err := add(analysisObjectKey(in.ProjectID, in.ID, "original-"+file.ID+".parquet")); err != nil {
+			return nil, err
+		}
+	}
+	for _, group := range [][]string{in.Normalized, in.ObsoleteObjects, in.RejectionArtifacts} {
+		for _, key := range group {
+			if err := add(key); err != nil {
+				return nil, err
 			}
 		}
 	}
-	keys := append(append([]string(nil), in.Normalized...), in.ObsoleteObjects...)
-	keys = append(keys, in.RejectionArtifacts...)
+	return keys, nil
+}
+func deleteAnalysisObjects(ctx context.Context, in *storage.AnalysisImport) error {
+	keys, err := analysisDatasetDeletionKeys(in)
+	if err != nil {
+		return err
+	}
+	backend, err := nativeAnalysisArtifactBackend(ctx)
+	if err != nil || backend.validate() != nil {
+		return errNativeReconciliationRetained
+	}
 	for _, key := range keys {
-		if err := analysisObjectDelete(ctx, key); err != nil {
+		if err = deleteAnalysisObjectPhysical(ctx, backend, key); err != nil {
 			return err
 		}
 	}
-	return nil
+	// The caller has already revoked the live state and obtained the durable
+	// all-writers-quiesced namespace proof. Closed abandoned upload intents and
+	// temporary files may not appear in the accepted metadata cursor; they must
+	// also be physically removed before a successful terminal DELETE response.
+	return deleteAnalysisNamespacePhysical(ctx, backend, filepath.Dir(analysisObjectKey(in.ProjectID, in.ID, "validation")))
 }
 
 func (s *Server) handleAnalysisDatasetSeries(w http.ResponseWriter, r *http.Request) {

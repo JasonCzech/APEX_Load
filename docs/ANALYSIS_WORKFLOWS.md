@@ -117,11 +117,18 @@ is atomic after all normalized artifacts are durable. Cancel invalidates the
 worker's revision; an expired worker can be retried idempotently with fresh output
 ownership. Dataset cancellation immediately hides the dataset and queues
 originals, upload chunks and normalized objects for cleanup. Physical deletion
-requires durable proof that every writer has stopped. Uploads created through
-the legacy writer path have no such proof: DELETE returns pending status 503,
-retains their bytes and keeps the cleanup job. A timeout, expired lease or
-completed HTTP request cannot establish physical closure. The durable upload
-writer successor and qualified restart recovery remain separate completion work.
+requires durable proof that every writer has stopped. New uploads record an
+immutable writer intent before opening storage; accepted chunk metadata and the
+physical completion seal commit together. Cancellation, timeout, panic, Goexit
+or an uncertain Close retain ownership and cannot advance the cursor. Exact
+retry state can be reconciled across a same-process Server replacement without
+redirecting its SQL or artifact namespace. After all writers are proven closed,
+delete joins the complete owned dataset namespace, including accepted opaque
+chunk keys and closed abandoned object/temporary siblings, before returning
+success. Uploads from the legacy writer path lack this proof: DELETE returns
+pending status 503, retains their bytes and keeps the cleanup job. Qualified
+process-restart, HA and remote-backend recovery remain open. See the
+[upload and deletion review](qa/reviews/feature-completion-native-upload-2026-10-04/README.md).
 
 Rejected measurements fail publication by default. Explicitly accepting them retains a complete rejected-row Parquet artifact with file/measure identity and zero-based source row ordinals, plus bounded metadata summaries. Rejected source values are never copied into error reports. The dashboard caps artifact downloads at 64 MiB; larger artifacts remain accessible through the authenticated API.
 

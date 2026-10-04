@@ -318,6 +318,7 @@ func (s *Server) startNativeAnalysisReconciliation() {
 		defer ticker.Stop()
 		for {
 			s.reconcileNativeAnalysisOnce(s.startupContext)
+			s.reconcileAnalysisUploadWritersOnce(s.startupContext)
 			select {
 			case <-s.startupContext.Done():
 				return

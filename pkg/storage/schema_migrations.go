@@ -54,6 +54,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 27, Name: "durable-messaging-progress-history", Fingerprint: "7fbd77d1e116e4349e96ca211376035d847db90d8137c640e7d8f82cb2912f32"},
 	{Version: 28, Name: "durable-messaging-management-polls", Fingerprint: "8302b2875bbd64d91edac96ab4c39b6adf66bbfb288f60fbef5428718a1d4911"},
 	{Version: 29, Name: "isolated-native-analysis-attempts", Fingerprint: "348e5bff6128c23431046d91f301e65f219eaa542faead33fc42d1508c4587df"},
+	{Version: 30, Name: "durable-analysis-upload-physical-writers", Fingerprint: "c15a763742c712fb827cd1c9579ba708b4a77e2c59ab20807d3ed4d2c8959aa9"},
 }
 
 type SchemaMigrationRecord struct {

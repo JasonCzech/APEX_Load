@@ -7273,6 +7273,7 @@ export interface operations {
             "error"?: string;
             "files": Array<{
               "chunks"?: Array<{
+                "object_key"?: string;
                 "offset": number;
                 "sha256": string;
                 "size": number;
@@ -7317,6 +7318,7 @@ export interface operations {
             "run_id"?: string;
             "state": string;
             "updated_at": string;
+            "upload_writer_version"?: number;
           }) | null;
         };
       };
@@ -7329,6 +7331,7 @@ export interface operations {
             "error"?: string;
             "files": Array<{
               "chunks"?: Array<{
+                "object_key"?: string;
                 "offset": number;
                 "sha256": string;
                 "size": number;
@@ -7373,6 +7376,7 @@ export interface operations {
             "run_id"?: string;
             "state": string;
             "updated_at": string;
+            "upload_writer_version"?: number;
           }) | null;
         };
       };
@@ -8361,6 +8365,7 @@ export interface operations {
             "error"?: string;
             "files": Array<{
               "chunks"?: Array<{
+                "object_key"?: string;
                 "offset": number;
                 "sha256": string;
                 "size": number;
@@ -8405,6 +8410,7 @@ export interface operations {
             "run_id"?: string;
             "state": string;
             "updated_at": string;
+            "upload_writer_version"?: number;
           }) | null;
         };
       };
@@ -8458,6 +8464,7 @@ export interface operations {
             "error"?: string;
             "files": Array<{
               "chunks"?: Array<{
+                "object_key"?: string;
                 "offset": number;
                 "sha256": string;
                 "size": number;
@@ -8502,6 +8509,7 @@ export interface operations {
             "run_id"?: string;
             "state": string;
             "updated_at": string;
+            "upload_writer_version"?: number;
           }) | null;
         };
       };
@@ -8555,6 +8563,7 @@ export interface operations {
             "error"?: string;
             "files": Array<{
               "chunks"?: Array<{
+                "object_key"?: string;
                 "offset": number;
                 "sha256": string;
                 "size": number;
@@ -8599,6 +8608,7 @@ export interface operations {
             "run_id"?: string;
             "state": string;
             "updated_at": string;
+            "upload_writer_version"?: number;
           }) | null;
         };
       };
@@ -8919,11 +8929,7 @@ export interface operations {
         "offset"?: number;
       };
     };
-    requestBody: {
-      content: {
-        "application/octet-stream": string;
-      };
-    };
+    requestBody?: never;
     responses: {
       "200": {
         content: {
@@ -8956,6 +8962,16 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

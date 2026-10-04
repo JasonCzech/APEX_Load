@@ -1,0 +1,14 @@
+[
+  {
+    "carrier": "/private/tmp/apexload-native-upload30-adoption-frozen-2026-10-04",
+    "manifest_sha256": "0ff38ad7bf5f7fb6f726c12d88ae2c2720856a7ef40ecc7bbcd92b86a3e911be",
+    "target_count": 19,
+    "status": "exact-preimages-and-frozen-inputs-verified-adopted"
+  },
+  {
+    "carrier": "/private/tmp/apexload-native-upload-goexit-frozen-2026-10-04",
+    "manifest_sha256": "af5378d08258750fa472cb0f422f41bb80b3e34ddc2829ece33e7f48e6b5f7f4",
+    "target_count": 3,
+    "status": "exact-preimages-and-frozen-inputs-verified-adopted"
+  }
+]

@@ -60,12 +60,13 @@ type AnalysisAttemptStore interface {
 // project FK: publication receipts and exact cleanup plans outlive deletion.
 func analysisAttemptInputDigest(in AnalysisImport) (string, error) {
 	body, err := json.Marshal(struct {
-		Files           []AnalysisImportFile
-		Mapping         any
-		AllowRejected   bool
-		MappingID       string
-		MappingRevision int64
-	}{in.Files, in.Mapping, in.AllowRejected, in.MappingID, in.MappingRevision})
+		UploadWriterVersion int
+		Files               []AnalysisImportFile
+		Mapping             any
+		AllowRejected       bool
+		MappingID           string
+		MappingRevision     int64
+	}{in.UploadWriterVersion, in.Files, in.Mapping, in.AllowRejected, in.MappingID, in.MappingRevision})
 	if err != nil || len(body) > 2<<20 {
 		return "", ErrAnalysisAuthority
 	}
