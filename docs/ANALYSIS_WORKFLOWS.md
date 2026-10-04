@@ -372,7 +372,7 @@ Counters and checkpoint timing distributions are cumulative by authenticated sou
 
 ## Exact messaging management evidence
 
-The management foundation is separate from data-plane action diagnostics and from native DuckDB queries. Enable new poll admission explicitly with both `APEXLOAD_RUN_MONITOR_PROJECTS` and `APEXLOAD_MESSAGING_MANAGEMENT_PROJECTS`. The capabilities response distinguishes the v1 evidence contract, project enablement and genuinely registered executable packs. The foundation and provider adapters are distinct releases. The collector registers the genuine `kafka-offsets` and pinned shared-key `servicebus-runtime` readers. Solace remains unavailable until its own implementation slice. Provider qualification is recorded separately from reader availability; the Service Bus workflow below describes its finite supported scope.
+The management foundation is separate from data-plane action diagnostics and from native DuckDB queries. Enable new poll admission explicitly with both `APEXLOAD_RUN_MONITOR_PROJECTS` and `APEXLOAD_MESSAGING_MANAGEMENT_PROJECTS`. The capabilities response distinguishes the v1 evidence contract, project enablement and genuinely registered executable packs. The foundation and provider adapters are distinct releases. The collector registers the genuine `kafka-offsets`, pinned shared-key `servicebus-runtime` and pinned Basic `solace-semp` readers. Provider qualification is recorded separately from reader availability; the Service Bus workflow below describes its finite supported scope.
 
 An administrator-approved source carries a versioned entity inventory, provider identity, principal/policy metadata and an exact `management://alias` destination. The alias selects an operator-owned collector target containing finite approved endpoints; a job cannot replace those endpoints. Kafka scopes state `read_committed` or `read_uncommitted` explicitly. Source revisions are immutable for already-started runs. Collector readiness publishes startup instance and scope/identity hashes; required sources remain unavailable without a matching genuine observer.
 
@@ -459,3 +459,37 @@ Collection cadence is 30–3600 seconds, with a 30-second default for local appr
 Observed populations remain exact decimal strings, including zero. Missing or nil fields remain missing. Deferred counts are unsupported because active counts can include deferred messages; this reader does not estimate a separate count. Subscription scheduled/size evidence stays unsupported in this initial profile. Queue total, active, scheduled, dead-letter, transfer, transfer-dead-letter and size observations retain individual availability. A row's capture/age includes its actual read and physical cleanup; partial coverage remains visible in the existing management table, archive sidecar and CLI queries.
 
 A timeout or unexplained socket close retains physical ownership. Verify the actual collector process has stopped before using the audited stopped-process release controls; expiry alone does not prove release. Controlled TLS/HTTP/XML tests qualify local parsing, authentication, budgets and cancellation behavior. They do not certify live Azure counters, service tiers or identity profiles. Provider results must identify the exact approved namespace/profile and independently reconcile populations.
+
+## Solace management source configuration
+
+The `solace-semp` collector pack polls only exact administrator-approved VPN/queue or VPN/topic-endpoint tuples through individual SEMP v2 monitor requests. The dashboard advertises it only with project management collection enabled and an executable collector pack. Enter the canonical lowercase broker hostname, exact Basic principal without a colon, policy revision, separate management-secret reference and enrolled collector public key. Entity case, Unicode and literal punctuation remain part of the identity. Saved approval and its opaque credential version remain separate from the unsaved draft; revision conflicts retain the draft.
+
+The initial decoder profile follows the pinned software-broker 10.26.7.12655 monitor/action schemas. A controlled fixture is not live broker qualification. Collection discovery, pagination, legacy XML and alternate provider versions remain separate acceptance gates. Depth comes only from `collections.msgs.count`, preserving exact decimal strings and observed zero; absent/null counts remain missing. A DMQ relationship is retained only when its exact queue is approved in the same VPN. The legacy empty DMQ field means the relationship is unavailable, and cannot establish that no DMQ exists.
+
+Approve one HTTPS origin, one fixed numeric route with a matching port and a protected explicit CA bundle in the collector. Startup loads trust once without target traffic. The collector requires a protected durable spool directory for session quarantine and explicit permission for the fixed own-session logout action.
+
+```json
+{
+  "pack": "solace-semp",
+  "destination": "management://orders-solace",
+  "management": {
+    "endpoints": ["https://broker.example.test:943"],
+    "tls_ca_file": "/protected/solace-ca.pem",
+    "solace": {
+      "profile": "semp_v2",
+      "dial_address": "192.0.2.30:943",
+      "allow_own_session_logout": true
+    }
+  }
+}
+```
+
+This routing fragment is not a complete target. Copy the saved `management_scope` and `management_identity` into local `management.scope` and `management.identity`, including the controller-generated credential version. Use the existing source CLI create/update/delete commands above; edits and deletion require the saved revision. The management identity is separate from message send/receive credentials.
+
+Each source has a minimum thirty-second interval; aliases at the same normalized origin share the cooldown and a bounded five-HTTP-operation-per-second rate with burst two. Every TCP, TLS, fixed GET and own-session PUT operation consumes signed activity/deadline authority. There is no DNS, proxy, redirect, retry, discovery or arbitrary action. The response capture time precedes physical GET cleanup, and row age includes later transport and logout work. Remaining inventory is visibly incomplete when poll bounds are exhausted.
+
+Before Basic bytes can escape, the collector durably records a bounded credential-free session intent. It reuses only the exact in-memory owned Session cookie and logs out using `PUT /SEMP/v2/action/about/user/logout` with fixed `{}` inside the original signed authority. A successful provider response, validated action metadata, proven raw socket close and durable intent removal are all required to release the session. Cookies and credentials never enter evidence. Cancellation may finish this bounded cleanup only while the original authority remains valid.
+
+A missing/ambiguous cookie, rejected logout, expired authority, failed persistence or unproven close retains quarantine and prevents further authentication at that origin. Restart reloads unresolved intents even if the collector identity, controller URL or enabled pack changes. Process/socket destruction is separate from provider-session destruction; the existing stopped-process attestation cannot clear this remote-session quarantine. No automatic session reset or public provider-audited recovery workflow is advertised by this first slice. Preserve the protected spool and independently audit the provider session before any later recovery procedure.
+
+Controlled TLS fixtures validate request surfaces, session ownership, exact depth, cancellation, physical cleanup and retained restart quarantine. Live software-broker/provider-version acceptance and audited restarted-source recovery remain open. Selecting this monitoring pack does not enable Solace SMF or JMS load execution.

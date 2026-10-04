@@ -10,9 +10,10 @@ import (
 )
 
 type managementOrigin struct {
-	slots chan struct{}
-	poll  string
-	next  time.Time
+	solace *solaceManagementOriginState
+	slots  chan struct{}
+	poll   string
+	next   time.Time
 }
 type managementOriginGate struct {
 	mu      sync.Mutex

@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"io"
@@ -123,6 +124,7 @@ func New(cfg Config) (*Agent, error) {
 			// compiled transport approval. Dormant targets acquire no approval.
 			cloned.kafkaApproval = nil
 			cloned.serviceBusApproval = nil
+			cloned.solaceApproval = nil
 			cfg.AdapterTargets[i].Management = &cloned
 		}
 		if cfg.AdapterTargets[i].Cloud != nil {
@@ -212,6 +214,9 @@ func New(cfg Config) (*Agent, error) {
 		}
 		cfg.OTLP.requireJournal = true
 	}
+	if err := validateSolaceManagementSpool(cfg); err != nil {
+		return nil, err
+	}
 	cfg.ControllerPublicKey = append(ed25519.PublicKey(nil), cfg.ControllerPublicKey...)
 	agent := &Agent{cfg: cfg, client: client, pendingBatches: map[string]*RunSampleBatch{}, nextCollection: map[string]time.Time{}, spoolBudget: newCollectorSpoolBudget()}
 	if len(cfg.ControllerPublicKey) > 0 {
@@ -264,11 +269,23 @@ func isLoopbackHost(host string) bool {
 
 // Run pushes a heartbeat immediately, then on every tick until ctx is cancelled.
 func (a *Agent) Run(ctx context.Context) error {
+	return a.runWithSolaceStartup(ctx, a.lockSolaceManagementQuarantine)
+}
+
+// The owned startup callback keeps exact cleanup attached to this Run lifetime.
+func (a *Agent) runWithSolaceStartup(ctx context.Context, startup func(context.Context) (func() error, error)) (retErr error) {
 	unlock, err := a.lockSpool(ctx)
 	if err != nil {
 		return err
 	}
 	defer unlock()
+	unlockSolace, err := startup(ctx)
+	if err != nil {
+		return err
+	}
+	// Registered before management.close: LIFO cleanup first joins every
+	// provider task, then observes the sole exact startup lock cleanup result.
+	defer func() { retErr = errors.Join(retErr, unlockSolace()) }()
 	if err = a.loadSpool(); err != nil {
 		return err
 	}

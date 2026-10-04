@@ -407,3 +407,113 @@ test('Service Bus authoring preserves explicit queue and subscription approval, 
   await sources.getByText('Saved collector approval · revision 2', { exact: true }).scrollIntoViewIfNeeded()
   await page.screenshot({ path: test.info().outputPath('servicebus-management-approval-narrow.png') })
 })
+
+test('Solace authoring preserves explicit VPN queue and topic-endpoint approval, revisions and narrow layout', async ({ page }) => {
+  const workspace = await createWorkspace(page.context().request)
+  const path = `/api/v1/projects/${workspace.projectId}/monitor-sources`
+  const credentialPin = `v1:${'a'.repeat(64)}`
+  let source: Record<string, unknown> | undefined
+  let staleUpdate: Record<string, unknown> | undefined
+  await page.route('**/api/v1/analysis/capabilities?*', route => route.fulfill({ json: { monitoring_enabled: true, messaging_management_enabled: true, messaging_management_packs: ['solace-semp'], messaging_management_version: 1, native_parquet: false } }))
+  await page.route('**/api/v1/monitoring/collectors?*', route => route.fulfill({ json: { collectors: [{ id: 'approved-collector', name: 'Approved collector', health: 'healthy' }] } }))
+  await page.route(`**${path}**`, route => {
+    const request = route.request()
+    if (new URL(request.url()).pathname.endsWith('/management-state')) return route.fulfill({ json: { state: 'unavailable' } })
+    if (request.method() === 'POST') {
+      const draft = request.postDataJSON() as Record<string, unknown>
+      expect(draft.credential_ref).toBe('')
+      expect(draft.password).toBeUndefined()
+      expect(draft.endpoints).toBeUndefined()
+      expect(draft.connection_string).toBeUndefined()
+      expect(draft.interval_seconds).toBe(30)
+      expect(draft.management_scope).toEqual({ version: 1, kind: 'solace_semp', provider: 'broker.example.com', entities: [{ solace: { vpn: 'primary', queue: 'Orders/Nested' } }, { solace: { vpn: 'primary', topic_endpoint: 'Events/☃' } }] })
+      expect(draft.management_identity).toEqual({ mode: 'basic', principal: 'reader', policy_revision: 'policy-1', credential_ref: 'runtime-reader-secret' })
+      source = { ...draft, id: 'managed-source', revision: 1, management_identity: { ...(draft.management_identity as Record<string, unknown>), credential_version: credentialPin } }
+      return route.fulfill({ json: source })
+    }
+    if (request.method() === 'PUT') {
+      staleUpdate = request.postDataJSON() as Record<string, unknown>
+      source = { ...source, name: 'Changed by another administrator', revision: 2 }
+      return route.fulfill({ status: 409, json: { error: 'monitor source revision changed' } })
+    }
+    return route.fulfill({ json: source ? [source] : [] })
+  })
+  await page.goto(`/#/monitoring?${scopeQuery(workspace)}`)
+  await page.reload()
+  await page.getByRole('tab', { name: 'Telemetry', exact: true }).click()
+  const sources = page.getByRole('region', { name: 'Run monitor sources', exact: true })
+  await expect(sources.getByRole('combobox', { name: 'Pack', exact: true }).locator('option[value="kafka-offsets"]')).toHaveCount(0)
+  await sources.getByLabel('Name', { exact: true }).fill('Approved Solace depths')
+  await sources.getByRole('combobox', { name: 'Collector', exact: true }).selectOption('approved-collector')
+  await sources.getByRole('combobox', { name: 'Pack', exact: true }).selectOption('solace-semp')
+  await expect(sources.getByLabel('Collection interval (seconds)', { exact: true })).toHaveValue('30')
+  await expect(sources.getByRole('button', { name: 'Save monitor source' })).toBeDisabled()
+  await sources.getByLabel('Approved destination', { exact: true }).fill('management://broker')
+  await sources.getByLabel('Solace management hostname', { exact: true }).fill('broker.example.com')
+  await sources.getByLabel('Approved Solace management username', { exact: true }).fill('reader')
+  await sources.getByLabel('Identity policy revision', { exact: true }).fill('policy-1')
+  await sources.getByLabel('Management credential project-secret reference', { exact: true }).fill('runtime-reader-secret')
+  await sources.getByLabel('Collector X25519 public key', { exact: true }).fill('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=')
+  await sources.getByLabel('VPN name 1', { exact: true }).fill('primary')
+  await sources.getByLabel('Queue name 1', { exact: true }).fill('Orders/Nested')
+  await sources.getByRole('button', { name: 'Add Solace entity', exact: true }).click()
+  await sources.getByRole('combobox', { name: 'Entity type 2', exact: true }).selectOption('topic_endpoint')
+  await expect(sources.getByRole('combobox', { name: 'Entity type 2', exact: true })).toHaveValue('topic_endpoint')
+  await sources.getByLabel('VPN name 2', { exact: true }).fill('primary')
+  await sources.getByLabel('Topic endpoint name 2', { exact: true }).fill('Events/☃')
+  await sources.getByRole('button', { name: 'Add Solace entity', exact: true }).click()
+  await sources.getByLabel('VPN name 3', { exact: true }).fill('primary')
+  await sources.getByLabel('Queue name 3', { exact: true }).fill('Orders/Nested')
+  await expect(sources).toContainText('duplicate Solace')
+  await expect(sources.getByRole('button', { name: 'Save monitor source' })).toBeDisabled()
+  await sources.getByRole('button', { name: 'Remove Solace entity 3', exact: true }).click()
+  await sources.getByRole('button', { name: 'Save monitor source' }).click()
+  await sources.getByRole('button', { name: 'Edit Approved Solace depths' }).click()
+  await sources.getByText('Saved collector approval · revision 1', { exact: true }).click()
+  await expect(sources.locator('pre')).toContainText(credentialPin)
+  await expect(sources.getByLabel('VPN name 1', { exact: true })).toHaveValue('primary')
+  await expect(sources.getByLabel('Queue name 1', { exact: true })).toHaveValue('Orders/Nested')
+  await expect(sources.getByRole('combobox', { name: 'Entity type 2', exact: true })).toHaveValue('topic_endpoint')
+  await expect(sources.getByLabel('VPN name 2', { exact: true })).toHaveValue('primary')
+  await expect(sources.getByLabel('Topic endpoint name 2', { exact: true })).toHaveValue('Events/☃')
+  await sources.getByLabel('Management credential project-secret reference', { exact: true }).fill('unsaved-rotation')
+  await expect(sources.locator('pre')).not.toContainText('unsaved-rotation')
+  await sources.getByRole('button', { name: 'Save monitor source' }).click()
+  await expect(sources.getByRole('alert')).toContainText('revision changed')
+  expect(staleUpdate?.revision).toBe(1)
+  expect((staleUpdate?.management_identity as Record<string, unknown>).credential_version).toBeUndefined()
+  await expect(sources.getByLabel('Management credential project-secret reference', { exact: true })).toHaveValue('unsaved-rotation')
+  await page.reload()
+  await page.getByRole('tab', { name: 'Telemetry', exact: true }).click()
+  await sources.getByRole('button', { name: 'Edit Changed by another administrator' }).click()
+  await sources.getByText('Saved collector approval · revision 2', { exact: true }).click()
+  await expect(sources.getByLabel('Management credential project-secret reference', { exact: true })).toHaveValue('runtime-reader-secret')
+  await expect(sources.locator('pre')).toContainText(credentialPin)
+  await sources.getByLabel('Solace management hostname', { exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: test.info().outputPath('solace-management-source.png') })
+  await page.setViewportSize({ width: 375, height: 900 })
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') {
+    const identity = page.locator('.sidebar-identity')
+    await expect(identity).toBeVisible()
+    await expect.poll(() => identity.evaluate(element => {
+      const rail = element.closest('.sidebar')!.getBoundingClientRect()
+      const card = element.getBoundingClientRect()
+      return card.left >= rail.left && card.right <= rail.right + 1
+    })).toBe(true)
+    const signOut = identity.getByRole('button', { name: 'Sign out', exact: true })
+    await expect(signOut).toBeVisible()
+    await expect.poll(() => signOut.evaluate(element => {
+      const rail = element.closest('.sidebar')!.getBoundingClientRect()
+      const action = element.getBoundingClientRect()
+      return action.left >= rail.left && action.right <= rail.right + 1
+    })).toBe(true)
+  }
+  const approval = sources.getByRole('group', { name: 'Solace management approval', exact: true })
+  await expect.poll(() => approval.evaluate(element => element.getBoundingClientRect().right <= window.innerWidth + 1)).toBe(true)
+  await expect(sources.locator('pre')).toContainText(credentialPin)
+  await sources.getByLabel('Solace management hostname', { exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: test.info().outputPath('solace-management-source-narrow.png') })
+  await sources.getByText('Saved collector approval · revision 2', { exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: test.info().outputPath('solace-management-approval-narrow.png') })
+})

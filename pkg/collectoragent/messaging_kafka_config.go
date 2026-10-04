@@ -160,7 +160,7 @@ func prepareKafkaManagementTarget(t *ManagementTarget) error {
 }
 
 func validateKafkaManagementShape(t *ManagementTarget) error {
-	if t == nil || t.Kafka == nil || t.ServiceBus != nil || t.Scope.Kind != "kafka_offsets" {
+	if t == nil || t.Kafka == nil || t.ServiceBus != nil || t.Solace != nil || t.Scope.Kind != "kafka_offsets" {
 		return errors.New("Kafka management configuration is missing")
 	}
 	if err := t.Scope.Validate(); err != nil {

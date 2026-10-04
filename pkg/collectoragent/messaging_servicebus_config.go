@@ -125,7 +125,7 @@ func prepareServiceBusManagementTarget(t *ManagementTarget) error {
 }
 
 func validateServiceBusManagementShape(t *ManagementTarget) error {
-	if t == nil || t.ServiceBus == nil || t.Kafka != nil || t.Scope.Kind != analysis.ManagementKindServiceBus {
+	if t == nil || t.ServiceBus == nil || t.Kafka != nil || t.Solace != nil || t.Scope.Kind != analysis.ManagementKindServiceBus {
 		return serviceBusManagementConfigError()
 	}
 	if err := t.Scope.Validate(); err != nil {

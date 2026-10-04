@@ -26,8 +26,10 @@ type ManagementTarget struct {
 	MinIntervalSeconds int                           `json:"min_interval_seconds,omitempty"`
 	Kafka              *KafkaManagementSettings      `json:"kafka,omitempty"`
 	ServiceBus         *ServiceBusManagementSettings `json:"service_bus,omitempty"`
+	Solace             *SolaceManagementSettings     `json:"solace,omitempty"`
 	kafkaApproval      *kafkaManagementApproval
 	serviceBusApproval *serviceBusManagementApproval
+	solaceApproval     *solaceManagementApproval
 }
 
 func (t ManagementTarget) clone() ManagementTarget {
@@ -37,6 +39,8 @@ func (t ManagementTarget) clone() ManagementTarget {
 	t.kafkaApproval = t.kafkaApproval.clone()
 	t.ServiceBus = t.ServiceBus.clone()
 	t.serviceBusApproval = t.serviceBusApproval.clone()
+	t.Solace = t.Solace.clone()
+	t.solaceApproval = t.solaceApproval.clone()
 	return t
 }
 func managementKind(pack string) string {
@@ -113,7 +117,7 @@ type managementObserver interface {
 }
 
 func registeredManagementObservers() map[string]managementObserver {
-	return map[string]managementObserver{"kafka-offsets": kafkaManagementObserver{}, "servicebus-runtime": serviceBusManagementObserver{}}
+	return map[string]managementObserver{"kafka-offsets": kafkaManagementObserver{}, "servicebus-runtime": serviceBusManagementObserver{}, "solace-semp": solaceManagementObserver{}}
 }
 func ManagementPacks() []string {
 	packs := []string{}
