@@ -93,7 +93,7 @@ func TestManagementPollGrantBoundedIdentityAndExactCohort(t *testing.T) {
 			t.Fatal("malformed signed grant accepted")
 		}
 	}
-	if packs := ManagementPacks(); len(packs) != 1 || packs[0] != "kafka-offsets" {
+	if packs := ManagementPacks(); len(packs) != 2 || packs[0] != "kafka-offsets" || packs[1] != "servicebus-runtime" {
 		t.Fatal("compiled provider inventory is incorrect", packs)
 	}
 }

@@ -1,0 +1,29 @@
+.run-monitor-sources fieldset {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  box-sizing: border-box;
+}
+.run-monitor-sources label,
+.run-monitor-sources input,
+.run-monitor-sources select {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  box-sizing: border-box;
+}
+.servicebus-management-approval {
+  flex-basis: 100%;
+  inline-size: 100%;
+}
+.servicebus-management-approval > p,
+.servicebus-management-inventory,
+.servicebus-management-approval details {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  inline-size: 100%;
+  overflow-wrap: anywhere;
+}
+.servicebus-management-approval pre {
+  max-inline-size: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

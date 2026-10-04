@@ -145,7 +145,7 @@ func validateManagementMonitorSource(m MonitorSource) error {
 			return errors.New("invalid management source identity")
 		}
 	}
-	if m.IntervalSeconds < 10 || m.IntervalSeconds > 3600 || m.Pack == "solace-semp" && m.IntervalSeconds < 30 {
+	if m.IntervalSeconds < 10 || m.IntervalSeconds > 3600 || (m.Pack == "solace-semp" || m.Pack == "servicebus-runtime") && m.IntervalSeconds < 30 {
 		return errors.New("invalid management collection interval")
 	}
 	if m.CredentialRef != "" || len(m.Service) > 128 {

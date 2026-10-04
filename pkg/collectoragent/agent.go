@@ -122,6 +122,7 @@ func New(cfg Config) (*Agent, error) {
 			// Construction reloads local trust instead of accepting another agent's
 			// compiled transport approval. Dormant targets acquire no approval.
 			cloned.kafkaApproval = nil
+			cloned.serviceBusApproval = nil
 			cfg.AdapterTargets[i].Management = &cloned
 		}
 		if cfg.AdapterTargets[i].Cloud != nil {

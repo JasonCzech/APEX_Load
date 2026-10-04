@@ -92,7 +92,7 @@ func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, 
 				return RunJob{}, errors.New("invalid management job identity")
 			}
 		}
-		if job.Management.Version != 1 || !isManagementPack(job.Pack) || !managementHash(job.Management.ScopeHash) || !managementHash(job.Management.IdentityHash) || job.IntervalSeconds < 10 || job.Pack == "solace-semp" && job.IntervalSeconds < 30 {
+		if job.Management.Version != 1 || !isManagementPack(job.Pack) || !managementHash(job.Management.ScopeHash) || !managementHash(job.Management.IdentityHash) || job.IntervalSeconds < managementMinimumInterval(job.Pack, ManagementTarget{}) {
 			return RunJob{}, errors.New("invalid management job approval")
 		}
 	} else if isManagementPack(job.Pack) {

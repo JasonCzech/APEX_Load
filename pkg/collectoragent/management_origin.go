@@ -52,7 +52,7 @@ func newManagementOriginGate(targets []AdapterTarget) *managementOriginGate {
 }
 
 // Origin state is bounded by immutable local approval; no response can add an
-// endpoint. Solace polls share one conservative 30s management cadence.
+// endpoint. Solace and Service Bus polls share one conservative 30s management cadence.
 func (g *managementOriginGate) admit(ctx context.Context, endpoint, poll, pack string) (func(), error) {
 	if err := managementContextError(ctx); err != nil {
 		return nil, err
@@ -74,7 +74,7 @@ func (g *managementOriginGate) admit(ctx context.Context, endpoint, poll, pack s
 		release()
 		return nil, err
 	}
-	if pack == "solace-semp" {
+	if pack == "solace-semp" || pack == "servicebus-runtime" {
 		g.mu.Lock()
 		if err := managementContextError(ctx); err != nil {
 			g.mu.Unlock()

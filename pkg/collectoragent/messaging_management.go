@@ -19,13 +19,15 @@ import (
 // ManagementTarget is local operator approval. It is not executable code and
 // cannot make an unimplemented provider pack available.
 type ManagementTarget struct {
-	Scope              analysis.ManagementScope    `json:"scope"`
-	Identity           analysis.ManagementIdentity `json:"identity"`
-	Endpoints          []string                    `json:"endpoints"`
-	TLSCAFile          string                      `json:"tls_ca_file,omitempty"`
-	MinIntervalSeconds int                         `json:"min_interval_seconds,omitempty"`
-	Kafka              *KafkaManagementSettings    `json:"kafka,omitempty"`
+	Scope              analysis.ManagementScope      `json:"scope"`
+	Identity           analysis.ManagementIdentity   `json:"identity"`
+	Endpoints          []string                      `json:"endpoints"`
+	TLSCAFile          string                        `json:"tls_ca_file,omitempty"`
+	MinIntervalSeconds int                           `json:"min_interval_seconds,omitempty"`
+	Kafka              *KafkaManagementSettings      `json:"kafka,omitempty"`
+	ServiceBus         *ServiceBusManagementSettings `json:"service_bus,omitempty"`
 	kafkaApproval      *kafkaManagementApproval
+	serviceBusApproval *serviceBusManagementApproval
 }
 
 func (t ManagementTarget) clone() ManagementTarget {
@@ -33,6 +35,8 @@ func (t ManagementTarget) clone() ManagementTarget {
 	t.Endpoints = append([]string(nil), t.Endpoints...)
 	t.Kafka = t.Kafka.clone()
 	t.kafkaApproval = t.kafkaApproval.clone()
+	t.ServiceBus = t.ServiceBus.clone()
+	t.serviceBusApproval = t.serviceBusApproval.clone()
 	return t
 }
 func managementKind(pack string) string {
@@ -86,7 +90,7 @@ func validateManagementTarget(pack string, t *ManagementTarget) error {
 }
 func managementMinimumInterval(pack string, t ManagementTarget) int {
 	minimum := 10
-	if pack == "solace-semp" {
+	if pack == "solace-semp" || pack == "servicebus-runtime" {
 		minimum = 30
 	}
 	return max(minimum, t.MinIntervalSeconds)
@@ -109,7 +113,7 @@ type managementObserver interface {
 }
 
 func registeredManagementObservers() map[string]managementObserver {
-	return map[string]managementObserver{"kafka-offsets": kafkaManagementObserver{}}
+	return map[string]managementObserver{"kafka-offsets": kafkaManagementObserver{}, "servicebus-runtime": serviceBusManagementObserver{}}
 }
 func ManagementPacks() []string {
 	packs := []string{}

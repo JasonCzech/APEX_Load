@@ -1,3 +1,5 @@
+import ServiceBusManagementSourceFields from './ServiceBusManagementSourceFields'
+import { newServiceBusIdentity, newServiceBusScope, serviceBusSourceAvailable, serviceBusSourceError } from './serviceBusManagementSource'
 import KafkaManagementSourceFields from './KafkaManagementSourceFields'
 import { kafkaSourceError, newKafkaIdentity, newKafkaScope } from './kafkaManagementSource'
 import ManagementCollectionState from "./ManagementCollectionState"
@@ -28,8 +30,9 @@ function useMonitoringEnabled(projectId?: string) { return useMonitoringCapabili
 export function RunMonitorSources({ projectId, canManage = false }: { projectId?: string; canManage?: boolean }) {
   const capabilities = useMonitoringCapabilities(projectId)
   const enabled = capabilities?.monitoring_enabled === true
-  const managementAvailable = capabilities?.messaging_management_enabled === true && capabilities.messaging_management_packs?.includes('kafka-offsets') === true
-  const availablePacks = managementAvailable ? [...sourcePacks, 'kafka-offsets'] : sourcePacks
+  const kafkaManagementAvailable = capabilities?.messaging_management_enabled === true && capabilities.messaging_management_packs?.includes('kafka-offsets') === true
+  const serviceBusManagementAvailable = serviceBusSourceAvailable(capabilities)
+  const availablePacks = [...sourcePacks, ...(kafkaManagementAvailable ? ['kafka-offsets'] : []), ...(serviceBusManagementAvailable ? ['servicebus-runtime'] : [])]
   const [sources, setSources] = useState<Source[]>([])
   const [collectors, setCollectors] = useState<MonitoringCollectorListResponse['collectors']>([])
   const [draft, setDraft] = useState<Source>(emptySource)
@@ -50,8 +53,13 @@ export function RunMonitorSources({ projectId, canManage = false }: { projectId?
     const c = new AbortController(); operation.current = c; setBusy(true); setError('')
     try {
       if (!remove && draft.pack === 'kafka-offsets') {
-        if (!managementAvailable) throw new Error('Kafka management configuration is unavailable for this project.')
+        if (!kafkaManagementAvailable) throw new Error('Kafka management configuration is unavailable for this project.')
         const invalid = kafkaSourceError(draft)
+        if (invalid) throw new Error(invalid)
+      }
+      if (!remove && draft.pack === 'servicebus-runtime') {
+        if (!serviceBusManagementAvailable) throw new Error('Service Bus management configuration is unavailable for this project.')
+        const invalid = serviceBusSourceError(draft)
         if (invalid) throw new Error(invalid)
       }
       const path = `${sourcesPath(projectId)}${draft.id ? `/${encodeURIComponent(draft.id)}` : ''}${remove ? `?revision=${draft.revision}` : ''}`
@@ -68,17 +76,18 @@ export function RunMonitorSources({ projectId, canManage = false }: { projectId?
       <legend>{draft.id ? 'Edit source' : 'New source'}</legend>
       <label>Name<input value={draft.name} maxLength={256} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
       <label>Collector<select value={draft.collector_id} onChange={e => setDraft({ ...draft, collector_id: e.target.value })}><option value="">Select a collector</option>{collectors.map(c => <option key={c.id} value={c.id}>{c.name} · {c.health}</option>)}</select></label>
-      <label>Pack<select value={draft.pack} onChange={e => setDraft({ ...draft, pack: e.target.value, interval_seconds: ['cloudwatch', 'azure-monitor'].includes(e.target.value) ? Math.max(60, draft.interval_seconds) : e.target.value === 'kafka-offsets' ? Math.max(10, draft.interval_seconds) : draft.interval_seconds, destination: '', credential_ref: '', collector_public_key: '', management_scope: e.target.value === 'kafka-offsets' ? newKafkaScope() : undefined, management_identity: e.target.value === 'kafka-offsets' ? newKafkaIdentity() : undefined })}>{!availablePacks.includes(draft.pack) && <option value={draft.pack} disabled>{draft.pack} (configured management pack)</option>}{availablePacks.map(p => <option key={p}>{p}</option>)}</select></label>
-      {!['linux-hosts', 'go-runtime'].includes(draft.pack) && <label>Approved destination<input type={draft.pack === 'kafka-offsets' ? 'text' : 'url'} value={draft.destination ?? ''} onChange={e => setDraft({ ...draft, destination: e.target.value })} /></label>}
+      <label>Pack<select value={draft.pack} onChange={e => setDraft({ ...draft, pack: e.target.value, interval_seconds: ['cloudwatch', 'azure-monitor'].includes(e.target.value) ? Math.max(60, draft.interval_seconds) : e.target.value === 'servicebus-runtime' ? Math.max(30, draft.interval_seconds) : e.target.value === 'kafka-offsets' ? Math.max(10, draft.interval_seconds) : draft.interval_seconds, destination: '', credential_ref: '', collector_public_key: '', management_scope: e.target.value === 'servicebus-runtime' ? newServiceBusScope() : e.target.value === 'kafka-offsets' ? newKafkaScope() : undefined, management_identity: e.target.value === 'servicebus-runtime' ? newServiceBusIdentity() : e.target.value === 'kafka-offsets' ? newKafkaIdentity() : undefined })}>{!availablePacks.includes(draft.pack) && <option value={draft.pack} disabled>{draft.pack} (configured management pack)</option>}{availablePacks.map(p => <option key={p}>{p}</option>)}</select></label>
+      {!['linux-hosts', 'go-runtime'].includes(draft.pack) && <label>Approved destination<input type={['kafka-offsets', 'servicebus-runtime'].includes(draft.pack) ? 'text' : 'url'} value={draft.destination ?? ''} onChange={e => setDraft({ ...draft, destination: e.target.value })} /></label>}
       <label>Dependency identity<input value={draft.service ?? ''} maxLength={128} onChange={e => setDraft({ ...draft, service: e.target.value })} /><small>Exact dependency label used to link collected evidence.</small></label>
       {['ssh-linux', 'jmx', 'jdbc'].includes(draft.pack) && <>
         <label>Project credential secret name<input value={draft.credential_ref ?? ''} maxLength={128} onChange={e => setDraft({ ...draft, credential_ref: e.target.value })} /></label>
         <label>Collector X25519 public key<input value={draft.collector_public_key ?? ''} onChange={e => setDraft({ ...draft, collector_public_key: e.target.value })} /><small>Enroll the public key from the approved collector. Jobs seal credentials to this key.</small></label>
       </>}
-      {draft.pack === 'kafka-offsets' && <KafkaManagementSourceFields source={draft} savedSource={sources.find(source => source.id === draft.id && source.pack === draft.pack)} available={managementAvailable} onChange={setDraft} />}
-      <label>Collection interval (seconds)<input type="number" min={draft.pack === 'kafka-offsets' ? 10 : 1} max={3600} value={draft.interval_seconds} onChange={e => setDraft({ ...draft, interval_seconds: Number(e.target.value) })} /></label>
+      {draft.pack === 'kafka-offsets' && <KafkaManagementSourceFields source={draft} savedSource={sources.find(source => source.id === draft.id && source.pack === draft.pack)} available={kafkaManagementAvailable} onChange={setDraft} />}
+      {draft.pack === 'servicebus-runtime' && <ServiceBusManagementSourceFields source={draft} savedSource={sources.find(source => source.id === draft.id && source.pack === draft.pack)} available={serviceBusManagementAvailable} onChange={setDraft} />}
+      <label>Collection interval (seconds)<input type="number" min={draft.pack === 'servicebus-runtime' ? 30 : draft.pack === 'kafka-offsets' ? 10 : 1} max={3600} value={draft.interval_seconds} onChange={e => setDraft({ ...draft, interval_seconds: Number(e.target.value) })} /></label>
       <label><input type="checkbox" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })} />Enabled</label>
-      <button type="button" disabled={!draft.name || !draft.collector_id || (draft.pack === 'kafka-offsets' && (!managementAvailable || !!kafkaSourceError(draft)))} onClick={() => void save()}>Save monitor source</button>
+      <button type="button" disabled={!draft.name || !draft.collector_id || (draft.pack === 'kafka-offsets' && (!kafkaManagementAvailable || !!kafkaSourceError(draft))) || (draft.pack === 'servicebus-runtime' && (!serviceBusManagementAvailable || !!serviceBusSourceError(draft)))} onClick={() => void save()}>Save monitor source</button>
       {draft.id && <><button type="button" onClick={() => void save(true)}>Delete source</button><button type="button" onClick={() => setDraft(emptySource())}>New source</button></>}
     </fieldset>}
   </section>

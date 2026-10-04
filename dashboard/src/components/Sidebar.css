@@ -726,6 +726,33 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
     flex: 0 0 auto;
     align-items: center;
   }
+  /* CSS narrows the rail before the explicit collapse preference changes.
+     Keep the authenticated identity and sign-out action inside that rail. */
+  .sidebar .sidebar-identity {
+    width: 100%;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 3px;
+  }
+  .sidebar .sidebar-identity-copy {
+    width: 100%;
+    align-items: center;
+    text-align: center;
+  }
+  .sidebar .sidebar-identity-name,
+  .sidebar .sidebar-identity-meta,
+  .sidebar .sidebar-identity-session {
+    max-width: 100%;
+  }
+  .sidebar .sidebar-identity-session,
+  .sidebar .sidebar-identity-meta[role="alert"],
+  .sidebar .sidebar-identity-action {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .sidebar .sidebar-identity-action {
+    min-height: 32px;
+  }
   .sidebar .dev-view-control {
     width: 36px;
   }
