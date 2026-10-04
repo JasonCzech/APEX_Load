@@ -106,11 +106,20 @@ func buildRunRootCauseSummary(testID string, report *RunArchiveReport) RunRootCa
 			addFinding("monitoring", "warning", "Incomplete monitor coverage", coverage.SourceID+": "+coverage.Reason, []string{"manifest.monitor_coverage"}, 35)
 		}
 	}
-	if report.Manifest.SLABreached {
-		addSignal("SLA", "breached", strings.Join(report.Manifest.SLADetails, "; "), "critical", 95)
+	slaState := archiveSLAState(report.Manifest)
+	switch slaState {
+	case archiveSLABreached:
+		addSignal("SLA", slaState, strings.Join(report.Manifest.SLADetails, "; "), "critical", 95)
 		addFinding("sla", "critical", "Release SLA breached", firstNonEmpty(strings.Join(report.Manifest.SLADetails, "; "), "The run archive marked one or more SLA checks as breached."), []string{"manifest.sla_breached", "manifest.sla_details"}, 95)
-	} else {
-		addSignal("SLA", "passed", "No archived SLA breach", "healthy", 5)
+	case archiveSLAPassed:
+		addSignal("SLA", slaState, "No archived SLA breach", "healthy", 5)
+	case archiveSLANotEvaluated:
+		addSignal("SLA", slaState, "SLA criteria are configured but the archive could not evaluate them", "warning", 40)
+		addFinding("sla", "warning", "SLA criteria could not be evaluated", "SLA criteria are configured for this run, but the archived evidence could not evaluate every criterion, so no acceptance verdict is available.", []string{"manifest.sla_evaluated", "manifest.transaction_response_time_sla_results"}, 40)
+	case archiveSLANotConfigured:
+		addSignal("SLA", slaState, "No SLA criteria were configured for this run", "info", 0)
+	default:
+		addSignal("SLA", slaState, "The archive does not record whether SLA criteria were configured", "info", 0)
 	}
 	if report.Overview.Errors > 0 || report.Overview.ErrorPct > 0 {
 		severity := "warning"
@@ -169,11 +178,14 @@ func buildRunRootCauseSummary(testID string, report *RunArchiveReport) RunRootCa
 	}
 
 	sort.SliceStable(summary.TopFindings, func(left, right int) bool {
-		return summary.TopFindings[left].Score > summary.TopFindings[right].Score
+		if summary.TopFindings[left].Score != summary.TopFindings[right].Score {
+			return summary.TopFindings[left].Score > summary.TopFindings[right].Score
+		}
+		return rootCauseSeverityRank(summary.TopFindings[left].Severity) > rootCauseSeverityRank(summary.TopFindings[right].Severity)
 	})
-	if len(summary.TopFindings) > 6 {
-		summary.TopFindings = summary.TopFindings[:6]
-	}
+	// Status, confidence, and next actions are derived from every finding
+	// before the display list is truncated, so a critical finding that ties
+	// with earlier advisories can never be cut out of the verdict.
 	critical := false
 	warning := false
 	categories := map[string]struct{}{}
@@ -194,13 +206,69 @@ func buildRunRootCauseSummary(testID string, report *RunArchiveReport) RunRootCa
 	default:
 		summary.Status = "healthy"
 	}
-	summary.Confidence = rootCauseConfidence(report)
-	summary.Summary = rootCauseNarrative(summary.Status, summary.TopFindings)
+	summary.Confidence = rootCauseConfidence(report, summary.TopFindings)
+	omitted := 0
+	if len(summary.TopFindings) > rootCauseMaxTopFindings {
+		omitted = len(summary.TopFindings) - rootCauseMaxTopFindings
+		summary.TopFindings = summary.TopFindings[:rootCauseMaxTopFindings]
+	}
+	summary.Summary = rootCauseNarrative(summary.Status, summary.TopFindings, slaState, omitted)
 	summary.NextActions = rootCauseNextActions(categories)
 	if len(summary.NextActions) == 0 {
 		summary.NextActions = []string{"Use the engineer report profile to review timeline, action, and resource evidence before closing the release gate."}
 	}
 	return summary
+}
+
+const rootCauseMaxTopFindings = 6
+
+const (
+	archiveSLABreached      = "breached"
+	archiveSLAPassed        = "passed"
+	archiveSLANotEvaluated  = "not_evaluated"
+	archiveSLANotConfigured = "not_configured"
+	archiveSLAUnknown       = "unknown"
+)
+
+// archiveSLAState separates "passed" from "nothing to evaluate". The manifest's
+// SLAEvaluated flag is vacuously true when no criteria exist, so configuration
+// is derived from the recorded goal config, per-group response-time SLAs, and
+// evaluated results. Archives that predate run provenance cannot say whether
+// criteria existed and report unknown rather than a verdict.
+func archiveSLAState(manifest *RunArchiveManifest) string {
+	if manifest == nil {
+		return archiveSLAUnknown
+	}
+	if manifest.SLABreached {
+		return archiveSLABreached
+	}
+	goals, _ := transactionResponseTimeSLAConfig(manifest)
+	configured := goalConfigHasArchiveIndependentSLA(goals) ||
+		len(transactionRulesFromManifest(manifest)) > 0 ||
+		len(effectiveTransactionResponseTimeSLAThresholds(manifest)) > 0 ||
+		len(manifest.TransactionResponseTimeSLAResults) > 0 ||
+		len(manifest.SLADetails) > 0
+	if !configured {
+		if len(manifest.Provenance.Groups) == 0 && manifest.InitialProvenance == nil {
+			return archiveSLAUnknown
+		}
+		return archiveSLANotConfigured
+	}
+	if manifest.SLAEvaluated {
+		return archiveSLAPassed
+	}
+	return archiveSLANotEvaluated
+}
+
+func rootCauseSeverityRank(severity string) int {
+	switch severity {
+	case "critical":
+		return 2
+	case "warning":
+		return 1
+	default:
+		return 0
+	}
 }
 
 func telemetrySeverity(status string) string {
@@ -253,32 +321,81 @@ func telemetryRootCauseDetail(telemetry *RunArchiveTelemetrySummary) string {
 	return strings.Join(parts, "; ") + "."
 }
 
-func rootCauseConfidence(report *RunArchiveReport) string {
+// rootCauseConfidence is the lower of two bands: how complete the archive is,
+// and how strong the evidence behind the lead finding is. A complete archive
+// does not make an advisory lead finding, or a thinly evidenced one, certain.
+func rootCauseConfidence(report *RunArchiveReport, findings []RootCauseFinding) string {
 	if report == nil {
 		return "low"
 	}
+	completeness := "medium"
 	if report.Completeness.ScorePct >= 90 && report.Overview.IntervalSummaries > 0 && report.Overview.Transactions > 0 {
-		return "high"
+		completeness = "high"
+	} else if report.Completeness.ScorePct < 60 {
+		completeness = "low"
 	}
-	if report.Completeness.ScorePct < 60 {
-		return "low"
+	evidence := "high"
+	if len(findings) == 0 {
+		// Absence of findings is only reassuring when the evidence is complete.
+		if report.Completeness.ScorePct < 90 {
+			evidence = "low"
+		}
+	} else if lead := findings[0]; !rootCauseMeasuredCategory(lead.Category) || len(lead.Evidence) < 2 {
+		evidence = "medium"
 	}
-	return "medium"
+	if rootCauseConfidenceRank(evidence) < rootCauseConfidenceRank(completeness) {
+		return evidence
+	}
+	return completeness
 }
 
-func rootCauseNarrative(status string, findings []RootCauseFinding) string {
+// Measured categories rest on archived measurements; the rest are advisory
+// heuristics or statements about missing evidence.
+func rootCauseMeasuredCategory(category string) bool {
+	switch category {
+	case "sla", "errors", "resource", "load_model", "telemetry", "browser", "oracle_db":
+		return true
+	default:
+		return false
+	}
+}
+
+func rootCauseConfidenceRank(confidence string) int {
+	switch confidence {
+	case "high":
+		return 2
+	case "medium":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func rootCauseNarrative(status string, findings []RootCauseFinding, slaState string, omitted int) string {
 	if len(findings) == 0 {
-		return "No root-cause findings were detected from the archived run evidence."
+		switch slaState {
+		case archiveSLAPassed:
+			return "No root-cause findings were detected from the archived run evidence, and the archived SLA checks passed."
+		case archiveSLANotConfigured:
+			return "No root-cause findings were detected from the archived run evidence. No SLA criteria were configured, so this is not an acceptance verdict."
+		default:
+			return "No root-cause findings were detected from the archived run evidence. The archive does not record SLA criteria, so this is not an acceptance verdict."
+		}
 	}
 	lead := findings[0]
+	var narrative string
 	switch status {
 	case "breached":
-		return "The strongest release-blocking signal is " + strings.ToLower(lead.Title) + "."
+		narrative = "The strongest release-blocking signal is " + strings.ToLower(lead.Title) + "."
 	case "degraded":
-		return "The run needs review; the strongest signal is " + strings.ToLower(lead.Title) + "."
+		narrative = "The run needs review; the strongest signal is " + strings.ToLower(lead.Title) + "."
 	default:
-		return "The run appears healthy across archived SLA, telemetry, resource, and browser evidence."
+		narrative = "No release-blocking or review findings were detected from the archived run evidence."
 	}
+	if omitted > 0 {
+		narrative += fmt.Sprintf(" %d further finding(s) are in the engineer report.", omitted)
+	}
+	return narrative
 }
 
 func rootCauseNextActions(categories map[string]struct{}) []string {

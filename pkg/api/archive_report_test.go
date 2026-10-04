@@ -1524,15 +1524,21 @@ func TestRunArchiveReportSummarizesOracleDBExternalMetrics(t *testing.T) {
 		t.Fatalf("newRunArchiveWriter returned error: %v", err)
 	}
 	start := time.Date(2026, time.June, 8, 10, 0, 0, 0, time.UTC)
-	waits := []float64{80, 220, 480}
-	p95s := []float64{180, 420, 820}
+	// Twelve one-minute intervals: correlation needs at least ten paired
+	// intervals, each sample paired only with the interval that contains it.
+	waits := make([]float64, 12)
+	p95s := make([]float64, 12)
+	for i := range waits {
+		waits[i] = 80 + 36*float64(i)
+		p95s[i] = 180 + 60*float64(i)
+	}
 	for i := range waits {
 		ts := start.Add(time.Duration(i) * time.Minute)
 		if err := writer.RecordResourceSample(ts, int64(20+i), &engine.SystemResources{
 			External: map[string]float64{
 				"oracle.db.wait_time_ms": waits[i],
-				"oracle.db.lock_waits":   float64(i + 1),
-				"oracle.db.cpu_pct":      70 + float64(i*8),
+				"oracle.db.lock_waits":   float64(1 + i/4),
+				"oracle.db.cpu_pct":      70 + float64(i),
 			},
 		}); err != nil {
 			t.Fatalf("RecordResourceSample[%d] returned error: %v", i, err)
@@ -1548,7 +1554,7 @@ func TestRunArchiveReportSummarizesOracleDBExternalMetrics(t *testing.T) {
 			t.Fatalf("RecordIntervalSummary[%d] returned error: %v", i, err)
 		}
 	}
-	record, err := writer.Finalize("COMPLETE", start.Add(3*time.Minute), "", false, false, nil)
+	record, err := writer.Finalize("COMPLETE", start.Add(12*time.Minute), "", false, false, nil)
 	if err != nil {
 		t.Fatalf("Finalize returned error: %v", err)
 	}
@@ -1560,11 +1566,11 @@ func TestRunArchiveReportSummarizesOracleDBExternalMetrics(t *testing.T) {
 	if report.OracleDB == nil {
 		t.Fatal("OracleDB evidence = nil, want oracle.db.* summary")
 	}
-	if report.OracleDB.Status != "partial" || report.OracleDB.Samples != 3 {
-		t.Fatalf("OracleDB evidence = %#v, want partial evidence with three samples", report.OracleDB)
+	if report.OracleDB.Status != "partial" || report.OracleDB.Samples != 12 {
+		t.Fatalf("OracleDB evidence = %#v, want partial evidence with twelve samples", report.OracleDB)
 	}
-	if got := report.OracleDB.MetricStats["oracle.db.wait_time_ms"].Peak; got != 480 {
-		t.Fatalf("oracle wait peak = %v, want 480", got)
+	if got := report.OracleDB.MetricStats["oracle.db.wait_time_ms"].Peak; got != 476 {
+		t.Fatalf("oracle wait peak = %v, want 476", got)
 	}
 	if len(report.OracleDB.Correlations) == 0 || report.OracleDB.Correlations[0].Strength != "strong" {
 		t.Fatalf("OracleDB correlations = %#v, want strong P95 correlation", report.OracleDB.Correlations)
@@ -1573,8 +1579,8 @@ func TestRunArchiveReportSummarizesOracleDBExternalMetrics(t *testing.T) {
 	for _, tier := range report.EvidenceTiers {
 		evidence[tier.Tier] = tier
 	}
-	if evidence["oracle_db_metrics"].Status != "present" || evidence["oracle_db_metrics"].Count != 3 {
-		t.Fatalf("oracle evidence tier = %#v, want present with three samples", evidence["oracle_db_metrics"])
+	if evidence["oracle_db_metrics"].Status != "present" || evidence["oracle_db_metrics"].Count != 12 {
+		t.Fatalf("oracle evidence tier = %#v, want present with twelve samples", evidence["oracle_db_metrics"])
 	}
 
 	root := buildRunRootCauseSummary("test-oracle-db", report)

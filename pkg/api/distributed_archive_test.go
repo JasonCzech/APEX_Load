@@ -760,7 +760,7 @@ func TestMergeRemoteArchiveIntervalSummariesAggregatesFleetTimeline(t *testing.T
 	if chart := buildReportCharts(report).ResponseTime; chart != "" {
 		t.Fatalf("unavailable fleet percentiles produced a misleading response-time chart: %s", chart)
 	}
-	if _, available := nearestSummaryP95(first.Timestamp, []IntervalSummaryRecord{first, second}); available {
+	if windows := oracleP95Windows([]IntervalSummaryRecord{first, second}); len(windows) != 0 {
 		t.Fatal("monitoring correlation treated an unavailable fleet percentile as a real zero")
 	}
 	htmlReport, err := renderRunArchiveHTMLReport(report)
