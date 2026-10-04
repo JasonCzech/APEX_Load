@@ -17,6 +17,8 @@ import (
 )
 
 type VUser struct {
+	replayRuntime *replayRuntimeState
+
 	webSocketCallbackSteps []dsl.Action
 	inWebSocketCallback    bool
 	errorLogs              *errorLogBuffer
@@ -1177,6 +1179,10 @@ func (vu *VUser) prepareRuntimeState() error {
 		vu.Parameters = NewParameterRuntime(vu.Script.Parameters, vu.DataProvider, vu.ID)
 	}
 	if vu.Parameters != nil {
+		if vu.replayRuntime != nil {
+			vu.Parameters.runtimeObservation = vu.replayRuntime
+			vu.Parameters.runtimeObservations = make(map[string]parameterRuntimeObservation)
+		}
 		vu.Parameters.sourceState = vu.sourceParameters
 		if vu.Script.Config.JMeter != nil {
 			vu.Parameters.sourcePlan = vu.Script.Config.JMeter.SourcePlanID

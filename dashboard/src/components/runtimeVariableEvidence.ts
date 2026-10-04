@@ -47,6 +47,8 @@ export function omitUnavailableReplayReport(report: BrowserReplayReport): Browse
 export function omitUnavailableReplaySession(session: ScriptDebugSession): ScriptDebugSession {
   return {
     runtime_evidence_unavailable: true, dropped_event_count: session.dropped_event_count,
+    session_incarnation: session.session_incarnation, state_revision: session.state_revision,
+    runtime_state: session.session_incarnation && session.state_revision ? { version: 1, kind: 'full', session_id: session.id, session_incarnation: session.session_incarnation, state_revision: session.state_revision, state: 'unavailable', reason: 'runtime_evidence_unavailable', snapshot: null } : undefined,
     id: session.id, mode: session.mode, script_id: session.script_id, project_id: session.project_id,
     status: session.status, group: 'script debug', protocol: session.protocol, log_level: session.log_level,
     preflight: session.preflight, started_at: session.started_at, completed_at: session.completed_at,

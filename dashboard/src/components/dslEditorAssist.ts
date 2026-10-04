@@ -353,6 +353,7 @@ export interface TemplateReferenceInfo {
   status: 'known' | 'unknown' | 'info'
   /** The concrete value this reference resolved to in the latest debug run, when known. */
   runtimeValue?: string
+  runtimeQualification?: string
 }
 
 /**
@@ -364,6 +365,7 @@ export function describeTemplateReference(
   expr: string,
   model: ScriptReferenceModel,
   runtimeValues?: Record<string, string> | null,
+  runtimeQualification?: string,
 ): TemplateReferenceInfo {
   const trimmed = expr.trim()
   const dot = trimmed.indexOf('.')
@@ -372,8 +374,10 @@ export function describeTemplateReference(
   const info = describeBase(namespace, rest, trimmed, model)
   // Secrets are masked; never surface a concrete value for them.
   if (runtimeValues && namespace !== 'secret' && ['var', 'param', 'env', 'data'].includes(namespace)) {
-    if (Object.prototype.hasOwnProperty.call(runtimeValues, rest)) {
-      info.runtimeValue = runtimeValues[rest]
+    const key = Object.prototype.hasOwnProperty.call(runtimeValues, trimmed) ? trimmed : namespace === 'var' ? rest : null
+    if (key !== null && Object.prototype.hasOwnProperty.call(runtimeValues, key)) {
+      info.runtimeValue = runtimeValues[key]
+      info.runtimeQualification = runtimeQualification
       if (info.status === 'info') info.status = 'known'
     }
   }
@@ -447,11 +451,11 @@ function truncateValue(value: string, max = 160): string {
   return value.length > max ? `${value.slice(0, max)}…` : value
 }
 
-function makeTemplateReferenceHover(getRuntimeValues: RuntimeValueSource): Extension {
+function makeTemplateReferenceHover(getRuntimeValues: RuntimeValueSource, getQualification: () => string): Extension {
   return hoverTooltip((view, pos): Tooltip | null => {
     const token = templateTokenAt(view.state, pos)
     if (!token) return null
-    const info = describeTemplateReference(token.expr, readScriptReferenceModel(view.state), getRuntimeValues())
+    const info = describeTemplateReference(token.expr, readScriptReferenceModel(view.state), getRuntimeValues(), getQualification())
     return {
       pos: token.from,
       end: token.to,
@@ -471,6 +475,9 @@ function makeTemplateReferenceHover(getRuntimeValues: RuntimeValueSource): Exten
           resolved.className = 'apex-template-hover-resolved'
           resolved.textContent = `= ${truncateValue(info.runtimeValue) || '(empty)'}`
           dom.append(resolved)
+          const qualifier = document.createElement('div')
+          qualifier.textContent = info.runtimeQualification || 'Retained runtime evidence'
+          dom.append(qualifier)
         }
         return { dom }
       },
@@ -522,6 +529,7 @@ export function diagnosticsFromIssues(state: EditorState, issues: string[], seve
 export function buildDslAssistExtensions(
   validateDraft: (script: unknown) => Promise<DslValidationOutcome>,
   getRuntimeValues: RuntimeValueSource = () => null,
+  getRuntimeQualification: () => string = () => 'Retained runtime evidence',
 ): Extension[] {
   const validationLinter = linter(
     async view => {
@@ -551,7 +559,7 @@ export function buildDslAssistExtensions(
   )
   return [
     autocompletion({ override: [dslCompletionSource] }),
-    makeTemplateReferenceHover(getRuntimeValues),
+    makeTemplateReferenceHover(getRuntimeValues, getRuntimeQualification),
     linter(jsonParseLinter()),
     validationLinter,
   ]

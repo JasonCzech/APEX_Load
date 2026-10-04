@@ -17,12 +17,14 @@ func runReplayConcurrentHTTP(ctx context.Context, vu *VUser, action dsl.Action, 
 	boundary.EventID = replayLeafEventID(report.ReplaySessionID, phase, actionIndex, boundary.EventIndex, appendStepPath(stepPath, "concurrent_group"))
 	boundary.StepPath = append([]string(nil), stepPath...)
 	boundary.IterationPath = append([]int(nil), iterationPath...)
+	runtimeLocation := *cloneReplayDebugAction(boundary)
+	defer vu.enterReplayRuntimeEvent(boundary.EventID)()
 	scrubReplayDebugAction(&boundary, vu.RedactionConfig)
 	if vu.runtimeCredentialRedactionErr != nil {
 		omitUnredactableReplayDebugAction(&boundary)
 	}
 	if debugger != nil {
-		if err := debugger.BeforeAction(ctx, boundary); err != nil {
+		if err := vu.replayBeforeBoundary(ctx, debugger, boundary, runtimeLocation); err != nil {
 			report.Success = false
 			report.Error = vu.replayPublicationError(err)
 			return replayStop, true
@@ -76,8 +78,8 @@ func runReplayConcurrentHTTP(ctx context.Context, vu *VUser, action dsl.Action, 
 		omitUnredactableReplayDebugAction(&boundary)
 		omitUnredactableReplayActionEvent(&aggregate)
 	}
-	if after, ok := debugger.(ReplayDebugControllerAfter); ok {
-		if err := after.AfterAction(ctx, boundary, &aggregate); err != nil {
+	if debugger != nil {
+		if err := vu.replayAfterBoundary(ctx, debugger, boundary, runtimeLocation, &aggregate); err != nil {
 			report.Success = false
 			report.Error = vu.replayPublicationError(err)
 			aborted = true

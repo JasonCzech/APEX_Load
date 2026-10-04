@@ -416,6 +416,9 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		importedCredentialInspection: importedCredentials,
 		SnapshotStore:                NewSnapshotStore(128),
 	}
+	if replayRuntimeEnabled(opts.DebugController) {
+		vu.replayRuntime = &replayRuntimeState{rows: make(map[string]ReplayRuntimeRow)}
+	}
 	defer vu.closeErrorLogs()
 	// Deterministic replay: seed random data selection and random template builtins
 	// BEFORE prepareRuntimeState, whose initial data-row load (loadDataRow → GetRow)
@@ -619,6 +622,7 @@ func runReplayPhase(
 	onProgress func(ReplayProgressEvent),
 	debugController ReplayDebugController,
 ) bool {
+	defer vu.pushReplayRuntimeFrame(ReplayRuntimeFrame{Kind: "phase", Phase: phase, ActionIndex: -1})()
 	for actionIndex, action := range actions {
 		leafOrdinal := 0
 		flow, abort := expandReplayAction(ctx, vu, action, phase, actionIndex, 0, nil, nil, &leafOrdinal, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
@@ -725,6 +729,15 @@ func expandReplayAction(
 		return replayContinue, false
 	}
 
+	if kind := replayContainerKind(action); kind != "" {
+		if kind == "control_parallel" {
+			kind = "parallel"
+		}
+		if kind == "control_loop" && action.Control != nil && action.Control.ForEach != nil {
+			kind = "foreach"
+		}
+		defer vu.pushReplayRuntimeFrame(ReplayRuntimeFrame{Kind: kind, Phase: phase, ActionIndex: actionIndex, StepPath: stepPath, IterationPath: iterationPath})()
+	}
 	switch replayContainerKind(action) {
 	case "http_sequence":
 		mode, _, modeErr := dsl.HTTPSequenceExecutionSettings(action)
@@ -852,6 +865,10 @@ func expandReplayAction(
 		if parentVariables == nil {
 			parentVariables = make(map[string]string)
 		}
+		var parentRuntimeRows map[string]ReplayRuntimeRow
+		if vu.replayRuntime != nil {
+			parentRuntimeRows = cloneReplayRuntimeRows(vu.replayRuntime.rows)
+		}
 		parentExtracted := cloneIntMap(vu.extractedVariables)
 		parentExtractedBytes := vu.extractedVariableBytes
 		parentRestored := false
@@ -860,6 +877,9 @@ func expandReplayAction(
 				return
 			}
 			vu.Variables = parentVariables
+			if vu.replayRuntime != nil {
+				vu.replayRuntime.rows = parentRuntimeRows
+			}
 			vu.extractedVariables = parentExtracted
 			vu.extractedVariableBytes = parentExtractedBytes
 			parentRestored = true
@@ -874,28 +894,39 @@ func expandReplayAction(
 		merged := make([]branchExtractions, 0, len(action.Control.Branches))
 		success := true
 		for branchIndex, branch := range action.Control.Branches {
+			if vu.replayRuntime != nil {
+				vu.replayRuntime.rows = cloneReplayRuntimeRows(parentRuntimeRows)
+			}
 			vu.Variables = cloneStringMap(parentVariables)
 			if vu.Variables == nil {
 				vu.Variables = make(map[string]string)
 			}
 			vu.extractedVariables = make(map[string]int)
 			vu.extractedVariableBytes = 0
-			for stepIndex, child := range branch.Steps {
-				childPath := appendStepPath(stepPath, fmt.Sprintf("branches[%d].steps[%d]", branchIndex, stepIndex))
-				flow, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, iterationPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
-				if abort {
-					return replayStop, true
-				}
-				if flow == replayStop {
-					success = false
-					if !continueOnError {
+			branchAborted := func() bool {
+				index := branchIndex
+				defer vu.pushReplayRuntimeFrame(ReplayRuntimeFrame{Kind: "parallel_branch", Phase: phase, ActionIndex: actionIndex, StepPath: stepPath, IterationPath: iterationPath, BranchIndex: &index})()
+				for stepIndex, child := range branch.Steps {
+					childPath := appendStepPath(stepPath, fmt.Sprintf("branches[%d].steps[%d]", branchIndex, stepIndex))
+					flow, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, iterationPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+					if abort {
+						return true
+					}
+					if flow == replayStop {
+						success = false
+						if !continueOnError {
+							break
+						}
+					}
+					if flow == replayBreak || flow == replayContinue || flow == replayExitIteration {
+						success = false
 						break
 					}
 				}
-				if flow == replayBreak || flow == replayContinue || flow == replayExitIteration {
-					success = false
-					break
-				}
+				return false
+			}()
+			if branchAborted {
+				return replayStop, true
 			}
 			values := make(map[string]string, len(vu.extractedVariables))
 			for key := range vu.extractedVariables {
@@ -942,6 +973,7 @@ func expandReplayAction(
 		// loop-level signal (next/break/continue) or replayStop when a child failed
 		// under !continueOnError. abort halts the whole replay.
 		runPass := func(childIterPath []int) (replayFlow, bool) {
+			defer vu.enterReplayRuntimeIteration(childIterPath)()
 			for stepIndex, child := range loop.Steps {
 				childPath := appendStepPath(stepPath, fmt.Sprintf("loop[%d]", stepIndex))
 				flow, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, childIterPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
@@ -967,12 +999,13 @@ func expandReplayAction(
 			defer restoreRows()
 			defer restoreLoopIndex()
 			for pass := 0; pass < rows.Len() && pass < maxPasses; pass++ {
-				row := rows.Row(pass)
+				row, receipt := rows.rowWithReceipt(pass)
 				if ctx.Err() != nil {
 					return replayStop, true
 				}
 				vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
 				vu.bindForEachRow(loop.ForEach.Var, row)
+				vu.recordReplayRuntimeRow("foreach", strings.TrimSpace(loop.ForEach.Source), strings.TrimSpace(loop.ForEach.Var), receipt)
 				childIterPath := append(append([]int(nil), iterationPath...), pass+1)
 				if loop.ForEach.Condition != nil {
 					condOK, evidence := vu.evalConditionEvidence(loop.ForEach.Condition)
@@ -1127,6 +1160,8 @@ func runReplayUnit(
 	debugAction := replayDebugActionFor(unit.action, unit.phase, unit.actionIndex, eventIndex)
 	debugAction.EventID = eventID
 	applyReplayUnitIdentityDebug(&debugAction, unit)
+	runtimeLocation := *cloneReplayDebugAction(debugAction)
+	defer vu.enterReplayRuntimeEvent(eventID)()
 	scrubReplayDebugAction(&debugAction, vu.resultPublicationRedactionConfig())
 	if vu.runtimeCredentialRedactionErr != nil {
 		omitUnredactableReplayDebugAction(&debugAction)
@@ -1137,7 +1172,7 @@ func runReplayUnit(
 	}
 
 	if debugController != nil && !unit.skipDebugBoundary {
-		if err := debugController.BeforeAction(ctx, debugAction); err != nil {
+		if err := vu.replayBeforeBoundary(ctx, debugController, debugAction, runtimeLocation); err != nil {
 			report.Success = false
 			if report.Error == "" {
 				report.Error = vu.replayPublicationError(err)
@@ -1212,8 +1247,8 @@ func runReplayUnit(
 		EventIndex: event.EventIndex,
 		Event:      cloneReplayActionEvent(event),
 	})
-	if after, ok := debugController.(ReplayDebugControllerAfter); ok && !unit.skipDebugBoundary {
-		if err := after.AfterAction(ctx, debugAction, &event); err != nil {
+	if debugController != nil && !unit.skipDebugBoundary {
+		if err := vu.replayAfterBoundary(ctx, debugController, debugAction, runtimeLocation, &event); err != nil {
 			report.Success = false
 			if report.Error == "" {
 				report.Error = vu.replayPublicationError(err)

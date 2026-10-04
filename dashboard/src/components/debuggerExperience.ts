@@ -41,8 +41,8 @@ export function eventIdentity(event: BrowserReplayEvent): string {
   return JSON.stringify([event.phase || 'action', event.action_index ?? 0, event.step_path || [], event.request_index ?? null, event.iteration_path || [], event.iteration ?? null])
 }
 export function variablesAt(events: BrowserReplayEvent[], seed: Record<string, string>, index: number): Record<string, string> {
-  let result = { ...seed }
-  for (const event of events.slice(0, index + 1)) result = { ...result, ...event.extractions }
+  const result: Record<string, string> = Object.assign(Object.create(null), seed)
+  for (const event of events.slice(0, index + 1)) Object.assign(result, event.extractions || {})
   return result
 }
 export function compareRuns(before: BrowserReplayReport, after: BrowserReplayReport) {

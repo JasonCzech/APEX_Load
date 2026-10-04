@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { BrowserReplayEvent, BrowserReplayReport, ScriptDebugBreakpoint } from '../types/replay'
+import type { BrowserReplayEvent, BrowserReplayReport, ScriptDebugBreakpoint, ReplayRuntimeSnapshot } from '../types/replay'
 import type { ReplayOptionsState } from './scriptEditorState'
 import { compareRuns, eventLocation, readProfiles, safeProfile, variablesAt, type DebugRunRecord } from './debuggerExperience'
 import { omitUnavailableReplayReport, RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
@@ -9,6 +9,8 @@ import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import { formatReplayHeaders } from './scriptEditorUtils'
+import type { RuntimeInspectionMode } from './debugRuntimeState'
+import { DebugRuntimeStateEvidence } from './DebugRuntimeStateEvidence'
 
 export function DebugProfiles({ options, onChange, disabled }: { options: ReplayOptionsState; onChange: (options: ReplayOptionsState) => void; disabled: boolean }) {
   const [profiles, setProfiles] = useState(() => { try { return readProfiles(localStorage.getItem('apexload.debug.profiles.v1')) } catch { return [] } })
@@ -22,25 +24,30 @@ export function DebugProfiles({ options, onChange, disabled }: { options: Replay
   </div>
 }
 
-export function DebugVariableWatches({ events, seed, latest, selected, onSelect, evidenceUnavailable = false }: { events: BrowserReplayEvent[]; seed: Record<string, string>; latest: Record<string, string> | null; selected: number | null; onSelect: (index: number) => void; evidenceUnavailable?: boolean }) {
-  const [scope, setScope] = useState<'latest' | 'selected'>('latest')
+export function DebugVariableWatches({ events, seed, latest, selected, onSelect, evidenceUnavailable = false, snapshot = null, currentReason = 'Current state unavailable. Pause at an engine boundary to inspect values.', mode, onModeChange, completed = false, canInspectFrame, onInspectFrame }: { events: BrowserReplayEvent[]; seed: Record<string, string>; latest: Record<string, string> | null; selected: number | null; onSelect: (index: number) => void; evidenceUnavailable?: boolean; snapshot?: ReplayRuntimeSnapshot | null; currentReason?: string; mode?: RuntimeInspectionMode; onModeChange?: (mode: RuntimeInspectionMode) => void; completed?: boolean; canInspectFrame?: (frame: ReplayRuntimeSnapshot['frames'][number]) => boolean; onInspectFrame?: (frame: ReplayRuntimeSnapshot['frames'][number]) => void }) {
+  const [localMode, setLocalMode] = useState<RuntimeInspectionMode>('current')
+  const scope = mode || localMode
+  const changeMode = (value: RuntimeInspectionMode) => { setLocalMode(value); onModeChange?.(value) }
   const [search, setSearch] = useState('')
   const [changedOnly, setChangedOnly] = useState(false)
   const [pinned, setPinned] = useState<string[]>([])
   const index = scope === 'selected' ? selected ?? -1 : events.length - 1
-  const values = useMemo(() => evidenceUnavailable ? {} : scope === 'latest' ? latest || variablesAt(events, seed, index) : variablesAt(events, seed, index), [scope, latest, events, seed, index, evidenceUnavailable])
-  const before = useMemo(() => evidenceUnavailable ? {} : variablesAt(events, seed, index - 1), [events, seed, index, evidenceUnavailable])
-  const names = [...new Set([...Object.keys(values), ...pinned])].filter(name => `${name} ${values[name] || ''}`.toLowerCase().includes(search.toLowerCase()) && (!changedOnly || before[name] !== values[name])).sort((a, b) => Number(pinned.includes(b)) - Number(pinned.includes(a)) || a.localeCompare(b))
+  const values = useMemo(() => evidenceUnavailable || scope === 'current' ? {} : scope === 'retained' ? latest || variablesAt(events, seed, index) : variablesAt(events, seed, index), [scope, latest, events, seed, index, evidenceUnavailable])
+  const before = useMemo(() => evidenceUnavailable || scope === 'current' ? {} : variablesAt(events, seed, index - 1), [scope, events, seed, index, evidenceUnavailable])
+  const names = [...new Set([...Object.keys(values), ...pinned])].filter(name => `${name} ${Object.prototype.hasOwnProperty.call(values, name) ? values[name] : ''}`.toLowerCase().includes(search.toLowerCase()) && (!changedOnly || before[name] !== values[name])).sort((a, b) => Number(pinned.includes(b)) - Number(pinned.includes(a)) || a.localeCompare(b))
   if (evidenceUnavailable) return <section aria-label="Variable watches" className="debug-watch-panel"><p role="status">{RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE}</p></section>
   return <section aria-label="Variable watches" className="debug-watch-panel">
-    <div className="debug-session-tools"><label>Search variables<input value={search} onChange={e => setSearch(e.target.value)} /></label><label>Values at<select value={scope} onChange={e => setScope(e.target.value as typeof scope)}><option value="latest">Latest session</option><option value="selected" disabled={selected == null}>Selected execution (after)</option></select></label><label><input type="checkbox" checked={changedOnly} onChange={e => setChangedOnly(e.target.checked)} />Changed at this execution</label></div>
-    <p>{scope === 'selected' && selected != null ? `After ${eventLocation(events[selected])}` : 'Latest captured session values'} · Values unavailable in retained evidence cannot be reconstructed.</p>
+    <div className="debug-session-tools"><label>Values at<select value={scope} onChange={e => changeMode(e.target.value as RuntimeInspectionMode)}><option value="current">Current paused state</option><option value="retained">Retained history</option><option value="selected" disabled={selected == null}>Selected execution (after)</option></select></label>{scope !== 'current' && <><label>Search variables<input value={search} onChange={e => setSearch(e.target.value)} /></label><label><input type="checkbox" checked={changedOnly} onChange={e => setChangedOnly(e.target.checked)} />Changed at this execution</label></>}</div>
+    {scope === 'current' ? snapshot ? <DebugRuntimeStateEvidence snapshot={snapshot} canInspectFrame={canInspectFrame} onInspectFrame={onInspectFrame} /> : <p role="status">{currentReason}</p> : <>
+    <p role="status">Retained history · {scope === 'selected' && selected != null && events[selected] ? `After ${eventLocation(events[selected])}` : completed ? 'Final historical values' : 'Reconstructed from session inputs and retained extractions'} · This is historical evidence, not current engine state. Values omitted from retained evidence cannot be reconstructed.</p>
     <table><caption className="sr-only">Variable values and provenance</caption><thead><tr><th>Watch</th><th>Name / namespace</th><th>Value</th><th>Last changed</th></tr></thead><tbody>{names.map(name => {
       let changed = -1
-      for (let i = 0; i <= index; i++) if (events[i]?.extractions && name in events[i].extractions!) changed = i
-      return <tr key={name}><td><button type="button" aria-label={`Pin ${name}`} aria-pressed={pinned.includes(name)} onClick={() => setPinned(p => p.includes(name) ? p.filter(n => n !== name) : [...p, name])}>{pinned.includes(name) ? 'Pinned' : 'Pin'}</button></td><th scope="row">{name}<small>{name.includes('.') ? name.split('.')[0] : 'var'}</small></th><td><code>{values[name] ?? 'Not available'}</code>{before[name] !== values[name] && <small>Changed</small>}</td><td>{changed >= 0 ? <button type="button" onClick={() => onSelect(changed)}>{events[changed].action_name} · {eventLocation(events[changed])}</button> : 'Session input'}</td></tr>
+      for (let i = 0; i <= index; i++) if (events[i]?.extractions && Object.prototype.hasOwnProperty.call(events[i].extractions!, name)) changed = i
+      const value = Object.prototype.hasOwnProperty.call(values, name) ? values[name] : undefined
+      return <tr key={name}><td><button type="button" aria-label={`Pin ${name}`} aria-pressed={pinned.includes(name)} onClick={() => setPinned(p => p.includes(name) ? p.filter(n => n !== name) : [...p, name])}>{pinned.includes(name) ? 'Pinned' : 'Pin'}</button></td><th scope="row">{name}<small>{name.includes('.') ? name.split('.')[0] : 'var'}</small></th><td><code>{value === '' ? '(empty)' : value ?? 'Not available'}</code>{before[name] !== value && <small>Changed</small>}</td><td>{changed >= 0 ? <button type="button" onClick={() => onSelect(changed)}>{events[changed].action_name} · {eventLocation(events[changed])}</button> : 'Session input'}</td></tr>
     })}</tbody></table>{!names.length && <p>No variables match this view.</p>}
     <details><summary>Values as JSON</summary><SnapshotBodyPreview body={JSON.stringify(values, null, 2)} headers={{ 'Content-Type': 'application/json' }} /></details>
+    </>}
   </section>
 }
 

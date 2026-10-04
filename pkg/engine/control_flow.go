@@ -254,6 +254,13 @@ func (vu *VUser) captureForEachRestore(varName string, rows dataRowView) func() 
 		value string
 		had   bool
 	}
+	rowKey := ""
+	var priorRow ReplayRuntimeRow
+	hadRow := false
+	if vu.replayRuntime != nil {
+		rowKey = "foreach\x00" + varName
+		priorRow, hadRow = vu.replayRuntime.rows[rowKey]
+	}
 	prior := map[string]savedVar{}
 	for _, col := range rows.Columns() {
 		key := varName + "." + col
@@ -261,6 +268,13 @@ func (vu *VUser) captureForEachRestore(varName string, rows dataRowView) func() 
 		prior[key] = savedVar{value: v, had: ok}
 	}
 	return func() {
+		if vu.replayRuntime != nil {
+			if hadRow {
+				vu.replayRuntime.rows[rowKey] = priorRow
+			} else {
+				delete(vu.replayRuntime.rows, rowKey)
+			}
+		}
 		for key, s := range prior {
 			if s.had {
 				vu.Variables[key] = s.value

@@ -108,7 +108,8 @@ func (vu *VUser) loadDataRow() error {
 		vu.Variables = make(map[string]string)
 	}
 	for _, name := range vu.DataProvider.SourceNames() {
-		row := vu.DataProvider.GetRow(name, vu.ID)
+		row, receipt := vu.DataProvider.getRowWithReceipt(name, vu.ID)
+		vu.recordReplayRuntimeRow("datasource", name, name, receipt)
 		// A missing row must never retain a previous iteration's bindings.
 		source := vu.DataProvider.sources[name]
 		for _, column := range source.columns {

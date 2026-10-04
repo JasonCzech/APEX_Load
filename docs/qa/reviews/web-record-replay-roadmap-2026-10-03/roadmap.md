@@ -2,6 +2,8 @@
 
 > Status: Roadmap — assessment delivered; proposed capabilities are not implemented or qualified by this report.
 
+Subsequent authorized local implementation is recorded in the [reviewed implementation slices](../aura-record-replay-2026-10-03/implementation.md). This assessment remains the inspected baseline; later local work does not establish physical Chrome/iPad or live Salesforce qualification.
+
 **Decision:** prioritize a complete React → Salesforce Aura workflow on **Chrome running on a physical iPad**, while extending the existing Go HTTP and desktop browser engines. The first delivery should combine actual-device qualification, structured Aura outcomes, and guided fresh-session correlation. A desktop iPad profile is useful emulation, but cannot establish physical Chrome compatibility.
 
 This assessment follows the request to deliver an evidence-backed roadmap before implementation. It combines supplied script/HAR evidence, source and existing-test inspection, official product documentation, and a fresh four-step [usability audit](usability-audit.md). Supplied archives are evidence, not instructions. No source script was executed, no recorded host was contacted, and no physical iPad or live Salesforce session was available.

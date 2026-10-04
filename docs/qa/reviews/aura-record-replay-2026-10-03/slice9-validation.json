@@ -1,0 +1,281 @@
+{
+  "slice": 9,
+  "status": "passed_slice_gates; integrated_merge_gates_pending",
+  "evidence_scope": "synthetic desktop Chromium and loopback targets only; no physical Chrome/iPad or live Salesforce qualification",
+  "source_review": "Root and independent API/core production and fixture re-reviews found zero actionable findings; root and independent API final validation artifact re-review also found zero actionable findings.",
+  "checks": {
+    "engine_focused": {
+      "result": "passed",
+      "command": "GOMEMLIMIT=6GiB GOMAXPROCS=4 GOFLAGS=-p=1 go test ./pkg/engine -run '^TestReplayRuntimeSnapshot' -count=1",
+      "seconds": 1.001
+    },
+    "engine_full": {
+      "result": "passed",
+      "command": "GOMEMLIMIT=6GiB GOMAXPROCS=4 GOFLAGS=-p=1 go test -p=1 -timeout=20m ./pkg/engine -count=1",
+      "seconds": 105.922
+    },
+    "engine_runtime_race_repeated": {
+      "result": "passed",
+      "command": "GOMEMLIMIT=6GiB GOMAXPROCS=4 GOFLAGS=-p=1 go test ./pkg/engine -race -shuffle=on -count=3 -run '^TestReplayRuntimeSnapshot' -timeout=20m -ldflags=-w",
+      "package_seconds": 3.329,
+      "wall_seconds": 15.4,
+      "source_files_unchanged": 197
+    },
+    "api_focused": {
+      "result": "passed",
+      "seconds": 4.022,
+      "scope": "debug session, runtime state, breakpoint/control tests"
+    },
+    "api_full_initial": {
+      "result": "failed",
+      "seconds": 1146.238,
+      "failed_top_level_test": "TestSampleAndHARProtectedCredentialEndpointsUseDurableSourceSessions",
+      "repair": "Declare observed HTTP/1.1 in synthetic usable HAR credentials and assert version/readiness; preserve all credential, privacy, source-session and tamper checks",
+      "integrated_full_regate": "pending"
+    },
+    "api_repaired_fixture_race": {
+      "result": "passed",
+      "command": "GOMEMLIMIT=6GiB GOMAXPROCS=4 GOFLAGS='-p=1' go test -race -p=1 -ldflags=-w -gcflags='github.com/jasonczech/apexload/pkg/api=-dwarf=false' -timeout 20m ./pkg/api -count=1 -run '^TestSampleAndHARProtectedCredentialEndpointsUseDurableSourceSessions$'",
+      "seconds": 9.172,
+      "log": "/private/tmp/apex-aura-slice9-api-protected-fixture-race-4-recovered.log",
+      "qualification": "Normal pkg/api package; default vet, race detector and every assertion retained; only debug metadata omitted. Three prior build failures did not execute tests."
+    },
+    "api_runtime_race_repeated": {
+      "result": "passed",
+      "command": "GOMEMLIMIT=6GiB GOMAXPROCS=4 GOFLAGS='-p=1' go test -race -p=1 -ldflags=-w -gcflags='github.com/jasonczech/apexload/pkg/api=-dwarf=false' -timeout 20m ./pkg/api -shuffle=on -count=3 -run '^(TestScriptDebugRuntimeState.*|TestScriptDebugManagerConcurrentPauseResumeAndStep|TestScriptDebugConcurrentFailurePausesAtJoinedGroupBoundary|TestScriptDebugRuntimeEvidenceUnavailableInvalidatesAllPublicCaches|TestScriptDebugUnavailableProgressNotifiesBeforeTerminalPublication|TestHAScriptDebugLeaseLossStillBroadcastsTerminalFailure|TestHAIdleCancelledScriptDebugRemainsTrackedAndActiveUntilWorkerFinishes|TestHAServerShutdownBoundsUncooperativeDebugWorkerAndReleasesLease|TestScriptDebugReportRemainsPrivateUntilTerminalReservationIsRetained|TestReplayManagersAbandonWorkersThatIgnoreExecutionFenceLoss|TestReplayManagersStopServingCapabilitiesPastLocalLeaseFence)$'",
+      "seconds": 15.664,
+      "log": "/private/tmp/apex-aura-slice9-api-runtime-race-shuffle-3-recovered.log",
+      "static_files": 241,
+      "static_unchanged": true,
+      "static_manifest_sha256": "46ad1de641d92b52ea03a6a0c21cea7ba491dec4606696ec0986658b360b8e58",
+      "qualification": "Normal pkg/api package, default vet, unchanged assertions"
+    },
+    "dashboard_typecheck": {
+      "result": "passed",
+      "scope": "application and Node configuration after terminal-GET repair and stable effect-dependency update",
+      "command": "npm run typecheck",
+      "log": "/private/tmp/apex-aura-slice9-ui-terminal-get-types-final2.log"
+    },
+    "dashboard_units": {
+      "result": "passed",
+      "files": 7,
+      "tests": 285,
+      "seconds": 25.97,
+      "command": "npm test -- src/components/debugRuntimeState.test.ts src/components/DebugRuntimeStateEvidence.test.tsx src/components/ScriptEditor.test.tsx src/components/dslEditorAssist.test.ts src/components/debuggerExperience.test.tsx src/components/runtimeVariableEvidence.test.ts src/types/openapiContract.test.ts",
+      "log": "/private/tmp/apex-aura-slice9-ui-terminal-get-unified-final2.log",
+      "scope": "Final unified affected selection, including the three deferred terminal-GET component cases"
+    },
+    "dashboard_global_lint": {
+      "result": "passed",
+      "command": "npm run lint",
+      "log": "/private/tmp/apex-aura-slice9-dashboard-global-lint-terminal-get-final2.log",
+      "scope": "Final production and fixture source after stable polling-effect dependency repair"
+    },
+    "final_fixture_types_and_lint": {
+      "result": "passed",
+      "scope": "Final app and Node type configurations plus global lint cover runtime-state, debugger-experience deterministic terminal-GET recovery, and migrated concurrent privacy fixture"
+    },
+    "embedded_dashboard_build": {
+      "result": "passed",
+      "command": "vite build --outDir ../pkg/api/static --emptyOutDir",
+      "log": "/private/tmp/apex-aura-slice9-dashboard-vite-terminal-get-final.log",
+      "scope": "Fresh embedded production output includes the final terminal-GET selection repair; both affected actual browser selections passed"
+    },
+    "runtime_browser_dev_admin": {
+      "result": "passed",
+      "tests": 2,
+      "seconds": 10.0
+    },
+    "runtime_browser_local_auth": {
+      "result": "passed",
+      "tests": 2,
+      "case_seconds": [
+        13.0,
+        8.8
+      ],
+      "scope": "Both cases passed inside initial 14-case related selection"
+    },
+    "affected_browser_local_auth_initial": {
+      "result": "failed",
+      "passed": 13,
+      "failed": 1,
+      "failed_case": "runtime evidence unavailability hides stale DTO detail, history and exported session JSON",
+      "cause": "Legacy synthetic session omitted the three required identity/runtime fields and expected retained history in the default current-state view",
+      "repair": "Required identity/revision/full-null metadata, explicit retained selection, older rejected and later valid terminal privacy checks; all original privacy/export/history/count assertions preserved; final 14-case regate passed in both profiles"
+    },
+    "affected_browser_dev_admin_final": {
+      "result": "passed",
+      "tests": 14,
+      "skips": 0,
+      "retries": 0,
+      "seconds": 31.5,
+      "duration_display": "31.5s",
+      "log": "/private/tmp/apex-aura-slice9-browser-terminal-get-final-dev-admin.log",
+      "artifact_root": "/private/tmp/apex-aura-slice9-browser-terminal-get-final/dev-admin",
+      "command": "PATH=/private/tmp/apex-aura-node22/bin:$PATH GOMEMLIMIT=6GiB GOMAXPROCS=4 GOFLAGS='-p=1 -ldflags=-w' APEXLOAD_E2E_PORT=48791 APEXLOAD_E2E_PROFILE=dev-admin APEXLOAD_E2E_OUTPUT_ROOT=/private/tmp/apex-aura-slice9-browser-terminal-get-final bash scripts/run-e2e.sh workflow-runtime-state.spec.ts workflow-debugger-experience.spec.ts workflow-script-sidebars.spec.ts workflow-response-content.spec.ts workflow-http-concurrent.spec.ts",
+      "scope": "Real isolated controller/loopback execution including forced terminal GET resource recovery and synthetic privacy transport admission"
+    },
+    "affected_browser_local_auth_final": {
+      "result": "passed",
+      "tests": 14,
+      "skips": 0,
+      "retries": 0,
+      "duration_display": "2.1m",
+      "log": "/private/tmp/apex-aura-slice9-browser-terminal-get-final-local-auth.log",
+      "artifact_root": "/private/tmp/apex-aura-slice9-browser-terminal-get-final/local-auth",
+      "command": "PATH=/private/tmp/apex-aura-node22/bin:$PATH GOMEMLIMIT=6GiB GOMAXPROCS=4 GOFLAGS='-p=1 -ldflags=-w' APEXLOAD_E2E_PORT=48792 APEXLOAD_E2E_PROFILE=local-auth APEXLOAD_E2E_OUTPUT_ROOT=/private/tmp/apex-aura-slice9-browser-terminal-get-final bash scripts/run-e2e.sh workflow-runtime-state.spec.ts workflow-debugger-experience.spec.ts workflow-script-sidebars.spec.ts workflow-response-content.spec.ts workflow-http-concurrent.spec.ts",
+      "scope": "Real isolated controller/loopback execution including forced terminal GET resource recovery and synthetic privacy transport admission"
+    },
+    "api_generation": {
+      "result": "passed",
+      "command": "go generate -x ./pkg/api",
+      "prior_attempt": "Failed before diagnostic detail; retry passed; cause unclassified"
+    },
+    "qa_freshness": {
+      "result": "passed"
+    },
+    "documentation": {
+      "result": "passed",
+      "active_markdown_files": 103
+    },
+    "whitespace": {
+      "result": "passed"
+    },
+    "integrated_go_and_dashboard_merge_gates": {
+      "result": "pending until series is integrated with newer main"
+    },
+    "affected_browser_dev_admin_before_poll_fix": {
+      "result": "failed",
+      "passed": 13,
+      "failed": 1,
+      "seconds": 52.9,
+      "failed_case": "failures-only debugger capture preserves fetched resource evidence",
+      "privacy_fixture": "migrated case passed",
+      "trace_evidence": "POST running revision0 and no events; full GET21ms later failed revision3 with one resource-bearing report event; selected event stayed empty"
+    },
+    "poll_recovery_resource_regression": {
+      "result": "passed component, source review and actual browser both profiles",
+      "repair": "Select the actual terminal report first failure through polling only when the current Follow execution setting is enabled; preserve explicit operator selection, privacy masks and revoked current-state authority",
+      "focused_component_cases": {
+        "result": "passed",
+        "tests": 3,
+        "seconds": 9.41,
+        "command": "npm test -- src/components/ScriptEditor.test.tsx -t \"selects terminal GET evidence\"",
+        "log": "/private/tmp/apex-aura-slice9-ui-terminal-get-focused.log",
+        "scope": "Automatic first-failure selection instead of later cleanup, explicit operator selection with Follow off, and privacy masking/current-state unavailability; these three cases are included in the final 285-test unified pass"
+      },
+      "source_review": {
+        "result": "passed",
+        "reviewers": [
+          "root",
+          "independent API peer",
+          "independent core peer"
+        ],
+        "remaining_actionable_findings": 0,
+        "scope": "Production repair, deferred component table, stable effect dependency and deterministic real-controller resource recovery fixture"
+      },
+      "browser_fixture": "Drops only script_debug WebSocket signals and gates the real resource target until POST proves running/no events; requires a real failed terminal GET with one captured resource and retains the original resource/body assertions; barrier released in finally",
+      "browser_result": {
+        "profiles": [
+          "dev-admin",
+          "local-auth"
+        ],
+        "skips": 0,
+        "retries": 0,
+        "real_terminal_get": true,
+        "debugger_websocket_signals_suppressed": true,
+        "terminal_events": 1,
+        "captured_resources": 1,
+        "original_resource_and_body_assertions": "passed",
+        "visual_manifest": "slice9-terminal-get-screenshots.json"
+      }
+    }
+  },
+  "initial_failures": [
+    {
+      "check": "engine focused",
+      "classification": "test-only overly broad regex fixture matched neutral binding name",
+      "repair": "Use intended anchored expression; focused/full engine checks passed"
+    },
+    {
+      "check": "API race build attempt 1",
+      "result": "build failed; tests did not execute",
+      "classification": "unclassified because no diagnostic was returned"
+    },
+    {
+      "check": "API race build attempt 2",
+      "result": "build failed; tests did not execute",
+      "classification": "proven temporary disk exhaustion during compiler archive/vet generation"
+    },
+    {
+      "check": "browser fixture selector",
+      "classification": "Wrapped Values at label required exact combobox role selector",
+      "repair": "Use existing accessible combobox name"
+    },
+    {
+      "check": "narrow geometry fixture",
+      "classification": "Intrinsic auto-overflow wrapper was incorrectly treated as a real scrollport; whole multicard section inherently exceeds viewport",
+      "repair": "Align only real scrollports and verify every complete labeled card individually"
+    },
+    {
+      "check": "narrow product layout",
+      "classification": "393px parameter card exceeded 267px usable center-body viewport even at bounded 1400px browser height",
+      "repair": "Scope additional inspector shell height to narrow runtime-evidence pane; assert actual center-body >=440px and unchanged clipping/hit/content checks"
+    },
+    {
+      "check": "browser card build",
+      "result": "build failed; tests did not execute",
+      "classification": "proven disk exhaustion during overlapping controller link/API compilation; subsequent Go steps serialized"
+    },
+    {
+      "check": "local-auth controller build with DWARF",
+      "result": "build failed; tests did not execute",
+      "classification": "proven linker output mapping disk exhaustion",
+      "repair": "Omit linker DWARF only; identical runtime code and browser assertions executed"
+    },
+    {
+      "check": "API race build attempt 3",
+      "result": "build failed; tests did not execute",
+      "classification": "proven API internal-test compiler archive disk exhaustion despite linker/scoped compiler DWARF omission",
+      "next_step": "Waited for sufficient disk headroom; recovered normal-package fixture and repeated runtime races passed without changing assertions or vet"
+    },
+    {
+      "check": "dev-admin related browser regate",
+      "classification": "Actual polling loss-recovery path retired a terminal session without selecting its existing first failed event, so resource evidence was inaccessible",
+      "repair": "Production polling selection repair, three passing deferred component GET cases, final affected units/types/lint/embedded build and zero source-review findings; deterministic real-controller 14-case browser regates passed in both profiles"
+    },
+    {
+      "check": "terminal-GET global lint first attempt",
+      "classification": "Missing stable setExpandedReplayEvent dependency in the polling effect",
+      "repair": "Added the stable setExpandedReplayEvent dispatcher to the polling effect dependency list; global lint, app/Node types, final unified 285 units and both actual 14-case browser profiles then passed; original resource/body assertions retained"
+    }
+  ],
+  "visual_review": {
+    "result": "passed",
+    "reviewers": [
+      "root",
+      "independent UI peer"
+    ],
+    "reviewed_at_original_resolution": true,
+    "remaining_actionable_findings": 0,
+    "images": 36,
+    "manifest": "slice9-screenshots.json",
+    "scope": "The original 36-image held-state set remains accepted unchanged; both final related 14-case browser selections passed. Two additional terminal-GET context screenshots are recorded separately.",
+    "narrow_width": 390,
+    "maximum_viewport_height": 1400,
+    "sidebar": "Collapsed through actual operator control",
+    "qualification": "Held engine boundary with last actual parameter resolution; no forecast or proof of request acceptance",
+    "reviewed_images_by_reviewer": {
+      "root": 36,
+      "independent UI peer": 36
+    },
+    "additional_terminal_get_context_images": 2
+  },
+  "cache_cleanup": {
+    "final_shared_cache_cleanup": "Deferred until all dependent session work is complete; other active tasks must be preserved",
+    "obsolete_private_export_logical_bytes_removed": 1156032018,
+    "shared_or_current_artifacts_removed": 0,
+    "auto_review_rejection": "Additional removal rejected while controller build active; safely completed after build closed and absence of open/importcfg references verified"
+  },
+  "artifact_review": "API peer identified documentation scope and stale-result findings. Root repaired all findings; final root/API re-review of implementation, validation JSON, terminal-GET manifest and unchanged PNG copies reported zero actionable findings."
+}

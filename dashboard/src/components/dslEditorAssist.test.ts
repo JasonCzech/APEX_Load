@@ -258,9 +258,13 @@ describe('describeTemplateReference', () => {
   })
 
   it('attaches a concrete runtime value when one is known, but never for secrets', () => {
-    const runtime = { username: 'alice', csrf: 'tok-1', PASSWORD: 'p@ss' }
+    const runtime = { username: 'wrong-var-namespace', 'param.username': 'alice', csrf: 'tok-1', PASSWORD: 'p@ss' }
     const param = describeTemplateReference('param.username', model, runtime)
     expect(param.runtimeValue).toBe('alice')
+    expect(describeTemplateReference('data.people.person', model, { 'data.people.person': 'Alice' }).runtimeValue).toBe('Alice')
+    expect(describeTemplateReference('param.username', model, { username: 'wrong-var-namespace' }).runtimeValue).toBeUndefined()
+    expect(describeTemplateReference('var.constructor', model, {}).runtimeValue).toBeUndefined()
+    expect(describeTemplateReference('var.__proto__', model, Object.fromEntries([['__proto__', 'ordinary-binding']]), 'Current paused state').runtimeQualification).toBe('Current paused state')
 
     const variable = describeTemplateReference('var.csrf', model, runtime)
     expect(variable.runtimeValue).toBe('tok-1')

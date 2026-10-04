@@ -307,7 +307,36 @@ export interface ConditionEvidence {
 // Step modes accepted by POST /script-debug/sessions/{id}/step.
 export type ScriptDebugStepMode = 'into' | 'over' | 'loop_end'
 
+export type DebugRuntimeUnavailableReason = 'boundary_held' | 'not_paused' | 'pause_pending' | 'snapshot_unavailable' | 'context_canceled' | 'integrity_fence_lost' | 'runtime_evidence_unavailable' | 'session_terminal' | 'session_retired' | 'revision_exhausted'
+
+export interface ReplayRuntimeSnapshot {
+  state: 'complete' | 'bounded' | 'unavailable'
+  boundary: 'before_action' | 'after_action'
+  location: ScriptDebugAction
+  variables: Array<{ name: string; value_state: 'assigned' | 'redacted' | 'omitted'; value?: string }>
+  parameters: Array<{ name: string; state: 'not_evaluated' | 'prepared' | 'observed' | 'exhausted' | 'unavailable'; update_policy: 'once' | 'each_iteration' | 'each_occurrence' | 'unavailable'; value_state: 'observed' | 'assigned' | 'redacted' | 'omitted'; value?: string; observed_event_id?: string }>
+  rows: Array<{ kind: 'datasource' | 'parameter' | 'foreach'; source: string; name: string; row_ordinal?: number; selection: 'sequential' | 'random' | 'unique' | 'pop' | 'same_line' | 'foreach' | 'fixed' | 'unavailable'; state: 'selected' | 'exhausted' | 'unavailable'; observed_event_id?: string }>
+  frames: Array<{ kind: 'phase' | 'http_sequence' | 'control_if' | 'control_switch' | 'control_loop' | 'foreach' | 'parallel' | 'parallel_branch'; phase: 'init' | 'action' | 'teardown'; action_index: number; step_path?: string[]; iteration_path?: number[]; branch_index?: number }>
+  omissions: { variables: number; parameters: number; rows: number; frames: number; values: number }
+  runtime_evidence_unavailable?: boolean
+  unavailable_reason?: 'publication_unavailable' | 'work_limit'
+}
+
+export interface ScriptDebugRuntimeState {
+  version: 1
+  kind: 'full'
+  session_id: string
+  session_incarnation: string
+  state_revision: string
+  state: 'paused' | 'unavailable'
+  reason: DebugRuntimeUnavailableReason
+  snapshot: ReplayRuntimeSnapshot | null
+}
+
 export interface ScriptDebugSession {
+  session_incarnation?: string
+  state_revision?: string
+  runtime_state?: ScriptDebugRuntimeState
   runtime_evidence_unavailable?: boolean
   dropped_event_count?: number
   id: string

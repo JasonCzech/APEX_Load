@@ -28,8 +28,8 @@ describe('debugger operator experience', () => {
     const events = [event({ extractions: { customer: 'first' } }), event({ extractions: { customer: 'second', order: '123' } })]
     expect(variablesAt(events, { input: 'seed' }, 0)).toEqual({ input: 'seed', customer: 'first' })
     expect(variablesAt(events, { input: 'seed' }, -1)).toEqual({ input: 'seed' })
-    const html = renderToStaticMarkup(<DebugVariableWatches events={events} seed={{}} latest={{ customer: 'second' }} selected={0} onSelect={() => {}} />)
-    expect(html).toContain('Latest session'); expect(html).toContain('Selected execution (after)'); expect(html).toContain('Pin customer')
+    const html = renderToStaticMarkup(<DebugVariableWatches mode="retained" events={events} seed={{}} latest={{ customer: 'second' }} selected={0} onSelect={() => {}} />)
+    expect(html).toContain('Retained history'); expect(html).toContain('Selected execution (after)'); expect(html).toContain('Pin customer')
   })
   it('hides retained watch values, namespace rows and JSON when runtime evidence is unavailable', () => {
     const html = renderToStaticMarkup(<DebugVariableWatches evidenceUnavailable events={[event({ extractions: { captured: 'captured-value' } })]} seed={{ seeded: 'seed-value' }} latest={{ final: 'final-value' }} selected={0} onSelect={() => {}} />)

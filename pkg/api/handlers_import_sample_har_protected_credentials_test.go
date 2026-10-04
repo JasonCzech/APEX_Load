@@ -17,9 +17,10 @@ import (
 
 func TestSampleAndHARProtectedCredentialEndpointsUseDurableSourceSessions(t *testing.T) {
 	tests := []struct {
-		name     string
-		endpoint string
-		body     func(projectID, canary string) []byte
+		name            string
+		endpoint        string
+		body            func(projectID, canary string) []byte
+		wantHTTPVersion string
 	}{
 		{
 			name:     "sample",
@@ -38,8 +39,9 @@ func TestSampleAndHARProtectedCredentialEndpointsUseDurableSourceSessions(t *tes
 			},
 		},
 		{
-			name:     "har",
-			endpoint: "/api/v1/scripts/import/har",
+			name:            "har",
+			endpoint:        "/api/v1/scripts/import/har",
+			wantHTTPVersion: "1.1",
 			body: func(projectID, canary string) []byte {
 				payload, _ := json.Marshal(map[string]any{
 					"name":       "Protected HAR",
@@ -48,11 +50,12 @@ func TestSampleAndHARProtectedCredentialEndpointsUseDurableSourceSessions(t *tes
 					  "log":{"entries":[{
 					    "request":{
 					      "method":"POST",
+					      "httpVersion":"HTTP/1.1",
 					      "url":"https://api.example.test/login",
 					      "headers":[{"name":"Content-Type","value":"application/json"}],
 					      "postData":{"mimeType":"application/json","text":"{\"password\":\"` + canary + `\"}"}
 					    },
-					    "response":{"status":204,"headers":[],"content":{"text":""}}
+					    "response":{"status":204,"httpVersion":"HTTP/1.1","headers":[],"content":{"text":""}}
 					  }]}
 					}`,
 				})
@@ -60,14 +63,16 @@ func TestSampleAndHARProtectedCredentialEndpointsUseDurableSourceSessions(t *tes
 			},
 		},
 		{
-			name:     "har_salesforce_branch",
-			endpoint: "/api/v1/scripts/import/har",
-			body:     protectedSalesforceHARImportBody,
+			name:            "har_salesforce_branch",
+			endpoint:        "/api/v1/scripts/import/har",
+			body:            protectedSalesforceHARImportBody,
+			wantHTTPVersion: "1.1",
 		},
 		{
-			name:     "salesforce",
-			endpoint: "/api/v1/scripts/import/salesforce",
-			body:     protectedSalesforceHARImportBody,
+			name:            "salesforce",
+			endpoint:        "/api/v1/scripts/import/salesforce",
+			body:            protectedSalesforceHARImportBody,
+			wantHTTPVersion: "1.1",
 		},
 	}
 
@@ -89,6 +94,7 @@ func TestSampleAndHARProtectedCredentialEndpointsUseDurableSourceSessions(t *tes
 				test.endpoint,
 				test.body(projectID, unavailableCanary),
 			)
+			assertProtectedCredentialImportHTTPVersion(t, unavailable.Script, test.wantHTTPVersion)
 			assertProtectedCredentialImportResponse(t, unavailable, unavailableCanary, true)
 
 			wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
@@ -110,6 +116,7 @@ func TestSampleAndHARProtectedCredentialEndpointsUseDurableSourceSessions(t *tes
 				test.endpoint,
 				test.body(projectID, availableCanary),
 			)
+			assertProtectedCredentialImportHTTPVersion(t, available.Script, test.wantHTTPVersion)
 			assertProtectedCredentialImportResponse(t, available, availableCanary, true)
 		})
 	}
@@ -123,15 +130,35 @@ func protectedSalesforceHARImportBody(projectID, canary string) []byte {
 		  "log":{"entries":[{
 		    "request":{
 		      "method":"POST",
+		      "httpVersion":"HTTP/1.1",
 		      "url":"https://contract.sandbox.my.salesforce.com/services/data/v61.0/sobjects/Account",
 		      "headers":[{"name":"Content-Type","value":"application/json"}],
 		      "postData":{"mimeType":"application/json","text":"{\"name\":\"Contract\",\"password\":\"` + canary + `\"}"}
 		    },
-		    "response":{"status":201,"headers":[],"content":{"mimeType":"application/json","text":"{\"id\":\"001contract\"}"}}
+		    "response":{"status":201,"httpVersion":"HTTP/1.1","headers":[],"content":{"mimeType":"application/json","text":"{\"id\":\"001contract\"}"}}
 		  }]}
 		}`,
 	})
 	return payload
+}
+
+// These credential fixtures model a supported observed HAR request rather than
+// the separately review-gated missing-version source case.
+func assertProtectedCredentialImportHTTPVersion(t *testing.T, script dsl.Script, want string) {
+	t.Helper()
+	if want == "" {
+		return
+	}
+	if len(script.Actions) != 1 {
+		t.Fatal("protected HAR fixture must import one request action")
+	}
+	version, err := dsl.EffectiveHTTPVersion(script.Actions[0], dsl.InheritedHTTPVersion(&script))
+	if err != nil || version != want {
+		t.Fatalf("imported HTTP version = %q, err=%v, want %q", version, err, want)
+	}
+	if len(executionReviewBlockerCodes(script.Actions[0].Metadata)) != 0 {
+		t.Fatal("supported observed HAR credential fixture unexpectedly requires import review")
+	}
 }
 
 type protectedCredentialImportResponse struct {

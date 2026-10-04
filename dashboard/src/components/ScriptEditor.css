@@ -8253,3 +8253,72 @@ button.debugger-problem-row:hover {
     flex-wrap: wrap;
   }
 }
+
+/* Current receipts need a full card inside the inspector's nested scrollport. */
+@container (max-width: 1100px) {
+  .editor-body.workspace-debug .debugger-shell[data-narrow-pane="inspector"]:has(.debug-runtime-state-evidence) {
+    min-height: calc(602px + max(100px, min(var(--bottom-h, 220px), 30vh)));
+  }
+  .editor-body.workspace-debug .debugger-shell.debug-dock-collapsed[data-narrow-pane="inspector"]:has(.debug-runtime-state-evidence) {
+    min-height: 640px;
+  }
+}
+
+/* Current-state receipts keep their labels readable inside the debug pane. */
+.debug-runtime-state-evidence {
+  min-width: 0;
+  container-type: inline-size;
+  container-name: debug-runtime-receipts;
+}
+.debug-runtime-state-evidence section,
+.debug-runtime-state-evidence table {
+  min-width: 0;
+  max-width: 100%;
+}
+.debug-runtime-state-evidence table {
+  width: 100%;
+  table-layout: fixed;
+}
+.debug-runtime-state-evidence th,
+.debug-runtime-state-evidence td,
+.debug-runtime-state-evidence li,
+.debug-runtime-state-evidence code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.debug-runtime-state-evidence th small,
+.debug-runtime-state-evidence td small {
+  display: block;
+}
+@container debug-runtime-receipts (max-width: 620px) {
+  .debug-runtime-state-evidence table,
+  .debug-runtime-state-evidence tbody,
+  .debug-runtime-state-evidence tr,
+  .debug-runtime-state-evidence th {
+    display: block;
+    width: 100%;
+  }
+  .debug-runtime-state-evidence thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .debug-runtime-state-evidence tr {
+    box-sizing: border-box;
+    margin-bottom: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+  }
+  .debug-runtime-state-evidence td {
+    display: grid;
+    grid-template-columns: minmax(0, 40%) minmax(0, 1fr);
+    gap: 8px;
+    box-sizing: border-box;
+  }
+  .debug-runtime-state-evidence td::before {
+    content: attr(data-label);
+    color: var(--text-secondary);
+  }
+}

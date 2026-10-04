@@ -95012,12 +95012,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -95027,6 +95109,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                 required:
@@ -96411,12 +96496,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -96426,6 +96593,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                 required:
@@ -97870,12 +98040,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -97885,6 +98137,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                 required:
@@ -99275,12 +99530,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -99290,6 +99627,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                 required:
@@ -100674,12 +101014,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -100689,6 +101111,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                 required:
@@ -102078,12 +102503,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -102093,6 +102600,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                 required:
@@ -103483,12 +103993,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -103498,6 +104090,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                 required:
@@ -137480,12 +138075,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -137495,6 +138172,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                 required:
@@ -138880,12 +139560,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -138895,6 +139657,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                 required:
@@ -140341,12 +141106,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -140356,6 +141203,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                 required:
@@ -141747,12 +142597,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -141762,6 +142694,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                 required:
@@ -143147,12 +144082,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -143162,6 +144179,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                 required:
@@ -144552,12 +145572,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -144567,6 +145669,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                 required:
@@ -145958,12 +147063,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -145973,6 +147160,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                 required:
@@ -166074,12 +167264,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -166089,6 +167361,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                   warnings:
@@ -172336,12 +173611,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -172351,6 +173708,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                   warnings:
@@ -202095,12 +203455,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -202110,6 +203552,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                   warnings:
@@ -247744,12 +249189,94 @@ paths:
                             type: string
                           name:
                             type: string
+                      runtime_state:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          reason:
+                            type: string
+                          session_id:
+                            type: string
+                          session_incarnation:
+                            type: string
+                          snapshot:
+                            type: object
+                            properties:
+                              boundary:
+                                type: string
+                              frames:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeFrame'
+                                  additionalProperties: true
+                              location:
+                                type: object
+                                additionalProperties: true
+                              omissions:
+                                type: object
+                                additionalProperties: true
+                              parameters:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeParameter'
+                                  additionalProperties: true
+                              rows:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeRow'
+                                  additionalProperties: true
+                              runtime_evidence_unavailable:
+                                type: boolean
+                              state:
+                                type: string
+                              unavailable_reason:
+                                type: string
+                              variables:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ReplayRuntimeBinding'
+                                  additionalProperties: true
+                            required:
+                              - boundary
+                              - frames
+                              - location
+                              - omissions
+                              - parameters
+                              - rows
+                              - state
+                              - variables
+                            nullable: true
+                          state:
+                            type: string
+                          state_revision:
+                            type: string
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - kind
+                          - reason
+                          - session_id
+                          - session_incarnation
+                          - snapshot
+                          - state
+                          - state_revision
+                          - version
                       script_id:
+                        type: string
+                      session_incarnation:
                         type: string
                       started_at:
                         type: string
                         format: date-time
                         nullable: true
+                      state_revision:
+                        type: string
                       status:
                         type: string
                     required:
@@ -247759,6 +249286,9 @@ paths:
                       - id
                       - log_level
                       - protocol
+                      - runtime_state
+                      - session_incarnation
+                      - state_revision
                       - status
                     nullable: true
                   warnings:

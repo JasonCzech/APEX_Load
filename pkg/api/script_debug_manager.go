@@ -75,6 +75,9 @@ type ScriptDebugLogEntry struct {
 }
 
 type ScriptDebugSession struct {
+	SessionIncarnation         string                      `json:"session_incarnation"`
+	StateRevision              string                      `json:"state_revision"`
+	RuntimeState               ScriptDebugRuntimeState     `json:"runtime_state"`
 	RuntimeEvidenceUnavailable bool                        `json:"runtime_evidence_unavailable,omitempty"`
 	ID                         string                      `json:"id"`
 	Mode                       string                      `json:"mode,omitempty"`
@@ -137,6 +140,13 @@ type ScriptDebugSession struct {
 	terminalFenceEstablished bool
 	retainedEventJSONBytes   int
 	eventJSONBytes           []int
+	executionContext         context.Context
+	workerContext            context.Context
+	heldBoundary             *scriptDebugHeldBoundary
+	activeRuntimeHook        *scriptDebugHeldBoundary
+	runtimeRevision          uint64
+	runtimeRevisionExhausted bool
+	runtimeUnavailableReason string
 }
 
 type ScriptDebugManager struct {
@@ -231,6 +241,7 @@ func (m *ScriptDebugManager) Close() {
 		cleanups := make([]closeCleanup, 0, len(m.sessions))
 		for id, session := range m.sessions {
 			session.mu.Lock()
+			session.invalidateRuntimeStateLocked(ScriptDebugRuntimeSessionRetired)
 			session.retired = true
 			if session.Status == ScriptDebugRunning || session.Status == ScriptDebugPaused {
 				session.Status = ScriptDebugStopped
@@ -347,6 +358,10 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 		actionGraphDigest, _ = scriptCorrelationActionGraphDigest(script)
 	}
 	session := &ScriptDebugSession{
+		SessionIncarnation:           uuid.New().String(),
+		executionContext:             executionCtx,
+		workerContext:                workerCtx,
+		runtimeUnavailableReason:     ScriptDebugRuntimeNotPaused,
 		ID:                           sessionID,
 		Mode:                         normalizeReplaySessionMode(req.Mode),
 		ScriptID:                     scriptID,
@@ -371,6 +386,7 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 	}
 	if req.StartPaused {
 		session.Status = ScriptDebugPaused
+		session.runtimeUnavailableReason = ScriptDebugRuntimePausePending
 	}
 	session.appendLogLocked("info", "session", "Debugger session started", "", nil)
 	if req.StartPaused {
@@ -455,6 +471,7 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 				return
 			}
 			session.CompletedAt = &completedAt
+			session.invalidateRuntimeStateLocked(ScriptDebugRuntimeSessionTerminal)
 			session.terminalFenceEstablished = terminalFenceEstablished
 			if report != nil && report.RuntimeEvidenceUnavailable {
 				session.omitRuntimeEvidenceLocked()
@@ -584,6 +601,7 @@ func (m *ScriptDebugManager) reconcileWorkerCancellation(workerCtx, executionCtx
 			failure = context.Canceled
 		}
 		session.Status = ScriptDebugFailed
+		session.invalidateRuntimeStateLocked(ScriptDebugRuntimeContextCanceled)
 		session.Error = failure.Error()
 		session.FinalReport = nil
 		session.stepOnce = false
@@ -630,6 +648,7 @@ func (m *ScriptDebugManager) pruneExpiredLocked(now time.Time) (int, []*replaySe
 		if m.shouldPruneSessionLocked(session, now) {
 			m.cancelSessionLocked(session, now, "Debugger session pruned after retention window")
 			session.retired = true
+			session.invalidateRuntimeStateLocked(ScriptDebugRuntimeSessionRetired)
 			releaseRetained := session.workerHasFinishedLocked()
 			delete(m.sessions, id)
 			removed++
@@ -661,6 +680,7 @@ func (m *ScriptDebugManager) enforceMaxSessionsLocked(now time.Time, protectedID
 		session.mu.Lock()
 		m.cancelSessionLocked(session, now, "Debugger session pruned to enforce session cap")
 		session.retired = true
+		session.invalidateRuntimeStateLocked(ScriptDebugRuntimeSessionRetired)
 		releaseRetained := session.workerHasFinishedLocked()
 		session.mu.Unlock()
 		delete(m.sessions, id)
@@ -735,6 +755,7 @@ func (m *ScriptDebugManager) cancelSessionLocked(session *ScriptDebugSession, no
 	if session == nil {
 		return
 	}
+	session.invalidateRuntimeStateLocked(ScriptDebugRuntimeSessionTerminal)
 	if session.Status == ScriptDebugRunning || session.Status == ScriptDebugPaused {
 		// A stopped status does not prove the replay goroutine has exited. Preserve
 		// the active capacity lease until the worker completion path runs so an
@@ -802,6 +823,7 @@ func (m *ScriptDebugManager) abandonUnresponsiveWorker(session *ScriptDebugSessi
 		return
 	}
 	session.workerAbandoned = true
+	session.invalidateRuntimeStateLocked(ScriptDebugRuntimeSessionRetired)
 	session.Status = ScriptDebugFailed
 	session.Error = "replay worker ignored cancellation past the abandon grace period; session orphaned and its lease force-released"
 	session.rejectCorrelationEvidenceLocked("debugger session was orphaned after its worker ignored cancellation")
@@ -913,6 +935,8 @@ func (m *ScriptDebugManager) handleReplayProgress(ctx context.Context, session *
 	switch event.Type {
 	case engine.ReplayProgressActionStarted:
 		session.mu.Lock()
+		session.clearActiveRuntimeCandidateLocked()
+		session.invalidateRuntimeStateLocked(ScriptDebugRuntimeNotPaused)
 		if event.Action != nil {
 			actionCopy := *event.Action
 			session.CurrentAction = &actionCopy
@@ -955,6 +979,7 @@ func (m *ScriptDebugManager) handleReplayProgress(ctx context.Context, session *
 		if shouldPauseAfterStep {
 			session.stepOnce = false
 			session.Status = ScriptDebugPaused
+			session.invalidateRuntimeStateLocked(ScriptDebugRuntimePausePending)
 			session.appendLogLocked("info", "control", "Step completed; debugger paused", "", nil)
 		}
 		session.mu.Unlock()
@@ -1027,6 +1052,7 @@ func (m *ScriptDebugManager) getForProject(sessionID, projectID string) (*Script
 		return nil, false
 	}
 	session.mu.Lock()
+	session.reconcileRuntimeStateLocked()
 	if session.reservation.failureOrExpired(time.Now()) != nil ||
 		!replaySessionProjectMatches(session.ProjectID, projectID) {
 		session.mu.Unlock()
@@ -1157,6 +1183,7 @@ func (m *ScriptDebugManager) stepModeForProject(sessionID, projectID, mode strin
 	}
 
 	session.mu.Lock()
+	session.reconcileRuntimeStateLocked()
 	if session.reservation.failureOrExpired(time.Now()) != nil ||
 		!replaySessionProjectMatches(session.ProjectID, projectID) {
 		session.mu.Unlock()
@@ -1166,6 +1193,7 @@ func (m *ScriptDebugManager) stepModeForProject(sessionID, projectID, mode strin
 	session.lastActivityAt = now
 	changed := false
 	if session.Status == ScriptDebugPaused {
+		session.invalidateRuntimeStateLocked(ScriptDebugRuntimeNotPaused)
 		boundary := computeStepBoundary(session.CurrentAction, mode)
 		if boundary == nil {
 			// Nothing to resume through: behave like a single step.
@@ -1219,6 +1247,7 @@ func (m *ScriptDebugManager) updateStatus(sessionID, projectID string, nextStatu
 	}
 
 	session.mu.Lock()
+	session.reconcileRuntimeStateLocked()
 	if session.reservation.failureOrExpired(time.Now()) != nil ||
 		!replaySessionProjectMatches(session.ProjectID, projectID) {
 		session.mu.Unlock()
@@ -1230,6 +1259,7 @@ func (m *ScriptDebugManager) updateStatus(sessionID, projectID string, nextStatu
 	switch nextStatus {
 	case ScriptDebugPaused:
 		if session.Status == ScriptDebugRunning {
+			session.invalidateRuntimeStateLocked(ScriptDebugRuntimePausePending)
 			session.Status = ScriptDebugPaused
 			session.stepOnce = false
 			session.clearStepLocked()
@@ -1237,6 +1267,7 @@ func (m *ScriptDebugManager) updateStatus(sessionID, projectID string, nextStatu
 		}
 	case ScriptDebugRunning:
 		if session.Status == ScriptDebugPaused {
+			session.invalidateRuntimeStateLocked(ScriptDebugRuntimeNotPaused)
 			session.Status = ScriptDebugRunning
 			session.stepOnce = stepOnce
 			session.clearStepLocked()
@@ -1278,6 +1309,7 @@ func (m *ScriptDebugManager) stopForProject(sessionID, projectID string) (*Scrip
 	}
 
 	session.mu.Lock()
+	session.reconcileRuntimeStateLocked()
 	if session.reservation.failureOrExpired(time.Now()) != nil ||
 		!replaySessionProjectMatches(session.ProjectID, projectID) {
 		session.mu.Unlock()
@@ -1286,6 +1318,7 @@ func (m *ScriptDebugManager) stopForProject(sessionID, projectID string) (*Scrip
 	}
 	session.lastActivityAt = now
 	if (session.Status == ScriptDebugRunning || session.Status == ScriptDebugPaused) && session.cancel != nil {
+		session.invalidateRuntimeStateLocked(ScriptDebugRuntimeSessionTerminal)
 		// Keep the lease active while cancellation drains. Retention begins only
 		// after ReplayScript returns, immediately before terminal publication.
 		if err := session.reservation.failureOrExpired(time.Now()); err != nil {
@@ -1340,6 +1373,7 @@ func (m *ScriptDebugManager) updateBreakpointsForProject(sessionID, projectID st
 	}
 
 	session.mu.Lock()
+	session.reconcileRuntimeStateLocked()
 	if session.reservation.failureOrExpired(time.Now()) != nil ||
 		!replaySessionProjectMatches(session.ProjectID, projectID) {
 		session.mu.Unlock()
@@ -1348,6 +1382,7 @@ func (m *ScriptDebugManager) updateBreakpointsForProject(sessionID, projectID st
 	}
 	session.lastActivityAt = now
 	session.Breakpoints = normalizeDebugBreakpoints(breakpoints)
+	session.advanceRuntimeRevisionLocked()
 	session.breakpointHits = nil
 	session.appendLogLocked("info", "breakpoint", fmt.Sprintf("Updated %d breakpoint(s)", len(session.Breakpoints)), "", nil)
 	snapshot := session.snapshotLocked()
@@ -1378,6 +1413,7 @@ func (m *ScriptDebugManager) setBreakOnFailureForProject(sessionID, projectID st
 	}
 
 	session.mu.Lock()
+	session.reconcileRuntimeStateLocked()
 	if session.reservation.failureOrExpired(time.Now()) != nil ||
 		!replaySessionProjectMatches(session.ProjectID, projectID) {
 		session.mu.Unlock()
@@ -1386,6 +1422,7 @@ func (m *ScriptDebugManager) setBreakOnFailureForProject(sessionID, projectID st
 	}
 	session.lastActivityAt = now
 	session.BreakOnFailure = enabled
+	session.advanceRuntimeRevisionLocked()
 	state := "disabled"
 	if enabled {
 		state = "enabled"
@@ -1441,6 +1478,7 @@ func (m *ScriptDebugManager) retireUnfencedSession(session *ScriptDebugSession) 
 		session.mu.Lock()
 		if !session.terminalFenceEstablished {
 			session.retired = true
+			session.invalidateRuntimeStateLocked(ScriptDebugRuntimeSessionRetired)
 			releaseID = session.releaseID
 			session.releaseID = nil
 			reservation = session.reservation
@@ -1462,18 +1500,46 @@ func (m *ScriptDebugManager) broadcast(messageType string, session *ScriptDebugS
 	if m.hub == nil || session == nil {
 		return
 	}
-	session.mu.RLock()
-	sessionID, scriptID, projectID := session.ID, session.ScriptID, session.ProjectID
-	unavailable := session.RuntimeEvidenceUnavailable
-	session.mu.RUnlock()
-	message := map[string]any{
-		"type":              messageType,
-		"replay_session_id": sessionID,
-		"debug_session_id":  sessionID,
-		"script_id":         scriptID,
-		"project_id":        projectID,
-		"timestamp":         time.Now(),
+	// Capture status, identity, revision and full runtime state under one lock.
+	// Leaf deltas carry only fixed metadata; accumulated state stays bounded to
+	// lifecycle/configuration publications.
+	full := true
+	switch messageType {
+	case "script_debug_action", "script_debug_action_started", "action_started",
+		"script_debug_event", "script_debug_action_completed", "script_debug_action_failed",
+		"script_debug_condition":
+		full = false
 	}
+	session.mu.Lock()
+	session.reconcileRuntimeStateLocked()
+	var fullSession *ScriptDebugSession
+	if full {
+		if report != nil {
+			fullSession = session.snapshotBaseLocked()
+		} else {
+			fullSession = session.snapshotLocked()
+		}
+	}
+	message := map[string]any{
+		"type":                messageType,
+		"replay_session_id":   session.ID,
+		"debug_session_id":    session.ID,
+		"session_incarnation": session.SessionIncarnation,
+		"state_revision":      strconv.FormatUint(session.runtimeRevision, 10),
+		"status":              session.Status,
+		"script_id":           session.ScriptID,
+		"project_id":          session.ProjectID,
+		"timestamp":           time.Now(),
+	}
+	unavailable := session.RuntimeEvidenceUnavailable
+	if full {
+		message["session"] = fullSession
+		message["state_revision"] = fullSession.StateRevision
+	}
+	if report != nil {
+		report = cloneBrowserReplayReport(report)
+	}
+	session.mu.Unlock()
 	if unavailable {
 		message["runtime_evidence_unavailable"] = true
 		action = cloneScriptDebugAction(action)
@@ -1481,24 +1547,7 @@ func (m *ScriptDebugManager) broadcast(messageType string, session *ScriptDebugS
 		if event != nil {
 			event = omitUnavailableScriptDebugEvent(event)
 		}
-		if report != nil {
-			report = cloneBrowserReplayReport(report)
-			engine.OmitUnavailableReplayReport(report)
-		}
-	}
-	// Per-leaf messages already contain their delta. Attaching the accumulated
-	// session here made n actions serialize O(n²) data. Lifecycle/configuration
-	// messages remain authoritative full snapshots.
-	switch messageType {
-	case "script_debug_action", "script_debug_action_started", "action_started",
-		"script_debug_event", "script_debug_action_completed", "script_debug_action_failed",
-		"script_debug_condition":
-	default:
-		if report != nil {
-			message["session"] = session.terminalSnapshot()
-		} else {
-			message["session"] = session.snapshot()
-		}
+		engine.OmitUnavailableReplayReport(report)
 	}
 	if eventIndex >= 0 {
 		message["event_index"] = eventIndex
@@ -1581,6 +1630,7 @@ func (m *ScriptDebugManager) finishWorker(session *ScriptDebugSession) {
 		session.mu.Unlock()
 		return
 	}
+	session.invalidateRuntimeStateLocked(ScriptDebugRuntimeSessionTerminal)
 	session.workerFinished = true
 	retired := session.retired
 	done := session.workerDone
@@ -1608,14 +1658,14 @@ func (s *ScriptDebugSession) workerHasFinishedLocked() bool {
 }
 
 func (s *ScriptDebugSession) snapshot() *ScriptDebugSession {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.snapshotLocked()
 }
 
 func (s *ScriptDebugSession) terminalSnapshot() *ScriptDebugSession {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.snapshotBaseLocked()
 }
 
@@ -1653,7 +1703,11 @@ func (s *ScriptDebugSession) snapshotLocked() *ScriptDebugSession {
 }
 
 func (s *ScriptDebugSession) snapshotBaseLocked() *ScriptDebugSession {
+	runtimeState := s.runtimeStateLocked()
 	clone := &ScriptDebugSession{
+		SessionIncarnation:         s.SessionIncarnation,
+		StateRevision:              runtimeState.StateRevision,
+		RuntimeState:               runtimeState,
 		ID:                         s.ID,
 		RuntimeEvidenceUnavailable: s.RuntimeEvidenceUnavailable,
 		Mode:                       s.Mode,
@@ -1755,6 +1809,7 @@ func (s *ScriptDebugSession) omitRuntimeEvidenceLocked() {
 		return
 	}
 	s.RuntimeEvidenceUnavailable = true
+	s.invalidateRuntimeStateLocked(ScriptDebugRuntimeEvidenceUnavailable)
 	s.CurrentAction, s.CurrentEvent = nil, nil
 	s.Events, s.eventJSONBytes = nil, nil
 	s.retainedEventJSONBytes = 0
@@ -2079,10 +2134,21 @@ func cloneCorrelationObservation(observation correlate.Observation) correlate.Ob
 }
 
 func (c scriptDebugController) BeforeAction(ctx context.Context, action engine.ReplayDebugAction) error {
+	return c.beforeAction(ctx, action, nil)
+}
+
+func (c scriptDebugController) BeforeActionWithRuntimeState(ctx context.Context, action engine.ReplayDebugAction, snapshot engine.ReplayRuntimeSnapshot) error {
+	return c.beforeAction(ctx, action, &snapshot)
+}
+
+func (c scriptDebugController) beforeAction(ctx context.Context, action engine.ReplayDebugAction, snapshot *engine.ReplayRuntimeSnapshot) error {
 	if c.manager == nil || c.session == nil {
 		return nil
 	}
-	actionCopy := action
+	actionCopy := *cloneScriptDebugAction(&action)
+	token := &scriptDebugHeldBoundary{ctx: ctx, snapshot: c.runtimeCandidate(snapshot, action, "before_action")}
+	defer c.leaveRuntimeBoundary(token)
+	c.enterRuntimeHook(token)
 	actionBroadcasted := false
 	pausedBroadcasted := false
 	for {
@@ -2093,7 +2159,7 @@ func (c scriptDebugController) BeforeAction(ctx context.Context, action engine.R
 		if !c.manager.withCurrentWorkerSession(c.session, func() {
 			c.session.mu.Lock()
 			defer c.session.mu.Unlock()
-			if c.session.Status == ScriptDebugStopped {
+			if replaySessionStatusTerminal(c.session.Status) {
 				status = ScriptDebugStopped
 				return
 			}
@@ -2103,6 +2169,7 @@ func (c scriptDebugController) BeforeAction(ctx context.Context, action engine.R
 				case c.session.Status != ScriptDebugRunning:
 					c.session.appendLogLocked("debug", "action", fmt.Sprintf("Ready to execute %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
 				case c.session.hasBreakpointLocked(actionCopy):
+					c.session.invalidateRuntimeStateLocked(ScriptDebugRuntimePausePending)
 					c.session.Status = ScriptDebugPaused
 					c.session.stepOnce = false
 					c.session.clearStepLocked()
@@ -2110,6 +2177,7 @@ func (c scriptDebugController) BeforeAction(ctx context.Context, action engine.R
 				case c.session.stepBoundaryExitLocked(actionCopy):
 					// A step-over / finish-loop resume has left its subtree: pause before
 					// the first action outside it.
+					c.session.invalidateRuntimeStateLocked(ScriptDebugRuntimePausePending)
 					c.session.Status = ScriptDebugPaused
 					c.session.stepOnce = false
 					c.session.clearStepLocked()
@@ -2131,8 +2199,21 @@ func (c scriptDebugController) BeforeAction(ctx context.Context, action engine.R
 			c.manager.broadcastIfCurrent("script_debug_action", c.session, actionCopy.EventIndex, nil, &actionCopy, nil)
 			actionBroadcasted = true
 		}
-		if status == ScriptDebugPaused && !pausedBroadcasted {
-			c.manager.broadcastIfCurrent("script_debug_paused", c.session, actionCopy.EventIndex, nil, &actionCopy, nil)
+		if status == ScriptDebugPaused {
+			// The action delta precedes the new authoritative pause revision.
+			readmitted := false
+			if !c.manager.withCurrentWorkerSession(c.session, func() {
+				c.session.mu.Lock()
+				readmitted = c.holdRuntimeBoundaryLocked(token)
+				status = c.session.Status
+				stateChanged = c.session.stateChangedChanLocked()
+				c.session.mu.Unlock()
+			}) {
+				return context.Canceled
+			}
+			if status == ScriptDebugPaused && (readmitted || !pausedBroadcasted) {
+				c.manager.broadcastIfCurrent("script_debug_paused", c.session, actionCopy.EventIndex, nil, &actionCopy, nil)
+			}
 			pausedBroadcasted = true
 		}
 		if status != ScriptDebugPaused {
@@ -2153,9 +2234,20 @@ func (c scriptDebugController) BeforeAction(ctx context.Context, action engine.R
 // session is already paused (e.g. via Step) or break-on-failure is off, control
 // is left to the before-action pause mechanism on the next action.
 func (c scriptDebugController) AfterAction(ctx context.Context, action engine.ReplayDebugAction, event *engine.ReplayActionEvent) error {
+	return c.afterAction(ctx, action, event, nil)
+}
+
+func (c scriptDebugController) AfterActionWithRuntimeState(ctx context.Context, action engine.ReplayDebugAction, event *engine.ReplayActionEvent, snapshot engine.ReplayRuntimeSnapshot) error {
+	return c.afterAction(ctx, action, event, &snapshot)
+}
+
+func (c scriptDebugController) afterAction(ctx context.Context, action engine.ReplayDebugAction, event *engine.ReplayActionEvent, snapshot *engine.ReplayRuntimeSnapshot) error {
 	if c.manager == nil || c.session == nil {
 		return nil
 	}
+	token := &scriptDebugHeldBoundary{ctx: ctx, snapshot: c.runtimeCandidate(snapshot, action, "after_action")}
+	defer c.leaveRuntimeBoundary(token)
+	c.enterRuntimeHook(token)
 	if event == nil || event.Success {
 		return nil
 	}
@@ -2183,6 +2275,7 @@ func (c scriptDebugController) AfterAction(ctx context.Context, action engine.Re
 		}
 		c.session.Status = ScriptDebugPaused
 		c.session.stepOnce = false
+		c.holdRuntimeBoundaryLocked(token)
 		c.session.appendLogLocked("warn", "breakpoint", fmt.Sprintf("Paused after failure in %s[%d] %s", action.Phase, action.ActionIndex, action.ActionName)+debugLeafSuffix(action), "", nil)
 		paused = true
 	}) {
@@ -2198,20 +2291,27 @@ func (c scriptDebugController) AfterAction(ctx context.Context, action engine.Re
 		var (
 			status       string
 			stateChanged <-chan struct{}
+			readmitted   bool
 		)
 		if !c.manager.withCurrentWorkerSession(c.session, func() {
 			c.session.mu.Lock()
 			status = c.session.Status
+			if status == ScriptDebugPaused {
+				readmitted = c.holdRuntimeBoundaryLocked(token)
+			}
 			stateChanged = c.session.stateChangedChanLocked()
 			c.session.mu.Unlock()
 		}) {
 			return context.Canceled
 		}
-		if status == ScriptDebugStopped {
+		if replaySessionStatusTerminal(status) {
 			return context.Canceled
 		}
 		if status != ScriptDebugPaused {
 			return nil
+		}
+		if readmitted {
+			c.manager.broadcastIfCurrent("script_debug_paused", c.session, actionCopy.EventIndex, nil, &actionCopy, nil)
 		}
 		select {
 		case <-ctx.Done():

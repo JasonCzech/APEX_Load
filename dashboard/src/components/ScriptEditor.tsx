@@ -205,6 +205,7 @@ import {
 } from './scriptEditorReplayModel'
 import { useScriptReplayDebuggerController } from './useScriptReplayDebuggerController'
 import { omitUnavailableReplayReport, omitUnavailableReplaySession, replayVariablesForInspection, runtimeEvidenceUnavailable } from './runtimeVariableEvidence'
+import { EMPTY_DEBUG_RUNTIME, admitDebugRuntimeSession, admitDebugRuntimeDelta, beginDebugRuntime, invalidateDebugRuntime, currentRuntimeLookup, runtimeRequestIsCurrent, type DebugRuntimeAdmission, type DebugRuntimeRequest, type RuntimeInspectionMode } from './debugRuntimeState'
 import { ScriptReplayDebuggerView } from './ScriptReplayDebuggerView'
 import {
   applyValidationRuntimeSettingsMetadata,
@@ -580,6 +581,9 @@ interface ReplayWSMessage extends WSMessage {
   runtime_evidence_unavailable?: boolean
   replay_session_id?: string
   debug_session_id?: string
+  session_incarnation?: string
+  state_revision?: string
+  status?: ScriptDebugSession['status']
   event_id?: string
   event_index?: number
   action?: ScriptDebugAction
@@ -737,11 +741,32 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   // Holds the latest resolved debug-run variables so the {{...}} hover can show
   // concrete values without rebuilding the (otherwise stable) editor extensions.
   const replayVariableInspectorRef = useRef<Record<string, string> | null>(null)
+  const replayVariableQualificationRef = useRef('Current paused state')
   const [unavailableRuntimeSessionId, setUnavailableRuntimeSessionId] = useState<string | null>(null)
+  const runtimeAdmissionRef = useRef<DebugRuntimeAdmission>(EMPTY_DEBUG_RUNTIME)
+  const [runtimeAdmission, setRuntimeAdmission] = useState<DebugRuntimeAdmission>(EMPTY_DEBUG_RUNTIME)
+  const [runtimeInspectionMode, setRuntimeInspectionMode] = useState<RuntimeInspectionMode>('current')
+  const [runtimeFrameSourcePath, setRuntimeFrameSourcePath] = useState<string | null>(null)
+  const publishRuntimeAdmission = useCallback((state: DebugRuntimeAdmission) => {
+    runtimeAdmissionRef.current = state
+    setRuntimeAdmission(state)
+    if (state.privacyUnavailable && state.sessionId) setUnavailableRuntimeSessionId(state.sessionId)
+  }, [])
+  const invalidateRuntimeAuthority = useCallback((reason: string) => {
+    publishRuntimeAdmission(invalidateDebugRuntime(runtimeAdmissionRef.current, reason))
+  }, [publishRuntimeAdmission])
+  const runtimeRequest = useCallback((): DebugRuntimeRequest => ({ sessionId: runtimeAdmissionRef.current.sessionId, generation: runtimeAdmissionRef.current.generation }), [])
+  const admitRuntimeSession = useCallback((session: ScriptDebugSession, source: 'start' | 'get' | 'mutation' | 'socket', request?: DebugRuntimeRequest) => {
+    const result = admitDebugRuntimeSession(runtimeAdmissionRef.current, session, source, request)
+    publishRuntimeAdmission(result.state)
+    return result.accepted
+  }, [publishRuntimeAdmission])
+
   const scriptAssistExtensions = useMemo(
     () => buildDslAssistExtensions(
       script => api.validateDraftScript(script as ScriptDefinition, projectId, folderId ?? undefined),
       () => replayVariableInspectorRef.current,
+      () => replayVariableQualificationRef.current,
     ),
     [api, projectId, folderId],
   )
@@ -819,12 +844,16 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     closeReplayScreenshot,
   } = useScriptEditorState(initialScript)
   const runtimeVariablesUnavailable = runtimeEvidenceUnavailable(retainedBrowserReplaySession, retainedReplayReport)
-    || unavailableRuntimeSessionId !== null
+    || unavailableRuntimeSessionId !== null || runtimeAdmission.privacyUnavailable
   // Project before any controller, history or export consumer can use a stale
   // snapshot. The sticky signal is scoped to the current run.
-  const browserReplaySession = useMemo(() => retainedBrowserReplaySession && runtimeVariablesUnavailable
-    ? omitUnavailableReplaySession(retainedBrowserReplaySession) : retainedBrowserReplaySession,
-  [retainedBrowserReplaySession, runtimeVariablesUnavailable])
+  const browserReplaySession = useMemo(() => {
+    const session = retainedBrowserReplaySession && runtimeVariablesUnavailable ? omitUnavailableReplaySession(retainedBrowserReplaySession) : retainedBrowserReplaySession
+    if (!session || !runtimeAdmission.incarnation || !runtimeAdmission.revision) return session
+    return { ...session, session_incarnation: runtimeAdmission.incarnation, state_revision: runtimeAdmission.revision,
+      runtime_state: runtimeAdmission.runtime || { version: 1 as const, kind: 'full' as const, session_id: runtimeAdmission.sessionId!, session_incarnation: runtimeAdmission.incarnation, state_revision: runtimeAdmission.revision, state: 'unavailable' as const,
+        reason: runtimeVariablesUnavailable ? 'runtime_evidence_unavailable' as const : runtimeAdmission.terminal ? 'session_terminal' as const : 'snapshot_unavailable' as const, snapshot: null } }
+  }, [retainedBrowserReplaySession, runtimeVariablesUnavailable, runtimeAdmission])
   const replayReport = useMemo(() => retainedReplayReport && runtimeVariablesUnavailable
     ? omitUnavailableReplayReport(retainedReplayReport) : retainedReplayReport,
   [retainedReplayReport, runtimeVariablesUnavailable])
@@ -1425,6 +1454,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setReplayEditableActionsKey(null)
     setActiveReplaySessionId(null)
     setUnavailableRuntimeSessionId(null)
+    publishRuntimeAdmission({ ...EMPTY_DEBUG_RUNTIME, generation: runtimeAdmissionRef.current.generation + 1 })
+    setRuntimeInspectionMode('current')
+    setRuntimeFrameSourcePath(null)
     setBrowserReplaySession(null)
     setReplayReport(null)
     setReplayActivity([])
@@ -1442,6 +1474,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     projectId,
     scriptId,
     clearPendingParameterDataCellEdits,
+    publishRuntimeAdmission,
     setActiveReplaySessionId,
     setBrowserReplaySession,
     setError,
@@ -1893,14 +1926,21 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
 
   const [followExecution, setFollowExecution] = useState(true)
   const followExecutionRef = useRef(true)
-  const changeFollowExecution = (enabled: boolean) => { followExecutionRef.current = enabled; setFollowExecution(enabled) }
+  const changeFollowExecution = (enabled: boolean) => { setRuntimeFrameSourcePath(null); followExecutionRef.current = enabled; setFollowExecution(enabled) }
   const handleReplaySocketMessage = useCallback((message: WSMessage) => {
     const msg = message as ReplayWSMessage
     const trackedSessionId = activeReplaySessionId || (replayStartPending ? replayStartAttemptRef.current?.sessionId : null)
     if (!trackedSessionId || (msg.replay_session_id !== trackedSessionId && msg.debug_session_id !== trackedSessionId)) return
-    // Sticky per run, including delta-only messages and stale snapshots.
-    if (runtimeEvidenceUnavailable(msg, msg.session, msg.report, msg.session?.report)) {
-      setUnavailableRuntimeSessionId(trackedSessionId)
+
+
+    if (msg.session) {
+      if (!admitRuntimeSession({ ...msg.session, runtime_evidence_unavailable: runtimeEvidenceUnavailable(msg, msg.session, msg.report, msg.session.report) }, 'socket')) return
+    } else {
+      const status = msg.status || (msg.type.includes('completed') ? 'completed' : msg.type.includes('failed') && !msg.event ? 'failed' : msg.type.includes('stopped') ? 'stopped' : msg.type.includes('paused') ? 'paused' : msg.type.includes('started') || msg.type.includes('resumed') ? 'running' : undefined)
+      const result = admitDebugRuntimeDelta(runtimeAdmissionRef.current, { session_id: trackedSessionId, session_incarnation: msg.session_incarnation, state_revision: msg.state_revision, status, runtime_evidence_unavailable: runtimeEvidenceUnavailable(msg, msg.report) })
+      publishRuntimeAdmission(result.state)
+      if (!result.accepted) return
+      if (status) setBrowserReplaySession(previous => previous ? { ...previous, status } : previous)
     }
 
     if (msg.type === 'script_debug_started' && msg.session) {
@@ -2282,7 +2322,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       setActiveReplaySessionId(null)
       setReplaying(false)
     }
-  }, [activeReplaySessionId, replayStartPending, setActiveReplaySessionId, setBrowserReplaySession, setDebugBreakpoints, setDebugDetailCollapsed, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayOptions, setReplayReport, setReplaying])
+  }, [activeReplaySessionId, replayStartPending, admitRuntimeSession, publishRuntimeAdmission, setActiveReplaySessionId, setBrowserReplaySession, setDebugBreakpoints, setDebugDetailCollapsed, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayOptions, setReplayReport, setReplaying])
 
   useWebSocket({ onMessage: handleReplaySocketMessage, projectId })
 
@@ -2963,12 +3003,17 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     let debugSessionStarted = false
     let startRequestDispatched = false
     let requestedReplaySessionId = ''
+    let startRuntimeRequest: DebugRuntimeRequest | undefined
     try {
       const currentScript = resolveCurrentScript()
       setReplayEditableActionsKey(scopedEditableActionsEvidenceKey(currentScript, projectId, scriptId))
       const variables = parseReplayVariablesText(replayOptions.variablesText)
       const replaySessionId = createReplaySessionId()
       requestedReplaySessionId = replaySessionId
+      publishRuntimeAdmission(beginDebugRuntime(runtimeAdmissionRef.current, replaySessionId))
+      setRuntimeInspectionMode('current')
+      setRuntimeFrameSourcePath(null)
+      startRuntimeRequest = runtimeRequest()
       replayStartAttemptRef.current = {
         sessionId: replaySessionId,
         terminalObserved: false,
@@ -3037,6 +3082,17 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         ? await api.startScriptDebugSession(scriptId, payload)
         : await api.startDraftScriptDebugSession(payload)
       if (!replayResourceIsCurrent()) return
+      if (!res.session || !admitRuntimeSession(res.session, 'start', startRuntimeRequest)) {
+        // Keep the generated public ID reachable while a bounded trusted GET
+        // reconciles a malformed or overtaken start response.
+        const attempt = replayStartAttemptRef.current
+        if (attempt?.sessionId === replaySessionId && !attempt.terminalObserved) {
+          attempt.awaitingReconciliation = true
+          setActiveReplaySessionId(replaySessionId)
+        }
+        debugSessionStarted = true
+        return
+      }
       const replayWarnings = normalizeWarnings(res.warnings)
       setValidationReplayPreflight(res.preflight || res.session?.preflight || null)
       const responseSessionFinalized = isFinalizedDebugSession(res.session, res.session?.report)
@@ -3145,6 +3201,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       if (message.includes('Script JSON is invalid')) {
         setDebuggerBottomTab('problems')
       }
+      invalidateRuntimeAuthority('Current state unavailable: debug start was rejected.')
       setReplayReport(null)
       setReplayEditableActionsKey(null)
       setActiveReplaySessionId(null)
@@ -3174,7 +3231,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         }
       }
     }
-  }, [api, commitJsonDraft, debugBreakpoints, jsonDirty, openReplayDebugger, projectId, replayOptions, scriptEditorDirty, resolveCurrentScript, scriptId, setActiveReplaySessionId, setBrowserReplaySession, setDebuggerBottomTab, setError, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplayScreenshotSelection, setReplaySeedVariables, setReplaying, setSuccess, setWarnings])
+  }, [api, admitRuntimeSession, invalidateRuntimeAuthority, publishRuntimeAdmission, runtimeRequest, commitJsonDraft, debugBreakpoints, jsonDirty, openReplayDebugger, projectId, replayOptions, scriptEditorDirty, resolveCurrentScript, scriptId, setActiveReplaySessionId, setBrowserReplaySession, setDebuggerBottomTab, setError, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplayScreenshotSelection, setReplaySeedVariables, setReplaying, setSuccess, setWarnings])
 
   useEffect(() => {
     if (replayReport?.completed_at) {
@@ -3182,31 +3239,48 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     }
   }, [replayReport?.completed_at, success, setSuccess])
 
+  const performDebugMutation = useCallback(async (operation: () => Promise<{ session?: ScriptDebugSession } | void>) => {
+    const scope = editorResourceScopeRef.current
+    invalidateRuntimeAuthority('Current state unavailable: waiting for the debugger control response.')
+    const request = runtimeRequest()
+    try {
+      const response = await operation()
+      if (!editorMountedRef.current || editorResourceScopeRef.current !== scope) return null
+      if (!response?.session && !runtimeRequestIsCurrent(runtimeAdmissionRef.current, request)) return null
+      if (!response?.session) { invalidateRuntimeAuthority('Current state unavailable: the debugger control response was incomplete.'); return null }
+      if (!admitRuntimeSession(response.session, 'mutation', request)) return null
+      setBrowserReplaySession(response.session)
+      return response.session
+    } catch (cause) {
+      if (!editorMountedRef.current || editorResourceScopeRef.current !== scope || !runtimeRequestIsCurrent(runtimeAdmissionRef.current, request)) return null
+      throw cause
+    }
+  }, [admitRuntimeSession, invalidateRuntimeAuthority, runtimeRequest, setBrowserReplaySession])
+
   const handleStopReplay = useCallback(async () => {
     if (!activeReplaySessionId) return
     setSuccess('Stopping debugger…')
     try {
-      await api.stopScriptDebugSession(activeReplaySessionId)
+      await performDebugMutation(() => api.stopScriptDebugSession(activeReplaySessionId))
       setError('')
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to stop debugger'))
     }
-  }, [activeReplaySessionId, api, setError, setSuccess])
+  }, [activeReplaySessionId, api, performDebugMutation, setError, setSuccess])
 
   const handlePauseResumeReplay = useCallback(async () => {
     if (!activeReplaySessionId || !browserReplaySession) return
     try {
       const isPaused = browserReplaySession.status === 'paused'
-      const res = isPaused
-        ? await api.resumeScriptDebugSession(activeReplaySessionId)
-        : await api.pauseScriptDebugSession(activeReplaySessionId)
-      if (res?.session) setBrowserReplaySession(res.session)
+      await performDebugMutation(() => isPaused
+        ? api.resumeScriptDebugSession(activeReplaySessionId)
+        : api.pauseScriptDebugSession(activeReplaySessionId))
       setError('')
       setSuccess('')
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to update debugger state'))
     }
-  }, [activeReplaySessionId, api, browserReplaySession, setBrowserReplaySession, setError, setSuccess])
+  }, [activeReplaySessionId, api, browserReplaySession, performDebugMutation, setError, setSuccess])
 
   const handleStepReplay = useCallback(async (mode: ScriptDebugStepMode = 'into') => {
     openReplayDebugger(false)
@@ -3216,14 +3290,13 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     }
     if (browserReplaySession.status !== 'paused') return
     try {
-      const res = await api.stepScriptDebugSession(activeReplaySessionId, mode)
-      if (res?.session) setBrowserReplaySession(res.session)
+      await performDebugMutation(() => api.stepScriptDebugSession(activeReplaySessionId, mode))
       setError('')
       setSuccess('')
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to step debugger'))
     }
-  }, [activeReplaySessionId, api, browserReplaySession, handleReplay, openReplayDebugger, setBrowserReplaySession, setError, setSuccess])
+  }, [activeReplaySessionId, api, browserReplaySession, handleReplay, openReplayDebugger, performDebugMutation, setError, setSuccess])
 
   const clearDebugBreakpoints = async () => {
     setDebugBreakpoints([])
@@ -3231,8 +3304,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       return
     }
     try {
-      const res = await api.updateScriptDebugBreakpoints(activeReplaySessionId, [])
-      if (res?.session) setBrowserReplaySession(res.session)
+      await performDebugMutation(() => api.updateScriptDebugBreakpoints(activeReplaySessionId, []))
       setError('')
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to clear debugger breakpoints'))
@@ -3246,13 +3318,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       return
     }
     try {
-      const res = await api.updateScriptDebugOptions(activeReplaySessionId, { break_on_failure: enabled })
-      if (res?.session) setBrowserReplaySession(res.session)
+      await performDebugMutation(() => api.updateScriptDebugOptions(activeReplaySessionId, { break_on_failure: enabled }))
       setError('')
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to update break-on-failure'))
     }
-  }, [activeReplaySessionId, api, browserReplaySession, setBrowserReplaySession, setError, setReplayOptions])
+  }, [activeReplaySessionId, api, browserReplaySession, performDebugMutation, setError, setReplayOptions])
 
   const breakpointEntryKey = useCallback((bp: ScriptDebugBreakpoint) =>
     bp.step_path && bp.step_path.length > 0
@@ -3268,14 +3339,13 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       return
     }
     try {
-      const res = await api.updateScriptDebugBreakpoints(activeReplaySessionId, next)
-      setDebugBreakpoints(res.session?.breakpoints || next)
-      if (res?.session) setBrowserReplaySession(res.session)
+      const session = await performDebugMutation(() => api.updateScriptDebugBreakpoints(activeReplaySessionId, next))
+      if (session) setDebugBreakpoints(session.breakpoints || next)
       setError('')
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to update debugger breakpoints'))
     }
-  }, [activeReplaySessionId, api, browserReplaySession, setBrowserReplaySession, setDebugBreakpoints, setError])
+  }, [activeReplaySessionId, api, browserReplaySession, performDebugMutation, setDebugBreakpoints, setError])
 
   const toggleDebugBreakpoint = useCallback(async (phase: string, actionIndex: number, requestIndex?: number) => {
     const normalizedPhase = normalizeDebugPhase(phase)
@@ -3381,9 +3451,15 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       ? 'Success'
       : 'Failed'
   const replayLatestActivity = replayActivity[replayActivity.length - 1]
-  const replayVariableInspector = replayVariablesForInspection(replayReport, replaySeedVariables, runtimeVariablesUnavailable)
+  const currentRuntimeSnapshot = runtimeVariablesUnavailable ? null : runtimeAdmission.runtime?.snapshot || null
+  const replayVariableInspector = runtimeVariablesUnavailable ? null : runtimeInspectionMode === 'current'
+    ? currentRuntimeLookup(currentRuntimeSnapshot)
+    : runtimeInspectionMode === 'selected'
+      ? replayReport ? mergeReplayVariables(replaySeedVariables, replayReport.events.slice(0, (replayDebuggerController.selectedReplayEventIndex ?? -1) + 1)) : null
+      : replayVariablesForInspection(replayReport, replaySeedVariables, false)
   const hasReplayVariableInspectorData = replayVariableInspector ? Object.keys(replayVariableInspector).length > 0 : false
   replayVariableInspectorRef.current = replayVariableInspector
+  replayVariableQualificationRef.current = runtimeInspectionMode === 'current' ? 'Current paused state · held engine boundary' : 'Retained history · historical evidence'
 
   // Whether a recorded baseline exists for this script, so the debugger can
   // offer an auto record-vs-replay correlation diagnosis (vs HAR-upload).
@@ -3567,7 +3643,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const selectedDebugCodeRow = workspaceTab === 'debug'
     ? (selectedReplayEvent ? selectedDebugRow : (debugActionRows[0] ?? null))
     : null
-  const scriptCodeActivePath = workspaceTab === 'debug' && selectedReplayEvent
+  const scriptCodeActivePath = workspaceTab === 'debug' && runtimeFrameSourcePath && replayEditableActionsKey === currentEditableActionsKey
+    ? runtimeFrameSourcePath
+    : workspaceTab === 'debug' && selectedReplayEvent
     ? codePathForDebugRow(selectedDebugCodeRow)
     : activeAutoParameterPath
       ? activeAutoParameterPath
@@ -3764,12 +3842,20 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   // which the WebSocket handler would otherwise drop.
   useEffect(() => {
     if (!activeReplaySessionId || !replaying || replayStartPending) return
+    const scope = editorResourceScopeRef.current
     let cancelled = false
+    let inFlight = false
     const reconcile = async () => {
+      if (inFlight) return
+      inFlight = true
+      const request = runtimeRequest()
       try {
         const res = await api.getScriptDebugSession(activeReplaySessionId)
-        if (cancelled || !res?.session) return
+        if (!editorMountedRef.current || editorResourceScopeRef.current !== scope) return
+        if (!res?.session && (cancelled || !runtimeRequestIsCurrent(runtimeAdmissionRef.current, request))) return
+        if (!res?.session) { invalidateRuntimeAuthority('Current state unavailable: session response was empty.'); return }
         const session = res.session
+        if (!admitRuntimeSession(session, 'get', request) || cancelled) return
         if (runtimeEvidenceUnavailable(session, session.report)) setUnavailableRuntimeSessionId(session.id)
         if (
           replayStartAttemptRef.current?.sessionId === session.id &&
@@ -3824,6 +3910,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           }))
         }
         if (finalized) {
+          if (terminalReport && followExecutionRef.current) setExpandedReplayEvent(replayEvidenceIndex(terminalReport))
           // Polling is the loss-recovery path for a missed terminal WebSocket
           // message. Reconcile the lifecycle flags too, otherwise the UI keeps
           // showing a live run and correlation diagnosis remains disabled even
@@ -3835,7 +3922,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           setReplaying(false)
         }
       } catch (e: unknown) {
-        if (cancelled) return
+        if (cancelled || !runtimeRequestIsCurrent(runtimeAdmissionRef.current, request)) return
+        invalidateRuntimeAuthority('Current state unavailable: the controller could not confirm this session.')
         if (e instanceof ApiError && e.status === 404) {
           const pendingAttempt = replayStartAttemptRef.current
           if (
@@ -3865,12 +3953,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           return
         }
         // Transient network/API errors retry on the next tick.
-      }
+      } finally { inFlight = false }
     }
     void reconcile()
     const timer = window.setInterval(reconcile, 1200)
     return () => { cancelled = true; window.clearInterval(timer) }
-  }, [activeReplaySessionId, replaying, replayStartPending, api, setActiveReplaySessionId, setBrowserReplaySession, setError, setReplayActivity, setReplayReport, setReplaying])
+  }, [activeReplaySessionId, replaying, replayStartPending, api, admitRuntimeSession, invalidateRuntimeAuthority, runtimeRequest, setActiveReplaySessionId, setBrowserReplaySession, setError, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplaying])
 
   const addParameter = (type = 'list') => {
     const parameters = script.parameters || []
@@ -5687,7 +5775,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         <ScriptBrowserEvidence
           key={activeReplaySessionId || 'idle'}
           event={selectedReplayEvent}
-          variables={runtimeVariablesUnavailable ? {} : mergeReplayVariables(replaySeedVariables, replayDebuggerController.debugEvents.slice(0, (replayDebuggerController.selectedReplayEventIndex ?? -1) + 1))}
+          variables={replayVariableInspector || {}}
           running={replaying}
           onEdit={!replaying && !jsonParseMessage && selectedReplayEvent && replayEditableActionsKey === currentEditableActionsKey ? () => editReplayAction(selectedReplayEvent) : undefined}
           onApplyLocator={!replaying && !jsonParseMessage && replayEditableActionsKey === currentEditableActionsKey ? applyReplaySuggestedLocator : undefined}
@@ -6400,16 +6488,34 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
               if (!activeReplaySessionId || browserReplaySession?.status !== 'paused') return
               try {
                 const next = [{ ...target, once: true }, ...debugBreakpoints.filter(bp => !bp.once)]
-                const updated = await api.updateScriptDebugBreakpoints(activeReplaySessionId, next)
-                if (updated.session) { setBrowserReplaySession(updated.session); setDebugBreakpoints(updated.session.breakpoints || []) }
-                const resumed = await api.resumeScriptDebugSession(activeReplaySessionId)
-                if (resumed.session) setBrowserReplaySession(resumed.session)
+                const updated = await performDebugMutation(() => api.updateScriptDebugBreakpoints(activeReplaySessionId, next))
+                if (!updated) return
+                setDebugBreakpoints(updated.breakpoints || [])
+                await performDebugMutation(() => api.resumeScriptDebugSession(activeReplaySessionId))
               } catch (cause) { setError(getErrorMessage(cause, 'Could not run to the selected action')) }
             }}
             replayStatusLabel={replayStatusLabel}
             replayVariableDiffs={replayVariableDiffs}
             replayVariableInspector={replayVariableInspector}
             runtimeVariablesUnavailable={runtimeVariablesUnavailable}
+            currentRuntimeSnapshot={currentRuntimeSnapshot}
+            currentRuntimeReason={runtimeAdmission.reason}
+            canInspectRuntimeFrame={frame => frame.action_index >= 0 && replayEditableActionsKey === currentEditableActionsKey && Boolean(resolveAuthorJsonScopeByKey(script, `${frame.phase}:${frame.action_index}${frame.step_path?.length ? `#${frame.step_path.join('/')}` : ''}`))}
+            onInspectRuntimeFrame={frame => {
+              if (frame.action_index < 0 || replayEditableActionsKey !== currentEditableActionsKey) return
+              const key = `${frame.phase}:${frame.action_index}${frame.step_path?.length ? `#${frame.step_path.join('/')}` : ''}`
+              const scope = resolveAuthorJsonScopeByKey(script, key)
+              if (!scope) return
+              changeFollowExecution(false)
+              setRuntimeFrameSourcePath(scope.path)
+              setSelectedOutlineParameterName(null)
+              setActiveAction(null)
+              setAuthorCodeFocus({ phase: frame.phase, actionIndex: frame.action_index, stepPath: frame.step_path || [], key, label: scope.action.name || scope.path })
+              setShowFullScriptJson(true)
+              openCenterTab(SCRIPT_JSON_TAB_ID)
+            }}
+            runtimeInspectionMode={runtimeInspectionMode}
+            onRuntimeInspectionMode={setRuntimeInspectionMode}
             replayVariableTimeline={replayVariableTimeline}
             saving={saving}
             script={script}

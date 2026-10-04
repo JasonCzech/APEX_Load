@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import type { Locator, Page, TestInfo } from '@playwright/test'
 import type { ScriptActionDefinition, ScriptDefinition } from '../src/types/scripts'
+import type { ScriptDebugRuntimeState } from '../src/types/replay'
 import { test, expect, idOf, json, login, mutation } from './support/workflow'
 import { createWorkspace, scopeQuery, type Workspace } from './support/workspace'
 
@@ -285,27 +286,36 @@ test('runtime evidence unavailability hides stale DTO detail, history and export
   const script: ScriptDefinition = { name: 'Unavailable evidence DTO fixture', version: '1', protocol: 'http', config: { base_url: 'https://fixture.invalid' },
     actions: [{ name: 'Authored request remains available', type: 'GET', target: 'https://fixture.invalid/read' }] }
   const id = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script } })))
-  let sessionId = '', runsStarted = 0
+  let sessionId = '', sessionIncarnation = '', runsStarted = 0
   const event = { event_id: 'synthetic-event-1', phase: 'action', action_index: 0, action_name: 'Synthetic read', action_type: 'GET',
     target: `/read?echo=${retained}`, success: true, status_code: 200, started_at: '2026-10-03T00:00:00Z',
     completed_at: '2026-10-03T00:00:01Z', duration_ms: 1, leaf_ordinal: 3, body: retained, extractions: { ordinary: retained },
     snapshot: { request_headers: { Echo: retained }, response_body: retained }, protocol_evidence: { detail: retained } }
   const report = () => ({ replay_session_id: sessionId, group: 'Synthetic DTO', protocol: 'http', success: true,
     started_at: '2026-10-03T00:00:00Z', completed_at: '', dropped_event_count: 4, truncated_event_evidence_count: 2, events: [event] })
-  const session = () => ({ id: sessionId, group: 'Synthetic DTO', protocol: 'http', log_level: 'trace', status: 'running',
+  const runtimeState = (status: 'running' | 'completed', revision: string): ScriptDebugRuntimeState => ({ version: 1, kind: 'full',
+    session_id: sessionId, session_incarnation: sessionIncarnation, state_revision: revision, state: 'unavailable',
+    reason: status === 'completed' ? 'session_terminal' : 'not_paused', snapshot: null })
+  const session = (status: 'running' | 'completed' = 'running', revision = '1') => ({ id: sessionId,
+    session_incarnation: sessionIncarnation, state_revision: revision, runtime_state: runtimeState(status, revision),
+    group: 'Synthetic DTO', protocol: 'http', log_level: 'trace', status,
     started_at: '2026-10-03T00:00:00Z', current_event_index: 0, dropped_event_count: 4, current_event: event, events: [event], report: report(),
     logs: [{ id: 'old-log', level: 'info', category: 'action', timestamp: '2026-10-03T00:00:01Z', message: retained }],
     raw_output: [retained], condition_evidence: { 'action#0#': { expr: retained, left: retained, result: true } } })
+  const servedSession = () => {
+    if (runsStarted === 1) return session()
+    const clean = { ...report(), completed_at: '2026-10-03T00:00:03Z', events: [], final_variables: { ordinary: 'new-run-current-value' } }
+    return { ...session('completed'), completed_at: clean.completed_at,
+      current_event_index: -1, current_event: undefined, events: [], logs: [], raw_output: [], condition_evidence: {}, report: clean }
+  }
   await page.route(`**/api/v1/scripts/${id}/debug/sessions`, async route => {
     sessionId = route.request().postDataJSON().replay_session_id as string
     runsStarted++
-    const clean = { ...report(), completed_at: '2026-10-03T00:00:03Z', events: [], final_variables: { ordinary: 'new-run-current-value' } }
-    await route.fulfill({ json: { script_id: id, replay_session_id: sessionId, debug_session_id: sessionId,
-      session: runsStarted === 1 ? session() : { ...session(), status: 'completed', completed_at: clean.completed_at,
-        current_event_index: -1, current_event: undefined, events: [], logs: [], raw_output: [], condition_evidence: {}, report: clean } } })
+    sessionIncarnation = runsStarted === 1 ? '11111111-1111-4111-8111-111111111111' : '22222222-2222-4222-8222-222222222222'
+    await route.fulfill({ json: { script_id: id, replay_session_id: sessionId, debug_session_id: sessionId, session: servedSession() } })
   })
   await page.route('**/api/v1/replay/sessions/*', async route => {
-    await route.fulfill({ json: { session: session() } })
+    await route.fulfill({ json: { session: servedSession() } })
   })
   await page.setViewportSize({ width: 1600, height: 1050 })
   await editor(page, workspace, id)
@@ -313,16 +323,30 @@ test('runtime evidence unavailability hides stale DTO detail, history and export
   await page.locator('.topbar-debug-action-run').click()
   await page.getByRole('tab', { name: 'Live Variables', exact: true }).click()
   const watches = page.getByRole('region', { name: 'Variable watches', exact: true })
+  await expect(watches.getByRole('combobox', { name: 'Values at', exact: true })).toHaveValue('current')
+  await expect(watches).toContainText('Current state unavailable: not paused.')
+  await expect(watches).not.toContainText(retained)
+  await watches.getByRole('combobox', { name: 'Values at', exact: true }).selectOption('retained')
+  await expect(watches).toContainText('Retained history')
   await expect(watches).toContainText(retained)
   await expect.poll(() => Boolean(sendProgress && sessionId)).toBe(true)
-  sendProgress!({ type: 'script_debug_evidence_unavailable', debug_session_id: sessionId, runtime_evidence_unavailable: true })
+  sendProgress!({ type: 'script_debug_evidence_unavailable', debug_session_id: sessionId,
+    session_incarnation: sessionIncarnation, state_revision: '2', runtime_evidence_unavailable: true })
   await expect(watches).toContainText('Runtime variable evidence unavailable')
   await expect(page.locator('body')).not.toContainText(retained)
   // An older terminal report and its cached sidecars lack the flag; the
   // already admitted signal must still govern every consumer.
   const terminal = { ...report(), completed_at: '2026-10-03T00:00:02Z', final_variables: { ordinary: retained }, runtime_evidence_unavailable: false }
-  sendProgress!({ type: 'script_debug_completed', debug_session_id: sessionId, report: terminal,
-    session: { ...session(), status: 'completed', completed_at: terminal.completed_at, report: terminal, runtime_evidence_unavailable: false } })
+  const terminalSession = (revision: string) => ({ ...session('completed', revision),
+    completed_at: terminal.completed_at, report: terminal, runtime_evidence_unavailable: false })
+  sendProgress!({ type: 'script_debug_completed', debug_session_id: sessionId, report: terminal, session: terminalSession('1') })
+  await expect(watches).toContainText('Runtime variable evidence unavailable')
+  await expect(page.locator('body')).not.toContainText(retained)
+  await expect(page.locator('.topbar-debug-action-pause')).toBeEnabled()
+  // A newer terminal publication can retire the session, but its stale false
+  // privacy flag still cannot restore cached detail or historical values.
+  sendProgress!({ type: 'script_debug_completed', debug_session_id: sessionId, report: terminal, session: terminalSession('3') })
+  await expect(page.locator('.topbar-debug-action-run')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Export session', exact: true })).toBeEnabled()
   await expect(watches).toContainText('Runtime variable evidence unavailable')
   await expect(page.locator('body')).not.toContainText(retained)
@@ -338,6 +362,12 @@ test('runtime evidence unavailability hides stale DTO detail, history and export
   // Recent runs exclude the current run. A clean second run exposes the
   // first run as history and proves the unavailable flag remains run-scoped.
   await page.locator('.topbar-debug-action-run').click()
+  await expect(watches.getByRole('combobox', { name: 'Values at', exact: true })).toHaveValue('current')
+  await expect(watches).toContainText('Current state unavailable: the session has ended.')
+  await expect(watches).not.toContainText('new-run-current-value')
+  await watches.getByRole('combobox', { name: 'Values at', exact: true }).selectOption('retained')
+  await expect(watches).toContainText('Retained history')
+  await expect(watches).toContainText('Final historical values')
   await expect(watches).toContainText('new-run-current-value')
   await expect(watches).not.toContainText('Runtime variable evidence unavailable')
   const history = page.locator('.debug-run-history')
