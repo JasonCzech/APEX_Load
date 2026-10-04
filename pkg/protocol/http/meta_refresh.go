@@ -217,6 +217,7 @@ func (h *HTTP) metaRefreshClient() *HTTP {
 		defaultHeaders:             h.defaultHeaders,
 		typedDefaultHeaders:        h.typedDefaultHeaders,
 		defaultHeaderList:          h.defaultHeaderList,
+		runCorrelation:             h.runCorrelation,
 		authType:                   h.authType,
 		authHeader:                 h.authHeader,
 		httpVersion:                h.httpVersion,

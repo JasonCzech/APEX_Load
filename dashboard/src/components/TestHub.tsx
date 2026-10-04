@@ -1,3 +1,4 @@
+import MonitorRuleEditor from './MonitorRuleEditor'
 import ObjectHistory, { ActivityAttribution } from './ObjectHistory'
 import ObjectArchiveControls from './ObjectArchiveControls'
 import LibraryAssignmentFilters from './LibraryAssignmentFilters'
@@ -4511,6 +4512,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           </details>
 
           {editingId && activeProjectId && <ScenarioMonitorBindings key={editingId} projectId={activeProjectId} scenarioId={editingId} canEdit={canManageTests} />}
+          <MonitorRuleEditor projectId={activeProjectId} value={form.goal_config?.monitor_rules || []} canEdit={canManageTests} onChange={rules => setForm(previous => scenarioFormWithGoalField(previous, 'monitor_rules', rules))} />
           <ScenarioDataBindings bindings={scenarioBindings} pools={dataPools} scripts={scripts.filter(script => form.groups.some(group => group.script_id === script.id))} canManage={canManageScripts} onChange={updateDataBindings} />
         </section>
       )

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/compute"
@@ -55,6 +56,11 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	at := flags.String("at", "", "dependency observation timestamp (RFC3339)")
 	failOnRegression := flags.Bool("fail-on-regression", false, "fail CI for regression or unavailable baseline evidence")
 	ttl := flags.Duration("ttl", 30*time.Minute, "readiness lifetime")
+	sourceID := flags.String("source-id", "", "monitor source filter")
+	metric := flags.String("metric", "", "monitor metric name filter")
+	evidenceKind := flags.String("kind", "", "diagnostic kind filter")
+	afterKey := flags.String("after-key", "", "monitor evidence pagination cursor")
+	limit := flags.Int("limit", 100, "monitor page size (series: 1 to 999; evidence: 1 to 100)")
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -127,13 +133,44 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 		}
 	case "monitor":
 		switch action {
-		case "sources", "create-source":
+		case "sources", "create-source", "update-source", "delete-source":
 			if *project == "" {
 				return errors.New("--project is required")
 			}
 			path = "/api/v1/projects/" + url.PathEscape(*project) + "/monitor-sources"
 			if action == "create-source" {
 				method = http.MethodPost
+			}
+			if action == "update-source" || action == "delete-source" {
+				if err := requireID(); err != nil {
+					return err
+				}
+				path += "/" + url.PathEscape(*id)
+				method = http.MethodPut
+				if action == "delete-source" {
+					version, err := strconv.ParseInt(*revision, 10, 64)
+					if err != nil || version < 1 {
+						return errors.New("numeric --revision is required")
+					}
+					method = http.MethodDelete
+					path += "?revision=" + strconv.FormatInt(version, 10)
+				}
+			}
+		case "create-run":
+			method, path = http.MethodPost, "/api/v1/tests"
+			if len(body) == 0 {
+				return errors.New("--file JSON test configuration with monitor_bindings and goal_config.monitor_rules is required")
+			}
+			var request map[string]json.RawMessage
+			if json.Unmarshal(body, &request) != nil {
+				return errors.New("test configuration must be a JSON object")
+			}
+			if *project != "" {
+				if existing := request["project_id"]; existing != nil && string(existing) != strconv.Quote(*project) {
+					return errors.New("--project does not match the test configuration")
+				}
+				request["project_id"], _ = json.Marshal(*project)
+				body, _ = json.Marshal(request)
 			}
 		case "bindings", "bind":
 			if err := requireID(); err != nil {
@@ -160,10 +197,45 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 				return err
 			}
 			path = "/api/v1/tests/" + url.PathEscape(*id) + "/monitors"
+		case "series", "evidence":
+			if err := requireID(); err != nil {
+				return err
+			}
+			maxLimit := 999
+			if action == "evidence" {
+				maxLimit = 100
+			}
+			if *limit < 1 || *limit > maxLimit {
+				return fmt.Errorf("--limit for %s must be between 1 and %d", action, maxLimit)
+			}
+			query := url.Values{"limit": {strconv.Itoa(*limit)}}
+			if *sourceID != "" {
+				query.Set("source_id", *sourceID)
+			}
+			if *afterKey != "" {
+				query.Set("after_key", *afterKey)
+			}
+			path = "/api/v1/tests/" + url.PathEscape(*id) + "/monitor-" + action
+			if action == "series" {
+				if *metric != "" {
+					query.Set("metric", *metric)
+				}
+			} else {
+				if *evidenceKind != "" {
+					if !strings.Contains("|event|violation|snapshot|log|transaction|", "|"+*evidenceKind+"|") {
+						return errors.New("unsupported diagnostic --kind")
+					}
+					query.Set("kind", *evidenceKind)
+				}
+				if *afterKey != "" {
+					query.Set("after_key", *afterKey)
+				}
+			}
+			path += "?" + query.Encode()
 		default:
-			return errors.New("monitor actions: sources, create-source, bindings, bind, run, dependencies")
+			return errors.New("monitor actions: sources, create-source, update-source, delete-source, bindings, bind, create-run, run, series, evidence, dependencies")
 		}
-		if method != http.MethodGet && len(body) == 0 {
+		if method != http.MethodGet && method != http.MethodDelete && len(body) == 0 {
 			return errors.New("--file JSON configuration is required")
 		}
 	case "analysis":

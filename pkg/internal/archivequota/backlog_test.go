@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -111,6 +112,153 @@ func TestBudgetUnknownPayloadAndLowerQuota(t *testing.T) {
 		t.Fatal("unknown data was pruned", err)
 	}
 }
+
+func TestBudgetInventoryRescansRenamedAndDeletedPayload(t *testing.T) {
+	for _, mode := range []string{"rename", "delete", "quota"} {
+		t.Run(mode, func(t *testing.T) {
+			maximum := int64(100)
+			if mode == "quota" {
+				maximum = 30
+			}
+			_, root, b := fixture(t, maximum)
+			if err := root.Mkdir("other-run", 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := root.WriteFile("retained", []byte("1234567"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := root.WriteFile("other-run/.payload.tmp", bytes.Repeat([]byte("x"), 31), 0600); err != nil {
+				t.Fatal(err)
+			}
+			changes, destinations := 0, 0
+			used, err := b.usageWithStat(context.Background(), func(dir *os.Root, name string) (os.FileInfo, error) {
+				if name == ".payload.tmp" {
+					changes++
+					if mode == "delete" {
+						if err := dir.Remove(name); err != nil {
+							t.Fatal(err)
+						}
+					} else if err := dir.Rename(name, "payload"); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if name == "payload" {
+					destinations++
+				}
+				return dir.Lstat(name)
+			})
+			if changes != 1 {
+				t.Fatalf("inventory did not encounter the disappearing entry: %d", changes)
+			}
+			if mode == "quota" {
+				if used != 0 || !errors.Is(err, ErrCapacity) {
+					t.Fatalf("renamed payload escaped quota: %d, %v", used, err)
+				}
+				return
+			}
+			expected := int64(38)
+			if mode == "delete" {
+				expected = 7
+			} else if destinations != 1 {
+				t.Fatalf("renamed payload was not counted once: %d", destinations)
+			}
+			if err != nil || used != expected {
+				t.Fatalf("rescan charged %d instead of %d: %v", used, expected, err)
+			}
+			if stable, err := b.usage(context.Background()); err != nil || stable != expected {
+				t.Fatalf("stable inventory changed after rescan: %d, %v", stable, err)
+			}
+		})
+	}
+}
+
+func TestBudgetInventoryRescanBoundAndCancellation(t *testing.T) {
+	for _, cancelScan := range []bool{false, true} {
+		t.Run(strconv.FormatBool(cancelScan), func(t *testing.T) {
+			_, root, b := fixture(t, 100)
+			if err := root.WriteFile("moving-0", []byte("payload"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			changes := 0
+			used, err := b.usageWithStat(ctx, func(dir *os.Root, name string) (os.FileInfo, error) {
+				if strings.HasPrefix(name, "moving-") {
+					changes++
+					if err := dir.Rename(name, "moving-"+strconv.Itoa(changes)); err != nil {
+						t.Fatal(err)
+					}
+					if cancelScan {
+						cancel()
+					}
+				}
+				return dir.Lstat(name)
+			})
+			expectedChanges := maxInventoryAttempts
+			if cancelScan {
+				expectedChanges = 1
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("cancellation ignored: %v", err)
+				}
+			} else if !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), "retry limit") {
+				t.Fatalf("unstable inventory was accepted: %v", err)
+			}
+			if used != 0 || changes != expectedChanges {
+				t.Fatalf("rescan was not bounded: %d bytes, %d changes", used, changes)
+			}
+			if stable, err := b.usage(context.Background()); err != nil || stable != 7 {
+				t.Fatalf("rescan removed or miscounted payload: %d, %v", stable, err)
+			}
+		})
+	}
+}
+
+func TestBudgetInventoryRescanStillRejectsLinks(t *testing.T) {
+	path, root, b := fixture(t, 100)
+	if err := root.WriteFile("moving", []byte("payload"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	changes := 0
+	used, err := b.usageWithStat(context.Background(), func(dir *os.Root, name string) (os.FileInfo, error) {
+		if name == "moving" && changes == 0 {
+			changes++
+			if err := dir.Rename(name, "payload"); err != nil {
+				t.Fatal(err)
+			}
+			info, missing := dir.Lstat(name)
+			if err := os.Symlink("payload", filepath.Join(path, name)); err != nil {
+				t.Fatal(err)
+			}
+			return info, missing
+		}
+		return dir.Lstat(name)
+	})
+	if used != 0 || err == nil || !strings.Contains(err.Error(), "non-regular entry") || changes != 1 {
+		t.Fatalf("rescan accepted unsafe payload: %d, %v, %d", used, err, changes)
+	}
+}
+
+func TestBudgetInventoryDoesNotRetryMissingLedgerRecord(t *testing.T) {
+	_, _, b := fixture(t, 100)
+	name := "lease-" + strings.Repeat("0", 32)
+	if err := b.ledger.WriteFile(name, []byte("10\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	changes := 0
+	used, err := b.usageWithStat(context.Background(), func(dir *os.Root, current string) (os.FileInfo, error) {
+		if current == name {
+			changes++
+			if err := dir.Remove(current); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir.Lstat(current)
+	})
+	if used != 0 || !errors.Is(err, os.ErrNotExist) || errors.Is(err, errInventoryChanged) || changes != 1 {
+		t.Fatalf("missing reservation was retried: %d, %v, %d", used, err, changes)
+	}
+}
+
 func TestBudgetRejectsLinksAndDeepInventory(t *testing.T) {
 	for _, mode := range []string{"link", "depth", "ledger"} {
 		t.Run(mode, func(t *testing.T) {

@@ -126,7 +126,9 @@ func (tr *TestRunner) finalizeRunArchiveDurablyUnderFence(ctx context.Context, t
 	}
 	defer func() { *record = job.ArchiveRecord }()
 	if err := tr.processArchiveFinalizationJobUnderSourceFence(ctx, job, test); err != nil {
-		tr.markArchiveFinalizationFailed(job.TestID, job.IntentToken, err)
+		if !errors.Is(err, errMonitoringPending) {
+			tr.markArchiveFinalizationFailed(job.TestID, job.IntentToken, err)
+		}
 		return err
 	}
 	return nil
@@ -239,6 +241,10 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 	test = tr.preferredArchiveFinalizationTestSnapshot(job.TestID, durableTest, test)
 	if test == nil {
 		return fmt.Errorf("test %s is unavailable for archive finalization", job.TestID)
+	}
+
+	if err := tr.ensureRunMonitorFinalization(test.ProjectID, test.ID); err != nil {
+		return err
 	}
 
 	if recovered, err := tr.recoverUploadedArchiveWithoutSource(ctx, job, durableTest); recovered || err != nil {
@@ -500,7 +506,9 @@ func (tr *TestRunner) processArchiveRefreshJob(ctx context.Context, snapshot *st
 		// Refresh retries bind to a finalization intent but do not pass through the
 		// normal finalization worker. Annotate that intent here so bounded backfill
 		// retries can eventually persist fail-soft evidence instead of looping forever.
-		tr.markArchiveFinalizationFailed(job.TestID, job.IntentToken, err)
+		if !errors.Is(err, errMonitoringPending) {
+			tr.markArchiveFinalizationFailed(job.TestID, job.IntentToken, err)
+		}
 	}
 	return err
 }
@@ -527,6 +535,9 @@ func (tr *TestRunner) cancelArchiveFinalizationJob(testID string) error {
 }
 
 func (tr *TestRunner) markArchiveFinalizationFailed(testID string, intentToken string, finalizationErr error) {
+	if errors.Is(finalizationErr, errMonitoringPending) {
+		return
+	}
 	outbox := tr.archiveFinalizationOutbox()
 	if outbox == nil {
 		return

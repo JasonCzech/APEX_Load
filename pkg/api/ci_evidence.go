@@ -30,6 +30,9 @@ func (s *Server) validatedCIRunArchiveEvidence(ctx context.Context, test *Manage
 	if s.runner.archiveStore == nil {
 		return nil, errors.New("durable archive catalog is unavailable")
 	}
+	if err := s.runner.ensureRunMonitorFinalization(test.ProjectID, test.ID); err != nil {
+		return nil, err
+	}
 	record, err := s.runner.archiveStore.GetRunArchive(test.ID)
 	if errors.Is(err, sql.ErrNoRows) || record == nil {
 		return nil, errors.New("durable archive record was not found")
@@ -147,6 +150,9 @@ func mergeCIRunArchiveEvidence(response *ciRunResponse, evidence *ciValidatedArc
 		return
 	}
 	manifest := evidence.Manifest
+	response.MonitoringStatus = manifest.MonitoringStatus
+	response.MonitorRuleResults = manifest.MonitorRuleResults
+	response.MonitoringIncomplete = monitoringAcceptanceIncomplete(manifest)
 	response.Transactions = manifest.TransactionCount
 	if evidence.FinalSummary != nil {
 		response.Errors = evidence.FinalSummary.TotalErrors
@@ -172,6 +178,11 @@ func applyCITerminalEvidence(response *ciRunResponse, evidence *ciValidatedArchi
 		return
 	}
 	response.ReportURL = ""
+	if errors.Is(evidenceErr, errMonitoringPending) {
+		response.MonitoringStatus = "pending"
+		response.Outcome = "monitoring_pending"
+		return
+	}
 	if strings.EqualFold(strings.TrimSpace(response.Status), "COMPLETE") {
 		response.Error = ciTerminalEvidenceFailureReason
 		response.Outcome = "execution_error"

@@ -973,7 +973,7 @@ func TestContainerBuildIsSelfContainedAndProfiled(t *testing.T) {
 // Live PostgreSQL regressions are build-tagged; the ordinary Go suite cannot
 // protect startup if either supported runner silently omits their test names.
 func TestPostgresStartupRegressionSelection(t *testing.T) {
-	selectorPattern := regexp.MustCompile(`-run '([^']*TestPostgres[^']*)'`)
+	selectorPattern := regexp.MustCompile(`-run '([^']*Postgres[^']*)'`)
 	for _, path := range []string{"../.github/workflows/ci.yml", "run-optin-suites.sh"} {
 		t.Run(path, func(t *testing.T) {
 			data, err := os.ReadFile(path)
@@ -988,13 +988,16 @@ func TestPostgresStartupRegressionSelection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, name := range []string{"TestPostgresSchedulerLeaseGenerationMigration", "TestPostgresConcurrentInitialization", "TestPostgresInitializationLockLifecycle"} {
+			for _, name := range []string{"TestPostgresSchedulerLeaseGenerationMigration", "TestPostgresConcurrentInitialization", "TestPostgresInitializationLockLifecycle", "TestPostgresAnalysisWorkflows", "TestAppDynamicsDurablePostgresHeadsCursorAndOwnerFence"} {
 				if !selector.MatchString(name) {
 					t.Errorf("live runner omits %s", name)
 				}
 			}
 			if selector.MatchString("TestPostgresUnrelatedDestructiveProbe") {
 				t.Error("runner selection is unexpectedly broad")
+			}
+			if selector.MatchString("TestAppDynamicsUnrelatedDestructiveProbe") {
+				t.Error("AppDynamics runner selection is unexpectedly broad")
 			}
 		})
 	}

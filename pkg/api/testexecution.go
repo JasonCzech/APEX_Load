@@ -243,6 +243,9 @@ func (tr *TestRunner) startTestWithOptionsAndExpectedTermCore(id string, opts St
 }
 
 func validateExpectedStartRecoveryIdentityLocked(test *ManagedTest, opts StartTestOptions) error {
+	if test != nil && test.Status == "QUEUED" && testHasShakeoutAdmissionReservation(test) && test.shakeoutAdmissionReservation != opts.shakeoutAdmissionReservation {
+		return errStartAdmissionEvidenceStale
+	}
 	if opts.expectedRecoveryIdentity == nil {
 		return nil
 	}
@@ -263,6 +266,16 @@ func (tr *TestRunner) prepareTestForExecutionWithOptionsAndExpectedTerm(id strin
 	if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
 		return nil, err
 	}
+	reservationCtx, cancelReservation := tr.executionOperationContext(context.Background())
+	defer cancelReservation()
+	opts.shakeoutAdmissionReservation = &shakeoutAdmissionReservation{ctx: reservationCtx}
+	defer func() {
+		tr.mu.Lock()
+		if test := tr.tests[id]; test != nil && test.shakeoutAdmissionReservation == opts.shakeoutAdmissionReservation {
+			test.shakeoutAdmissionReservation = nil
+		}
+		tr.mu.Unlock()
+	}()
 	tr.mu.Lock()
 	id = tr.resolveRefKeyLocked(id)
 	if err := validateExpectedStartRecoveryIdentityLocked(tr.tests[id], opts); err != nil {
@@ -1542,7 +1555,11 @@ func (tr *TestRunner) evaluateStartGatesLockedWithEvidence(id string, test *Mana
 	if err := tr.launchTimeslotRevalidationErrorWithEvidenceLocked(test, now, evidence.launchWindow); err != nil {
 		return false, err
 	}
-	if blocked, reason := tr.evaluateQuotaBlockWithLaunchEvidenceLocked(test, "", now, evidence.launchWindow); blocked {
+	excludeTestID := ""
+	if test.Status == "QUEUED" && testHasShakeoutAdmissionReservation(test) && test.shakeoutAdmissionReservation == opts.shakeoutAdmissionReservation {
+		excludeTestID = id
+	}
+	if blocked, reason := tr.evaluateQuotaBlockWithLaunchEvidenceLocked(test, excludeTestID, now, evidence.launchWindow); blocked {
 		authorizationSnapshot := cloneQueuedStartAuthorization(test.StartAuthorization)
 		actorSnapshot, actorChanged := applyTestStartedByActor(test, opts.actor)
 		applyRequestedStartAuthorizations(test, opts, time.Now().UTC())
@@ -1956,6 +1973,7 @@ func (tr *TestRunner) beginScriptShakeoutWithEvidenceLocked(id string, opts Star
 	previousQueuePosition := test.QueuePosition
 	previousError := test.Error
 	previousStartAuthorization := cloneQueuedStartAuthorization(test.StartAuthorization)
+	previousAdmissionReservation := test.shakeoutAdmissionReservation
 	actorSnapshot, actorChanged := applyTestStartedByActor(test, opts.actor)
 	// SHAKEOUT reserves runtime capacity before executing one-shot actions. The
 	// exact bounded operator authorizations that admitted this attempt must be
@@ -1963,6 +1981,7 @@ func (tr *TestRunner) beginScriptShakeoutWithEvidenceLocked(id string, opts Star
 	// continue with empty process-local options after an outage or failover.
 	applyRequestedStartAuthorizations(test, opts, now)
 	test.Status = "SHAKEOUT"
+	test.shakeoutAdmissionReservation = opts.shakeoutAdmissionReservation
 	test.PendingSince = nil
 	test.PendingReason = ""
 	test.QueuePosition = 0
@@ -1979,6 +1998,7 @@ func (tr *TestRunner) beginScriptShakeoutWithEvidenceLocked(id string, opts Star
 			test.QueuePosition = previousQueuePosition
 			test.Error = previousError
 			test.StartAuthorization = previousStartAuthorization
+			test.shakeoutAdmissionReservation = previousAdmissionReservation
 			if actorChanged {
 				restoreTestStartedByActor(test, actorSnapshot)
 			}
@@ -5502,6 +5522,7 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 	for index := range groups {
 		groups[index].ScenarioID = strings.TrimSpace(test.ScenarioID)
 		groups[index].RunID = test.ID
+		groups[index].RunCorrelationOrigins = tr.runMonitorCorrelationOrigins(test.ID)
 		projectID := test.ProjectID
 		if groups[index].Script != nil && strings.TrimSpace(groups[index].Script.ProjectID) != "" {
 			projectID = groups[index].Script.ProjectID

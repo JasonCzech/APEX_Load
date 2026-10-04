@@ -35,6 +35,9 @@ type GroupConfig struct {
 	// RunID is the managed test identity exposed to {{run.id}} at execution.
 	// Direct/library callers may leave it empty; that template then fails closed.
 	RunID string
+	// RunCorrelationOrigins permits the managed run header only at these origins.
+	// This controller-owned setting is never derived from executable script data.
+	RunCorrelationOrigins []string
 	// ScenarioID is the managed execution identity exposed to protocol
 	// runtimes. Direct/library callers may leave it empty to fall back to the
 	// script artifact ID.

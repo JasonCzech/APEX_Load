@@ -45,7 +45,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Tier-0
 
 | GREEN | PARTIAL | MISSING | Total |
 |---:|---:|---:|---:|
-| 655 | 0 | 0 | 655 |
+| 671 | 0 | 0 | 671 |
 
 ## Gate tiers
 

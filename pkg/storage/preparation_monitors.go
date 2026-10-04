@@ -9,9 +9,10 @@ import (
 // PreparationMonitorSnapshot is immutable execution evidence. Definitions may
 // change after consumption; the execution commit must still use this snapshot.
 type PreparationMonitorSnapshot struct {
-	ScenarioID string                   `json:"scenario_id,omitempty"`
-	Bindings   MonitorBindings          `json:"bindings"`
-	Sources    map[string]MonitorSource `json:"sources"`
+	ScenarioID  string                                    `json:"scenario_id,omitempty"`
+	Bindings    MonitorBindings                           `json:"bindings"`
+	Sources     map[string]MonitorSource                  `json:"sources"`
+	Connections map[string]*AppDynamicsConnectionSnapshot `json:"-"`
 }
 
 func preparationMonitorSnapshotTx(tx *storeTx, project, run string) (*PreparationMonitorSnapshot, error) {
@@ -19,20 +20,13 @@ func preparationMonitorSnapshotTx(tx *storeTx, project, run string) (*Preparatio
 	if err := tx.QueryRow(`SELECT COALESCE(scenario_id,'') FROM tests WHERE id=? AND project_id=?`, run, project).Scan(&snapshot.ScenarioID); err != nil {
 		return nil, err
 	}
-	if snapshot.ScenarioID == "" {
-		return snapshot, nil
-	}
-	var body string
-	err := tx.QueryRow(`SELECT payload FROM monitor_bindings WHERE project_id=? AND scenario_id=?`, project, snapshot.ScenarioID).Scan(&body)
-	if errors.Is(err, sql.ErrNoRows) {
-		return snapshot, nil
-	}
+	resolved, err := resolveRunMonitorBindingsTx(tx, project, run, snapshot.ScenarioID)
 	if err != nil {
 		return nil, err
 	}
-	if err = json.Unmarshal([]byte(body), &snapshot.Bindings); err != nil {
-		return nil, err
-	}
+	snapshot.Bindings = *resolved
+
+	var body string
 	for _, binding := range snapshot.Bindings.Sources {
 		err = tx.QueryRow(`SELECT payload FROM monitor_sources WHERE project_id=? AND id=?`, project, binding.SourceID).Scan(&body)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -46,6 +40,23 @@ func preparationMonitorSnapshotTx(tx *storeTx, project, run string) (*Preparatio
 			return nil, err
 		}
 		snapshot.Sources[source.ID] = source
+		if source.Pack == "appdynamics" {
+			var raw string
+			if err = tx.QueryRow(`SELECT payload_json FROM appdynamics_connections WHERE id=? AND project_id=?`, source.ConnectionID, project).Scan(&raw); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					continue
+				}
+				return nil, err
+			}
+			c, e := UnmarshalAppDynamicsConnectionPrivate([]byte(raw))
+			if e != nil {
+				return nil, e
+			}
+			if snapshot.Connections == nil {
+				snapshot.Connections = map[string]*AppDynamicsConnectionSnapshot{}
+			}
+			snapshot.Connections[source.ID] = c.Snapshot()
+		}
 	}
 	return snapshot, nil
 }

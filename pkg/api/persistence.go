@@ -938,6 +938,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		RuntimeSettings:          decodeStoredRuntimeSettings(record.RuntimeSettings),
 		ELKCapture:               decodeStoredELKCapture(record.ELKCapture),
 		DynatraceCapture:         decodeStoredDynatraceCapture(record.DynatraceCapture),
+		MonitorBindings:          cloneMonitorBindings(record.MonitorBindings),
 		TotalVUsers:              record.TotalVUsers,
 		Duration:                 time.Duration(record.Duration),
 		DurationStr:              persistedDurationString(record.Duration, record.TerminationMode),
@@ -1842,6 +1843,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		RuntimeSettings:                test.RuntimeSettings,
 		ELKCapture:                     elkCaptureForStorage(test.ELKCapture),
 		DynatraceCapture:               dynatraceCaptureForStorage(test.DynatraceCapture),
+		MonitorBindings:                cloneMonitorBindings(test.MonitorBindings),
 	}
 }
 
@@ -2077,7 +2079,7 @@ func (tr *TestRunner) saveManagedTestRecordSnapshot(record *storage.TestRecord, 
 			leaseName = executionLeaseName
 		}
 		if record.Status == "RUNNING" {
-			if _, err := monitorSigningKey(); err != nil {
+			if err := tr.validateMonitorStorageAndSigning(record); err != nil {
 				return err
 			}
 		}

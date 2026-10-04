@@ -14,6 +14,54 @@ func point(at time.Time, value float64) MetricPoint {
 	}
 }
 
+func TestProviderCatalogPathBounds(t *testing.T) {
+	for _, length := range []int{2048, 4096, 4097} {
+		p := rulePoint(time.Now().UTC().Truncate(time.Minute), 10, 1, 10)
+		p.Provider.CatalogPath = strings.Repeat("x", length)
+		if valid := p.Validate() == nil; valid != (length <= 4096) {
+			t.Fatalf("path length %d: valid=%v", length, valid)
+		}
+	}
+}
+
+func TestProviderResolutionDistinguishesQueryWindowsFromSourceBuckets(t *testing.T) {
+	start := time.Now().UTC().Truncate(time.Second)
+	for _, tc := range []struct {
+		name        string
+		seconds     int
+		queryWindow bool
+		valid       bool
+	}{
+		{"one-day source bucket", 86400, false, true},
+		{"multi-day query aggregate", 26 * 3600, true, true},
+		{"multi-day source bucket", 26 * 3600, false, false},
+		{"zero query duration", 0, true, false},
+		{"maximum integer query duration", math.MaxInt, true, int64(math.MaxInt) <= math.MaxInt64/int64(time.Second)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := rulePoint(start, 10, 1, 10)
+			p.Provider.QueryWindow = tc.queryWindow
+			p.Provider.ResolutionSeconds = tc.seconds
+			// Keep the overflow fixture's end valid so validation must reject
+			// the resolution rather than evaluating an overflowing duration.
+			p.Provider.BucketEnd = start.Add(time.Hour)
+			if tc.seconds > 0 && int64(tc.seconds) <= math.MaxInt64/int64(time.Second) {
+				p.Provider.BucketEnd = start.Add(time.Duration(tc.seconds) * time.Second)
+			}
+			if valid := p.Validate() == nil; valid != tc.valid {
+				t.Fatalf("valid=%v, want=%v", valid, tc.valid)
+			}
+		})
+	}
+	p := rulePoint(start, 10, 1, 10)
+	p.Provider.QueryWindow = true
+	p.Provider.ResolutionSeconds = 26 * 3600
+	p.Provider.BucketEnd = start.Add(26*time.Hour + time.Second)
+	if p.Validate() == nil {
+		t.Fatal("query aggregate duration differs from its interval")
+	}
+}
+
 func TestMetricPointValidate(t *testing.T) {
 	now := time.Now().UTC()
 	cases := []struct {

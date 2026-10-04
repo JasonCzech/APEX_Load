@@ -57,9 +57,15 @@ export interface ProjectSecretsWriteResponse {
 }
 
 export interface ProjectSecretConsumer {
+  resource_type?: string
+  resource_id?: string
   script_id: string
   script_name: string
   reference_count: number
+}
+
+export function secretConsumerKey(consumer: ProjectSecretConsumer): string {
+  return `${consumer.resource_type || 'script'}:${consumer.resource_id || consumer.script_id}`
 }
 
 export interface ProjectSecretUsage {

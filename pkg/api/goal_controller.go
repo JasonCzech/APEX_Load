@@ -44,6 +44,19 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 		return nil
 	}
 	clone := *config
+	clone.MonitorRules = append(config.MonitorRules[:0:0], config.MonitorRules...)
+	for i := range clone.MonitorRules {
+		if config.MonitorRules[i].EndOffsetSeconds != nil {
+			v := *config.MonitorRules[i].EndOffsetSeconds
+			clone.MonitorRules[i].EndOffsetSeconds = &v
+		}
+		if config.MonitorRules[i].Dimensions != nil {
+			clone.MonitorRules[i].Dimensions = make(map[string]string)
+			for k, v := range config.MonitorRules[i].Dimensions {
+				clone.MonitorRules[i].Dimensions[k] = v
+			}
+		}
+	}
 	clone.TransactionRules = append([]TransactionSLARule(nil), config.TransactionRules...)
 	if config.EarlyStop != nil {
 		value := *config.EarlyStop
@@ -178,7 +191,7 @@ func hasGoalConfig(config *GoalConfig) bool {
 	if config == nil {
 		return false
 	}
-	return config.TargetAverageTPS != nil ||
+	return len(config.MonitorRules) > 0 || config.TargetAverageTPS != nil ||
 		config.P95LatencyMs != nil ||
 		config.TransactionResponseTimeSLAMs != nil ||
 		config.MaxErrorPct != nil ||
@@ -198,6 +211,15 @@ func hasGoalConfig(config *GoalConfig) bool {
 		len(config.TransactionRules) > 0 ||
 		config.StopOnSLABreach ||
 		config.StopOnMaxErrors
+}
+
+func hasLiveGoalConfig(config *GoalConfig) bool {
+	if config == nil {
+		return false
+	}
+	live := *config
+	live.MonitorRules = nil
+	return hasGoalConfig(&live)
 }
 
 func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMetrics, config *GoalConfig, state *goalControllerState) goalControllerUpdate {

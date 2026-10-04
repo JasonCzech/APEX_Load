@@ -18,6 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/secretstore"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const (
@@ -187,6 +188,19 @@ func (s *Server) discoverProjectSecretMetadata(ctx context.Context, projectID st
 			byName[name] = struct{}{}
 		}
 	}
+	if connections, ok := s.store.(storage.AppDynamicsConnectionStore); ok {
+		profiles, err := connections.ListAppDynamicsConnections(projectID)
+		if err != nil {
+			return false, err
+		}
+		for _, profile := range profiles {
+			for _, reference := range []string{profile.ClientIDSecretName, profile.ClientSecretSecretName, profile.UsernameSecretName, profile.PasswordSecretName, profile.EventsAPIKeySecretName} {
+				if name, err := normalizeProjectSecretName(reference); err == nil {
+					byName[name] = struct{}{}
+				}
+			}
+		}
+	}
 	names := make([]string, 0, len(byName))
 	for name := range byName {
 		names = append(names, name)
@@ -338,6 +352,10 @@ func (s *Server) handleCreateProjectSecrets(w http.ResponseWriter, r *http.Reque
 	}
 	created := make([]secretstore.Metadata, 0, len(inputs))
 	for index, input := range inputs {
+		if err := s.invalidateAppDynamicsSecretPreparations(mutationCtx, projectID, input.Name); err != nil {
+			writeError(w, 503, "monitoring credential authorization invalidation failed")
+			return
+		}
 		operationID, auditErr := s.beginProjectSecretOperation(r, "project_secret.create", input.Name, projectID, secretStoreProvider(s.projectSecretStore))
 		if auditErr != nil {
 			writeProjectSecretPartialFailure(w, http.StatusServiceUnavailable, projectID, "project secret creation audit is unavailable", "created", created, input.Name, "audit_persistence_unavailable", projectSecretInputNames(inputs[index:]), false)
@@ -364,6 +382,10 @@ func (s *Server) handleCreateProjectSecrets(w http.ResponseWriter, r *http.Reque
 				return
 			}
 			writeError(w, status, message)
+			return
+		}
+		if err := s.invalidateAppDynamicsSecretPreparations(mutationCtx, projectID, input.Name); err != nil {
+			writeError(w, 503, "credential created; monitoring authorization invalidation must be retried")
 			return
 		}
 		created = append(created, metadata)
@@ -428,6 +450,10 @@ func (s *Server) handleRotateProjectSecret(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusServiceUnavailable, "no writable project secret provider is configured")
 		return
 	}
+	if err := s.invalidateAppDynamicsSecretPreparations(mutationCtx, projectID, name); err != nil {
+		writeError(w, 503, "monitoring credential authorization invalidation failed")
+		return
+	}
 	operationID, auditErr := s.beginProjectSecretOperation(r, "project_secret.rotate", name, projectID, secretStoreProvider(s.projectSecretStore))
 	if auditErr != nil {
 		writeProjectSecretAuditUnavailable(w)
@@ -453,6 +479,10 @@ func (s *Server) handleRotateProjectSecret(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		writeError(w, status, message)
+		return
+	}
+	if err := s.invalidateAppDynamicsSecretPreparations(mutationCtx, projectID, name); err != nil {
+		writeError(w, 503, "credential rotated; monitoring authorization invalidation must be retried")
 		return
 	}
 	if auditErr := s.completeProjectSecretOperation(r, operationID, "project_secret.rotate", "success", outcome, name, projectID, firstNonEmpty(strings.TrimSpace(metadata.Provider), secretStoreProvider(s.projectSecretStore)), "", nil); auditErr != nil {

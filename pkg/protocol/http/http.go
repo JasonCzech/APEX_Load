@@ -58,6 +58,7 @@ type HTTP struct {
 	defaultHeaders             map[string]string
 	typedDefaultHeaders        map[string]string
 	defaultHeaderList          protocol.HeaderList
+	runCorrelation             runCorrelationPolicy
 	authType                   string
 	authHeader                 string // pre-computed Authorization header value
 	httpVersion                string // empty = automatic; "1.1"/"2" = exact
@@ -139,6 +140,11 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	if err := validateHTTPRuntimeConfigBounds(config); err != nil {
 		return err
 	}
+	correlation, err := newRunCorrelationPolicy(config)
+	if err != nil {
+		return err
+	}
+	h.runCorrelation = correlation
 	h.receiveBufferBytes = protocol.ConfigInt(config, "receive_buffer_bytes")
 	h.maxMetaRefresh = protocol.ConfigInt(config, "max_meta_refresh")
 	h.contentCheckErrorLimit = protocol.ConfigInt(config, "content_check_error_limit")
@@ -209,6 +215,9 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 		}
 	}
 	h.client.Transport = withoutImplicitUserAgent(h.client.Transport)
+	if h.runCorrelation.enabled() {
+		h.client.Transport = runCorrelationRoundTripper{base: h.client.Transport, policy: h.runCorrelation}
+	}
 	if h.oauthClient != nil {
 		h.oauthClient.Transport = withoutImplicitUserAgent(h.oauthClient.Transport)
 	}
@@ -393,6 +402,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		addRequestHeader(req, header.Name, header.Value)
 	}
 	mergeRequestCookieHeaders(req)
+	if err := h.runCorrelation.apply(req); err != nil {
+		return nil, err
+	}
 	// Authored headers are authoritative over typed auth. Digest normally
 	// starts without Authorization and retries a 401 challenge, but doing so
 	// here would silently replace an authored value on the second request.

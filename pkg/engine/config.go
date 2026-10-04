@@ -33,6 +33,10 @@ func buildGroupProtoConfig(group GroupConfig, runMode string) map[string]any {
 	if scenarioID := strings.TrimSpace(group.ScenarioID); scenarioID != "" {
 		cfg["scenario_id"] = scenarioID
 	}
+	if len(group.RunCorrelationOrigins) > 0 {
+		cfg["apexload_run_correlation_id"] = group.RunID
+		cfg["apexload_run_correlation_origins"] = append([]string(nil), group.RunCorrelationOrigins...)
+	}
 	return cfg
 }
 

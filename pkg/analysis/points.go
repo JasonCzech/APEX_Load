@@ -39,30 +39,75 @@ const (
 // MetricPoint is a measurement, not an aggregated percentile. Value is absent
 // when the source reports missing or dropped evidence; zero remains a real value.
 type MetricPoint struct {
-	SchemaVersion   string            `json:"schema_version"`
-	ProjectID       string            `json:"project_id"`
-	DatasetID       string            `json:"dataset_id,omitempty"`
-	RunID           string            `json:"run_id,omitempty"`
-	ScenarioID      string            `json:"scenario_id,omitempty"`
-	Source          string            `json:"source"`
-	Host            string            `json:"host,omitempty"`
-	Service         string            `json:"service,omitempty"`
-	TimestampUTC    time.Time         `json:"timestamp_utc"`
-	ReceivedAt      time.Time         `json:"received_at,omitempty"`
-	RelativeTimeMS  *int64            `json:"relative_time_ms,omitempty"`
-	ActiveRuntimeMS *int64            `json:"active_runtime_ms,omitempty"`
-	MetricName      string            `json:"metric_name"`
-	Kind            string            `json:"kind"`
-	InputKind       string            `json:"input_kind,omitempty"` // Original semantics for derived bucket gauges.
-	Value           *float64          `json:"value,omitempty"`
-	Unit            string            `json:"unit,omitempty"`
-	Dimensions      map[string]string `json:"dimensions,omitempty"`
-	Quality         string            `json:"quality"`
+	SchemaVersion   string               `json:"schema_version"`
+	ProjectID       string               `json:"project_id"`
+	DatasetID       string               `json:"dataset_id,omitempty"`
+	RunID           string               `json:"run_id,omitempty"`
+	ScenarioID      string               `json:"scenario_id,omitempty"`
+	Source          string               `json:"source"`
+	Host            string               `json:"host,omitempty"`
+	Service         string               `json:"service,omitempty"`
+	TimestampUTC    time.Time            `json:"timestamp_utc"`
+	ReceivedAt      time.Time            `json:"received_at,omitempty"`
+	RelativeTimeMS  *int64               `json:"relative_time_ms,omitempty"`
+	ActiveRuntimeMS *int64               `json:"active_runtime_ms,omitempty"`
+	MetricName      string               `json:"metric_name"`
+	Kind            string               `json:"kind"`
+	InputKind       string               `json:"input_kind,omitempty"` // Original semantics for derived bucket gauges.
+	Value           *float64             `json:"value,omitempty"`
+	Unit            string               `json:"unit,omitempty"`
+	Dimensions      map[string]string    `json:"dimensions,omitempty"`
+	Quality         string               `json:"quality"`
+	Provider        *ProviderMeasurement `json:"provider,omitempty"`
+}
+
+// ProviderMeasurement preserves source bucket semantics. A bucket statistic is
+// never a raw transaction observation and must not enter a percentile digest.
+// QueryWindow values describe a full query interval, which may exceed the
+// one-day maximum resolution of an individual source bucket.
+type ProviderMeasurement struct {
+	Name                string            `json:"name"`
+	MetricID            string            `json:"metric_id"`
+	CatalogPath         string            `json:"catalog_path,omitempty"`
+	EntityIDs           map[string]string `json:"entity_ids,omitempty"`
+	BucketStart         time.Time         `json:"bucket_start"`
+	BucketEnd           time.Time         `json:"bucket_end"`
+	ResolutionSeconds   int               `json:"resolution_seconds"`
+	Statistic           string            `json:"statistic"`
+	Count               *float64          `json:"count,omitempty"`
+	Sum                 *float64          `json:"sum,omitempty"`
+	Min                 *float64          `json:"min,omitempty"`
+	Max                 *float64          `json:"max,omitempty"`
+	Settled             bool              `json:"settled"`
+	AggregationEligible bool              `json:"aggregation_eligible"`
+	QueryWindow         bool              `json:"query_window,omitempty"`
 }
 
 // Validate rejects non-finite, ambiguous, and unbounded measurements before
 // they enter a live payload or durable analysis artifact.
 func (p MetricPoint) Validate() error {
+	if p.Provider != nil {
+		m := p.Provider
+		if m.Name != "appdynamics" || m.MetricID == "" || len(m.MetricID) > 256 || len(m.CatalogPath) > 4096 || len(m.EntityIDs) > 16 || m.BucketStart.Location() != time.UTC || m.BucketEnd.Location() != time.UTC || m.BucketStart.IsZero() || !m.BucketEnd.After(m.BucketStart) || m.ResolutionSeconds < 1 || (!m.QueryWindow && m.ResolutionSeconds > 86400) || int64(m.ResolutionSeconds) > math.MaxInt64/int64(time.Second) || m.BucketEnd.Year() < 1 || m.BucketEnd.Year() > 9999 || !m.BucketStart.Add(time.Duration(m.ResolutionSeconds)*time.Second).Equal(m.BucketEnd) || !p.TimestampUTC.Equal(m.BucketStart) || len(m.Statistic) > 64 {
+			return errors.New("invalid provider bucket measurement")
+		}
+		for k, v := range m.EntityIDs {
+			if k == "" || len(k) > 128 || len(v) > 128 {
+				return errors.New("invalid provider entity identity")
+			}
+		}
+		for _, v := range []*float64{m.Count, m.Sum, m.Min, m.Max} {
+			if v != nil && (math.IsNaN(*v) || math.IsInf(*v, 0)) {
+				return errors.New("nonfinite provider statistic")
+			}
+		}
+		if m.Count != nil && *m.Count < 0 {
+			return errors.New("negative provider count")
+		}
+		if m.Min != nil && m.Max != nil && *m.Min > *m.Max {
+			return errors.New("inverted provider extrema")
+		}
+	}
 	if p.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("unsupported metric point schema %q", p.SchemaVersion)
 	}

@@ -66,6 +66,7 @@ export const INTEGRATION_SETTINGS_SUBSECTIONS = [
   { id: 'github', title: 'GitHub' },
   { id: 'elk-capture', title: 'Elastic test capture' },
   { id: 'dynatrace-capture', title: 'Dynatrace test capture' },
+  { id: 'appdynamics-capture', title: 'AppDynamics test capture' },
   { id: 'prometheus', title: 'Prometheus' },
   { id: 'opensearch', title: 'OpenSearch' },
   { id: 'grafana', title: 'Grafana' },

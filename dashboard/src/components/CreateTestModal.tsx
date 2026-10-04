@@ -1,3 +1,6 @@
+import MonitorRuleEditor from './MonitorRuleEditor'
+import RunMonitorBindingSelector from './RunMonitorBindingSelector'
+import type { MonitorBinding } from '../types/appdynamics'
 import DialogLayer from './ux/DialogLayer'
 import CaptureSelectionHelp from './CaptureSelectionHelp'
 import { captureSelectionNeedsReview, dynatraceCapabilities } from './captureConnectionModel'
@@ -65,6 +68,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const [elkConnectionId, setELKConnectionId] = useState('')
   const [dynatraceConnections, setDynatraceConnections] = useState<DynatraceConnection[]>([])
   const [dynatraceConnectionId, setDynatraceConnectionId] = useState('')
+  const [monitorBindings, setMonitorBindings] = useState<MonitorBinding[] | undefined>(() => initialScenario?.revisionContext?.monitorBindings?.map(binding => ({ ...binding })))
+  const baselineMonitorBindingsRef = useRef(JSON.stringify(monitorBindings))
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const scenarioNameRef = useRef<HTMLInputElement | null>(null)
   const titleId = useId()
@@ -235,6 +240,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     dataPools: revisionContext?.dataPools,
     elkConnectionId,
     dynatraceConnectionId,
+    monitorBindings,
   })
 
   const buildEstimatePayload = useCallback(() => buildCreateTestPayload({
@@ -257,7 +263,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     projectId: revisionContext?.projectId ?? projectId,
     folderId: revisionContext ? revisionContext.folderId : folderId,
     dataPools: revisionContext?.dataPools,
-  }), [assignment, duration, folderId, goalConfig, groups, name, projectId, resourceBaseline, revisionContext, runtimeSettings, scenarioMode, scriptShakeout, startDelay])
+    monitorBindings,
+  }), [assignment, duration, folderId, goalConfig, groups, monitorBindings, name, projectId, resourceBaseline, revisionContext, runtimeSettings, scenarioMode, scriptShakeout, startDelay])
 
   useEffect(() => {
     const canEstimate = Boolean(duration.trim()) && groups.every((group) => group.scriptId)
@@ -352,7 +359,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     }
   }
   submitDraftRef.current = submitDraft
-  const modalDirty = JSON.stringify(scenarioDraft) !== baselineDraftRef.current
+  const modalDirty = JSON.stringify(scenarioDraft) !== baselineDraftRef.current || JSON.stringify(monitorBindings) !== baselineMonitorBindingsRef.current
   modalDirtyRef.current = modalDirty
   const modalGuard = useMemo<NavigationGuard>(() => ({
     id: `create-test-modal-${mode}`,
@@ -571,6 +578,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 				onGroupOverrideChange={(index, value) => updateGroup(index, { transactionResponseTimeSlaMs: value })}
 			/>
 
+          <RunMonitorBindingSelector projectId={revisionContext?.projectId ?? projectId} value={monitorBindings} onChange={setMonitorBindings} />
+          <MonitorRuleEditor projectId={revisionContext?.projectId ?? projectId} value={goalConfig.monitor_rules || []} onChange={rules => updateGoalConfig('monitor_rules', rules)} />
           <CreateTestRuntimeOverrides
             draftScope={`${revisionContext?.projectId ?? projectId ?? ''}:${revisionContext?.scenarioId ?? 'new'}`}
             runtimeSettings={runtimeSettings}

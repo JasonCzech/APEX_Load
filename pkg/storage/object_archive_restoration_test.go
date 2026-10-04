@@ -104,7 +104,7 @@ func TestArchiveRestorationBoundaryUpgradesExistingMetadata(t *testing.T) {
 	if _, err := db.Exec(`ALTER TABLE object_archive_states DROP COLUMN restored_at`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`DELETE FROM schema_migrations WHERE version=28`); err != nil {
+	if _, err := db.Exec(`DELETE FROM schema_migrations WHERE version>=28`); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {

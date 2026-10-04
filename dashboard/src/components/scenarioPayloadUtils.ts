@@ -1,3 +1,4 @@
+import type { MonitorBinding } from '../types/appdynamics'
 import { GeneratorAssignmentSettings, GoalConfig, RuntimeJavaVuserSettings, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode, TrafficProfile } from '../types'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import { ScenarioRuntimeSettings } from './scenarioDraftUtils'
@@ -65,6 +66,7 @@ export type ScenarioUpsertPayload = {
 }
 
 export type CreateTestPayload = {
+  monitor_bindings?: MonitorBinding[]
   name?: string
   duration: string
   termination_mode?: 'duration' | 'iterations'
@@ -115,6 +117,7 @@ type ScenarioUpsertPayloadInput = ScenarioPayloadInput & {
 }
 
 type CreateTestPayloadInput = ScenarioPayloadInput & {
+  monitorBindings?: MonitorBinding[]
   name?: string
   applicationId?: string
   releaseId?: string
@@ -275,10 +278,12 @@ function normalizeSelectedTargets(targets?: string[]) {
 
 
 export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: GoalConfig = {}): GoalConfig | undefined {
+	const monitorRules = goalConfig.monitor_rules === undefined ? undefined : structuredClone(goalConfig.monitor_rules)
 	const transactionRules = goalConfig.transaction_rules?.map(rule => ({ ...rule }))
 	const transactionResponseTimeSLA = goalConfig.transaction_response_time_sla_ms
 	if (scenarioMode !== 'goal_oriented') {
 		const payload: GoalConfig = {
+			...(monitorRules !== undefined ? { monitor_rules: monitorRules } : {}),
 			...(transactionResponseTimeSLA !== undefined ? { transaction_response_time_sla_ms: transactionResponseTimeSLA } : {}),
 			...(transactionRules?.length ? { transaction_rules: transactionRules } : {}),
 			...(goalConfig.early_stop ? { early_stop: structuredClone(goalConfig.early_stop) } : {}),
@@ -289,6 +294,7 @@ export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: G
 
   const hasValue = (value: number | undefined) => value !== undefined && value !== null
   const payload: GoalConfig = {
+		...(monitorRules !== undefined ? { monitor_rules: monitorRules } : {}),
 		...(transactionResponseTimeSLA !== undefined ? { transaction_response_time_sla_ms: transactionResponseTimeSLA } : {}),
     ...(hasValue(goalConfig.target_average_tps) ? { target_average_tps: goalConfig.target_average_tps } : {}),
     ...(hasValue(goalConfig.p95_latency_ms) ? { p95_latency_ms: goalConfig.p95_latency_ms } : {}),
@@ -436,6 +442,7 @@ export function buildScenarioUpsertPayload(input: ScenarioUpsertPayloadInput): S
 export function buildCreateTestPayload(input: CreateTestPayloadInput): CreateTestPayload {
  return {
   ...buildScenarioExecutionPayload(input),
+  ...(input.monitorBindings !== undefined ? {monitor_bindings: structuredClone(input.monitorBindings)} : {}),
   ...(input.name ? {name: input.name} : {}),
   ...(input.projectId ? {project_id: input.projectId} : {}),
   ...(input.applicationId ? {application_id: input.applicationId} : {}),

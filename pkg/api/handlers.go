@@ -2005,7 +2005,7 @@ func (s *Server) writeSLAReport(w http.ResponseWriter, id, status string, cfg *G
 		details = append(details, "Transfer time breached threshold")
 	}
 
-	evaluated := cfg != nil && hasGoalConfig(cfg)
+	evaluated := hasLiveGoalConfig(cfg)
 	if goalConfigOnlyHasTransactionResponseTimeSLA(cfg) {
 		evaluated = false
 	}
@@ -2040,5 +2040,5 @@ func goalConfigOnlyHasTransactionResponseTimeSLA(config *GoalConfig) bool {
 	}
 	copy := cloneGoalConfig(config)
 	copy.TransactionResponseTimeSLAMs = nil
-	return !hasGoalConfig(copy)
+	return !hasLiveGoalConfig(copy)
 }

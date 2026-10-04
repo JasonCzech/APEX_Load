@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -79,6 +80,10 @@ type RunArchiveManifest struct {
 	DynatraceEvidenceFile             string                             `json:"dynatrace_evidence_file,omitempty"`
 	MonitorEvidenceFile               string                             `json:"monitor_evidence_file,omitempty"`
 	MonitorEvidenceCount              int64                              `json:"monitor_evidence_count,omitempty"`
+	MonitorDiagnosticsFile            string                             `json:"monitor_diagnostics_file,omitempty"`
+	MonitorDiagnosticsCount           int64                              `json:"monitor_diagnostics_count,omitempty"`
+	MonitoringStatus                  string                             `json:"monitoring_status,omitempty"`
+	MonitorRuleResults                []analysis.MonitorRuleResult       `json:"monitor_rule_results,omitempty"`
 	MonitorCoverage                   []RunMonitorCoverage               `json:"monitor_coverage,omitempty"`
 	Artifacts                         []RunArchiveArtifact               `json:"artifacts,omitempty"`
 	TransactionCount                  int64                              `json:"transaction_count"`
@@ -428,6 +433,8 @@ type RunArchiveIdentityNames struct {
 }
 
 type RunArchiveReport struct {
+	MonitorDiagnostics                []RunMonitorDiagnostic                 `json:"monitor_diagnostics,omitempty"`
+	MonitorRuleResults                []analysis.MonitorRuleResult           `json:"monitor_rule_results,omitempty"`
 	StatisticalFindings               []StatisticalFinding                   `json:"statistical_findings,omitempty"`
 	BaselineComparison                *BaselineComparisonSnapshot            `json:"baseline_comparison,omitempty"`
 	IdentityNames                     RunArchiveIdentityNames                `json:"identity_names"`

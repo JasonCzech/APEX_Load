@@ -1,3 +1,7 @@
+import { validateGoalConfig } from './goalConfigValidation'
+import RunMonitorBindingSelector from './RunMonitorBindingSelector'
+import type { MonitorBinding, MonitorRule } from '../types/appdynamics'
+import MonitorRuleEditor from './MonitorRuleEditor'
 import ObjectHistory from './ObjectHistory'
 import ObjectArchiveControls from './ObjectArchiveControls'
 import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
@@ -559,7 +563,9 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [elkConnectionId, setELKConnectionId] = useState('')
   const [dynatraceConnections, setDynatraceConnections] = useState<DynatraceConnection[]>([])
   const [dynatraceConnectionId, setDynatraceConnectionId] = useState('')
-  useEffect(() => { setELKConnectionId(''); setDynatraceConnectionId(''); setELKConnections([]); setDynatraceConnections([]) }, [activeProjectID])
+  const [monitorBindings, setMonitorBindings] = useState<MonitorBinding[] | undefined>()
+  const [monitorRules, setMonitorRules] = useState<MonitorRule[] | undefined>()
+  useEffect(() => { setELKConnectionId(''); setDynatraceConnectionId(''); setMonitorBindings(undefined); setMonitorRules(undefined); setELKConnections([]); setDynatraceConnections([]) }, [activeProjectID])
   const captureNeedsReview = captureSelectionNeedsReview(elkConnectionId, elkConnections, elkLoading, elkError) || captureSelectionNeedsReview(dynatraceConnectionId, dynatraceConnections, dynatraceLoading, dynatraceError)
   const [activeApplication, setLaunchApplication] = useState(workspaceApplication)
   const [applications, setApplications] = useState<Application[]>([])
@@ -1344,7 +1350,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     () => timeslotValidationError || validateRunSetup(scenario, effectiveScenarioGroups),
     [effectiveScenarioGroups, scenario, timeslotValidationError],
   )
-  const canLaunch = !scenario?.archived_at && archivedDependencies.length === 0 && readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError && !captureNeedsReview
+  const monitorRuleValidationError = validateGoalConfig({ monitor_rules: monitorRules ?? scenario?.goal_config?.monitor_rules })
+  const canLaunch = !monitorRuleValidationError && !scenario?.archived_at && archivedDependencies.length === 0 && readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError && !captureNeedsReview
   const buildCurrentRunCreatePayload = useCallback((
     currentRunDefaults: RunDefaultOverrides,
     currentGroupOverrides: Record<string, GroupRunOverride>,
@@ -1367,8 +1374,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       ...(hasOwnKey(currentRunDefaults, 'resource_baseline') ? { resource_baseline: Boolean(currentRunDefaults.resource_baseline) } : {}),
       ...(elkConnectionId ? { elk_capture: { connection_id: elkConnectionId } } : {}),
 	  ...(dynatraceConnectionId ? { dynatrace_capture: { connection_id: dynatraceConnectionId } } : {}),
+      ...(monitorBindings !== undefined ? { monitor_bindings: monitorBindings } : {}),
+      ...(monitorRules !== undefined ? { goal_config: { ...scenario.goal_config, monitor_rules: monitorRules } } : {}),
     }
-  }, [activeApplication, activeProject?.id, dynatraceConnectionId, elkConnectionId, releaseId, runName, scenario])
+  }, [activeApplication, activeProject?.id, dynatraceConnectionId, elkConnectionId, monitorBindings, monitorRules, releaseId, runName, scenario])
   const runCreatePayload = useMemo(
     () => buildCurrentRunCreatePayload(runDefaultOverrides, groupRunOverrides),
     [buildCurrentRunCreatePayload, groupRunOverrides, runDefaultOverrides],
@@ -1530,6 +1539,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   )
 
   const createRun = async (intent: 'start' | 'reserve' | 'queue' | 'schedule', options: { navigate?: boolean } = {}): Promise<boolean> => {
+    if (monitorRuleValidationError) { setError(monitorRuleValidationError); return false }
     if (captureNeedsReview) { setError('Review the unavailable capture connection, retry, or explicitly turn capture off before launching.'); return false }
     if (creatingRef.current) return false
     const navigate = options.navigate ?? true
@@ -1735,6 +1745,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setSelectedTimeslotId('')
     setELKConnectionId('')
 	setDynatraceConnectionId('')
+    setMonitorBindings(undefined)
+    setMonitorRules(undefined)
     void refreshBindableTimeslots()
   }, [refreshBindableTimeslots])
 
@@ -1794,6 +1806,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setSelectedTimeslotId('')
     setELKConnectionId('')
 	setDynatraceConnectionId('')
+    setMonitorBindings(undefined)
+    setMonitorRules(undefined)
     scheduledStartBaselineRef.current = ''
     setScheduledStartLocal('')
   }, [defaultReleaseId, scenario?.name])
@@ -1816,6 +1830,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     || selectedTimeslotId
     || elkConnectionId
 	|| dynatraceConnectionId
+    || monitorBindings !== undefined
+    || monitorRules !== undefined
     || scheduledStartLocal !== scheduledStartBaselineRef.current
     || newReleaseName.trim()
     || pendingDefaultDirty
@@ -1826,7 +1842,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       version: 1, projectId: activeProjectID, applicationId: activeApplication?.id || '',
       scenarioId: scenario?.id || '', scenarioUpdatedAt: scenario?.updated_at || '', pageMode,
       runName, releaseId, runDefaultOverrides: runDefaultOverridesRef.current,
-      groupRunOverrides: groupRunOverridesRef.current, scheduledStartLocal, selectedTimeslotId, elkConnectionId, dynatraceConnectionId, newReleaseName, showNewRelease,
+      groupRunOverrides: groupRunOverridesRef.current, scheduledStartLocal, selectedTimeslotId, elkConnectionId, dynatraceConnectionId, monitorBindings, monitorRules, newReleaseName, showNewRelease,
       scheduleDraft, editingScheduleId,
     })
   const savedDraftMatches = savedDraft && JSON.stringify({ ...savedDraft, pageMode: null }) === JSON.stringify({ ...buildCurrentDraft(), pageMode: null })
@@ -2628,6 +2644,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setSelectedTimeslotId(restoreDraft.selectedTimeslotId)
     setELKConnectionId(restoreDraft.elkConnectionId || '')
 	setDynatraceConnectionId(restoreDraft.dynatraceConnectionId || '')
+    setMonitorBindings(restoreDraft.monitorBindings)
+    setMonitorRules(restoreDraft.monitorRules)
     setScheduleDraft(restoreDraft.editingScheduleId ? restoreDraft.scheduleDraft : { ...restoreDraft.scheduleDraft, approval_policy: scheduleDefaults.approval_policy || 'auto', missed_run_policy: scheduleDefaults.missed_run_policy || 'skip' })
     setEditingScheduleId(restoreDraft.editingScheduleId)
     setPageMode(restoreDraft.pageMode)
@@ -3396,6 +3414,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     </select>
                   </div>
                 )}
+                <RunMonitorBindingSelector projectId={activeProjectID} value={monitorBindings} onChange={setMonitorBindings} />
+                <MonitorRuleEditor projectId={activeProjectID} value={monitorRules ?? scenario?.goal_config?.monitor_rules ?? []} onChange={setMonitorRules} />
                 <div className="setting-row">
                   <div className="setting-info">
                     <span className="setting-label" id="new-test-elk-label">Elastic log capture</span>

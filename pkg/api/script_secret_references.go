@@ -38,6 +38,8 @@ type scriptSecretBindingDetail struct {
 }
 
 type projectSecretConsumer struct {
+	ResourceType   string `json:"resource_type,omitempty"`
+	ResourceID     string `json:"resource_id,omitempty"`
 	ScriptID       string `json:"script_id"`
 	ScriptName     string `json:"script_name"`
 	ReferenceCount int    `json:"reference_count"`
@@ -101,7 +103,7 @@ func (s *Server) projectSecretUsage(projectID, name string) (projectSecretUsage,
 			}
 		}
 	}
-	return projectSecretUsageFromScripts(projectID, name, scripts), nil
+	return s.appendAppDynamicsSecretUsage(projectSecretUsageFromScripts(projectID, name, scripts))
 }
 
 func projectSecretUsageFromScripts(projectID, name string, scripts []*dsl.Script) projectSecretUsage {
@@ -467,7 +469,7 @@ func validateExpectedProjectSecretUsage(usage projectSecretUsage, expected *proj
 		return fmt.Errorf("secret consumers changed; refresh usage before creating the value")
 	}
 	if scriptID := strings.TrimSpace(expected.ExclusiveScriptID); scriptID != "" {
-		if usage.ConsumerCount != 1 || usage.Consumers[0].ScriptID != scriptID {
+		if usage.ConsumerCount != 1 || usage.Consumers[0].ScriptID != scriptID || usage.Consumers[0].ResourceType != "" && usage.Consumers[0].ResourceType != "script" {
 			return fmt.Errorf("secret is no longer dedicated to the expected script")
 		}
 	}

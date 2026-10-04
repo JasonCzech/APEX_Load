@@ -13,30 +13,40 @@ import (
 	"net/url"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/appdynamics"
 )
 
 // RunJob grants a short collection lease for one immutable run/source binding.
 // Destination is also checked against local operator configuration before I/O.
 type RunJob struct {
-	UnavailableReason string             `json:"unavailable_reason,omitempty"`
-	Credentials       *SealedCredentials `json:"credentials,omitempty"`
-	ID                string             `json:"id"`
-	ProjectID         string             `json:"project_id"`
-	RunID             string             `json:"run_id"`
-	ScenarioID        string             `json:"scenario_id,omitempty"`
-	CollectorID       string             `json:"collector_id"`
-	SourceID          string             `json:"source_id"`
-	SourceRevision    int64              `json:"source_revision"`
-	Pack              string             `json:"pack"`
-	Destination       string             `json:"destination,omitempty"`
-	IntervalSeconds   int                `json:"interval_seconds"`
-	StartedAt         time.Time          `json:"started_at"`
-	ExpiresAt         time.Time          `json:"expires_at"`
-	LeaseExpiresAt    time.Time          `json:"lease_expires_at"`
-	NextSequence      int64              `json:"next_sequence"`
+	AppDynamics       *appdynamics.JobConfig `json:"appdynamics,omitempty"`
+	QueryFromUTC      time.Time              `json:"query_from_utc,omitempty"`
+	QueryUntilUTC     time.Time              `json:"query_until_utc,omitempty"`
+	LoadEndedAt       *time.Time             `json:"load_ended_at,omitempty"`
+	DrainDeadline     *time.Time             `json:"drain_deadline,omitempty"`
+	QueryWatermark    time.Time              `json:"query_watermark,omitempty"`
+	Reconciling       bool                   `json:"reconciling,omitempty"`
+	UnavailableReason string                 `json:"unavailable_reason,omitempty"`
+	Credentials       *SealedCredentials     `json:"credentials,omitempty"`
+	ID                string                 `json:"id"`
+	ProjectID         string                 `json:"project_id"`
+	RunID             string                 `json:"run_id"`
+	ScenarioID        string                 `json:"scenario_id,omitempty"`
+	CollectorID       string                 `json:"collector_id"`
+	SourceID          string                 `json:"source_id"`
+	SourceRevision    int64                  `json:"source_revision"`
+	Pack              string                 `json:"pack"`
+	Destination       string                 `json:"destination,omitempty"`
+	IntervalSeconds   int                    `json:"interval_seconds"`
+	StartedAt         time.Time              `json:"started_at"`
+	ExpiresAt         time.Time              `json:"expires_at"`
+	LeaseExpiresAt    time.Time              `json:"lease_expires_at"`
+	NextSequence      int64                  `json:"next_sequence"`
+	MaxBatches        int                    `json:"max_batches,omitempty"`
 }
 
 type SignedRunJob struct {
@@ -45,9 +55,18 @@ type SignedRunJob struct {
 }
 
 type RunSampleBatch struct {
-	Job      SignedRunJob           `json:"job"`
-	Sequence int64                  `json:"sequence"`
-	Points   []analysis.MetricPoint `json:"points"`
+	Topology       []appdynamics.Entity            `json:"topology,omitempty"`
+	Evidence       []appdynamics.Diagnostic        `json:"evidence,omitempty"`
+	Coverage       map[string]appdynamics.Coverage `json:"coverage,omitempty"`
+	Capabilities   appdynamics.Capabilities        `json:"capabilities,omitempty"`
+	Progress       *appdynamics.QueryProgress      `json:"progress,omitempty"`
+	QueryFromUTC   time.Time                       `json:"query_from_utc,omitempty"`
+	QueryUntilUTC  time.Time                       `json:"query_until_utc,omitempty"`
+	QueryWindowEnd *time.Time                      `json:"query_window_end,omitempty"`
+	Final          bool                            `json:"final,omitempty"`
+	Job            SignedRunJob                    `json:"job"`
+	Sequence       int64                           `json:"sequence"`
+	Points         []analysis.MetricPoint          `json:"points"`
 }
 
 func SignRunJob(job RunJob, key ed25519.PrivateKey) (SignedRunJob, error) {
@@ -58,12 +77,15 @@ func SignRunJob(job RunJob, key ed25519.PrivateKey) (SignedRunJob, error) {
 	if err != nil {
 		return SignedRunJob{}, err
 	}
+	if len(body) > 96<<10 || job.Pack != "appdynamics" && len(body) > 32768 {
+		return SignedRunJob{}, errors.New("monitor job exceeds payload limit")
+	}
 	return SignedRunJob{Payload: string(body), Signature: base64.RawStdEncoding.EncodeToString(ed25519.Sign(key, body))}, nil
 }
 
 func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, now time.Time) (RunJob, error) {
 	var job RunJob
-	if len(key) != ed25519.PublicKeySize || len(signed.Payload) > 32768 || len(signed.Signature) > 128 {
+	if len(key) != ed25519.PublicKeySize || len(signed.Payload) > 96<<10 || len(signed.Signature) > 128 {
 		return job, errors.New("invalid signed monitor job")
 	}
 	sig, err := base64.RawStdEncoding.DecodeString(signed.Signature)
@@ -72,6 +94,12 @@ func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, 
 	}
 	if err = json.Unmarshal([]byte(signed.Payload), &job); err != nil {
 		return job, err
+	}
+	if job.Pack != "appdynamics" && len(signed.Payload) > 32768 {
+		return RunJob{}, errors.New("monitor job exceeds payload limit")
+	}
+	if job.MaxBatches < 0 || job.MaxBatches > 32 || job.Pack != "appdynamics" && job.MaxBatches > 1 {
+		return RunJob{}, errors.New("monitor grant batch budget rejected")
 	}
 	if job.CollectorID != collector || job.ID == "" || job.ProjectID == "" || job.RunID == "" || job.SourceID == "" || job.SourceRevision < 1 || job.NextSequence < 0 || job.IntervalSeconds < 1 || job.IntervalSeconds > 3600 || job.StartedAt.IsZero() || job.StartedAt.After(now.Add(30*time.Second)) || !job.ExpiresAt.After(now) || !job.LeaseExpiresAt.After(now) || job.LeaseExpiresAt.After(now.Add(2*time.Minute)) || job.LeaseExpiresAt.After(job.ExpiresAt) {
 		return RunJob{}, errors.New("monitor job identity or collection lease rejected")
@@ -84,14 +112,49 @@ func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, 
 
 func (a *Agent) runJobTick(ctx context.Context) error {
 	var signed []SignedRunJob
-	if err := a.jobRequest(ctx, http.MethodGet, "jobs", nil, &signed); err != nil {
+	a.stateMu.Lock()
+	after := a.jobPollAfterKey
+	a.stateMu.Unlock()
+	query := url.Values{"page_size": {"32"}}
+	if after != "" {
+		query.Set("after_key", after)
+	}
+	var headers http.Header
+	if err := a.jobRequestWithHeaders(ctx, http.MethodGet, "jobs?"+query.Encode(), nil, &signed, &headers); err != nil {
 		return err
 	}
 	if len(signed) > 32 {
 		return errors.New("too many assigned monitor jobs")
 	}
+	next := headers.Get("X-APEX-Monitor-Next-Key")
+	if headers.Get("X-APEX-Monitor-Page") != "1" {
+		next = "" // An older controller still returns the original complete array.
+	} else if len(next) > maxRunMonitorJobIDBytes || strings.TrimSpace(next) != next || strings.ContainsAny(next, "\r\n\x00") || next != "" && next <= after {
+		return errors.New("invalid collector job continuation")
+	}
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
 	now := time.Now().UTC()
-	active := map[string]bool{}
+	if after == "" || a.jobScanUnseen == nil {
+		a.jobScanUnseen = map[string]bool{}
+		for id := range a.pendingBatches {
+			a.jobScanUnseen[id] = true
+		}
+		for id := range a.providerBacklog {
+			a.jobScanUnseen[id] = true
+		}
+		for id := range a.otlpAccepted {
+			a.jobScanUnseen[id] = true
+		}
+	}
+	a.jobPollAfterKey = next
+	a.discardExpiredMonitorSpool(now)
+	if len(signed) > 1 {
+		offset := a.jobScanOffset % len(signed)
+		ordered := make([]SignedRunJob, 0, len(signed))
+		ordered = append(ordered, signed[offset:]...)
+		signed = append(ordered, signed[:offset]...)
+	}
 	var failures []error
 	for _, envelope := range signed {
 		err := func() error {
@@ -99,7 +162,14 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			active[job.ID] = true
+			delete(a.jobScanUnseen, job.ID)
+			if job.Pack == "appdynamics" {
+				if !slices.Contains(a.cfg.Packs, job.Pack) || job.UnavailableReason != "" {
+					return errors.New("AppDynamics pack is disabled or temporarily unavailable")
+				}
+				a.dispatchAppDynamicsJob(ctx, job, envelope)
+				return nil
+			}
 			if job.UnavailableReason != "" {
 				return errors.New("monitor job is temporarily unavailable")
 			}
@@ -119,6 +189,9 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 				batch = nil
 			}
 			if batch == nil {
+				if len(a.pendingBatches) >= maxCollectorSpoolJobs || job.Pack == "otel-metrics" && a.otlpAccepted[job.ID] == nil && len(a.otlpAccepted) >= maxCollectorSpoolJobs {
+					return errors.New("collector retry storage job budget reached")
+				}
 				if until := a.nextCollection[job.ID]; now.Before(until) {
 					return nil
 				}
@@ -225,14 +298,15 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 				if err != nil || len(encoded) > 1<<20 {
 					return errors.New("monitor batch exceeds byte limit")
 				}
-				a.pendingBatches[job.ID] = batch
-				if err := a.saveSpool(); err != nil {
+				if err := a.admitMonitorRetry(job.ID, batch, nil); err != nil {
 					return err
 				}
 			}
 			// Renew only the signed authorization; source observations remain intact.
+			previousEnvelope := batch.Job
 			batch.Job = envelope
 			if err := a.saveSpool(); err != nil {
+				batch.Job = previousEnvelope
 				return err
 			}
 			if err := a.jobRequest(ctx, http.MethodPost, "jobs/"+url.PathEscape(job.ID)+"/samples", batch, nil); err != nil {
@@ -256,25 +330,41 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 			failures = append(failures, err)
 		}
 	}
-	for id := range a.pendingBatches {
-		if !active[id] {
+	// Absence from one page is not cancellation. Prune stopped jobs only after
+	// the complete scan; persisted observations require a newly signed grant
+	// before any retry is submitted.
+	if next == "" {
+		for id := range a.jobScanUnseen {
 			delete(a.pendingBatches, id)
-		}
-	}
-	for id := range a.otlpAccepted {
-		if !active[id] {
+			delete(a.providerBacklog, id)
 			delete(a.otlpAccepted, id)
-		}
-	}
-	for id := range a.nextCollection {
-		if !active[id] {
 			delete(a.nextCollection, id)
 		}
+		a.jobScanUnseen = nil
+		a.jobScanOffset = (a.jobScanOffset + max(1, cap(a.providerSlots))) % 32
+	}
+	for id := range a.nextCollection {
+		if !a.nextCollection[id].After(now) {
+			delete(a.nextCollection, id)
+		}
+	}
+	for len(a.nextCollection) > maxCollectorSpoolJobs {
+		var earliest string
+		for id, at := range a.nextCollection {
+			if earliest == "" || at.Before(a.nextCollection[earliest]) {
+				earliest = id
+			}
+		}
+		delete(a.nextCollection, earliest)
 	}
 	return errors.Join(append(failures, a.saveSpool())...)
 }
 
 func (a *Agent) jobRequest(ctx context.Context, method, path string, body, result any) error {
+	return a.jobRequestWithHeaders(ctx, method, path, body, result, nil)
+}
+
+func (a *Agent) jobRequestWithHeaders(ctx context.Context, method, path string, body, result any, headers *http.Header) error {
 	var encoded []byte
 	var err error
 	if body != nil {
@@ -289,8 +379,11 @@ func (a *Agent) jobRequest(ctx context.Context, method, path string, body, resul
 	}
 	req.Header.Set("Authorization", "Bearer "+a.cfg.Token)
 	req.Header.Set("Content-Type", "application/json")
-	if path == "jobs" {
+	if path == "jobs" || strings.HasPrefix(path, "jobs?") {
 		ad := RunJobReadiness{Packs: a.cfg.Packs, SigningKey: base64.StdEncoding.EncodeToString(a.cfg.ControllerPublicKey)}
+		if slices.Contains(a.cfg.Packs, "appdynamics") {
+			ad.Contracts = []string{AppDynamicsBatchContract}
+		}
 		ad.Destinations = a.approvedDestinations()
 		payload, _ := json.Marshal(ad)
 		req.Header.Set("X-APEX-Monitor-Readiness", string(payload))
@@ -302,6 +395,9 @@ func (a *Agent) jobRequest(ctx context.Context, method, path string, body, resul
 		return err
 	}
 	defer response.Body.Close()
+	if headers != nil {
+		*headers = response.Header.Clone()
+	}
 	if response.StatusCode >= 300 {
 		return fmt.Errorf("monitor job request returned %d", response.StatusCode)
 	}
@@ -309,11 +405,11 @@ func (a *Agent) jobRequest(ctx context.Context, method, path string, body, resul
 		_, err = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 		return err
 	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, 2<<20+1))
+	data, err := io.ReadAll(io.LimitReader(response.Body, 4<<20+1))
 	if err != nil {
 		return err
 	}
-	if len(data) > 2<<20 {
+	if len(data) > 4<<20 {
 		return errors.New("monitor job response exceeds limit")
 	}
 	return json.Unmarshal(data, result)
@@ -321,9 +417,14 @@ func (a *Agent) jobRequest(ctx context.Context, method, path string, body, resul
 
 type RunJobReadiness struct {
 	Packs        []string `json:"packs"`
+	Contracts    []string `json:"contracts,omitempty"`
 	Destinations []string `json:"destinations"`
 	SigningKey   string   `json:"signing_key"`
 }
+
+// AppDynamicsBatchContract identifies signed query progress, diagnostic and
+// topology batches; the pack name alone does not attest support for them.
+const AppDynamicsBatchContract = "appdynamics.v1"
 
 func normalizeAdapterPoint(point *analysis.MetricPoint) error {
 	switch point.Unit {

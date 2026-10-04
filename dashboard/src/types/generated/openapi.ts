@@ -3091,16 +3091,34 @@ export interface operations {
                 "truncated_items"?: number;
               }) | null;
               "monitor_coverage"?: Array<{
+                "appdynamics"?: (Record<string, unknown>) | null;
                 "batches"?: number;
                 "binding_revision"?: number;
+                "connection_id"?: string;
+                "connection_revision"?: number;
+                "executor_mode"?: string;
                 "job_id"?: string;
+                "provider_coverage"?: Record<string, Record<string, unknown>>;
                 "reason"?: string;
+                "required"?: boolean;
                 "source_id"?: string;
                 "source_revision"?: number;
                 "state"?: string;
+                "topology"?: Array<Record<string, unknown>>;
               }>;
+              "monitor_diagnostics_count"?: number;
+              "monitor_diagnostics_file"?: string;
               "monitor_evidence_count"?: number;
               "monitor_evidence_file"?: string;
+              "monitor_rule_results"?: Array<{
+                "coverage_pct"?: number;
+                "eligible_buckets"?: number;
+                "message"?: string;
+                "observed"?: (number) | null;
+                "rule"?: Record<string, unknown>;
+                "status"?: string;
+              }>;
+              "monitoring_status"?: string;
               "provenance"?: {
                 "application_id"?: string;
                 "assignment"?: (Record<string, unknown>) | null;
@@ -3316,6 +3334,41 @@ export interface operations {
                   "sum"?: number;
                 };
               }) | null;
+            }>;
+            "monitor_diagnostics"?: Array<{
+              "diagnostic"?: {
+                "application_id"?: string;
+                "deep_link"?: string;
+                "entity_ids"?: Record<string, string>;
+                "id"?: string;
+                "kind"?: string;
+                "properties"?: Record<string, string>;
+                "severity"?: string;
+                "status"?: string;
+                "summary"?: string;
+                "timestamp_utc"?: string;
+              };
+              "source_id"?: string;
+            }>;
+            "monitor_rule_results"?: Array<{
+              "coverage_pct"?: number;
+              "eligible_buckets"?: number;
+              "message"?: string;
+              "observed"?: (number) | null;
+              "rule"?: {
+                "comparator"?: string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric"?: string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id"?: string;
+                "start_offset_seconds"?: number;
+                "statistic"?: string;
+                "threshold"?: number;
+                "unit"?: string;
+              };
+              "status"?: string;
             }>;
             "network_phases"?: {
               "by_action"?: Record<string, {
@@ -3978,6 +4031,19 @@ export interface operations {
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
+              "monitor_rules"?: Array<{
+                "comparator"?: string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric"?: string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id"?: string;
+                "start_offset_seconds"?: number;
+                "statistic"?: string;
+                "threshold"?: number;
+                "unit"?: string;
+              }>;
               "p95_latency_ms"?: (number) | null;
               "sla_breach_window"?: string;
               "stop_on_max_errors"?: boolean;
@@ -6666,6 +6732,27 @@ export interface operations {
             "duration_ms": number;
             "error"?: string;
             "errors": number;
+            "monitor_rule_results"?: Array<{
+              "coverage_pct": number;
+              "eligible_buckets": number;
+              "message": string;
+              "observed"?: (number) | null;
+              "rule": {
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              };
+              "status": string;
+            }>;
+            "monitoring_status"?: string;
             "outcome": string;
             "report_url": string;
             "results_present": boolean;
@@ -9136,6 +9223,78 @@ export interface operations {
         };
       };
       "502": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAppDynamicsInspectionResult": {
+    parameters: {
+      "path": {
+        "id": string;
+        "operation_id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "capabilities"?: {
+            "analytics"?: boolean;
+            "events"?: boolean;
+            "metric_api"?: string;
+            "metrics"?: boolean;
+            "snapshots"?: boolean;
+            "status"?: Record<string, string>;
+            "violations"?: boolean;
+          };
+          "entities"?: Array<{
+            "entity_ids"?: Record<string, string>;
+            "id"?: string;
+            "name"?: string;
+            "parent_id"?: string;
+            "path"?: string;
+            "type"?: string;
+          }>;
+          "job": {
+            "payload"?: string;
+            "signature"?: string;
+          };
+          "message"?: string;
+          "truncated"?: boolean;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -14189,6 +14348,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -16121,6 +16293,19 @@ export interface operations {
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
               "p95_latency_ms"?: (number) | null;
               "sla_breach_window"?: string;
               "stop_on_max_errors"?: boolean;
@@ -17033,6 +17218,19 @@ export interface operations {
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
               "p95_latency_ms"?: (number) | null;
               "sla_breach_window"?: string;
               "stop_on_max_errors"?: boolean;
@@ -23576,6 +23774,137 @@ export interface operations {
       };
     };
   };
+  "handleCreateAppDynamicsConnection": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "client_id_secret"?: (string) | null;
+          "client_secret_secret"?: (string) | null;
+          "collection_mode"?: string;
+          "collector_agent_id"?: string;
+          "config"?: {
+            "account_name"?: string;
+            "analytics_requests_per_minute"?: number;
+            "approved_cidrs"?: Array<string>;
+            "auth_type"?: string;
+            "ca_pem"?: string;
+            "context_path"?: string;
+            "endpoint"?: string;
+            "events_account_name"?: string;
+            "events_endpoint"?: string;
+            "max_points"?: number;
+            "max_poll_seconds"?: number;
+            "max_requests_per_poll"?: number;
+            "max_response_bytes"?: number;
+            "max_series"?: number;
+            "requests_per_minute"?: number;
+            "timeout_seconds"?: number;
+          };
+          "description"?: string;
+          "enabled"?: boolean;
+          "events_api_key_secret"?: (string) | null;
+          "name": string;
+          "password_secret"?: (string) | null;
+          "revision"?: number;
+          "username_secret"?: (string) | null;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": {
+            "capabilities": {
+              "analytics": boolean;
+              "events": boolean;
+              "metric_api"?: string;
+              "metrics": boolean;
+              "snapshots": boolean;
+              "status"?: Record<string, string>;
+              "violations": boolean;
+            };
+            "collection_mode": string;
+            "collector_agent_id"?: string;
+            "config": {
+              "account_name": string;
+              "analytics_requests_per_minute"?: number;
+              "approved_cidrs"?: Array<string>;
+              "auth_type": string;
+              "ca_pem"?: string;
+              "context_path"?: string;
+              "endpoint": string;
+              "events_account_name"?: string;
+              "events_endpoint"?: string;
+              "max_points"?: number;
+              "max_poll_seconds"?: number;
+              "max_requests_per_poll"?: number;
+              "max_response_bytes"?: number;
+              "max_series"?: number;
+              "requests_per_minute"?: number;
+              "timeout_seconds"?: number;
+            };
+            "created_at": string;
+            "description"?: string;
+            "enabled": boolean;
+            "has_client_id": boolean;
+            "has_client_secret": boolean;
+            "has_custom_ca": boolean;
+            "has_events_api_key": boolean;
+            "has_password": boolean;
+            "has_username": boolean;
+            "id": string;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+            "status": string;
+            "updated_at": string;
+            "verified_revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleCreateApplication": {
     parameters?: never;
     requestBody: {
@@ -25701,10 +26030,27 @@ export interface operations {
             "max_avg_transfer_ms"?: (number) | null;
             "max_error_count"?: (number) | null;
             "max_error_pct"?: (number) | null;
+            "monitor_rules"?: Array<{
+              "comparator"?: string;
+              "dimensions"?: Record<string, string>;
+              "end_offset_seconds"?: (number) | null;
+              "metric"?: string;
+              "min_coverage_pct"?: number;
+              "severity"?: string;
+              "source_id"?: string;
+              "start_offset_seconds"?: number;
+              "statistic"?: string;
+              "threshold"?: number;
+              "unit"?: string;
+            }>;
             "p95_latency_ms"?: (number) | null;
             "require_results"?: boolean;
             "require_sla"?: boolean;
           };
+          "monitor_bindings"?: (Array<{
+            "required"?: boolean;
+            "source_id"?: string;
+          }>) | null;
           "name"?: string;
           "project_id"?: string;
           "publish_check"?: (boolean) | null;
@@ -25745,6 +26091,27 @@ export interface operations {
             "duration_ms": number;
             "error"?: string;
             "errors": number;
+            "monitor_rule_results"?: Array<{
+              "coverage_pct": number;
+              "eligible_buckets": number;
+              "message": string;
+              "observed"?: (number) | null;
+              "rule": {
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              };
+              "status": string;
+            }>;
+            "monitoring_status"?: string;
             "outcome": string;
             "report_url": string;
             "results_present": boolean;
@@ -25796,6 +26163,11 @@ export interface operations {
         };
       };
       "502": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -28090,6 +28462,19 @@ export interface operations {
             "max_throttled_requests"?: (number) | null;
             "max_vusers"?: (number) | null;
             "min_vusers"?: (number) | null;
+            "monitor_rules"?: Array<{
+              "comparator"?: string;
+              "dimensions"?: Record<string, string>;
+              "end_offset_seconds"?: (number) | null;
+              "metric"?: string;
+              "min_coverage_pct"?: number;
+              "severity"?: string;
+              "source_id"?: string;
+              "start_offset_seconds"?: number;
+              "statistic"?: string;
+              "threshold"?: number;
+              "unit"?: string;
+            }>;
             "p95_latency_ms"?: (number) | null;
             "sla_breach_window"?: string;
             "stop_on_max_errors"?: boolean;
@@ -28163,6 +28548,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
+          "monitor_bindings"?: (Array<{
+            "required"?: boolean;
+            "source_id"?: string;
+          }>) | null;
           "name"?: string;
           "project_id"?: string;
           "ramp_up"?: string;
@@ -28432,6 +28821,19 @@ export interface operations {
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
+              "monitor_rules"?: Array<{
+                "comparator"?: string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric"?: string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id"?: string;
+                "start_offset_seconds"?: number;
+                "statistic"?: string;
+                "threshold"?: number;
+                "unit"?: string;
+              }>;
               "p95_latency_ms"?: (number) | null;
               "sla_breach_window"?: string;
               "stop_on_max_errors"?: boolean;
@@ -28505,6 +28907,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "vusers"?: number;
             }>;
+            "monitor_bindings"?: (Array<{
+              "required"?: boolean;
+              "source_id"?: string;
+            }>) | null;
             "name"?: string;
             "project_id"?: string;
             "ramp_up"?: string;
@@ -29186,6 +29592,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -29921,6 +30340,15 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+              }) | null;
+              "monitor_bindings"?: ({
+                "project_id": string;
+                "revision": number;
+                "scenario_id": string;
+                "sources": Array<{
+                  "required": boolean;
+                  "source_id": string;
+                }>;
               }) | null;
               "name": string;
               "paused_at"?: (string) | null;
@@ -30831,6 +31259,19 @@ export interface operations {
             "max_throttled_requests"?: (number) | null;
             "max_vusers"?: (number) | null;
             "min_vusers"?: (number) | null;
+            "monitor_rules"?: Array<{
+              "comparator"?: string;
+              "dimensions"?: Record<string, string>;
+              "end_offset_seconds"?: (number) | null;
+              "metric"?: string;
+              "min_coverage_pct"?: number;
+              "severity"?: string;
+              "source_id"?: string;
+              "start_offset_seconds"?: number;
+              "statistic"?: string;
+              "threshold"?: number;
+              "unit"?: string;
+            }>;
             "p95_latency_ms"?: (number) | null;
             "sla_breach_window"?: string;
             "stop_on_max_errors"?: boolean;
@@ -31585,6 +32026,19 @@ export interface operations {
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
               "p95_latency_ms"?: (number) | null;
               "sla_breach_window"?: string;
               "stop_on_max_errors"?: boolean;
@@ -34335,6 +34789,19 @@ export interface operations {
             "max_throttled_requests"?: (number) | null;
             "max_vusers"?: (number) | null;
             "min_vusers"?: (number) | null;
+            "monitor_rules"?: Array<{
+              "comparator"?: string;
+              "dimensions"?: Record<string, string>;
+              "end_offset_seconds"?: (number) | null;
+              "metric"?: string;
+              "min_coverage_pct"?: number;
+              "severity"?: string;
+              "source_id"?: string;
+              "start_offset_seconds"?: number;
+              "statistic"?: string;
+              "threshold"?: number;
+              "unit"?: string;
+            }>;
             "p95_latency_ms"?: (number) | null;
             "sla_breach_window"?: string;
             "stop_on_max_errors"?: boolean;
@@ -34587,6 +35054,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
+          "monitor_bindings"?: (Array<{
+            "required"?: boolean;
+            "source_id"?: string;
+          }>) | null;
           "name"?: string;
           "project_id"?: string;
           "ramp_up"?: string;
@@ -35655,6 +36126,19 @@ export interface operations {
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
               "p95_latency_ms"?: (number) | null;
               "sla_breach_window"?: string;
               "stop_on_max_errors"?: boolean;
@@ -37948,6 +38432,15 @@ export interface operations {
                 "tps": number;
               }) | null>;
             }) | null;
+            "monitor_bindings"?: ({
+              "project_id": string;
+              "revision": number;
+              "scenario_id": string;
+              "sources": Array<{
+                "required": boolean;
+                "source_id": string;
+              }>;
+            }) | null;
             "name": string;
             "paused_at"?: (string) | null;
             "pending_reason"?: string;
@@ -38726,6 +39219,51 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleDeleteAppDynamicsConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+      "query"?: {
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "204": {
+        content?: never;
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -40573,6 +41111,19 @@ export interface operations {
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
+              "monitor_rules"?: Array<{
+                "comparator"?: string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric"?: string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id"?: string;
+                "start_offset_seconds"?: number;
+                "statistic"?: string;
+                "threshold"?: number;
+                "unit"?: string;
+              }>;
               "p95_latency_ms"?: (number) | null;
               "sla_breach_window"?: string;
               "stop_on_max_errors"?: boolean;
@@ -41210,6 +41761,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -41769,6 +42333,19 @@ export interface operations {
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
+              "monitor_rules"?: Array<{
+                "comparator"?: string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric"?: string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id"?: string;
+                "start_offset_seconds"?: number;
+                "statistic"?: string;
+                "threshold"?: number;
+                "unit"?: string;
+              }>;
               "p95_latency_ms"?: (number) | null;
               "sla_breach_window"?: string;
               "stop_on_max_errors"?: boolean;
@@ -42406,6 +42983,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -43412,6 +44002,126 @@ export interface operations {
       };
     };
   };
+  "handleDiscoverAppDynamicsApplications": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "2XX": {
+        content?: never;
+      };
+      "4XX": {
+        content?: never;
+      };
+      "5XX": {
+        content?: never;
+      };
+    };
+  };
+  "handleDiscoverAppDynamicsBackends": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "2XX": {
+        content?: never;
+      };
+      "4XX": {
+        content?: never;
+      };
+      "5XX": {
+        content?: never;
+      };
+    };
+  };
+  "handleDiscoverAppDynamicsBusinessTransactions": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "2XX": {
+        content?: never;
+      };
+      "4XX": {
+        content?: never;
+      };
+      "5XX": {
+        content?: never;
+      };
+    };
+  };
+  "handleDiscoverAppDynamicsMetrics": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "2XX": {
+        content?: never;
+      };
+      "4XX": {
+        content?: never;
+      };
+      "5XX": {
+        content?: never;
+      };
+    };
+  };
+  "handleDiscoverAppDynamicsNodes": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "2XX": {
+        content?: never;
+      };
+      "4XX": {
+        content?: never;
+      };
+      "5XX": {
+        content?: never;
+      };
+    };
+  };
+  "handleDiscoverAppDynamicsTiers": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "2XX": {
+        content?: never;
+      };
+      "4XX": {
+        content?: never;
+      };
+      "5XX": {
+        content?: never;
+      };
+    };
+  };
   "handleDiscoverCorrelationRulesetFromScript": {
     parameters?: never;
     requestBody: {
@@ -44025,6 +44735,19 @@ export interface operations {
             "max_throttled_requests"?: (number) | null;
             "max_vusers"?: (number) | null;
             "min_vusers"?: (number) | null;
+            "monitor_rules"?: Array<{
+              "comparator"?: string;
+              "dimensions"?: Record<string, string>;
+              "end_offset_seconds"?: (number) | null;
+              "metric"?: string;
+              "min_coverage_pct"?: number;
+              "severity"?: string;
+              "source_id"?: string;
+              "start_offset_seconds"?: number;
+              "statistic"?: string;
+              "threshold"?: number;
+              "unit"?: string;
+            }>;
             "p95_latency_ms"?: (number) | null;
             "sla_breach_window"?: string;
             "stop_on_max_errors"?: boolean;
@@ -44277,6 +45000,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
+          "monitor_bindings"?: (Array<{
+            "required"?: boolean;
+            "source_id"?: string;
+          }>) | null;
           "name"?: string;
           "project_id"?: string;
           "ramp_up"?: string;
@@ -46759,6 +47486,129 @@ export interface operations {
       };
     };
   };
+  "handleGetAppDynamicsConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "capabilities": {
+              "analytics": boolean;
+              "events": boolean;
+              "metric_api"?: string;
+              "metrics": boolean;
+              "snapshots": boolean;
+              "status"?: Record<string, string>;
+              "violations": boolean;
+            };
+            "collection_mode": string;
+            "collector_agent_id"?: string;
+            "config": {
+              "account_name": string;
+              "analytics_requests_per_minute"?: number;
+              "approved_cidrs"?: Array<string>;
+              "auth_type": string;
+              "ca_pem"?: string;
+              "context_path"?: string;
+              "endpoint": string;
+              "events_account_name"?: string;
+              "events_endpoint"?: string;
+              "max_points"?: number;
+              "max_poll_seconds"?: number;
+              "max_requests_per_poll"?: number;
+              "max_response_bytes"?: number;
+              "max_series"?: number;
+              "requests_per_minute"?: number;
+              "timeout_seconds"?: number;
+            };
+            "created_at": string;
+            "description"?: string;
+            "enabled": boolean;
+            "has_client_id": boolean;
+            "has_client_secret": boolean;
+            "has_custom_ca": boolean;
+            "has_events_api_key": boolean;
+            "has_password": boolean;
+            "has_username": boolean;
+            "id": string;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+            "status": string;
+            "updated_at": string;
+            "verified_revision": number;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetAppDynamicsOperation": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+        "operation_id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "connection_id": string;
+            "connection_revision": number;
+            "created_at": string;
+            "expires_at": string;
+            "id": string;
+            "kind": string;
+            "message"?: string;
+            "result"?: unknown;
+            "status": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetApplication": {
     parameters: {
       "path": {
@@ -49128,6 +49978,27 @@ export interface operations {
             "duration_ms": number;
             "error"?: string;
             "errors": number;
+            "monitor_rule_results"?: Array<{
+              "coverage_pct": number;
+              "eligible_buckets": number;
+              "message": string;
+              "observed"?: (number) | null;
+              "rule": {
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              };
+              "status": string;
+            }>;
+            "monitoring_status"?: string;
             "outcome": string;
             "report_url": string;
             "results_present": boolean;
@@ -52077,6 +52948,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -52812,6 +53696,15 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+              }) | null;
+              "monitor_bindings"?: ({
+                "project_id": string;
+                "revision": number;
+                "scenario_id": string;
+                "sources": Array<{
+                  "required": boolean;
+                  "source_id": string;
+                }>;
               }) | null;
               "name": string;
               "paused_at"?: (string) | null;
@@ -53821,6 +54714,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -54251,16 +55157,76 @@ export interface operations {
               "truncated_items": number;
             }) | null;
             "monitor_coverage"?: Array<{
+              "appdynamics"?: ({
+                "analytics"?: Array<Record<string, unknown>>;
+                "applications": Array<string>;
+                "collector_header"?: string;
+                "collector_value"?: string;
+                "events"?: boolean;
+                "header_origins"?: Array<string>;
+                "metrics"?: Array<Record<string, unknown>>;
+                "project_id": string;
+                "query_offset"?: number;
+                "run_header"?: boolean;
+                "scope_ids"?: Record<string, Array<string>>;
+                "settle_seconds"?: number;
+                "snapshots"?: boolean;
+                "violations"?: boolean;
+              }) | null;
               "batches": number;
               "binding_revision": number;
+              "connection_id"?: string;
+              "connection_revision"?: number;
+              "executor_mode"?: string;
               "job_id": string;
+              "provider_coverage"?: Record<string, {
+                "evidence": number;
+                "from": string;
+                "message"?: string;
+                "points": number;
+                "status": string;
+                "to": string;
+                "truncated": boolean;
+              }>;
               "reason"?: string;
+              "required": boolean;
               "source_id": string;
               "source_revision": number;
               "state": string;
+              "topology"?: Array<{
+                "entity_ids"?: Record<string, string>;
+                "id"?: string;
+                "name": string;
+                "parent_id"?: string;
+                "path"?: string;
+                "type": string;
+              }>;
             }>;
+            "monitor_diagnostics_count"?: number;
+            "monitor_diagnostics_file"?: string;
             "monitor_evidence_count"?: number;
             "monitor_evidence_file"?: string;
+            "monitor_rule_results"?: Array<{
+              "coverage_pct": number;
+              "eligible_buckets": number;
+              "message": string;
+              "observed"?: (number) | null;
+              "rule": {
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              };
+              "status": string;
+            }>;
+            "monitoring_status"?: string;
             "provenance"?: {
               "application_id"?: string;
               "assignment"?: ({
@@ -54490,6 +55456,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -57173,6 +58152,7 @@ export interface operations {
                   "max_throttled_requests"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
+                  "monitor_rules"?: Array<Record<string, unknown>>;
                   "p95_latency_ms"?: (number) | null;
                   "sla_breach_window"?: string;
                   "stop_on_max_errors"?: boolean;
@@ -57287,16 +58267,61 @@ export interface operations {
                 "truncated_items": number;
               }) | null;
               "monitor_coverage"?: Array<{
+                "appdynamics"?: ({
+                  "analytics"?: Array<Record<string, unknown>>;
+                  "applications": Array<string>;
+                  "collector_header"?: string;
+                  "collector_value"?: string;
+                  "events"?: boolean;
+                  "header_origins"?: Array<string>;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "project_id": string;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "scope_ids"?: Record<string, Array<string>>;
+                  "settle_seconds"?: number;
+                  "snapshots"?: boolean;
+                  "violations"?: boolean;
+                }) | null;
                 "batches": number;
                 "binding_revision": number;
+                "connection_id"?: string;
+                "connection_revision"?: number;
+                "executor_mode"?: string;
                 "job_id": string;
+                "provider_coverage"?: Record<string, Record<string, unknown>>;
                 "reason"?: string;
+                "required": boolean;
                 "source_id": string;
                 "source_revision": number;
                 "state": string;
+                "topology"?: Array<Record<string, unknown>>;
               }>;
+              "monitor_diagnostics_count"?: number;
+              "monitor_diagnostics_file"?: string;
               "monitor_evidence_count"?: number;
               "monitor_evidence_file"?: string;
+              "monitor_rule_results"?: Array<{
+                "coverage_pct": number;
+                "eligible_buckets": number;
+                "message": string;
+                "observed"?: (number) | null;
+                "rule": {
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                };
+                "status": string;
+              }>;
+              "monitoring_status"?: string;
               "provenance"?: {
                 "application_id"?: string;
                 "assignment"?: ({
@@ -57440,6 +58465,7 @@ export interface operations {
                   "max_throttled_requests"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
+                  "monitor_rules"?: Array<Record<string, unknown>>;
                   "p95_latency_ms"?: (number) | null;
                   "sla_breach_window"?: string;
                   "stop_on_max_errors"?: boolean;
@@ -57734,6 +58760,41 @@ export interface operations {
                   "sum": number;
                 };
               }) | null;
+            }>;
+            "monitor_diagnostics"?: Array<{
+              "diagnostic": {
+                "application_id": string;
+                "deep_link"?: string;
+                "entity_ids"?: Record<string, string>;
+                "id": string;
+                "kind": string;
+                "properties"?: Record<string, string>;
+                "severity"?: string;
+                "status"?: string;
+                "summary"?: string;
+                "timestamp_utc": string;
+              };
+              "source_id": string;
+            }>;
+            "monitor_rule_results"?: Array<{
+              "coverage_pct": number;
+              "eligible_buckets": number;
+              "message": string;
+              "observed"?: (number) | null;
+              "rule": {
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              };
+              "status": string;
             }>;
             "network_phases"?: {
               "by_action"?: Record<string, {
@@ -58619,6 +59680,19 @@ export interface operations {
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
               "p95_latency_ms"?: (number) | null;
               "sla_breach_window"?: string;
               "stop_on_max_errors"?: boolean;
@@ -62432,6 +63506,19 @@ export interface operations {
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
               "p95_latency_ms"?: (number) | null;
               "sla_breach_window"?: string;
               "stop_on_max_errors"?: boolean;
@@ -64725,6 +65812,15 @@ export interface operations {
                 "tps": number;
               }) | null>;
             }) | null;
+            "monitor_bindings"?: ({
+              "project_id": string;
+              "revision": number;
+              "scenario_id": string;
+              "sources": Array<{
+                "required": boolean;
+                "source_id": string;
+              }>;
+            }) | null;
             "name": string;
             "paused_at"?: (string) | null;
             "pending_reason"?: string;
@@ -66670,6 +67766,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -67150,6 +68259,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -72057,6 +73179,7 @@ export interface operations {
                   "history"?: Array<(Record<string, unknown>) | null>;
                   "id": string;
                   "live_metrics"?: (Record<string, unknown>) | null;
+                  "monitor_bindings"?: (Record<string, unknown>) | null;
                   "name": string;
                   "paused_at"?: (string) | null;
                   "pending_reason"?: string;
@@ -72953,6 +74076,39 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListAppDynamicsConnections": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -75770,7 +76926,56 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": {
+            "appdynamics"?: ({
+              "analytics"?: Array<{
+                "application_id": string;
+                "application_id_field"?: string;
+                "application_name"?: string;
+                "bucket_seconds"?: number;
+                "kind"?: string;
+                "name": string;
+                "query": string;
+                "run_id_field"?: string;
+                "statistic"?: string;
+                "unit"?: string;
+              }>;
+              "applications": Array<string>;
+              "collector_header"?: string;
+              "collector_value"?: string;
+              "events"?: boolean;
+              "header_origins"?: Array<string>;
+              "metrics"?: Array<{
+                "application_id": string;
+                "entity_ids"?: Record<string, string>;
+                "name": string;
+                "path": string;
+                "statistic"?: string;
+                "unit"?: string;
+              }>;
+              "project_id": string;
+              "query_offset"?: number;
+              "run_header"?: boolean;
+              "scope_ids"?: Record<string, Array<string>>;
+              "settle_seconds"?: number;
+              "snapshots"?: boolean;
+              "violations"?: boolean;
+            }) | null;
+            "collector_id": string;
+            "collector_public_key"?: string;
+            "connection_id"?: string;
+            "credential_ref"?: string;
+            "destination"?: string;
+            "enabled": boolean;
+            "executor_mode"?: string;
+            "id": string;
+            "interval_seconds": number;
+            "name": string;
+            "pack": string;
+            "project_id": string;
+            "revision": number;
+            "service"?: string;
+          };
         };
       };
       "204": {
@@ -75823,11 +77028,47 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "appdynamics"?: ({
+            "analytics"?: Array<{
+              "application_id"?: string;
+              "application_id_field"?: string;
+              "application_name"?: string;
+              "bucket_seconds"?: number;
+              "kind"?: string;
+              "name"?: string;
+              "query"?: string;
+              "run_id_field"?: string;
+              "statistic"?: string;
+              "unit"?: string;
+            }>;
+            "applications"?: Array<string>;
+            "collector_header"?: string;
+            "collector_value"?: string;
+            "events"?: boolean;
+            "header_origins"?: Array<string>;
+            "metrics"?: Array<{
+              "application_id"?: string;
+              "entity_ids"?: Record<string, string>;
+              "name"?: string;
+              "path"?: string;
+              "statistic"?: string;
+              "unit"?: string;
+            }>;
+            "project_id"?: string;
+            "query_offset"?: number;
+            "run_header"?: boolean;
+            "scope_ids"?: Record<string, Array<string>>;
+            "settle_seconds"?: number;
+            "snapshots"?: boolean;
+            "violations"?: boolean;
+          }) | null;
           "collector_id"?: string;
           "collector_public_key"?: string;
+          "connection_id"?: string;
           "credential_ref"?: string;
           "destination"?: string;
           "enabled"?: boolean;
+          "executor_mode"?: string;
           "id"?: string;
           "interval_seconds"?: number;
           "name"?: string;
@@ -75841,7 +77082,56 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": {
+            "appdynamics"?: ({
+              "analytics"?: Array<{
+                "application_id": string;
+                "application_id_field"?: string;
+                "application_name"?: string;
+                "bucket_seconds"?: number;
+                "kind"?: string;
+                "name": string;
+                "query": string;
+                "run_id_field"?: string;
+                "statistic"?: string;
+                "unit"?: string;
+              }>;
+              "applications": Array<string>;
+              "collector_header"?: string;
+              "collector_value"?: string;
+              "events"?: boolean;
+              "header_origins"?: Array<string>;
+              "metrics"?: Array<{
+                "application_id": string;
+                "entity_ids"?: Record<string, string>;
+                "name": string;
+                "path": string;
+                "statistic"?: string;
+                "unit"?: string;
+              }>;
+              "project_id": string;
+              "query_offset"?: number;
+              "run_header"?: boolean;
+              "scope_ids"?: Record<string, Array<string>>;
+              "settle_seconds"?: number;
+              "snapshots"?: boolean;
+              "violations"?: boolean;
+            }) | null;
+            "collector_id": string;
+            "collector_public_key"?: string;
+            "connection_id"?: string;
+            "credential_ref"?: string;
+            "destination"?: string;
+            "enabled": boolean;
+            "executor_mode"?: string;
+            "id": string;
+            "interval_seconds": number;
+            "name": string;
+            "pack": string;
+            "project_id": string;
+            "revision": number;
+            "service"?: string;
+          };
         };
       };
       "204": {
@@ -75895,11 +77185,47 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "appdynamics"?: ({
+            "analytics"?: Array<{
+              "application_id"?: string;
+              "application_id_field"?: string;
+              "application_name"?: string;
+              "bucket_seconds"?: number;
+              "kind"?: string;
+              "name"?: string;
+              "query"?: string;
+              "run_id_field"?: string;
+              "statistic"?: string;
+              "unit"?: string;
+            }>;
+            "applications"?: Array<string>;
+            "collector_header"?: string;
+            "collector_value"?: string;
+            "events"?: boolean;
+            "header_origins"?: Array<string>;
+            "metrics"?: Array<{
+              "application_id"?: string;
+              "entity_ids"?: Record<string, string>;
+              "name"?: string;
+              "path"?: string;
+              "statistic"?: string;
+              "unit"?: string;
+            }>;
+            "project_id"?: string;
+            "query_offset"?: number;
+            "run_header"?: boolean;
+            "scope_ids"?: Record<string, Array<string>>;
+            "settle_seconds"?: number;
+            "snapshots"?: boolean;
+            "violations"?: boolean;
+          }) | null;
           "collector_id"?: string;
           "collector_public_key"?: string;
+          "connection_id"?: string;
           "credential_ref"?: string;
           "destination"?: string;
           "enabled"?: boolean;
+          "executor_mode"?: string;
           "id"?: string;
           "interval_seconds"?: number;
           "name"?: string;
@@ -75913,7 +77239,56 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": {
+            "appdynamics"?: ({
+              "analytics"?: Array<{
+                "application_id": string;
+                "application_id_field"?: string;
+                "application_name"?: string;
+                "bucket_seconds"?: number;
+                "kind"?: string;
+                "name": string;
+                "query": string;
+                "run_id_field"?: string;
+                "statistic"?: string;
+                "unit"?: string;
+              }>;
+              "applications": Array<string>;
+              "collector_header"?: string;
+              "collector_value"?: string;
+              "events"?: boolean;
+              "header_origins"?: Array<string>;
+              "metrics"?: Array<{
+                "application_id": string;
+                "entity_ids"?: Record<string, string>;
+                "name": string;
+                "path": string;
+                "statistic"?: string;
+                "unit"?: string;
+              }>;
+              "project_id": string;
+              "query_offset"?: number;
+              "run_header"?: boolean;
+              "scope_ids"?: Record<string, Array<string>>;
+              "settle_seconds"?: number;
+              "snapshots"?: boolean;
+              "violations"?: boolean;
+            }) | null;
+            "collector_id": string;
+            "collector_public_key"?: string;
+            "connection_id"?: string;
+            "credential_ref"?: string;
+            "destination"?: string;
+            "enabled": boolean;
+            "executor_mode"?: string;
+            "id": string;
+            "interval_seconds": number;
+            "name": string;
+            "pack": string;
+            "project_id": string;
+            "revision": number;
+            "service"?: string;
+          };
         };
       };
       "204": {
@@ -75967,11 +77342,47 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "appdynamics"?: ({
+            "analytics"?: Array<{
+              "application_id"?: string;
+              "application_id_field"?: string;
+              "application_name"?: string;
+              "bucket_seconds"?: number;
+              "kind"?: string;
+              "name"?: string;
+              "query"?: string;
+              "run_id_field"?: string;
+              "statistic"?: string;
+              "unit"?: string;
+            }>;
+            "applications"?: Array<string>;
+            "collector_header"?: string;
+            "collector_value"?: string;
+            "events"?: boolean;
+            "header_origins"?: Array<string>;
+            "metrics"?: Array<{
+              "application_id"?: string;
+              "entity_ids"?: Record<string, string>;
+              "name"?: string;
+              "path"?: string;
+              "statistic"?: string;
+              "unit"?: string;
+            }>;
+            "project_id"?: string;
+            "query_offset"?: number;
+            "run_header"?: boolean;
+            "scope_ids"?: Record<string, Array<string>>;
+            "settle_seconds"?: number;
+            "snapshots"?: boolean;
+            "violations"?: boolean;
+          }) | null;
           "collector_id"?: string;
           "collector_public_key"?: string;
+          "connection_id"?: string;
           "credential_ref"?: string;
           "destination"?: string;
           "enabled"?: boolean;
+          "executor_mode"?: string;
           "id"?: string;
           "interval_seconds"?: number;
           "name"?: string;
@@ -75985,7 +77396,56 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": {
+            "appdynamics"?: ({
+              "analytics"?: Array<{
+                "application_id": string;
+                "application_id_field"?: string;
+                "application_name"?: string;
+                "bucket_seconds"?: number;
+                "kind"?: string;
+                "name": string;
+                "query": string;
+                "run_id_field"?: string;
+                "statistic"?: string;
+                "unit"?: string;
+              }>;
+              "applications": Array<string>;
+              "collector_header"?: string;
+              "collector_value"?: string;
+              "events"?: boolean;
+              "header_origins"?: Array<string>;
+              "metrics"?: Array<{
+                "application_id": string;
+                "entity_ids"?: Record<string, string>;
+                "name": string;
+                "path": string;
+                "statistic"?: string;
+                "unit"?: string;
+              }>;
+              "project_id": string;
+              "query_offset"?: number;
+              "run_header"?: boolean;
+              "scope_ids"?: Record<string, Array<string>>;
+              "settle_seconds"?: number;
+              "snapshots"?: boolean;
+              "violations"?: boolean;
+            }) | null;
+            "collector_id": string;
+            "collector_public_key"?: string;
+            "connection_id"?: string;
+            "credential_ref"?: string;
+            "destination"?: string;
+            "enabled": boolean;
+            "executor_mode"?: string;
+            "id": string;
+            "interval_seconds": number;
+            "name": string;
+            "pack": string;
+            "project_id": string;
+            "revision": number;
+            "service"?: string;
+          };
         };
       };
       "204": {
@@ -76314,6 +77774,23 @@ export interface operations {
               "kind": string;
               "metric_name": string;
               "project_id": string;
+              "provider"?: ({
+                "aggregation_eligible": boolean;
+                "bucket_end": string;
+                "bucket_start": string;
+                "catalog_path"?: string;
+                "count"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
+                "max"?: (number) | null;
+                "metric_id": string;
+                "min"?: (number) | null;
+                "name": string;
+                "query_window"?: boolean;
+                "resolution_seconds": number;
+                "settled": boolean;
+                "statistic": string;
+                "sum"?: (number) | null;
+              }) | null;
               "quality": string;
               "received_at"?: string;
               "relative_time_ms"?: (number) | null;
@@ -79666,6 +81143,19 @@ export interface operations {
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
               "p95_latency_ms"?: (number) | null;
               "sla_breach_window"?: string;
               "stop_on_max_errors"?: boolean;
@@ -81959,6 +83449,15 @@ export interface operations {
                 "tps": number;
               }) | null>;
             }) | null;
+            "monitor_bindings"?: ({
+              "project_id": string;
+              "revision": number;
+              "scenario_id": string;
+              "sources": Array<{
+                "required": boolean;
+                "source_id": string;
+              }>;
+            }) | null;
             "name": string;
             "paused_at"?: (string) | null;
             "pending_reason"?: string;
@@ -82544,10 +84043,53 @@ export interface operations {
       };
     };
   };
+  "handlePollAppDynamicsInspections": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "capacity"?: boolean;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Array<{
+            "payload": string;
+            "signature": string;
+          }>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handlePollRunMonitorJobs": {
     parameters: {
       "path": {
         "id": string;
+      };
+      "query"?: {
+        "after_key"?: string;
+        "page_size"?: number;
       };
       "header"?: {
         "X-APEX-Monitor-Readiness"?: string;
@@ -82569,6 +84111,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -82678,6 +84225,19 @@ export interface operations {
             "max_throttled_requests"?: (number) | null;
             "max_vusers"?: (number) | null;
             "min_vusers"?: (number) | null;
+            "monitor_rules"?: Array<{
+              "comparator"?: string;
+              "dimensions"?: Record<string, string>;
+              "end_offset_seconds"?: (number) | null;
+              "metric"?: string;
+              "min_coverage_pct"?: number;
+              "severity"?: string;
+              "source_id"?: string;
+              "start_offset_seconds"?: number;
+              "statistic"?: string;
+              "threshold"?: number;
+              "unit"?: string;
+            }>;
             "p95_latency_ms"?: (number) | null;
             "sla_breach_window"?: string;
             "stop_on_max_errors"?: boolean;
@@ -82752,6 +84312,10 @@ export interface operations {
             "vusers"?: number;
           }>;
           "intent"?: string;
+          "monitor_bindings"?: (Array<{
+            "required"?: boolean;
+            "source_id"?: string;
+          }>) | null;
           "name"?: string;
           "project_id"?: string;
           "ramp_up"?: string;
@@ -83248,12 +84812,130 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": ({
+            "allocation"?: unknown;
+            "capacity"?: Record<string, unknown>;
+            "created_at": string;
+            "execution_revision": string;
+            "expires_at": string;
+            "failure"?: string;
+            "id": string;
+            "idempotency_key": string;
+            "monitors"?: ({
+              "bindings": {
+                "project_id": string;
+                "revision": number;
+                "scenario_id": string;
+                "sources": Array<{
+                  "required": boolean;
+                  "source_id": string;
+                }>;
+              };
+              "scenario_id"?: string;
+              "sources": Record<string, {
+                "appdynamics"?: ({
+                  "analytics"?: Array<Record<string, unknown>>;
+                  "applications": Array<string>;
+                  "collector_header"?: string;
+                  "collector_value"?: string;
+                  "events"?: boolean;
+                  "header_origins"?: Array<string>;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "project_id": string;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "scope_ids"?: Record<string, Array<string>>;
+                  "settle_seconds"?: number;
+                  "snapshots"?: boolean;
+                  "violations"?: boolean;
+                }) | null;
+                "collector_id": string;
+                "collector_public_key"?: string;
+                "connection_id"?: string;
+                "credential_ref"?: string;
+                "destination"?: string;
+                "enabled": boolean;
+                "executor_mode"?: string;
+                "id": string;
+                "interval_seconds": number;
+                "name": string;
+                "pack": string;
+                "project_id": string;
+                "revision": number;
+                "service"?: string;
+              }>;
+            }) | null;
+            "project_id": string;
+            "ready_at"?: string;
+            "revision": number;
+            "state": string;
+            "test_id": string;
+            "ttl_seconds": number;
+          }) | null;
         };
       };
       "202": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "allocation"?: unknown;
+            "capacity"?: Record<string, unknown>;
+            "created_at": string;
+            "execution_revision": string;
+            "expires_at": string;
+            "failure"?: string;
+            "id": string;
+            "idempotency_key": string;
+            "monitors"?: ({
+              "bindings": {
+                "project_id": string;
+                "revision": number;
+                "scenario_id": string;
+                "sources": Array<{
+                  "required": boolean;
+                  "source_id": string;
+                }>;
+              };
+              "scenario_id"?: string;
+              "sources": Record<string, {
+                "appdynamics"?: ({
+                  "analytics"?: Array<Record<string, unknown>>;
+                  "applications": Array<string>;
+                  "collector_header"?: string;
+                  "collector_value"?: string;
+                  "events"?: boolean;
+                  "header_origins"?: Array<string>;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "project_id": string;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "scope_ids"?: Record<string, Array<string>>;
+                  "settle_seconds"?: number;
+                  "snapshots"?: boolean;
+                  "violations"?: boolean;
+                }) | null;
+                "collector_id": string;
+                "collector_public_key"?: string;
+                "connection_id"?: string;
+                "credential_ref"?: string;
+                "destination"?: string;
+                "enabled": boolean;
+                "executor_mode"?: string;
+                "id": string;
+                "interval_seconds": number;
+                "name": string;
+                "pack": string;
+                "project_id": string;
+                "revision": number;
+                "service"?: string;
+              }>;
+            }) | null;
+            "project_id": string;
+            "ready_at"?: string;
+            "revision": number;
+            "state": string;
+            "test_id": string;
+            "ttl_seconds": number;
+          }) | null;
         };
       };
       "400": {
@@ -83319,12 +85001,130 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": ({
+            "allocation"?: unknown;
+            "capacity"?: Record<string, unknown>;
+            "created_at": string;
+            "execution_revision": string;
+            "expires_at": string;
+            "failure"?: string;
+            "id": string;
+            "idempotency_key": string;
+            "monitors"?: ({
+              "bindings": {
+                "project_id": string;
+                "revision": number;
+                "scenario_id": string;
+                "sources": Array<{
+                  "required": boolean;
+                  "source_id": string;
+                }>;
+              };
+              "scenario_id"?: string;
+              "sources": Record<string, {
+                "appdynamics"?: ({
+                  "analytics"?: Array<Record<string, unknown>>;
+                  "applications": Array<string>;
+                  "collector_header"?: string;
+                  "collector_value"?: string;
+                  "events"?: boolean;
+                  "header_origins"?: Array<string>;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "project_id": string;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "scope_ids"?: Record<string, Array<string>>;
+                  "settle_seconds"?: number;
+                  "snapshots"?: boolean;
+                  "violations"?: boolean;
+                }) | null;
+                "collector_id": string;
+                "collector_public_key"?: string;
+                "connection_id"?: string;
+                "credential_ref"?: string;
+                "destination"?: string;
+                "enabled": boolean;
+                "executor_mode"?: string;
+                "id": string;
+                "interval_seconds": number;
+                "name": string;
+                "pack": string;
+                "project_id": string;
+                "revision": number;
+                "service"?: string;
+              }>;
+            }) | null;
+            "project_id": string;
+            "ready_at"?: string;
+            "revision": number;
+            "state": string;
+            "test_id": string;
+            "ttl_seconds": number;
+          }) | null;
         };
       };
       "202": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "allocation"?: unknown;
+            "capacity"?: Record<string, unknown>;
+            "created_at": string;
+            "execution_revision": string;
+            "expires_at": string;
+            "failure"?: string;
+            "id": string;
+            "idempotency_key": string;
+            "monitors"?: ({
+              "bindings": {
+                "project_id": string;
+                "revision": number;
+                "scenario_id": string;
+                "sources": Array<{
+                  "required": boolean;
+                  "source_id": string;
+                }>;
+              };
+              "scenario_id"?: string;
+              "sources": Record<string, {
+                "appdynamics"?: ({
+                  "analytics"?: Array<Record<string, unknown>>;
+                  "applications": Array<string>;
+                  "collector_header"?: string;
+                  "collector_value"?: string;
+                  "events"?: boolean;
+                  "header_origins"?: Array<string>;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "project_id": string;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "scope_ids"?: Record<string, Array<string>>;
+                  "settle_seconds"?: number;
+                  "snapshots"?: boolean;
+                  "violations"?: boolean;
+                }) | null;
+                "collector_id": string;
+                "collector_public_key"?: string;
+                "connection_id"?: string;
+                "credential_ref"?: string;
+                "destination"?: string;
+                "enabled": boolean;
+                "executor_mode"?: string;
+                "id": string;
+                "interval_seconds": number;
+                "name": string;
+                "pack": string;
+                "project_id": string;
+                "revision": number;
+                "service"?: string;
+              }>;
+            }) | null;
+            "project_id": string;
+            "ready_at"?: string;
+            "revision": number;
+            "state": string;
+            "test_id": string;
+            "ttl_seconds": number;
+          }) | null;
         };
       };
       "400": {
@@ -83400,12 +85200,130 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": ({
+            "allocation"?: unknown;
+            "capacity"?: Record<string, unknown>;
+            "created_at": string;
+            "execution_revision": string;
+            "expires_at": string;
+            "failure"?: string;
+            "id": string;
+            "idempotency_key": string;
+            "monitors"?: ({
+              "bindings": {
+                "project_id": string;
+                "revision": number;
+                "scenario_id": string;
+                "sources": Array<{
+                  "required": boolean;
+                  "source_id": string;
+                }>;
+              };
+              "scenario_id"?: string;
+              "sources": Record<string, {
+                "appdynamics"?: ({
+                  "analytics"?: Array<Record<string, unknown>>;
+                  "applications": Array<string>;
+                  "collector_header"?: string;
+                  "collector_value"?: string;
+                  "events"?: boolean;
+                  "header_origins"?: Array<string>;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "project_id": string;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "scope_ids"?: Record<string, Array<string>>;
+                  "settle_seconds"?: number;
+                  "snapshots"?: boolean;
+                  "violations"?: boolean;
+                }) | null;
+                "collector_id": string;
+                "collector_public_key"?: string;
+                "connection_id"?: string;
+                "credential_ref"?: string;
+                "destination"?: string;
+                "enabled": boolean;
+                "executor_mode"?: string;
+                "id": string;
+                "interval_seconds": number;
+                "name": string;
+                "pack": string;
+                "project_id": string;
+                "revision": number;
+                "service"?: string;
+              }>;
+            }) | null;
+            "project_id": string;
+            "ready_at"?: string;
+            "revision": number;
+            "state": string;
+            "test_id": string;
+            "ttl_seconds": number;
+          }) | null;
         };
       };
       "202": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "allocation"?: unknown;
+            "capacity"?: Record<string, unknown>;
+            "created_at": string;
+            "execution_revision": string;
+            "expires_at": string;
+            "failure"?: string;
+            "id": string;
+            "idempotency_key": string;
+            "monitors"?: ({
+              "bindings": {
+                "project_id": string;
+                "revision": number;
+                "scenario_id": string;
+                "sources": Array<{
+                  "required": boolean;
+                  "source_id": string;
+                }>;
+              };
+              "scenario_id"?: string;
+              "sources": Record<string, {
+                "appdynamics"?: ({
+                  "analytics"?: Array<Record<string, unknown>>;
+                  "applications": Array<string>;
+                  "collector_header"?: string;
+                  "collector_value"?: string;
+                  "events"?: boolean;
+                  "header_origins"?: Array<string>;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "project_id": string;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "scope_ids"?: Record<string, Array<string>>;
+                  "settle_seconds"?: number;
+                  "snapshots"?: boolean;
+                  "violations"?: boolean;
+                }) | null;
+                "collector_id": string;
+                "collector_public_key"?: string;
+                "connection_id"?: string;
+                "credential_ref"?: string;
+                "destination"?: string;
+                "enabled": boolean;
+                "executor_mode"?: string;
+                "id": string;
+                "interval_seconds": number;
+                "name": string;
+                "pack": string;
+                "project_id": string;
+                "revision": number;
+                "service"?: string;
+              }>;
+            }) | null;
+            "project_id": string;
+            "ready_at"?: string;
+            "revision": number;
+            "state": string;
+            "test_id": string;
+            "ttl_seconds": number;
+          }) | null;
         };
       };
       "400": {
@@ -91718,6 +93636,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -92453,6 +94384,15 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+              }) | null;
+              "monitor_bindings"?: ({
+                "project_id": string;
+                "revision": number;
+                "scenario_id": string;
+                "sources": Array<{
+                  "required": boolean;
+                  "source_id": string;
+                }>;
               }) | null;
               "name": string;
               "paused_at"?: (string) | null;
@@ -93223,6 +95163,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -93958,6 +95911,15 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+              }) | null;
+              "monitor_bindings"?: ({
+                "project_id": string;
+                "revision": number;
+                "scenario_id": string;
+                "sources": Array<{
+                  "required": boolean;
+                  "source_id": string;
+                }>;
               }) | null;
               "name": string;
               "paused_at"?: (string) | null;
@@ -94728,6 +96690,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -95463,6 +97438,15 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+              }) | null;
+              "monitor_bindings"?: ({
+                "project_id": string;
+                "revision": number;
+                "scenario_id": string;
+                "sources": Array<{
+                  "required": boolean;
+                  "source_id": string;
+                }>;
               }) | null;
               "name": string;
               "paused_at"?: (string) | null;
@@ -96233,6 +98217,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -96968,6 +98965,15 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+              }) | null;
+              "monitor_bindings"?: ({
+                "project_id": string;
+                "revision": number;
+                "scenario_id": string;
+                "sources": Array<{
+                  "required": boolean;
+                  "source_id": string;
+                }>;
               }) | null;
               "name": string;
               "paused_at"?: (string) | null;
@@ -97738,6 +99744,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -98473,6 +100492,15 @@ export interface operations {
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
+              }) | null;
+              "monitor_bindings"?: ({
+                "project_id": string;
+                "revision": number;
+                "scenario_id": string;
+                "sources": Array<{
+                  "required": boolean;
+                  "source_id": string;
+                }>;
               }) | null;
               "name": string;
               "paused_at"?: (string) | null;
@@ -103443,6 +105471,50 @@ export interface operations {
       };
     };
   };
+  "handleRunMonitorEvidence": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "after_key"?: string;
+        "kind"?: string;
+        "limit"?: number;
+        "source_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleRunMonitorSamples": {
     parameters: {
       "path": {
@@ -103453,6 +105525,37 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "capabilities"?: {
+            "analytics"?: boolean;
+            "events"?: boolean;
+            "metric_api"?: string;
+            "metrics"?: boolean;
+            "snapshots"?: boolean;
+            "status"?: Record<string, string>;
+            "violations"?: boolean;
+          };
+          "coverage"?: Record<string, {
+            "evidence"?: number;
+            "from"?: string;
+            "message"?: string;
+            "points"?: number;
+            "status"?: string;
+            "to"?: string;
+            "truncated"?: boolean;
+          }>;
+          "evidence"?: Array<{
+            "application_id"?: string;
+            "deep_link"?: string;
+            "entity_ids"?: Record<string, string>;
+            "id"?: string;
+            "kind"?: string;
+            "properties"?: Record<string, string>;
+            "severity"?: string;
+            "status"?: string;
+            "summary"?: string;
+            "timestamp_utc"?: string;
+          }>;
+          "final"?: boolean;
           "job"?: {
             "payload"?: string;
             "signature"?: string;
@@ -103466,6 +105569,23 @@ export interface operations {
             "kind"?: string;
             "metric_name"?: string;
             "project_id"?: string;
+            "provider"?: ({
+              "aggregation_eligible"?: boolean;
+              "bucket_end"?: string;
+              "bucket_start"?: string;
+              "catalog_path"?: string;
+              "count"?: (number) | null;
+              "entity_ids"?: Record<string, string>;
+              "max"?: (number) | null;
+              "metric_id"?: string;
+              "min"?: (number) | null;
+              "name"?: string;
+              "query_window"?: boolean;
+              "resolution_seconds"?: number;
+              "settled"?: boolean;
+              "statistic"?: string;
+              "sum"?: (number) | null;
+            }) | null;
             "quality"?: string;
             "received_at"?: string;
             "relative_time_ms"?: (number) | null;
@@ -103478,7 +105598,23 @@ export interface operations {
             "unit"?: string;
             "value"?: (number) | null;
           }>;
+          "progress"?: ({
+            "complete"?: boolean;
+            "next_query"?: number;
+            "total_queries"?: number;
+          }) | null;
+          "query_from_utc"?: string;
+          "query_until_utc"?: string;
+          "query_window_end"?: (string) | null;
           "sequence"?: number;
+          "topology"?: Array<{
+            "entity_ids"?: Record<string, string>;
+            "id"?: string;
+            "name"?: string;
+            "parent_id"?: string;
+            "path"?: string;
+            "type"?: string;
+          }>;
         };
       };
     };
@@ -103530,9 +105666,11 @@ export interface operations {
       };
       "query"?: {
         "after_job"?: string;
+        "after_key"?: string;
         "after_sequence"?: string;
         "dimensions"?: string;
         "host"?: string;
+        "limit"?: number;
         "metric"?: string;
         "source_id"?: string;
       };
@@ -106300,6 +108438,19 @@ export interface operations {
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "metric": string;
+                  "min_coverage_pct"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
                 "p95_latency_ms"?: (number) | null;
                 "sla_breach_window"?: string;
                 "stop_on_max_errors"?: boolean;
@@ -117453,6 +119604,26 @@ export interface operations {
       };
     };
   };
+  "handleTestAppDynamicsConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "2XX": {
+        content?: never;
+      };
+      "4XX": {
+        content?: never;
+      };
+      "5XX": {
+        content?: never;
+      };
+    };
+  };
   "handleTestCloudConnection": {
     parameters: {
       "path": {
@@ -118515,6 +120686,19 @@ export interface operations {
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
               "p95_latency_ms"?: (number) | null;
               "sla_breach_window"?: string;
               "stop_on_max_errors"?: boolean;
@@ -120808,6 +122992,15 @@ export interface operations {
                 "tps": number;
               }) | null>;
             }) | null;
+            "monitor_bindings"?: ({
+              "project_id": string;
+              "revision": number;
+              "scenario_id": string;
+              "sources": Array<{
+                "required": boolean;
+                "source_id": string;
+              }>;
+            }) | null;
             "name": string;
             "paused_at"?: (string) | null;
             "pending_reason"?: string;
@@ -121314,6 +123507,138 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleUpdateAppDynamicsConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "client_id_secret"?: (string) | null;
+          "client_secret_secret"?: (string) | null;
+          "collection_mode"?: string;
+          "collector_agent_id"?: string;
+          "config"?: {
+            "account_name"?: string;
+            "analytics_requests_per_minute"?: number;
+            "approved_cidrs"?: Array<string>;
+            "auth_type"?: string;
+            "ca_pem"?: string;
+            "context_path"?: string;
+            "endpoint"?: string;
+            "events_account_name"?: string;
+            "events_endpoint"?: string;
+            "max_points"?: number;
+            "max_poll_seconds"?: number;
+            "max_requests_per_poll"?: number;
+            "max_response_bytes"?: number;
+            "max_series"?: number;
+            "requests_per_minute"?: number;
+            "timeout_seconds"?: number;
+          };
+          "description"?: string;
+          "enabled"?: boolean;
+          "events_api_key_secret"?: (string) | null;
+          "name": string;
+          "password_secret"?: (string) | null;
+          "revision": number;
+          "username_secret"?: (string) | null;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "capabilities": {
+              "analytics": boolean;
+              "events": boolean;
+              "metric_api"?: string;
+              "metrics": boolean;
+              "snapshots": boolean;
+              "status"?: Record<string, string>;
+              "violations": boolean;
+            };
+            "collection_mode": string;
+            "collector_agent_id"?: string;
+            "config": {
+              "account_name": string;
+              "analytics_requests_per_minute"?: number;
+              "approved_cidrs"?: Array<string>;
+              "auth_type": string;
+              "ca_pem"?: string;
+              "context_path"?: string;
+              "endpoint": string;
+              "events_account_name"?: string;
+              "events_endpoint"?: string;
+              "max_points"?: number;
+              "max_poll_seconds"?: number;
+              "max_requests_per_poll"?: number;
+              "max_response_bytes"?: number;
+              "max_series"?: number;
+              "requests_per_minute"?: number;
+              "timeout_seconds"?: number;
+            };
+            "created_at": string;
+            "description"?: string;
+            "enabled": boolean;
+            "has_client_id": boolean;
+            "has_client_secret": boolean;
+            "has_custom_ca": boolean;
+            "has_events_api_key": boolean;
+            "has_password": boolean;
+            "has_username": boolean;
+            "id": string;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+            "status": string;
+            "updated_at": string;
+            "verified_revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -125375,6 +127700,19 @@ export interface operations {
             "max_throttled_requests"?: (number) | null;
             "max_vusers"?: (number) | null;
             "min_vusers"?: (number) | null;
+            "monitor_rules"?: Array<{
+              "comparator"?: string;
+              "dimensions"?: Record<string, string>;
+              "end_offset_seconds"?: (number) | null;
+              "metric"?: string;
+              "min_coverage_pct"?: number;
+              "severity"?: string;
+              "source_id"?: string;
+              "start_offset_seconds"?: number;
+              "statistic"?: string;
+              "threshold"?: number;
+              "unit"?: string;
+            }>;
             "p95_latency_ms"?: (number) | null;
             "sla_breach_window"?: string;
             "stop_on_max_errors"?: boolean;
@@ -126129,6 +128467,19 @@ export interface operations {
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
               "p95_latency_ms"?: (number) | null;
               "sla_breach_window"?: string;
               "stop_on_max_errors"?: boolean;
@@ -133613,6 +135964,19 @@ export interface operations {
             "max_throttled_requests"?: (number) | null;
             "max_vusers"?: (number) | null;
             "min_vusers"?: (number) | null;
+            "monitor_rules"?: Array<{
+              "comparator"?: string;
+              "dimensions"?: Record<string, string>;
+              "end_offset_seconds"?: (number) | null;
+              "metric"?: string;
+              "min_coverage_pct"?: number;
+              "severity"?: string;
+              "source_id"?: string;
+              "start_offset_seconds"?: number;
+              "statistic"?: string;
+              "threshold"?: number;
+              "unit"?: string;
+            }>;
             "p95_latency_ms"?: (number) | null;
             "sla_breach_window"?: string;
             "stop_on_max_errors"?: boolean;
@@ -135773,6 +138137,12 @@ export interface paths {
   "/api/v1/monitoring/collectors/{id}/heartbeat": {
     "post": operations["handleCollectorHeartbeat"];
   };
+  "/api/v1/monitoring/collectors/{id}/inspections": {
+    "get": operations["handlePollAppDynamicsInspections"];
+  };
+  "/api/v1/monitoring/collectors/{id}/inspections/{operation_id}/result": {
+    "post": operations["handleAppDynamicsInspectionResult"];
+  };
   "/api/v1/monitoring/collectors/{id}/jobs": {
     "get": operations["handlePollRunMonitorJobs"];
   };
@@ -135887,6 +138257,39 @@ export interface paths {
   "/api/v1/projects/{id}/monitor-sources/{source_id}": {
     "put": operations["handleMonitorSources_4"];
     "delete": operations["handleMonitorSources_3"];
+  };
+  "/api/v1/projects/{id}/monitoring/appdynamics-connections": {
+    "get": operations["handleListAppDynamicsConnections"];
+    "post": operations["handleCreateAppDynamicsConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}": {
+    "get": operations["handleGetAppDynamicsConnection"];
+    "put": operations["handleUpdateAppDynamicsConnection"];
+    "delete": operations["handleDeleteAppDynamicsConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/applications": {
+    "get": operations["handleDiscoverAppDynamicsApplications"];
+  };
+  "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/backends": {
+    "get": operations["handleDiscoverAppDynamicsBackends"];
+  };
+  "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/business-transactions": {
+    "get": operations["handleDiscoverAppDynamicsBusinessTransactions"];
+  };
+  "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/metrics": {
+    "get": operations["handleDiscoverAppDynamicsMetrics"];
+  };
+  "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/nodes": {
+    "get": operations["handleDiscoverAppDynamicsNodes"];
+  };
+  "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/operations/{operation_id}": {
+    "get": operations["handleGetAppDynamicsOperation"];
+  };
+  "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/test": {
+    "post": operations["handleTestAppDynamicsConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/tiers": {
+    "get": operations["handleDiscoverAppDynamicsTiers"];
   };
   "/api/v1/projects/{id}/monitoring/dynatrace-connections": {
     "get": operations["handleListDynatraceConnections"];
@@ -136746,6 +139149,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/metrics": {
     "get": operations["handleGetMetrics"];
+  };
+  "/api/v1/tests/{id}/monitor-evidence": {
+    "get": operations["handleRunMonitorEvidence"];
   };
   "/api/v1/tests/{id}/monitor-series": {
     "get": operations["handleRunMonitorSeries"];

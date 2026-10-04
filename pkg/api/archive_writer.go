@@ -988,6 +988,7 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		{Name: manifest.ELKEvidenceFile, Kind: "evidence", Format: "jsonl", RecordType: "elk_log_samples", Count: manifest.ELKEvidenceCount},
 		{Name: manifest.DynatraceEvidenceFile, Kind: "evidence", Format: "jsonl", RecordType: "dynatrace_evidence", Count: manifest.DynatraceEvidenceCount},
 		{Name: manifest.MonitorEvidenceFile, Kind: "evidence", Format: "jsonl", RecordType: "monitor_points_v1", Count: manifest.MonitorEvidenceCount},
+		{Name: manifest.MonitorDiagnosticsFile, Kind: "evidence", Format: "jsonl", RecordType: "monitor_diagnostics_v1", Count: manifest.MonitorDiagnosticsCount},
 	}
 	for _, export := range manifest.CSVExports {
 		if export.Status == "complete" {

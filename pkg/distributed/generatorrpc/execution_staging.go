@@ -950,6 +950,11 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if err := json.Unmarshal(plan.scriptContent, &script); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "decode script: %v", err)
 	}
+	if len(request.GetRunCorrelationOrigins()) > 0 {
+		if err := engine.ValidateRunCorrelationHeaders(&script, request.GetTestId()); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
 	if err := validateSourcePlanScript(request, &script); err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
@@ -1146,6 +1151,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			Region:                       strings.TrimSpace(request.GetRegion()),
 			RunID:                        request.GetTestId(),
 			ScenarioID:                   request.GetScenarioId(),
+			RunCorrelationOrigins:        append([]string(nil), request.GetRunCorrelationOrigins()...),
 			Script:                       &script,
 			VUsers:                       int(request.GetVuserCount()),
 			RampUp:                       plan.validated.rampUp,

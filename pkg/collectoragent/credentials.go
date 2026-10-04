@@ -15,9 +15,10 @@ import (
 // Credentials are sealed for one signed job lease and never written in plaintext
 // to the collector spool. Destination identity is authenticated as associated data.
 type Credentials struct {
-	Username   string `json:"username,omitempty"`
-	Password   string `json:"password,omitempty"`
-	PrivateKey string `json:"private_key,omitempty"`
+	AppDynamics *AppDynamicsCredentials `json:"appdynamics,omitempty"`
+	Username    string                  `json:"username,omitempty"`
+	Password    string                  `json:"password,omitempty"`
+	PrivateKey  string                  `json:"private_key,omitempty"`
 }
 type SealedCredentials struct {
 	EphemeralKey string `json:"ephemeral_key"`

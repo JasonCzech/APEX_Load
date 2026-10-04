@@ -1364,12 +1364,13 @@ type TestRecord struct {
 	StartedByDisplayName  string                    `json:"started_by_display_name,omitempty"`
 	StoppedBySubject      string                    `json:"stopped_by_subject,omitempty"`
 	StoppedByDisplayName  string                    `json:"stopped_by_display_name,omitempty"`
-	Groups                any                       `json:"groups"`                            // JSON blob
-	DataPools             []ScenarioDataPoolBinding `json:"data_pools,omitempty"`              // JSON blob
-	RuntimeSettings       any                       `json:"runtime_settings,omitempty"`        // JSON blob
-	GoalConfig            any                       `json:"goal_config,omitempty"`             // JSON blob
-	TrafficProfile        any                       `json:"traffic_profile,omitempty"`         // JSON blob
-	ELKCapture            any                       `json:"elk_capture,omitempty"`             // JSON blob
+	Groups                any                       `json:"groups"`                     // JSON blob
+	DataPools             []ScenarioDataPoolBinding `json:"data_pools,omitempty"`       // JSON blob
+	RuntimeSettings       any                       `json:"runtime_settings,omitempty"` // JSON blob
+	GoalConfig            any                       `json:"goal_config,omitempty"`      // JSON blob
+	TrafficProfile        any                       `json:"traffic_profile,omitempty"`  // JSON blob
+	ELKCapture            any                       `json:"elk_capture,omitempty"`      // JSON blob
+	MonitorBindings       *MonitorBindings          `json:"monitor_bindings,omitempty"`
 	DynatraceCapture      any                       `json:"dynatrace_capture,omitempty"`       // JSON blob
 	StartAuthorization    any                       `json:"start_authorization,omitempty"`     // JSON blob
 	ExecutionPlanApproval any                       `json:"execution_plan_approval,omitempty"` // JSON blob

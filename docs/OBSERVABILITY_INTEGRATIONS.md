@@ -1,6 +1,15 @@
 # Observability Integrations
 
-Configuration and operating guidance for Prometheus, OpenTelemetry, Dynatrace, Power BI, Elastic, and Confluence integrations.
+Configuration and operating guidance for Prometheus, OpenTelemetry, Dynatrace, AppDynamics, Power BI, Elastic, and Confluence integrations.
+
+## AppDynamics test monitoring
+
+Classic AppDynamics SaaS and on-premises Controllers can be configured as project connections and attached to tests through revisioned monitor sources. A source selects direct controller collection or an assigned collector, application/entity scope, metric paths, events, health-rule violations, bounded snapshot summaries, and optional licensed Analytics queries. Credentials use project-secret references; values and reference names are excluded from public connection and job projections.
+
+Configure **Settings → Integrations → AppDynamics test capture**, test the saved connection, discover applications and metric paths, then add an AppDynamics source in **Monitoring → Telemetry → Run monitor sources**. Save reusable scenario bindings or override them for one run in Run Setup. Collection continues through pauses and drains delayed source data after load ends. Terminal performance criteria require settled, compatible measurements with sufficient coverage.
+
+See [AppDynamics setup and operation](APPDYNAMICS.md) and [implementation specification](APPDYNAMICS_SPEC.md) for transport policy, authentication, selection, evidence semantics, rollout, and acceptance criteria. The generated [OpenAPI specification](swagger.yaml) is the authority for route contracts.
+
 
 ## Confluence Cloud result publishing
 
