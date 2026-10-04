@@ -52,5 +52,17 @@ type ProviderQueryProgress struct {
 	ScannedBytes         int64      `json:"scanned_bytes,omitempty"`
 	ScanReservationBytes int64      `json:"scan_reservation_bytes,omitempty"`
 	ScanReservationIDs   []string   `json:"scan_reservation_ids,omitempty"`
-	QueryCostKnown       bool       `json:"query_cost_known,omitempty"`
+	// ScanSettlements report the upstream cost of individual attempts that
+	// finished in this pass. Each releases only its own reservation, so an
+	// attempt still running later in the pass cannot strand finished ones.
+	ScanSettlements []ProviderScanSettlement `json:"scan_settlements,omitempty"`
+	// QueryCostKnown is a display flag: false while any attempt in the pass is
+	// still running or finished without reporting its scanned bytes.
+	QueryCostKnown bool `json:"query_cost_known,omitempty"`
+}
+
+// ProviderScanSettlement is the reported scanned bytes of one admitted attempt.
+type ProviderScanSettlement struct {
+	AttemptID    string `json:"attempt_id"`
+	ScannedBytes int64  `json:"scanned_bytes"`
 }

@@ -257,14 +257,11 @@ func (s Selection) Validate() error {
 		default:
 			return errors.New("unsupported metric aggregation")
 		}
-		if err := validateSelectorAggregation(m); err != nil {
+		if err := validateSelectorTransforms(m.MetricSelector); err != nil {
 			return err
 		}
-		lower := strings.ToLower(m.MetricSelector)
-		for _, t := range []string{":fold", ":last", ":lastreal", ":timeshift", ":default"} {
-			if strings.Contains(lower, t) {
-				return errors.New("metric transformations that alter time or missing data are unsupported")
-			}
+		if err := validateSelectorAggregation(m); err != nil {
+			return err
 		}
 	}
 	for _, q := range s.Grail {
@@ -292,6 +289,7 @@ type Entity = analysis.ProviderEntity
 type Diagnostic = analysis.ProviderDiagnostic
 type Coverage = analysis.ProviderCoverage
 type QueryProgress = analysis.ProviderQueryProgress
+type QueryScanSettlement = analysis.ProviderScanSettlement
 type Capabilities struct {
 	EnvironmentID         string            `json:"environment_id,omitempty"`
 	PlatformEnvironmentID string            `json:"platform_environment_id,omitempty"`

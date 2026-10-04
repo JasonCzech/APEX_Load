@@ -72,7 +72,7 @@ func (c *Client) Preview(ctx context.Context, s Selection, from, to time.Time) (
 		scanned += next.Progress.ScannedBytes
 		reserved += next.Progress.ScanReservationBytes
 		result.Progress = next.Progress
-		result.Progress.Cursor, result.Progress.CursorExpiresAt, result.Progress.ScanReservationIDs = "", nil, nil
+		result.Progress.Cursor, result.Progress.CursorExpiresAt, result.Progress.ScanReservationIDs, result.Progress.ScanSettlements = "", nil, nil, nil
 		result.Progress.QueryCostKnown, result.Progress.ScannedBytes, result.Progress.ScanReservationBytes = known, scanned, reserved
 		if truncated {
 			result.Coverage["retention"] = Coverage{Status: "partial", From: from, To: to, Truncated: true, Message: "preview result retention limit reached"}

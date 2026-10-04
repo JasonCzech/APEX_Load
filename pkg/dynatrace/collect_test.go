@@ -81,12 +81,12 @@ func TestDiagnosticContinuationResolutionIDsAndTruncation(t *testing.T) {
 	c := fixtureClient(t, func(r *http.Request) (*http.Response, error) {
 		requests++
 		if requests == 1 {
-			return response(200, `{"nextPageKey":"page-two","problems":[{"problemId":"P-1","title":"password=secret","status":"OPEN","startTime":1791028800000,"affectedEntities":[{"entityId":"SERVICE-0000000000000001"},{"entityId":"HOST-0000000000000002"}]}]}`), nil
+			return response(200, documentedResponse(t, "problems.json")), nil
 		}
 		if len(r.URL.Query()) != 1 || r.URL.Query().Get("nextPageKey") != "page-two" {
 			t.Fatal(r.URL)
 		}
-		return response(200, `{"problems":[{"problemId":"P-1","status":"CLOSED","startTime":1791028800000,"endTime":1791028860000}]}`), nil
+		return response(200, `{"problems":[{"problemId":"06F288EE2A930951-1791028800000","status":"CLOSED","startTime":1791028800000,"endTime":1791028860000,"affectedEntities":[]}]}`), nil
 	})
 	one, err := c.Collect(t.Context(), s, start, start.Add(time.Minute), "r")
 	if err != nil || one.Progress.Complete || one.Progress.Cursor == "" || len(one.Evidence) != 1 || len(one.Evidence[0].EntityIDs) != 2 || strings.Contains(one.Evidence[0].Summary, "secret") {

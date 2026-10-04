@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -288,23 +289,17 @@ func (c *Client) diagnostics(ctx context.Context, kind string, s Selection, from
 			ID                                      string `json:"problemId"`
 			DisplayID, Title, SeverityLevel, Status string
 			StartTime, EndTime                      int64
-			AffectedEntities                        []struct {
-				ID   string `json:"entityId"`
-				Name string `json:"name"`
-			}
+			AffectedEntities                        []classicEntityStub `json:"affectedEntities"`
 		} `json:"problems"`
 		Events []struct {
 			ID                       string `json:"eventId"`
 			Title, EventType, Status string
 			StartTime, EndTime       int64
-			EntityID                 struct {
-				ID   string `json:"id"`
-				Type string `json:"type"`
-			} `json:"entityId"`
+			EntityID                 classicEntityStub `json:"entityId"`
 		} `json:"events"`
 	}
 	if json.Unmarshal(data, &payload) != nil {
-		return nil, cursor, false, errors.New("invalid diagnostic response")
+		return nil, cursor, false, fmt.Errorf("invalid diagnostic response: %w", ErrInvalidResponse)
 	}
 	if len(payload.Problems) > 100 || len(payload.Events) > 100 {
 		return nil, cursor, false, errors.New("diagnostic page exceeds requested bound")
@@ -319,8 +314,8 @@ func (c *Client) diagnostics(ctx context.Context, kind string, s Selection, from
 			if i >= 16 {
 				break
 			}
-			if entityID.MatchString(e.ID) {
-				ids["entity_"+strconv.Itoa(i)] = e.ID
+			if entityID.MatchString(e.EntityID.ID) {
+				ids["entity_"+strconv.Itoa(i)] = e.EntityID.ID
 			}
 		}
 		at := time.UnixMilli(p.StartTime).UTC()
@@ -335,8 +330,8 @@ func (c *Client) diagnostics(ctx context.Context, kind string, s Selection, from
 			continue
 		}
 		ids := map[string]string{}
-		if entityID.MatchString(e.EntityID.ID) {
-			ids["entity"] = e.EntityID.ID
+		if entityID.MatchString(e.EntityID.EntityID.ID) {
+			ids["entity"] = e.EntityID.EntityID.ID
 		}
 		props := map[string]string{"event_type": boundedText(e.EventType, 128), "correlation": "entity_time"}
 		if e.EndTime > 0 {
@@ -361,7 +356,7 @@ func (c *Client) classicTopology(ctx context.Context, s Selection, from, to time
 	if selector == "" {
 		selector = `type("SERVICE")`
 	}
-	params := url.Values{"entitySelector": {selector}, "from": {from.Format(time.RFC3339Nano)}, "to": {to.Format(time.RFC3339Nano)}, "pageSize": {"100"}, "fields": {"fromRelationships,toRelationships"}}
+	params := url.Values{"entitySelector": {selector}, "from": {from.Format(time.RFC3339Nano)}, "to": {to.Format(time.RFC3339Nano)}, "pageSize": {"100"}, "fields": {classicRelationshipFields}}
 	if cursor.Page != "" {
 		params = url.Values{"nextPageKey": {cursor.Page}}
 	}
@@ -373,8 +368,11 @@ func (c *Client) classicTopology(ctx context.Context, s Selection, from, to time
 		Entities []classicEntity `json:"entities"`
 		Next     string          `json:"nextPageKey"`
 	}
-	if json.Unmarshal(raw, &payload) != nil || len(payload.Entities) > 100 {
-		return nil, cursor, false, errors.New("invalid topology response")
+	if json.Unmarshal(raw, &payload) != nil {
+		return nil, cursor, false, fmt.Errorf("invalid topology response: %w", ErrInvalidResponse)
+	}
+	if len(payload.Entities) > 100 {
+		return nil, cursor, false, errors.New("topology page exceeds requested bound")
 	}
 	items := []Entity{}
 	for _, e := range payload.Entities {
@@ -698,7 +696,7 @@ func ValidateResult(s Selection, cfg Config, from, to time.Time, runID string, r
 		}
 	}
 	progress := result.Progress
-	if progress.TotalQueries != 0 || progress.Complete || progress.Cursor != "" || progress.NextQuery != 0 || progress.ScannedBytes != 0 || progress.ScanReservationBytes != 0 || len(progress.ScanReservationIDs) > 0 {
+	if progress.TotalQueries != 0 || progress.Complete || progress.Cursor != "" || progress.NextQuery != 0 || progress.ScannedBytes != 0 || progress.ScanReservationBytes != 0 || len(progress.ScanReservationIDs) > 0 || len(progress.ScanSettlements) > 0 {
 		if progress.TotalQueries != len(ops) || progress.NextQuery < 0 || progress.NextQuery > len(ops) || progress.Complete && (progress.NextQuery != len(ops) || progress.Cursor != "") || progress.ScannedBytes < 0 || progress.ScanReservationBytes < 0 || len(progress.ScanReservationIDs) > 32 {
 			return errors.New("invalid selected query progress")
 		}
@@ -706,6 +704,9 @@ func ValidateResult(s Selection, cfg Config, from, to time.Time, runID string, r
 			if len(attempt) != 32 || !validHexID(attempt, 32) {
 				return errors.New("invalid query attempt identity")
 			}
+		}
+		if err := ValidateScanSettlements(progress); err != nil {
+			return err
 		}
 		if progress.Cursor != "" {
 			cursor, err := decodeCursor(progress.Cursor)

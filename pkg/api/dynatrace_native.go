@@ -106,6 +106,9 @@ func (s *Server) nativeDynatraceClient(ctx context.Context, snapshot *storage.Dy
 	if err != nil {
 		return nil, err
 	}
+	if s.dynatraceClient != nil {
+		return s.dynatraceClient(cfg, credentials)
+	}
 	return dynatrace.NewClient(cfg, credentials)
 }
 func (s *Server) dynatraceQuotaConfig(ctx context.Context, snapshot *storage.DynatraceConnectionSnapshot, credentials dynatrace.Credentials, executor string, selections ...*dynatrace.Selection) (dynatrace.Config, error) {
@@ -198,6 +201,7 @@ func dynatraceOperationResponse(op *storage.DynatraceOperation) DynatraceOperati
 				result.Preview.Progress.Cursor = ""
 				result.Preview.Progress.CursorExpiresAt = nil
 				result.Preview.Progress.ScanReservationIDs = nil
+				result.Preview.Progress.ScanSettlements = nil
 			}
 			publicResult, _ = json.Marshal(result)
 		}
@@ -558,14 +562,14 @@ func sanitizeDynatraceCapabilities(c dynatrace.Capabilities) dynatrace.Capabilit
 	statuses := map[string]string{}
 	for _, key := range []string{"environment", "metrics", "metric_discovery", "entities", "problems", "events", "platform", "grail_metrics", "logs", "grail_events", "spans", "smartscape", "classic_topology"} {
 		switch c.Status[key] {
-		case "available", "available_no_data", "empty", "not_verified", "not_configured", "not_selected", "unauthorized", "forbidden", "unsupported", "rate_limited", "budget_exhausted", "unlicensed", "unreachable", "error", "authentication_denied", "permission_denied", "throttled", "query_rejected", "query_budget", "upstream_error", "query_expired", "pending", "partial":
+		case "available", "available_no_data", "empty", "not_verified", "not_configured", "not_selected", "unauthorized", "forbidden", "unsupported", "rate_limited", "budget_exhausted", "unlicensed", "unreachable", "error", "authentication_denied", "permission_denied", "throttled", "query_rejected", "query_budget", "upstream_error", "query_expired", "invalid_response", "pending", "partial":
 			statuses[key] = c.Status[key]
 		}
 	}
 	for key, value := range c.Status {
 		if (strings.HasPrefix(key, "metrics:") || strings.HasPrefix(key, "grail:")) && len(key) <= 256 {
 			switch value {
-			case "available", "available_no_data", "not_verified", "not_selected", "unauthorized", "forbidden", "unsupported", "budget_exhausted", "rate_limited", "unlicensed", "unreachable", "error", "pending", "partial", "authentication_denied", "permission_denied", "throttled", "query_rejected", "query_budget", "upstream_error", "query_expired":
+			case "available", "available_no_data", "not_verified", "not_selected", "unauthorized", "forbidden", "unsupported", "budget_exhausted", "rate_limited", "unlicensed", "unreachable", "error", "pending", "partial", "authentication_denied", "permission_denied", "throttled", "query_rejected", "query_budget", "upstream_error", "query_expired", "invalid_response":
 				statuses[key] = value
 			}
 		}

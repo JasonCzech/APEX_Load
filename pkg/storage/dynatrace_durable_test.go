@@ -134,7 +134,7 @@ func TestDynatraceScanReservationsAreDurableAndReserveDrain(t *testing.T) {
 		t.Fatal("conflicting reservation accepted")
 	}
 	until := start.Add(time.Minute)
-	p := ProviderMonitorBatch{QueryFromUTC: start, QueryUntilUTC: until, Progress: &analysis.ProviderQueryProgress{NextQuery: 1, TotalQueries: 1, Complete: true, ScannedBytes: 10, QueryCostKnown: true, ScanReservationIDs: []string{"execute-0"}}}
+	p := ProviderMonitorBatch{QueryFromUTC: start, QueryUntilUTC: until, Progress: &analysis.ProviderQueryProgress{NextQuery: 1, TotalQueries: 1, Complete: true, ScannedBytes: 10, QueryCostKnown: true, ScanReservationIDs: []string{"execute-0"}, ScanSettlements: []analysis.ProviderScanSettlement{{AttemptID: "execute-0", ScannedBytes: 10}}}}
 	acceptDynatraceFixture(t, s, source, 0, p, until)
 	job, _ := s.GetRunMonitorJob(source.ProjectID, jobID)
 	if job.ScanConsumedBytes != 10 || job.ScanReservedBytes != 7_000_000_000 {
@@ -146,6 +146,7 @@ func TestDynatraceScanReservationsAreDurableAndReserveDrain(t *testing.T) {
 	p.Progress.ScannedBytes = 0
 	p.Progress.QueryCostKnown = false
 	p.Progress.ScanReservationIDs = []string{"unknown-cost"}
+	p.Progress.ScanSettlements = nil
 	acceptDynatraceFixture(t, s, source, 1, p, until)
 	job, _ = s.GetRunMonitorJob(source.ProjectID, jobID)
 	if job.ScanConsumedBytes != 10 || job.ScanReservedBytes != 7_999_999_990 {
@@ -305,4 +306,60 @@ func TestDynatraceTerminalProgressRequiresAllSelectedCoverage(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A finished attempt must release its reservation even when another attempt in
+// the same pass is still running; otherwise every pass leaks a full reservation
+// until the run's scan budget is exhausted.
+func TestDynatraceScanSettlementIsPerAttempt(t *testing.T) {
+	s, source, start := dynatraceMonitorFixture(t)
+	jobs, err := s.StartRunMonitors(source.ProjectID, "monitor-run", "monitor-scenario", start, start.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobID := jobs[0].ID
+	until := start.Add(time.Minute)
+	reserve := func(id string) {
+		t.Helper()
+		if ok, err := s.ReserveDynatraceScan(source.ProjectID, jobID, id, 1_000_000_000, start); err != nil || !ok {
+			t.Fatalf("reserve %s %v %v", id, ok, err)
+		}
+	}
+	batch := func(progress analysis.ProviderQueryProgress) ProviderMonitorBatch {
+		return ProviderMonitorBatch{QueryFromUTC: start, QueryUntilUTC: until, Progress: &progress}
+	}
+	// Pass 1: attempt A finished (5 KB), attempt B is still running.
+	reserve("attempt-a")
+	reserve("attempt-b")
+	acceptDynatraceFixture(t, s, source, 0, batch(analysis.ProviderQueryProgress{TotalQueries: 2, NextQuery: 1, ScannedBytes: 5000, ScanReservationIDs: []string{"attempt-a", "attempt-b"}, ScanSettlements: []analysis.ProviderScanSettlement{{AttemptID: "attempt-a", ScannedBytes: 5000}}}), until)
+	job, _ := s.GetRunMonitorJob(source.ProjectID, jobID)
+	if job.ScanReservedBytes != 1_000_000_000 || job.ScanConsumedBytes != 5000 {
+		t.Fatalf("pass 1 accounting reserved=%d consumed=%d", job.ScanReservedBytes, job.ScanConsumedBytes)
+	}
+	// Pass 2: B completes via its continuation.
+	acceptDynatraceFixture(t, s, source, 1, batch(analysis.ProviderQueryProgress{TotalQueries: 2, NextQuery: 2, Complete: true, ScannedBytes: 7000, QueryCostKnown: true, ScanSettlements: []analysis.ProviderScanSettlement{{AttemptID: "attempt-b", ScannedBytes: 7000}}}), until)
+	job, _ = s.GetRunMonitorJob(source.ProjectID, jobID)
+	if job.ScanReservedBytes != 0 || job.ScanConsumedBytes != 12_000 {
+		t.Fatalf("pass 2 accounting reserved=%d consumed=%d", job.ScanReservedBytes, job.ScanConsumedBytes)
+	}
+	// Many passes of cheap queries never exhaust the 8 GB collecting allowance.
+	for pass := 0; pass < 20; pass++ {
+		id := fmt.Sprintf("cheap-%02d", pass)
+		reserve(id)
+		acceptDynatraceFixture(t, s, source, int64(2+pass), batch(analysis.ProviderQueryProgress{TotalQueries: 2, NextQuery: 2, Complete: true, ScannedBytes: 1000, QueryCostKnown: true, ScanReservationIDs: []string{id}, ScanSettlements: []analysis.ProviderScanSettlement{{AttemptID: id, ScannedBytes: 1000}}}), until)
+	}
+	job, _ = s.GetRunMonitorJob(source.ProjectID, jobID)
+	if job.ScanReservedBytes != 0 || job.ScanConsumedBytes != 32_000 {
+		t.Fatalf("repeated passes reserved=%d consumed=%d", job.ScanReservedBytes, job.ScanConsumedBytes)
+	}
+	reject := func(sequence int64, progress analysis.ProviderQueryProgress, why string) {
+		t.Helper()
+		if err := s.AcceptProviderMonitorBatch(source.ProjectID, "", MonitorBatchReceipt{JobID: jobID, Sequence: sequence, Digest: strings.Repeat(fmt.Sprint(sequence%10), 64), ReceivedAt: until}, batch(progress), "", "", 0); err == nil {
+			t.Fatal(why)
+		}
+	}
+	reject(22, analysis.ProviderQueryProgress{TotalQueries: 2, NextQuery: 2, Complete: true, ScannedBytes: 1, ScanSettlements: []analysis.ProviderScanSettlement{{AttemptID: "attempt-a", ScannedBytes: 1}}}, "settled attempt charged twice")
+	reject(22, analysis.ProviderQueryProgress{TotalQueries: 2, NextQuery: 2, Complete: true, ScannedBytes: 1, ScanSettlements: []analysis.ProviderScanSettlement{{AttemptID: "never-admitted", ScannedBytes: 1}}}, "unadmitted attempt settled")
+	reserve("mismatch")
+	reject(22, analysis.ProviderQueryProgress{TotalQueries: 2, NextQuery: 2, Complete: true, ScannedBytes: 99, ScanSettlements: []analysis.ProviderScanSettlement{{AttemptID: "mismatch", ScannedBytes: 1}}}, "pass total differs from settled attempts")
 }

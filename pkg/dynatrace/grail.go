@@ -388,12 +388,12 @@ func (c *Client) executeGrail(ctx context.Context, query string, from, to time.T
 				cursor.Token = ""
 			}
 		}
-		return response, cursor, errors.New("invalid Grail query response")
+		return response, cursor, fmt.Errorf("invalid Grail query response: %w", ErrInvalidResponse)
 	}
 	if response.State == "SUCCEEDED" {
 		if cost := response.Result.Metadata.Grail.ScannedBytes; cost != nil && *cost >= 0 {
 			progress.ScannedBytes += *cost
-			progress.ScanReservationIDs = appendUnique(progress.ScanReservationIDs, cursor.Attempt)
+			progress.ScanSettlements = append(progress.ScanSettlements, QueryScanSettlement{AttemptID: cursor.Attempt, ScannedBytes: *cost})
 			if *cost > c.cfg.MaxScanBytes {
 				return response, cursor, ErrBudget
 			}
@@ -434,6 +434,29 @@ func (c *Client) executeGrail(ctx context.Context, query string, from, to time.T
 }
 
 var ErrPrincipalChanged = errors.New("Dynatrace query originating principal changed")
+
+// ValidateScanSettlements bounds per-attempt scan costs. Each attempt settles at
+// most once per pass. Storage charges only settlements; public previews strip
+// them and keep ScannedBytes as a display total, so equality is required only
+// when settlements are present.
+func ValidateScanSettlements(progress QueryProgress) error {
+	if len(progress.ScanSettlements) > 32 {
+		return errors.New("too many query scan settlements")
+	}
+	seen := map[string]bool{}
+	var total int64
+	for _, settlement := range progress.ScanSettlements {
+		if !validHexID(settlement.AttemptID, 32) || seen[settlement.AttemptID] || settlement.ScannedBytes < 0 || settlement.ScannedBytes > 100_000_000_000 {
+			return errors.New("invalid query scan settlement")
+		}
+		seen[settlement.AttemptID] = true
+		total += settlement.ScannedBytes
+	}
+	if len(progress.ScanSettlements) > 0 && total != progress.ScannedBytes {
+		return errors.New("scanned bytes differ from settled query attempts")
+	}
+	return nil
+}
 
 // Cancel abandons one private query token. The origin and principal must match
 // those that executed it; returned completion results are not persisted.
@@ -591,8 +614,8 @@ func (c *Client) normalizeGrail(q GrailQuery, response grailResponse, project st
 			if q.Kind == "trace" {
 				properties["evidence_scope"] = "sampled_span"
 			}
-			if duration, err := numeric(record["duration"]); err == nil && duration != nil && *duration >= 0 {
-				properties["duration_ms"] = strconv.FormatFloat(*duration/1_000_000, 'f', -1, 64)
+			if nanos, ok := grailDurationNanos(record["duration"]); ok && nanos >= 0 {
+				properties["duration_ms"] = strconv.FormatFloat(float64(nanos)/1_000_000, 'f', -1, 64)
 			}
 			if string(record["request.is_failed"]) == "true" {
 				status = "ERROR"
@@ -763,15 +786,33 @@ func containsIdentity(ids []string, id string) bool {
 	return false
 }
 func grailInterval(raw json.RawMessage) (int, error) {
-	var nanos int64
-	if json.Unmarshal(raw, &nanos) == nil && nanos > 0 && nanos%int64(time.Second) == 0 && nanos/int64(time.Second) <= 86400 {
-		return int(nanos / int64(time.Second)), nil
+	if nanos, ok := grailDurationNanos(raw); ok {
+		if nanos > 0 && nanos%int64(time.Second) == 0 && nanos/int64(time.Second) <= 86400 {
+			return int(nanos / int64(time.Second)), nil
+		}
+		return 0, errors.New("invalid Grail duration")
 	}
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
 		return parseResolution(s)
 	}
 	return 0, errors.New("invalid Grail duration type")
+}
+
+// grailDurationNanos reads a Grail duration as integer nanoseconds. The query
+// API may encode 64-bit values as JSON numbers or as decimal strings, so both
+// encodings are accepted; textual forms such as "1m" are left to the caller.
+func grailDurationNanos(raw json.RawMessage) (int64, bool) {
+	var nanos int64
+	if json.Unmarshal(raw, &nanos) == nil {
+		return nanos, true
+	}
+	var text string
+	if json.Unmarshal(raw, &text) != nil || text == "" {
+		return 0, false
+	}
+	parsed, err := strconv.ParseInt(text, 10, 64)
+	return parsed, err == nil
 }
 func firstString(record map[string]json.RawMessage, fields ...string) string {
 	for _, k := range fields {

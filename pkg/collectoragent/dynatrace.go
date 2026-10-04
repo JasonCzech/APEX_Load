@@ -374,6 +374,7 @@ func (a *Agent) executeDynatraceInspection(ctx context.Context, job DynatraceIns
 		preview, err = client.Preview(leaseCtx, *job.Selection, job.PreviewFromUTC, job.PreviewUntilUTC)
 		preview.Progress.Cursor = ""
 		preview.Progress.ScanReservationIDs = nil
+		preview.Progress.ScanSettlements = nil
 		preview.Progress.CursorExpiresAt = nil
 		if err == nil {
 			result.Preview = &preview

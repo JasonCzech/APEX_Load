@@ -312,6 +312,7 @@ func sanitizeDynatracePreview(work dynatraceOperationWork, preview *dynatrace.Re
 	preview.Progress.Cursor = ""
 	preview.Progress.CursorExpiresAt = nil
 	preview.Progress.ScanReservationIDs = nil
+	preview.Progress.ScanSettlements = nil
 	preview.Capabilities = sanitizeDynatraceCapabilitiesForConfig(preview.Capabilities, work.Connection.Config)
 	preview.Topology = sanitizeDynatraceEntities(preview.Topology)
 	for key, coverage := range preview.Coverage {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
@@ -94,7 +95,7 @@ func (c *Client) Discover(ctx context.Context, request DiscoveryRequest) (Discov
 			selector = `type("SERVICE")`
 		}
 		params.Set("entitySelector", selector)
-		params.Set("fields", "fromRelationships,toRelationships")
+		params.Set("fields", classicRelationshipFields)
 	case "entity_types":
 		path = "/api/v2/entityTypes"
 	default:
@@ -114,7 +115,7 @@ func (c *Client) Discover(ctx context.Context, request DiscoveryRequest) (Discov
 		Types    []struct{ Type, DisplayName string } `json:"types"`
 	}
 	if json.Unmarshal(data, &page) != nil {
-		return result, errors.New("invalid discovery response")
+		return result, fmt.Errorf("invalid discovery response: %w", ErrInvalidResponse)
 	}
 	result.NextCursor = page.Next
 	for _, m := range page.Metrics {
@@ -151,12 +152,29 @@ func (c *Client) Discover(ctx context.Context, request DiscoveryRequest) (Discov
 	return result, nil
 }
 
+// Entities API v2 returns only ID and display name unless extra properties are
+// requested with a leading plus.
+const classicRelationshipFields = "+fromRelationships,+toRelationships"
+
+// classicEntityRef is the Environment API v2 EntityId reference {id,type}.
+type classicEntityRef struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+}
+
+// classicEntityStub is the Environment API v2 EntityStub used by problems and
+// events: {entityId:{id,type}, name}.
+type classicEntityStub struct {
+	EntityID classicEntityRef `json:"entityId"`
+	Name     string           `json:"name"`
+}
+
 type classicEntity struct {
-	ID   string              `json:"entityId"`
-	Name string              `json:"displayName"`
-	Type string              `json:"type"`
-	From map[string][]string `json:"fromRelationships"`
-	To   map[string][]string `json:"toRelationships"`
+	ID   string                        `json:"entityId"`
+	Name string                        `json:"displayName"`
+	Type string                        `json:"type"`
+	From map[string][]classicEntityRef `json:"fromRelationships"`
+	To   map[string][]classicEntityRef `json:"toRelationships"`
 }
 
 func normalizeEntity(e classicEntity) Entity {
@@ -170,14 +188,14 @@ func normalizeEntity(e classicEntity) Entity {
 	}
 	sort.Strings(fromKinds)
 	for _, kind := range fromKinds {
-		for index, id := range e.From[kind] {
+		for index, ref := range e.From[kind] {
 			if len(ids) >= 16 {
 				break
 			}
-			if entityID.MatchString(id) {
+			if entityID.MatchString(ref.ID) {
 				key := "from." + kind + "." + strconv.Itoa(index)
 				if len(key) <= 128 {
-					ids[key] = id
+					ids[key] = ref.ID
 				}
 			}
 		}
@@ -188,14 +206,14 @@ func normalizeEntity(e classicEntity) Entity {
 	}
 	sort.Strings(toKinds)
 	for _, kind := range toKinds {
-		for index, id := range e.To[kind] {
+		for index, ref := range e.To[kind] {
 			if len(ids) >= 16 {
 				break
 			}
-			if entityID.MatchString(id) {
+			if entityID.MatchString(ref.ID) {
 				key := "to." + kind + "." + strconv.Itoa(index)
 				if len(key) <= 128 {
-					ids[key] = id
+					ids[key] = ref.ID
 				}
 			}
 		}

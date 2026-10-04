@@ -26,6 +26,10 @@ import (
 var ErrBudget = errors.New("Dynatrace collection budget exhausted")
 var ErrUnreachable = errors.New("Dynatrace destination is unreachable")
 
+// ErrInvalidResponse marks a reachable upstream whose payload does not match
+// the documented API shape. It is reported distinctly from connectivity loss.
+var ErrInvalidResponse = errors.New("Dynatrace returned an unexpected response shape")
+
 type HTTPError struct {
 	Status     int
 	Kind       string
@@ -388,8 +392,10 @@ func (c *Client) readResponse(resp *http.Response) ([]byte, error) {
 			}
 		}
 		retry := time.Duration(0)
-		if seconds, e := strconv.Atoi(resp.Header.Get("Retry-After")); e == nil && seconds >= 0 && seconds <= 300 {
-			retry = time.Duration(seconds) * time.Second
+		// An excessive delay is capped rather than ignored: dropping it would
+		// retry immediately against an upstream that asked to be left alone.
+		if seconds, e := strconv.ParseUint(strings.TrimSpace(resp.Header.Get("Retry-After")), 10, 64); e == nil || errors.Is(e, strconv.ErrRange) {
+			retry = time.Duration(min(seconds, 300)) * time.Second
 		} else if at, e := http.ParseTime(resp.Header.Get("Retry-After")); e == nil {
 			retry = at.Sub(c.now())
 			if retry < 0 {
@@ -481,6 +487,9 @@ func capabilityStatus(err error) string {
 	}
 	if errors.Is(err, ErrPrincipalChanged) {
 		return "authentication_denied"
+	}
+	if errors.Is(err, ErrInvalidResponse) {
+		return "invalid_response"
 	}
 	return "unreachable"
 }

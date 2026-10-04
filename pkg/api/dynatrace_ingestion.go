@@ -58,6 +58,9 @@ func (s *Server) ingestDynatraceBatch(ctx context.Context, job storage.RunMonito
 		if progress.TotalQueries != queries || progress.NextQuery < 0 || progress.NextQuery > queries || progress.Complete && (progress.NextQuery != queries || progress.Cursor != "") || progress.ScannedBytes < 0 || progress.ScanReservationBytes < 0 || len(progress.ScanReservationIDs) > 32 {
 			return errors.New("invalid Dynatrace query progress")
 		}
+		if err := dynatrace.ValidateScanSettlements(*progress); err != nil {
+			return err
+		}
 	}
 	if err := dynatrace.ValidateResult(selection, job.DynatraceSnapshot.Config, from, to, job.RunID, result); err != nil {
 		return err
@@ -128,7 +131,7 @@ func (s *Server) ingestDynatraceBatch(ctx context.Context, job storage.RunMonito
 			return errors.New("invalid Dynatrace coverage")
 		}
 		switch coverage.Status {
-		case "complete", "partial", "pending", "unavailable", "unreachable", "unauthorized", "forbidden", "unsupported", "unlicensed", "rate_limited", "budget_exhausted", "error", "authentication_denied", "permission_denied", "throttled", "query_rejected", "query_budget", "upstream_error", "query_expired":
+		case "complete", "partial", "pending", "unavailable", "unreachable", "unauthorized", "forbidden", "unsupported", "unlicensed", "rate_limited", "budget_exhausted", "error", "authentication_denied", "permission_denied", "throttled", "query_rejected", "query_budget", "upstream_error", "query_expired", "invalid_response":
 		default:
 			return errors.New("invalid Dynatrace coverage status")
 		}

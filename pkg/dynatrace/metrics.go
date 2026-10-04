@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/url"
@@ -87,6 +88,64 @@ func baseMetricID(selector string) (string, error) {
 		return "", errors.New("native metric queries require one explicit metric key")
 	}
 	return base, nil
+}
+
+var errUnsupportedTransform = errors.New("metric selector transformation is outside the supported set")
+
+// allowedSelectorTransforms lists the transformations whose effect on time,
+// gaps, units and statistics is modelled. Anything else could fold or shift
+// time, fill gaps or reshape series without changing the frozen statistic.
+var allowedSelectorTransforms = map[string]bool{"avg": true, "min": true, "max": true, "sum": true, "count": true, "value": true, "percentile": true, "splitBy": true, "filter": true, "merge": true, "parents": true, "sort": true, "limit": true, "rate": true, "setUnit": true, "toUnit": true}
+
+// validateSelectorTransforms requires everything after the metric key to be a
+// contiguous chain of allowed transformations.
+func validateSelectorTransforms(selector string) error {
+	selector = strings.TrimSpace(selector)
+	base, err := baseMetricID(selector)
+	if err != nil {
+		return err
+	}
+	var chain string
+	if selector[0] == '"' {
+		chain = strings.TrimSpace(selector[quotedMetricKeyEnd(selector)+1:])
+	} else {
+		// Metric keys carry at most one colon (builtin:, ext:, calc:, func:), so
+		// a further colon inside the unquoted key is an unrecognised transform.
+		if strings.Count(base, ":") > 1 {
+			return errUnsupportedTransform
+		}
+		chain = selector[len(base):]
+	}
+	transforms, err := selectorTransforms(chain)
+	if err != nil {
+		return err
+	}
+	next := 0
+	for _, transform := range transforms {
+		if transform.start != next || !allowedSelectorTransforms[transform.name] {
+			return errUnsupportedTransform
+		}
+		next = transform.end
+	}
+	if next != len(chain) {
+		return errUnsupportedTransform
+	}
+	return nil
+}
+
+// quotedMetricKeyEnd returns the index of the closing quote of a quoted key
+// already accepted by baseMetricID.
+func quotedMetricKeyEnd(selector string) int {
+	for i := 1; i < len(selector); i++ {
+		if selector[i] == '~' {
+			i++
+			continue
+		}
+		if selector[i] == '"' {
+			return i
+		}
+	}
+	return len(selector) - 1
 }
 
 // MetricID is stable across aliases and returned descriptor display names.
@@ -448,7 +507,7 @@ func (c *Client) metrics(ctx context.Context, m MetricSelection, project string,
 	}
 	var payload metricResponse
 	if json.Unmarshal(data, &payload) != nil {
-		return nil, false, errors.New("invalid metric response")
+		return nil, false, fmt.Errorf("invalid metric response: %w", ErrInvalidResponse)
 	}
 	seconds, err := parseResolution(payload.Resolution)
 	if err != nil {

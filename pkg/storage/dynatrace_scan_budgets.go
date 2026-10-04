@@ -83,18 +83,16 @@ func (s *SQLiteStore) ReserveDynatraceScanFenced(project, jobID, attempt string,
 	return true, tx.Commit()
 }
 
+// commitDynatraceScanProgressTx confirms this pass's new reservations and
+// settles each attempt that reported its scanned bytes. Attempts are settled
+// independently: one still running, or finished without cost metadata, keeps
+// only its own reservation and never strands attempts that did finish.
 func commitDynatraceScanProgressTx(tx *storeTx, job *RunMonitorJob, p *analysis.ProviderQueryProgress) error {
 	if p == nil {
 		return nil
 	}
-	if p.ScannedBytes < 0 || p.ScanReservationBytes < 0 || len(p.ScanReservationIDs) > 32 {
+	if p.ScannedBytes < 0 || p.ScanReservationBytes < 0 || len(p.ScanReservationIDs) > 32 || len(p.ScanSettlements) > 32 {
 		return errors.New("invalid Dynatrace scan accounting")
-	}
-	if len(p.ScanReservationIDs) == 0 {
-		if p.ScannedBytes != 0 || p.ScanReservationBytes != 0 {
-			return errors.New("scan cost requires its admitted execution identity")
-		}
-		return nil
 	}
 	seen := map[string]bool{}
 	var reserved int64
@@ -113,25 +111,38 @@ func commitDynatraceScanProgressTx(tx *storeTx, job *RunMonitorJob, p *analysis.
 		}
 		reserved += amount
 	}
-	if p.ScanReservationBytes != 0 && p.ScanReservationBytes != reserved || p.ScannedBytes > reserved || reserved > job.ScanReservedBytes {
-		return errors.New("scan cost exceeds admitted amount")
+	if p.ScanReservationBytes != 0 && p.ScanReservationBytes != reserved || reserved > job.ScanReservedBytes {
+		return errors.New("scan reservation differs from admitted amount")
 	}
-	if !p.QueryCostKnown {
-		return nil
-	}
-	job.ScanReservedBytes -= reserved
-	job.ScanConsumedBytes += p.ScannedBytes
-	remaining := p.ScannedBytes
-	for _, id := range p.ScanReservationIDs {
+	settled := map[string]bool{}
+	var total int64
+	for _, settlement := range p.ScanSettlements {
+		if settlement.AttemptID == "" || len(settlement.AttemptID) > 256 || settled[settlement.AttemptID] || settlement.ScannedBytes < 0 {
+			return errors.New("invalid scan settlement")
+		}
+		settled[settlement.AttemptID] = true
+		total += settlement.ScannedBytes
 		var amount int64
-		if err := tx.QueryRow(`SELECT reserved_bytes FROM dynatrace_scan_reservations WHERE job_id=? AND attempt_id=?`, job.ID, id).Scan(&amount); err != nil {
+		var state string
+		if err := tx.QueryRow(`SELECT reserved_bytes,state FROM dynatrace_scan_reservations WHERE job_id=? AND attempt_id=?`, job.ID, settlement.AttemptID).Scan(&amount, &state); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return errors.New("scan settlement names an unadmitted execution")
+			}
 			return err
 		}
-		cost := min(amount, remaining)
-		remaining -= cost
-		if _, err := tx.Exec(`UPDATE dynatrace_scan_reservations SET state='settled',consumed_bytes=? WHERE job_id=? AND attempt_id=? AND state='pending'`, cost, job.ID, id); err != nil {
+		if state != "pending" {
+			return errors.New("scan execution already accounted")
+		}
+		if _, err := tx.Exec(`UPDATE dynatrace_scan_reservations SET state='settled',consumed_bytes=? WHERE job_id=? AND attempt_id=? AND state='pending'`, settlement.ScannedBytes, job.ID, settlement.AttemptID); err != nil {
 			return err
 		}
+		// The actual cost is charged even above the reservation, so a later
+		// admission sees the true remaining run allowance.
+		job.ScanReservedBytes -= amount
+		job.ScanConsumedBytes += settlement.ScannedBytes
+	}
+	if len(p.ScanSettlements) > 0 && total != p.ScannedBytes || job.ScanReservedBytes < 0 {
+		return errors.New("scan cost differs from settled executions")
 	}
 	return nil
 }
