@@ -683,10 +683,11 @@ func (vu *VUser) executeWithRetryStream(
 	errCfg dsl.ErrorHandlingConfig,
 	emit func(*protocol.Result) error,
 ) (finalResult *protocol.Result, finalErr error) {
-	return vu.executeRetryInternal(ctx, action, errCfg, emit, false)
+	return vu.executeRetryInternal(ctx, action, errCfg, emit, nil)
 }
 
-func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Action, errCfg dsl.ErrorHandlingConfig, emit func(*protocol.Result) error, prepared bool) (finalResult *protocol.Result, finalErr error) {
+func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Action, errCfg dsl.ErrorHandlingConfig, emit func(*protocol.Result) error, classification *httpRetryClassificationHistory) (finalResult *protocol.Result, finalErr error) {
+	prepared := classification != nil
 	var actionSpan trace.Span
 	attemptCount := 0
 	if apptelemetry.ShouldStartActionSpan(ctx) {
@@ -847,7 +848,12 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 		applyProtocolResultSourceMetadata(result, action.Metadata)
 		applyProtocolResultAttribution(result, action)
 		applyMessageDetailRequest(result, action)
-		if !prepared {
+		if prepared {
+			if err := classification.observe(vu, result); err != nil {
+				clearUnredactableResultEvidence(result)
+				return result, nil
+			}
+		} else {
 			if err := vu.observeExtractionClassification(result); err != nil {
 				clearUnredactableResultEvidence(result)
 				// A complete matcher cannot be recovered by another retry. No

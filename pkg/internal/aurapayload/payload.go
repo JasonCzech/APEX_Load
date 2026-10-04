@@ -14,7 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/credential"
-	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 	"github.com/jasonczech/apexload/pkg/protocol/aura"
 )
 
@@ -265,19 +265,36 @@ func Resolve(body, bodyEncoding string, resolve func(string) (string, string)) (
 // ResolveWithWorkAccounting bounds one resolution by the caller's remaining
 // shared work allowance and reports actual work without changing Resolve semantics.
 func ResolveWithWorkAccounting(body, bodyEncoding string, resolve func(string) (string, string), maxWork int) (string, string, int, error) {
+	if resolve == nil {
+		return "", "", 0, fail(InvalidRoute)
+	}
+	return ResolveContextualWithWorkAccounting(body, bodyEncoding, nil, func(value string, _ TemplateContext) (string, string) { return resolve(value) }, maxWork)
+}
+
+// ResolveContextualWithWorkAccounting validates every retained occurrence
+// before invoking any callback. A context marks only the old form-wire outputs
+// whose outer component layer must be undone before structural rendering.
+func ResolveContextualWithWorkAccounting(body, bodyEncoding string, rawContract any, resolve func(string, TemplateContext) (string, string), maxWork int) (string, string, int, error) {
+	contract, err := ReadTemplateContract(rawContract)
+	if err != nil {
+		return "", "", 0, err
+	}
 	p, err := readPayloadLimit(body, bodyEncoding, maxWork)
 	if err != nil {
-		work := 0
-		if failure, ok := err.(*Error); ok {
-			work = failure.WorkBytes
-		}
-		return "", "", work, err
+		return "", "", errorWork(err), err
 	}
-	actual, safe, err := resolvePayload(p, resolve)
+	prepared, err := prepareTemplates(p)
+	if err != nil {
+		return "", "", p.budget.work, err
+	}
+	if err := prepared.bind(contract, p.codec); err != nil {
+		return "", "", p.budget.work, err
+	}
+	actual, safe, err := resolvePayload(p, prepared, resolve)
 	return actual, safe, p.budget.work, err
 }
 
-func resolvePayload(p *payload, resolve func(string) (string, string)) (string, string, error) {
+func resolvePayload(p *payload, prepared *preparedTemplates, resolve func(string, TemplateContext) (string, string)) (string, string, error) {
 	var err error
 	if resolve == nil {
 		return "", "", fail(InvalidRoute)
@@ -288,7 +305,7 @@ func resolvePayload(p *payload, resolve func(string) (string, string)) (string, 
 			continue
 		}
 		key, _ := routeKey(leaf.Route)
-		value, safe := resolve(leaf.Value)
+		value, safe := resolve(leaf.Value, prepared.message[p.nodes[key]].context)
 		if !utf8.ValidString(value) || !utf8.ValidString(safe) {
 			return "", "", fail(InvalidUTF8)
 		}
@@ -315,13 +332,13 @@ func resolvePayload(p *payload, resolve func(string) (string, string)) (string, 
 			}
 			key, safeKey := f.key, f.key
 			var value, safeValue string
-			if f.key == "aura.context" && looksJSONContainer(f.value) {
-				value, safeValue, err = resolveJSON(f.value, p.budget, resolve)
+			if q := prepared.jsonFields[i]; q != nil {
+				value, safeValue, err = resolveJSON(q, prepared.jsonLeaves[i], resolve)
 				if err != nil {
 					return "", "", err
 				}
 			} else {
-				value, safeValue = resolve(f.value)
+				value, safeValue = resolve(f.value, prepared.fields[i].context)
 			}
 			if f.key == "aura.context" && contextCount > 1 && (value != f.value || safeValue != f.value) {
 				return "", "", fail(AmbiguousContext)
@@ -389,9 +406,9 @@ func readPayloadLimit(body, encoding string, maxWork int) (result *payload, err 
 		if predicted > (b.limit-b.work)/2 {
 			return nil, fail(WorkLimit)
 		}
-		decoded, _, err := dsl.DecodeBodyEncoding(body, encoding, MaxBodyBytes)
+		decoded, _, err := bodyencoding.Decode(body, encoding, MaxBodyBytes)
 		if err != nil {
-			if err == dsl.ErrBodyEncodingLimit {
+			if err == bodyencoding.ErrLimit {
 				return nil, fail(ByteLimit)
 			}
 			return nil, fail(InvalidEncoding)
@@ -836,22 +853,27 @@ func looksJSONContainer(value string) bool {
 	return (strings.HasPrefix(trimmed, "{") && !strings.HasPrefix(trimmed, "{{")) || strings.HasPrefix(trimmed, "[")
 }
 
-func resolveJSON(source string, b *budget, resolve func(string) (string, string)) (string, string, error) {
+func readJSONPayload(source string, b *budget) (*payload, error) {
 	doc, err := parseDocument(source, b)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 	q := &payload{doc: doc, budget: b, nodes: make(map[string]*node)}
 	if err := q.collect(doc.root, nil, "", "$", []string{"json"}, 0, 0); err != nil {
-		return "", "", err
+		return nil, err
 	}
+	return q, nil
+}
+
+func resolveJSON(q *payload, contexts map[*node]*templateSurface, resolve func(string, TemplateContext) (string, string)) (string, string, error) {
+	b := q.budget
 	actual, safe := make(map[*node]string), make(map[*node]string)
 	for _, leaf := range q.inspection.Leaves {
 		if leaf.ValueType != "string" {
 			continue
 		}
 		key, _ := routeKey(leaf.Route)
-		value, redacted := resolve(leaf.Value)
+		value, redacted := resolve(leaf.Value, contexts[q.nodes[key]].context)
 		if !utf8.ValidString(value) || !utf8.ValidString(redacted) {
 			return "", "", fail(InvalidUTF8)
 		}
@@ -860,11 +882,11 @@ func resolveJSON(source string, b *budget, resolve func(string) (string, string)
 		}
 		actual[q.nodes[key]], safe[q.nodes[key]] = value, redacted
 	}
-	value, err := renderDocument(doc, actual, b)
+	value, err := renderDocument(q.doc, actual, b)
 	if err != nil {
 		return "", "", err
 	}
-	redacted, err := renderDocument(doc, safe, b)
+	redacted, err := renderDocument(q.doc, safe, b)
 	return value, redacted, err
 }
 

@@ -5,6 +5,7 @@ import {
   applyCorrelationRepairToAction,
   correlationEditableActionsKey,
   correlationExtractorScope,
+  correlationRepairRequiresStructuralBodyReview,
   currentCorrelationEditableActionsKey,
   resolveCorrelationExtractorAndRepair,
   resolveCorrelationExtractorName,
@@ -65,6 +66,66 @@ describe('applyCorrelationRepairToAction', () => {
     })
 
     expect(repaired).toBe(action)
+  })
+
+  it('rejects all request edits when a body repair would invalidate retained Aura template occurrences', () => {
+    const body = `message=${encodeURIComponent('{"actions":[{"id":"a","descriptor":"fixture","params":{"echo":"OLD \\u007b\\u007bvar.literal\\u007d\\u007d"}}]}')}`
+    const action: ScriptActionDefinition = {
+      name: 'Aura submit', type: 'POST', target: '/submit?csrf=OLD', body,
+      headers: { 'X-CSRF': 'OLD' },
+      metadata: {
+        body_template_value_encoding: 'aura_json_strings',
+        body_aura_template_contract: {
+          version: 1,
+          form_wire_occurrences: [],
+          literal_occurrences: [{ context_id: 'a'.repeat(64), occurrence_index: 0, expression_sha256: 'b'.repeat(64) }],
+        },
+      },
+    }
+    const bodyStart = body.indexOf('OLD')
+    const repair = {
+      failingActionIndex: 1,
+      requestLocations: [
+        { field: 'request_url', start: 13, end: 16 },
+        { field: 'request_body', start: bodyStart, end: bodyStart + 3 },
+        { field: 'request_headers.X-CSRF', start: 0, end: 3 },
+      ],
+      replacement: '{{var.csrf}}',
+    }
+
+    expect(correlationRepairRequiresStructuralBodyReview(action, repair)).toBe(true)
+    const repaired = applyCorrelationRepairToAction(action, repair)
+    expect(repaired).toBe(action)
+    expect(repaired.body).toBe(body)
+    expect(repaired.target).toBe('/submit?csrf=OLD')
+    expect(repaired.headers).toEqual({ 'X-CSRF': 'OLD' })
+  })
+
+  it('allows URL and header repairs on an Aura action without changing its body or template contract', () => {
+    const action: ScriptActionDefinition = {
+      name: 'Aura submit', type: 'POST', target: '/submit?csrf=OLD',
+      body: 'message=retained-body',
+      headers: { 'X-CSRF': 'OLD' },
+      metadata: {
+        body_template_value_encoding: 'aura_json_strings',
+        body_aura_template_contract: { version: 1, form_wire_occurrences: [], literal_occurrences: [] },
+      },
+    }
+    const repair = {
+      failingActionIndex: 1,
+      requestLocations: [
+        { field: 'request_url', start: 13, end: 16 },
+        { field: 'request_headers.X-CSRF', start: 0, end: 3 },
+      ],
+      replacement: '{{var.csrf}}',
+    }
+
+    expect(correlationRepairRequiresStructuralBodyReview(action, repair)).toBe(false)
+    const repaired = applyCorrelationRepairToAction(action, repair)
+    expect(repaired.target).toBe('/submit?csrf={{var.csrf}}')
+    expect(repaired.headers).toEqual({ 'X-CSRF': '{{var.csrf}}' })
+    expect(repaired.body).toBe(action.body)
+    expect(repaired.metadata).toBe(action.metadata)
   })
 
   it('replaces raw and exact query-encoded literals in one non-recursive pass', () => {

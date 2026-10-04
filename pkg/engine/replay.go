@@ -1986,6 +1986,10 @@ func replayCorrelationEvidence(action *protocol.Action, result *protocol.Result,
 			}
 		}
 	}
+	// Structural Aura bodies have contextual template semantics even when an
+	// all-literal replay is byte-identical to the draft. Raw repair offsets do
+	// not attest those semantics or maintain occurrence contracts.
+	requestBodyTransformed = requestBodyTransformed || actionBodyTemplateValueEncoding(authored.Metadata) == dsl.ImportAuraJSONTemplateValueEncoding
 	if !correlationEvidenceFitsCaptureLimit(requestURL, requestBody, requestBodyBytes, requestHeaders, action, useActionHeaders, authored, responseBody, responseHeaders) {
 		return protocol.UnavailableCorrelationEvidence(protocol.CorrelationEvidenceTooLargeReason)
 	}

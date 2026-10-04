@@ -279,7 +279,10 @@ func (r *Reader) initialize() error {
 				}
 				return r.classify(err)
 			}
-			if header[0]&15 == 8 && header[0]>>4 <= 7 {
+			// A raw stored block can share zlib's CMF byte through its ignored
+			// padding bits. Require FCHECK too before selecting the wrapped codec;
+			// once selected, codec/checksum failures must never retry as raw flate.
+			if header[0]&15 == 8 && header[0]>>4 <= 7 && (uint16(header[0])<<8|uint16(header[1]))%31 == 0 {
 				codec, err := zlib.NewReader(buffered)
 				if err != nil {
 					return r.classify(err)

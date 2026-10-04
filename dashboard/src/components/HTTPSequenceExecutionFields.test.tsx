@@ -108,6 +108,23 @@ describe('HTTP sequence execution fields', () => {
     expect(container.textContent).not.toContain('Execution settings need review')
   })
 
+  it.each(['http/1.1', 'http/2'])('shows alias %s authored limits and preserves manual policy edits', protocol => {
+    act(() => root.render(<Controlled protocol={protocol} action={{ ...initial, params: { ...initial.params, execution_mode: 'concurrent', max_concurrency: 99 } }} />))
+    expect(mode()?.value).toBe('concurrent')
+    expect(limit()?.value).toBe('99')
+    expect(container.textContent).toContain('Authored concurrency limit is invalid')
+    changeLimit('2')
+    expect(current.params?.max_concurrency).toBe(2)
+    expect(container.textContent).toContain('up to 2 requests in flight')
+    choose('default')
+    expect(current.params).not.toHaveProperty('execution_mode')
+    expect(current.params?.max_concurrency).toBe(2)
+    choose('concurrent')
+    expect(current.params?.execution_mode).toBe('concurrent')
+    expect(current.params?.requests).toBe(initial.params?.requests)
+    expect(current.params?.unknown).toBe(initial.params?.unknown)
+  })
+
   it.each(['browser', 'soap', 'grpc', 'java_http'])('does not expose concurrent HTTP claims or controls on %s', protocol => {
     act(() => root.render(<Controlled protocol={protocol} action={{ ...initial, params: { ...initial.params, execution_mode: 'concurrent' } }} />))
     expect(mode()).toBeNull()

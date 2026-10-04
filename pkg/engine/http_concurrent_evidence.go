@@ -17,14 +17,11 @@ const maxConcurrentRichEvidenceBytes = 16 << 20
 const maxConcurrentCorrelationBytes = 16 << 20
 const concurrentCorrelationOmitted = "raw correlation evidence omitted by concurrent group retention limit"
 
-func boundConcurrentCompletedResult(result *protocol.Result, count int, config *RedactionConfig) (*RedactionConfig, error) {
-	if result == nil {
-		return config, nil
-	}
+func boundConcurrentCompletedResult(result *protocol.Result, count int, config *RedactionConfig, observed ...[]string) (*RedactionConfig, error) {
 	// Register only bounded, sensitively named outputs in a detached worker
 	// matcher. Runtime variable publication remains owned by the parent after
 	// the join. Exact outputs and private exchanges bypass public projection.
-	if result.ExtractionsIncomplete || protocol.ValidateExtractions(result.Extractions) != nil {
+	if result != nil && (result.ExtractionsIncomplete || protocol.ValidateExtractions(result.Extractions) != nil) {
 		// Once any outputs were discarded, no complete sensitive-value matcher
 		// can be established. Do not classify only the surviving prefix/map.
 		omitConcurrentPublicEvidence(result)
@@ -35,18 +32,32 @@ func boundConcurrentCompletedResult(result *protocol.Result, count int, config *
 		result.CorrelationEvidence = protocol.UnavailableCorrelationEvidence("concurrent HTTP credential projection unavailable")
 		return nil, errors.New("concurrent HTTP publication redaction failed")
 	}
-	values := concurrentSensitiveExtractionValues(result.Extractions)
+	var values []string
+	if result != nil {
+		values = concurrentSensitiveExtractionValues(result.Extractions)
+	}
+	for _, history := range observed {
+		values = append(values, history...)
+	}
 	matcher, err := WithSecretValueRedactionChecked(nil, values)
 	if err == nil {
 		config, err = attachConcurrentRuntimeMatcher(config, matcher)
 	}
 	if err != nil {
+		if result == nil {
+			return nil, errors.New("concurrent HTTP publication redaction failed")
+		}
 		omitConcurrentPublicEvidence(result)
 		result.Success = false
 		result.Extractions = nil
 		result.ExtractionsIncomplete = true
 		result.CorrelationEvidence = protocol.UnavailableCorrelationEvidence("concurrent HTTP credential projection unavailable")
 		return nil, errors.New("concurrent HTTP publication redaction failed")
+	}
+	// A later transport error can discard the final result while an earlier
+	// attempt still supplies classifications needed to project the error text.
+	if result == nil {
+		return config, nil
 	}
 	count = max(1, count)
 	allowance := maxConcurrentRichEvidenceBytes / count
@@ -271,11 +282,14 @@ func omitConcurrentPublicEvidence(result *protocol.Result) {
 	result.ProtocolEvidence = map[string]any{"concurrent_group_evidence_bounded": true, "concurrent_group_evidence_details_complete": false}
 }
 
-// The admitted combined outputs are bounded to 64 KiB. Apply their sensitive
-// subset to every sibling's remaining complete public evidence before any
-// source-ordered publication. No VUser variables or credential scopes advance.
-func scrubConcurrentJoinedEvidence(children []preparedHTTPChild, outputs map[string]string) error {
+// Final outputs are bounded to 64 KiB; observed retry values have a separate
+// cumulative group ceiling. Apply both sensitive subsets to every sibling's
+// remaining complete public evidence before any source-ordered publication.
+func scrubConcurrentJoinedEvidence(children []preparedHTTPChild, outputs map[string]string, observed ...[]string) error {
 	values := concurrentSensitiveExtractionValues(outputs)
+	for _, history := range observed {
+		values = append(values, history...)
+	}
 	matcher, err := WithSecretValueRedactionChecked(nil, values)
 	if err != nil {
 		omitConcurrentJoinedPublicEvidence(children)

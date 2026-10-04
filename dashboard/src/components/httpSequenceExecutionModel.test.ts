@@ -33,10 +33,22 @@ describe('HTTP sequence execution settings', () => {
     expect(settings({ requests, execution_mode: 'concurrent', max_concurrency }).effectiveConcurrency).toBeUndefined()
   })
 
-  it.each(['browser', 'soap', 'http/1.1', 'http/2', 'grpc', 'java_http', 'kafka'])('does not author HTTP sequence policy for %s', protocol => {
+  it.each(['browser', 'soap', 'grpc', 'java_http', 'kafka'])('does not author HTTP sequence policy for %s', protocol => {
     expect(httpSequenceExecutionSettings(sequence, protocol)).toBeNull()
     expect(setHTTPSequenceExecutionMode(sequence, protocol, 'concurrent')).toBe(sequence)
     expect(setHTTPSequenceMaxConcurrency(sequence, protocol, 2)).toBe(sequence)
+  })
+
+  it.each(['http/1.1', 'http/2'])('reviews and authors concurrent settings for HTTP alias %s', protocol => {
+    const invalid = { ...sequence, params: { ...sequence.params, execution_mode: 'concurrent', max_concurrency: 99 } }
+    expect(httpSequenceExecutionSettings(invalid, protocol)).toMatchObject({ mode: 'concurrent', limitValid: false, valid: false })
+    const limited = setHTTPSequenceMaxConcurrency(invalid, protocol, 2)
+    expect(httpSequenceExecutionSettings(limited, protocol)).toMatchObject({ mode: 'concurrent', valid: true, effectiveConcurrency: 2 })
+    const serial = setHTTPSequenceExecutionMode(limited, protocol, undefined)
+    expect(httpSequenceExecutionSettings(serial, protocol)).toMatchObject({ defaultMode: true, mode: 'sequential', valid: true })
+    expect(serial.params?.requests).toBe(requests)
+    expect(serial.params?.unknown).toBe(sequence.params?.unknown)
+    expect(serial.metadata).toBe(sequence.metadata)
   })
 
   it('edits only the selected policy key without changing raw requests, unknown params or metadata', () => {

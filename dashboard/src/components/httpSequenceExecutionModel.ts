@@ -1,4 +1,5 @@
 import type { ScriptActionDefinition } from '../types/scripts'
+import { dslProtocolFamily } from './dslActionCatalog'
 
 export type HTTPSequenceExecutionMode = 'sequential' | 'concurrent'
 export const HTTP_SEQUENCE_MAX_CONCURRENCY = 16
@@ -7,7 +8,7 @@ const record = (value: unknown): value is Record<string, unknown> => !!value && 
 const own = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key)
 
 export function httpSequenceExecutionSettings(action: ScriptActionDefinition, protocol: string) {
-  if (protocol !== 'http' || action.type !== 'http_sequence') return null
+  if (dslProtocolFamily(protocol) !== 'http' || action.type !== 'http_sequence') return null
   const paramsInvalid = action.params !== undefined && !record(action.params)
   const params = record(action.params) ? action.params : {}
   const defaultMode = !own(params, 'execution_mode')

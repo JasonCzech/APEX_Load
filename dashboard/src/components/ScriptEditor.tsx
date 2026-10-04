@@ -54,6 +54,7 @@ import {
   applyCorrelationRepairToAction,
   correlationEditableActionsKey,
   correlationExtractorScope,
+  correlationRepairRequiresStructuralBodyReview,
   currentCorrelationEditableActionsKey,
   resolveCorrelationExtractorAndRepair,
   type CorrelationApplyResult,
@@ -205,7 +206,7 @@ import {
 } from './scriptEditorReplayModel'
 import { useScriptReplayDebuggerController } from './useScriptReplayDebuggerController'
 import { omitUnavailableReplayReport, omitUnavailableReplaySession, replayVariablesForInspection, runtimeEvidenceUnavailable } from './runtimeVariableEvidence'
-import { EMPTY_DEBUG_RUNTIME, admitDebugRuntimeSession, admitDebugRuntimeDelta, beginDebugRuntime, invalidateDebugRuntime, currentRuntimeLookup, runtimeRequestIsCurrent, type DebugRuntimeAdmission, type DebugRuntimeRequest, type RuntimeInspectionMode } from './debugRuntimeState'
+import { EMPTY_DEBUG_RUNTIME, admitDebugRuntimeSession, admitDebugRuntimeDelta, beginDebugRuntime, invalidateDebugRuntime, currentRuntimeLookup, runtimeRequestIsCurrent, runtimeCommandIsAcknowledged, type DebugRuntimeAdmission, type DebugRuntimeCommand, type DebugRuntimeRequest, type RuntimeInspectionMode } from './debugRuntimeState'
 import { ScriptReplayDebuggerView } from './ScriptReplayDebuggerView'
 import {
   applyValidationRuntimeSettingsMetadata,
@@ -744,6 +745,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const replayVariableQualificationRef = useRef('Current paused state')
   const [unavailableRuntimeSessionId, setUnavailableRuntimeSessionId] = useState<string | null>(null)
   const runtimeAdmissionRef = useRef<DebugRuntimeAdmission>(EMPTY_DEBUG_RUNTIME)
+  const debugMutationSequenceRef = useRef(0)
   const [runtimeAdmission, setRuntimeAdmission] = useState<DebugRuntimeAdmission>(EMPTY_DEBUG_RUNTIME)
   const [runtimeInspectionMode, setRuntimeInspectionMode] = useState<RuntimeInspectionMode>('current')
   const [runtimeFrameSourcePath, setRuntimeFrameSourcePath] = useState<string | null>(null)
@@ -1425,6 +1427,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   ) {
     editorResourceScopeRef.current = { projectId, folderId, scriptId, initialScript }
     editorResourceScopeVersionRef.current += 1
+    debugMutationSequenceRef.current += 1
   }
   const validationDocumentKey = useMemo(
     () => jsonParseMessage ? null : jsonDirty ? formatScriptJson(currentDraftScript) : formattedScriptJson,
@@ -1443,6 +1446,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     clearPendingParameterDataCellEdits()
     replayStartInFlightRef.current = null
     replayStartAttemptRef.current = null
+    debugMutationSequenceRef.current += 1
     setValidating(false)
     setSaving(false)
     setValidationEvidence(null)
@@ -2545,6 +2549,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       ? script.actions[effectiveRepair.failingActionIndex]
       : undefined
     const repairWillApply = Boolean(repairAction && effectiveRepair && applyCorrelationRepairToAction(repairAction, effectiveRepair) !== repairAction)
+    const repairRequiresStructuralReview = Boolean(repairAction && effectiveRepair && correlationRepairRequiresStructuralBodyReview(repairAction, effectiveRepair))
     const extractorAlreadyExists = Boolean(sourceAction.extractors?.some(existing => existing.name === effectiveExtractor.name))
     const actions = [...script.actions]
     actions[actionIdx] = addCorrelationExtractorIfMissing(actions[actionIdx], effectiveExtractor)
@@ -2554,6 +2559,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setScript({ ...script, actions })
     const repairSuffix = repairWillApply && effectiveRepair
       ? ` Updated action ${effectiveRepair.failingActionIndex + 1} to use ${effectiveRepair.replacement}.`
+      : repairRequiresStructuralReview
+        ? ' The Aura body requires structural review; automatic request replacement was not applied.'
       : effectiveRepair
         ? ' The mapped request value was not found; replace it manually.'
       : ''
@@ -3010,6 +3017,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       const variables = parseReplayVariablesText(replayOptions.variablesText)
       const replaySessionId = createReplaySessionId()
       requestedReplaySessionId = replaySessionId
+      debugMutationSequenceRef.current += 1
       publishRuntimeAdmission(beginDebugRuntime(runtimeAdmissionRef.current, replaySessionId))
       setRuntimeInspectionMode('current')
       setRuntimeFrameSourcePath(null)
@@ -3241,18 +3249,25 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
 
   const performDebugMutation = useCallback(async (operation: () => Promise<{ session?: ScriptDebugSession } | void>) => {
     const scope = editorResourceScopeRef.current
+    const sequence = ++debugMutationSequenceRef.current
+    const { sessionId, incarnation, revision } = runtimeAdmissionRef.current
+    const command: DebugRuntimeCommand = { sessionId, incarnation, revision }
     invalidateRuntimeAuthority('Current state unavailable: waiting for the debugger control response.')
     const request = runtimeRequest()
     try {
       const response = await operation()
       if (!editorMountedRef.current || editorResourceScopeRef.current !== scope) return null
-      if (!response?.session && !runtimeRequestIsCurrent(runtimeAdmissionRef.current, request)) return null
+      if (!response?.session && (!runtimeRequestIsCurrent(runtimeAdmissionRef.current, request) || debugMutationSequenceRef.current !== sequence)) return null
       if (!response?.session) { invalidateRuntimeAuthority('Current state unavailable: the debugger control response was incomplete.'); return null }
-      if (!admitRuntimeSession(response.session, 'mutation', request)) return null
-      setBrowserReplaySession(response.session)
-      return response.session
+      // Admission still guards every state consumer, including a same-run privacy
+      // failure carried by a delayed response. A command acknowledgement never
+      // publishes rejected runtime detail or overwrites newer breakpoint state.
+      const admitted = admitRuntimeSession(response.session, 'mutation', request)
+      if (admitted) setBrowserReplaySession(response.session)
+      if (debugMutationSequenceRef.current !== sequence || !runtimeCommandIsAcknowledged(runtimeAdmissionRef.current, command, response.session)) return null
+      return { session: admitted ? response.session : null }
     } catch (cause) {
-      if (!editorMountedRef.current || editorResourceScopeRef.current !== scope || !runtimeRequestIsCurrent(runtimeAdmissionRef.current, request)) return null
+      if (!editorMountedRef.current || editorResourceScopeRef.current !== scope || debugMutationSequenceRef.current !== sequence || !runtimeRequestIsCurrent(runtimeAdmissionRef.current, request)) return null
       throw cause
     }
   }, [admitRuntimeSession, invalidateRuntimeAuthority, runtimeRequest, setBrowserReplaySession])
@@ -3339,8 +3354,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       return
     }
     try {
-      const session = await performDebugMutation(() => api.updateScriptDebugBreakpoints(activeReplaySessionId, next))
-      if (session) setDebugBreakpoints(session.breakpoints || next)
+      const acknowledgement = await performDebugMutation(() => api.updateScriptDebugBreakpoints(activeReplaySessionId, next))
+      if (acknowledgement?.session) setDebugBreakpoints(acknowledgement.session.breakpoints || next)
       setError('')
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to update debugger breakpoints'))
@@ -3938,6 +3953,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             pendingAttempt.notFoundCount += 1
             return
           }
+          debugMutationSequenceRef.current += 1
           setActiveReplaySessionId(null)
           setBrowserReplaySession(prev => prev ? { ...prev, status: 'stopped' } : null)
           setReplaying(false)
@@ -6490,7 +6506,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                 const next = [{ ...target, once: true }, ...debugBreakpoints.filter(bp => !bp.once)]
                 const updated = await performDebugMutation(() => api.updateScriptDebugBreakpoints(activeReplaySessionId, next))
                 if (!updated) return
-                setDebugBreakpoints(updated.breakpoints || [])
+                if (updated.session) setDebugBreakpoints(updated.session.breakpoints || [])
                 await performDebugMutation(() => api.resumeScriptDebugSession(activeReplaySessionId))
               } catch (cause) { setError(getErrorMessage(cause, 'Could not run to the selected action')) }
             }}

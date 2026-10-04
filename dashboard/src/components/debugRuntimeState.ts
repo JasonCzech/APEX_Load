@@ -13,6 +13,7 @@ export interface DebugRuntimeAdmission {
   reason: string
 }
 export type DebugRuntimeRequest = Pick<DebugRuntimeAdmission, 'sessionId' | 'generation'>
+export type DebugRuntimeCommand = Pick<DebugRuntimeAdmission, 'sessionId' | 'incarnation' | 'revision'>
 export const EMPTY_DEBUG_RUNTIME: DebugRuntimeAdmission = { sessionId: null, incarnation: null, revision: null, signature: null, generation: 0, privacyUnavailable: false, terminal: false, runtime: null, reason: 'Start a debug run to inspect current paused state.' }
 const MAX_REVISION = '18446744073709551615'
 const terminal = new Set(['completed', 'failed', 'stopped'])
@@ -84,6 +85,18 @@ function fullState(session: ScriptDebugSession): ScriptDebugRuntimeState | null 
   if (!record(value) || !closed(value, ['version', 'kind', 'session_id', 'session_incarnation', 'state_revision', 'state', 'reason', 'snapshot']) || value.version !== 1 || value.kind !== 'full' || value.session_id !== session.id || value.session_incarnation !== session.session_incarnation || value.state_revision !== session.state_revision || !reasons.has(value.reason as string)) return null
   if (value.state === 'unavailable') return value.snapshot === null && value.reason !== 'boundary_held' ? value as unknown as ScriptDebugRuntimeState : null
   return value.state === 'paused' && value.reason === 'boundary_held' && session.status === 'paused' && runtimeSnapshotIsValid(value.snapshot) && value.snapshot.state !== 'unavailable' ? value as unknown as ScriptDebugRuntimeState : null
+}
+/** A successful control response may acknowledge a command after newer evidence
+ * arrived. This verifies the bound run without admitting or returning its detail. */
+export function runtimeCommandIsAcknowledged(state: DebugRuntimeAdmission, command: DebugRuntimeCommand, session: ScriptDebugSession): boolean {
+  if (!command.sessionId || !command.incarnation || !canonicalRuntimeRevision(command.revision) || state.terminal
+    || command.sessionId !== state.sessionId || command.incarnation !== state.incarnation
+    || session.id !== command.sessionId || session.session_incarnation !== command.incarnation
+    || !canonicalRuntimeRevision(session.state_revision) || compareRuntimeRevisions(session.state_revision, command.revision) < 0
+    || !oneOf(session.status, ['queued', 'running', 'paused'])
+    || session.report?.replay_session_id !== undefined && session.report.replay_session_id !== command.sessionId) return false
+  const runtime = fullState(session)
+  return runtime !== null && !['session_terminal', 'session_retired', 'revision_exhausted'].includes(runtime.reason)
 }
 // Object-key order does not create a false equal-revision conflict.
 function stableSignature(value: unknown): string {

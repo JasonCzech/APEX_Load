@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ReplayRuntimeSnapshot, ScriptDebugSession } from '../types/replay'
-import { EMPTY_DEBUG_RUNTIME, admitDebugRuntimeDelta, admitDebugRuntimeSession, beginDebugRuntime, canonicalRuntimeRevision, compareRuntimeRevisions, currentRuntimeLookup, currentRuntimeParameter, invalidateDebugRuntime, runtimeSnapshotIsValid, type DebugRuntimeAdmission } from './debugRuntimeState'
+import { EMPTY_DEBUG_RUNTIME, admitDebugRuntimeDelta, admitDebugRuntimeSession, beginDebugRuntime, canonicalRuntimeRevision, compareRuntimeRevisions, currentRuntimeLookup, currentRuntimeParameter, invalidateDebugRuntime, runtimeCommandIsAcknowledged, runtimeSnapshotIsValid, type DebugRuntimeAdmission } from './debugRuntimeState'
 const incarnation = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const otherIncarnation = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 export function runtimeSnapshot(overrides: Partial<ReplayRuntimeSnapshot> = {}): ReplayRuntimeSnapshot {
@@ -152,5 +152,47 @@ describe('closed bounded engine DTO admission', () => {
     for (const value of [undefined, null]) expect(runtimeSnapshotIsValid({ ...runtimeSnapshot(), variables: value })).toBe(false)
     for (const value of ['\0', '\ud800', '界'.repeat(2000)]) expect(runtimeSnapshotIsValid(runtimeSnapshot({ variables: [{ name: 'x', value_state: 'assigned', value }] }))).toBe(false)
     expect(runtimeSnapshotIsValid(runtimeSnapshot({ variables: Array.from({ length: 20 }, (_, i) => ({ name: String(i), value_state: 'assigned', value: 'x'.repeat(4096) })) }))).toBe(false)
+  })
+})
+
+
+describe('debug command acknowledgement independent of runtime evidence admission', () => {
+  it('confirms a same-run delayed command without admitting its stale runtime state', () => {
+    const initial = started()
+    const command = { sessionId: initial.sessionId, incarnation: initial.incarnation, revision: initial.revision }
+    const request = { sessionId: initial.sessionId, generation: initial.generation }
+    const newer = admit(initial, runtimeSession('3', runtimeSnapshot({ variables: [] })), 'socket').state
+    const delayed = runtimeSession('2')
+    expect(admitDebugRuntimeSession(newer, delayed, 'mutation', request).accepted).toBe(false)
+    expect(runtimeCommandIsAcknowledged(newer, command, delayed)).toBe(true)
+    expect(newer.revision).toBe('3')
+    expect(newer.runtime?.snapshot?.variables).toEqual([])
+  })
+
+  it('retains privacy suppression while confirming only a bound command receipt', () => {
+    const initial = started()
+    const command = { sessionId: initial.sessionId, incarnation: initial.incarnation, revision: initial.revision }
+    const privateState = admit(initial, runtimeSession('3', null, { runtime_evidence_unavailable: true })).state
+    expect(runtimeCommandIsAcknowledged(privateState, command, runtimeSession('2'))).toBe(true)
+    expect(privateState.privacyUnavailable).toBe(true)
+    expect(privateState.runtime).toBeNull()
+  })
+
+  it('rejects foreign, replaced, terminal, pre-command and malformed acknowledgements', () => {
+    const initial = started()
+    const command = { sessionId: initial.sessionId, incarnation: initial.incarnation, revision: initial.revision }
+    const current = admit(initial, runtimeSession('3'), 'socket').state
+    for (const response of [runtimeSession('0'), runtimeSession('2', null, { id: 'foreign' }), runtimeSession('2', null, { session_incarnation: otherIncarnation }), runtimeSession('2', null, { status: 'completed' }), runtimeSession('2', null, { state_revision: '02' }), runtimeSession('2', null, { runtime_state: undefined })]) {
+      expect(runtimeCommandIsAcknowledged(current, command, response)).toBe(false)
+    }
+    expect(runtimeCommandIsAcknowledged(beginDebugRuntime(current, 'replacement'), command, runtimeSession('2'))).toBe(false)
+    expect(runtimeCommandIsAcknowledged({ ...current, incarnation: otherIncarnation }, command, runtimeSession('2'))).toBe(false)
+    expect(runtimeCommandIsAcknowledged({ ...current, terminal: true }, command, runtimeSession('2'))).toBe(false)
+    expect(runtimeCommandIsAcknowledged(current, { ...command, incarnation: null }, runtimeSession('2'))).toBe(false)
+    for (const reason of ['session_terminal', 'session_retired', 'revision_exhausted'] as const) {
+      const response = runtimeSession('2', null)
+      expect(runtimeCommandIsAcknowledged(current, command, { ...response, runtime_state: { ...response.runtime_state!, reason } })).toBe(false)
+    }
+    expect(runtimeCommandIsAcknowledged(current, command, runtimeSession('2', null, { report: { replay_session_id: 'foreign' } as ScriptDebugSession['report'] }))).toBe(false)
   })
 })

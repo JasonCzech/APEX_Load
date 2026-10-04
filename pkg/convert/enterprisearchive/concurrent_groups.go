@@ -2,6 +2,7 @@ package enterprisearchive
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -14,6 +15,8 @@ import (
 const sourceConcurrentMarkerKey = "__source_concurrent_marker"
 const maxSourceConcurrencyWork = 64 << 20
 const maxSourceConcurrencyDetails = 1024
+
+var sourceAuraTemplatePattern = regexp.MustCompile(`\{\{([^{}]+)\}\}`)
 
 // Plans are private source identities. No timestamps, action names, or inferred
 // transaction membership can create a concurrent group.
@@ -497,7 +500,8 @@ func sourceConcurrentStructuredChildrenReason(children []dsl.Action, plan *sourc
 	}
 	remainingTemplates := aurapayload.MaxTemplateOccurrences
 	for _, child := range children {
-		if child.Metadata[dsl.ImportURLFormTemplateValueEncodingMetadataKey] != dsl.ImportAuraJSONTemplateValueEncoding {
+		policy, _ := child.Metadata[dsl.ImportURLFormTemplateValueEncodingMetadataKey].(string)
+		if strings.TrimSpace(policy) != dsl.ImportAuraJSONTemplateValueEncoding {
 			continue
 		}
 		codecAllowance := min(aurapayload.MaxWorkBytes, plan.workRemaining/2)
@@ -508,10 +512,42 @@ func sourceConcurrentStructuredChildrenReason(children []dsl.Action, plan *sourc
 		scannerAllowance := plan.workRemaining - codecAllowance
 		scanWork := 0
 		var scanErr error
-		_, _, codecWork, codecErr := aurapayload.ResolveWithWorkAccounting(child.Body, child.BodyEncoding, func(value string) (string, string) {
+		_, _, codecWork, codecErr := aurapayload.ResolveContextualWithWorkAccounting(child.Body, child.BodyEncoding, child.Metadata[dsl.ImportAuraTemplateContractMetadataKey], func(value string, templateContext aurapayload.TemplateContext) (string, string) {
 			if scanErr == nil {
+				if len(value) > scannerAllowance-scanWork {
+					scanErr = &aurapayload.Error{Code: aurapayload.WorkLimit}
+					return value, value
+				}
+				scanWork += len(value)
+				matches := sourceAuraTemplatePattern.FindAllStringIndex(value, remainingTemplates+1)
+				if len(matches) > remainingTemplates {
+					scanErr = &aurapayload.Error{Code: aurapayload.TokenLimit}
+					return value, value
+				}
+				var scanBytes []byte
+				for index, match := range matches {
+					if !templateContext.IsLiteralToken(index) {
+						continue
+					}
+					remainingTemplates--
+					if scanBytes == nil {
+						if len(value) > (scannerAllowance-scanWork)/2 {
+							scanErr = &aurapayload.Error{Code: aurapayload.WorkLimit}
+							return value, value
+						}
+						scanWork += 2 * len(value)
+						scanBytes = []byte(value)
+					}
+					for i := match[0]; i < match[1]; i++ {
+						scanBytes[i] = ' '
+					}
+				}
+				scanValue := value
+				if scanBytes != nil {
+					scanValue = string(scanBytes)
+				}
 				var charged int
-				charged, scanErr = dsl.HTTPConcurrentTemplateDependency(value, outputs, &remainingTemplates, scannerAllowance-scanWork)
+				charged, scanErr = dsl.HTTPConcurrentTemplateDependency(scanValue, outputs, &remainingTemplates, scannerAllowance-scanWork)
 				scanWork += charged
 			}
 			return value, value

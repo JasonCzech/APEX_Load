@@ -305,3 +305,64 @@ test('foreach receipts retain original row ordinals and restore enclosing bindin
   expect(stopped.runtime_state).toMatchObject({ state: 'unavailable', snapshot: null })
   expect(observed.slice(startCount)).toEqual(['/foreach/row-one', '/foreach/row-two'])
 })
+
+
+test('Run To continues after its breakpoint socket precedes the HTTP acknowledgement', async ({ page }) => {
+  test.setTimeout(90_000)
+  let breakpointSocket: { session?: RuntimeSession } | undefined
+  await page.routeWebSocket('**/api/v1/ws**', socket => {
+    const server = socket.connectToServer()
+    server.onMessage(message => {
+      const event = JSON.parse(message.toString()) as { type?: string; session?: RuntimeSession }
+      if (event.type === 'script_debug_breakpoints_updated') breakpointSocket = event
+      socket.send(message)
+    })
+  })
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request, workspace = await createWorkspace(request), startCount = observed.length
+  const script: ScriptDefinition = { name: 'Runtime_state_Run_To_socket_acknowledgement', version: '1.0', protocol: 'http', config: { base_url: targetURL }, actions: [
+    { name: 'First before target', type: 'request', method: 'GET', target: '/run-to/first' },
+    { name: 'Selected target', type: 'request', method: 'GET', target: '/run-to/target' },
+    { name: 'Finish after target', type: 'request', method: 'GET', target: '/run-to/finish' },
+  ] }
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script } })))
+  await openDebugger(page, workspace, id)
+  const started = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/debug/sessions'))
+  await page.locator('.topbar-debug-action-run').click()
+  const initial = (await (await started).json()).session as RuntimeSession
+  await held(request, initial.id, { phase: 'action', action_index: 0 })
+  await expect(page.getByRole('status').filter({ hasText: 'Paused before: First before target' })).toBeVisible()
+  let releaseAcknowledgement!: () => void
+  const acknowledgementGate = new Promise<void>(resolve => { releaseAcknowledgement = resolve })
+  let fetchedAcknowledgement: RuntimeSession | undefined, resumeRequests = 0
+  page.on('request', outgoing => {
+    if (outgoing.method() === 'POST' && new URL(outgoing.url()).pathname === `/api/v1/replay/sessions/${initial.id}/resume`) resumeRequests++
+  })
+  await page.route(`**/api/v1/replay/sessions/${initial.id}/breakpoints`, async route => {
+    if (route.request().method() !== 'PATCH') { await route.continue(); return }
+    const response = await route.fetch()
+    fetchedAcknowledgement = (await response.json()).session as RuntimeSession
+    await acknowledgementGate
+    await route.fulfill({ response })
+  })
+  try {
+    await page.getByRole('region', { name: 'Debugger actions' }).getByRole('button', { name: /Action 2.*Selected target/ }).click()
+    await page.getByRole('button', { name: 'Run to selected action', exact: true }).click()
+    await expect.poll(() => fetchedAcknowledgement?.id).toBe(initial.id)
+    await expect.poll(() => breakpointSocket?.session?.state_revision).toBe(fetchedAcknowledgement!.state_revision)
+    // The real published session has reached and changed the page before the
+    // successful HTTP command acknowledgement is allowed to arrive.
+    await expect(page.locator('.debugger-statusbar').getByText('1 breakpoint', { exact: true })).toBeVisible()
+    expect(resumeRequests).toBe(0)
+    expect(observed.slice(startCount)).toEqual([])
+    await held(request, initial.id, { phase: 'action', action_index: 0 })
+    releaseAcknowledgement()
+    await expect.poll(() => resumeRequests).toBe(1)
+    await held(request, initial.id, { phase: 'action', action_index: 1 })
+    await expect(page.getByRole('status').filter({ hasText: 'Paused before: Selected target' })).toBeVisible()
+    expect(observed.slice(startCount)).toEqual(['/run-to/first'])
+    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
+    expect(observed.slice(startCount)).toEqual(['/run-to/first', '/run-to/target', '/run-to/finish'])
+  } finally { releaseAcknowledgement() }
+})

@@ -219,6 +219,49 @@ test('HTTP sequence authoring preserves children and steps a concurrent parent-s
   } finally { await target.close() }
 })
 
+for (const protocol of ['http/1.1', 'http/2'] as const) {
+  test(`HTTP sequence controls review and preserve manual execution settings for ${protocol}`, async ({ page }) => {
+    if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+    const request = page.context().request, workspace = await createWorkspace(request)
+    const script: ScriptDefinition = { name: `Alias concurrency ${protocol}`, version: '1', protocol, config: { base_url: 'https://example.test' }, actions: [
+      { name: 'Alias concurrent group', type: 'http_sequence', target: '', params: { execution_mode: 'concurrent', max_concurrency: 2, requests: [
+        { name: 'Alias first', type: 'GET', target: '/one', metadata: { fixture_tag: 'first' } },
+        { name: 'Alias second', type: 'GET', target: '/two', metadata: { fixture_tag: 'second' } },
+      ], future_note: { keep: true } }, metadata: { fixture_tag: 'alias-parent' } },
+    ] }
+    const id = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script } })))
+    const before = (await json(await request.get(`/api/v1/scripts/${id}`))).script as unknown as ScriptDefinition
+    await page.setViewportSize({ width: 1600, height: 1050 })
+    await editor(page, workspace, id)
+    const panel = await selectGroup(page, 'Alias concurrent group')
+    const mode = panel.getByLabel('Sequence execution mode', { exact: true }), limit = panel.getByLabel('Maximum concurrent requests', { exact: true })
+    await expect(mode).toHaveValue('concurrent')
+    await expect(limit).toHaveValue('2')
+    await limit.fill('99')
+    await expect(limit).toHaveValue('99')
+    await expect(panel).toContainText('Authored concurrency limit is invalid')
+    await expect(panel).toContainText('Execution settings need review')
+    await limit.fill('1')
+    await expect(panel).not.toContainText('Execution settings need review')
+    await mode.selectOption('default')
+    await expect(panel).toContainText('Sequential execution (default)')
+    await expect(limit).toHaveValue('1')
+    await mode.selectOption('concurrent')
+    await limit.fill('2')
+    await expect(panel).toContainText('up to 2 requests in flight')
+    await page.getByRole('button', { name: 'Save script', exact: true }).click()
+    await expect(page.getByLabel('Script evidence states')).toContainText('Saved: up to date')
+    const after = (await json(await request.get(`/api/v1/scripts/${id}`))).script as unknown as ScriptDefinition
+    expect(after.protocol).toBe(protocol)
+    expect(after.actions[0].params).toEqual(before.actions[0].params)
+    expect(after.actions[0].metadata).toEqual(before.actions[0].metadata)
+    await editor(page, workspace, id)
+    const reopened = await selectGroup(page, 'Alias concurrent group')
+    await expect(reopened.getByLabel('Sequence execution mode', { exact: true })).toHaveValue('concurrent')
+    await expect(reopened.getByLabel('Maximum concurrent requests', { exact: true })).toHaveValue('2')
+  })
+}
+
 function sourceArchive(source: string): Buffer {
   // Standard ZIP serialization; no source script is executed. The real importer
   // parses these bytes, including the .usr runtime/action declarations.

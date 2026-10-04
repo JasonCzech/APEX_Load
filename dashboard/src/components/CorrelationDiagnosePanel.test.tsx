@@ -5,8 +5,9 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { CorrelationDiagnosePanel } from './CorrelationDiagnosePanel'
-import type { CorrelationDiagnoseResponse, ScriptReplayActionEvent } from '../types/scripts'
+import type { CorrelationDiagnoseResponse, ScriptActionDefinition, ScriptExtractorDefinition, ScriptReplayActionEvent } from '../types/scripts'
 import { ApiError } from '../hooks/apiClient'
+import { addCorrelationExtractorIfMissing, applyCorrelationRepairToAction, type CorrelationExtractorRepair } from './scriptCorrelationRepair'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -399,6 +400,51 @@ describe('CorrelationDiagnosePanel', () => {
 
     expect(container.textContent).toContain('Extractor added only')
     expect(container.textContent).toContain('mapped editable request span could not be updated')
+    expect(container.textContent).not.toContain('Fix applied')
+  })
+
+  it('reports extractor-only when an Aura template contract blocks automatic body replacement', async () => {
+    let sourceAction: ScriptActionDefinition = { name: 'login', type: 'POST', target: '/login' }
+    const originalRequestAction: ScriptActionDefinition = {
+      name: 'submit', type: 'POST', target: '/submit', body: 'csrf=OLD',
+      metadata: { body_aura_template_contract: { version: 1, form_wire_occurrences: [], literal_occurrences: [] } },
+    }
+    let requestAction = originalRequestAction
+    const onAddExtractor = vi.fn((_index: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => {
+      const previousSource = sourceAction
+      sourceAction = addCorrelationExtractorIfMissing(sourceAction, extractor)
+      const previousRequest = requestAction
+      if (repair) requestAction = applyCorrelationRepairToAction(requestAction, repair)
+      return {
+        extractorAdded: sourceAction !== previousSource,
+        extractorAvailable: true,
+        requestRepaired: requestAction !== previousRequest,
+      }
+    })
+    await act(async () => {
+      root.render(
+        <CorrelationDiagnosePanel
+          scriptId="s1"
+          replaySessionId="replay-1"
+          replayTerminal
+          replayMatchesCurrentScript
+          events={events}
+          recordingStatus={{ exists: true, request_count: 2 }}
+          actionCount={2}
+          diagnoseWithBaseline={vi.fn().mockResolvedValue(diagnoseResponse)}
+          diagnoseWithUpload={vi.fn()}
+          onAddExtractor={onAddExtractor}
+        />,
+      )
+    })
+    const diagnoseButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Diagnose correlations')!
+    await act(async () => { diagnoseButton.click() })
+    const addButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Add as extractor')!
+    await act(async () => { addButton.click() })
+
+    expect(sourceAction.extractors).toEqual([{ name: 'csrf', source: 'body', type: 'jsonpath', expression: '$.t', on_miss: 'fail' }])
+    expect(requestAction).toBe(originalRequestAction)
+    expect(container.textContent).toContain('Extractor added only')
     expect(container.textContent).not.toContain('Fix applied')
   })
 

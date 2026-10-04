@@ -250,6 +250,8 @@ func (d *concurrentBoundaryRecorder) AfterAction(_ context.Context, a ReplayDebu
 func TestConcurrentHTTPReplayUsesSameJoinAndOuterDebuggerBoundary(t *testing.T) {
 	f := newConcurrentFixture(t)
 	login, group, consume := concurrentActions()
+	children := group.Params["requests"].([]dsl.Action)
+	group.Params["requests"] = append(children, dsl.Action{Name: "Third", Type: "GET", Target: "/child/third"})
 	debugger := &concurrentBoundaryRecorder{}
 	script := &dsl.Script{Name: "Concurrent replay", Protocol: concurrentFixtureProtocol, Config: dsl.ScriptConfig{BaseURL: f.server.URL}, Parameters: []dsl.Parameter{{Name: "order", Type: "counter", Update: "each_occurrence", Start: 10, Step: 1}}, Actions: []dsl.Action{login, group, consume}}
 	done := make(chan *ReplayReport, 1)
@@ -263,24 +265,33 @@ func TestConcurrentHTTPReplayUsesSameJoinAndOuterDebuggerBoundary(t *testing.T) 
 		t.Fatal("replay passed group barrier early")
 	default:
 	}
+	// First remains held, so only Second's worker can start queued Third.
+	// Its arrival proves Second's completed timestamp was recorded, including
+	// result classification and projection, before First is released.
 	select {
-	case <-f.secondReturned:
+	case name := <-f.arrived:
+		if name != "third" {
+			t.Fatalf("queued completion witness = %q, want third", name)
+		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("second HTTP result did not finish")
+		t.Fatal("second worker did not advance to queued completion witness")
 	}
 	close(f.release)
 	report := <-done
-	if report == nil || !report.Success || len(report.Events) != 4 || f.consumed.Load() != 1 {
+	if report == nil || !report.Success || len(report.Events) != 5 || f.consumed.Load() != 1 || f.peak.Load() != 2 {
 		t.Fatal("real concurrent replay failed")
 	}
 	if !reflect.DeepEqual(debugger.before, []string{"Login", "Concurrent fetches", "Consume"}) || !reflect.DeepEqual(debugger.before, debugger.after) {
 		t.Fatalf("debugger entered child boundaries: %v/%v", debugger.before, debugger.after)
 	}
-	first, second := report.Events[1], report.Events[2]
+	first, second, third := report.Events[1], report.Events[2], report.Events[3]
 	if first.RequestIndex == nil || *first.RequestIndex != 0 || second.RequestIndex == nil || *second.RequestIndex != 1 || first.ParentActionName != "Concurrent fetches" || first.StepPath[0] != "requests[0]" || second.StepPath[0] != "requests[1]" {
 		t.Fatal("concurrent leaf source identity changed")
 	}
-	if !second.StartedAt.Before(first.CompletedAt) || !second.CompletedAt.Before(first.CompletedAt) || first.DurationMs <= 0 || second.DurationMs <= 0 {
+	if third.RequestIndex == nil || *third.RequestIndex != 2 || third.RequestCount != 3 || third.ParentActionName != "Concurrent fetches" || len(third.StepPath) == 0 || third.StepPath[0] != "requests[2]" || third.ActionName != "Third" {
+		t.Fatal("queued completion witness source identity changed")
+	}
+	if !first.StartedAt.Before(second.CompletedAt) || !second.StartedAt.Before(first.CompletedAt) || !second.CompletedAt.Before(first.CompletedAt) || first.DurationMs <= 0 || second.DurationMs <= 0 {
 		t.Fatal("leaf timing lost actual overlap/inverted completion")
 	}
 	duration, ok := first.ProtocolEvidence["concurrent_group_duration_ms"].(float64)

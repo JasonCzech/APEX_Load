@@ -496,8 +496,9 @@ func auraPayloadSuggestions(script *dsl.Script, names *nameRegistry, claimed map
 }
 
 type auraBodyPlan struct {
-	Body  string
-	Diffs []Diff
+	Body     string
+	Diffs    []Diff
+	Contract *aurapayload.TemplateContract
 }
 
 // planAuraApplication validates all edits against original bodies. The returned
@@ -600,12 +601,26 @@ func planAuraApplication(script *dsl.Script, suggestions []Suggestion, selected 
 			}
 		}
 
+		metadata := ref.Metadata()
+		policy, _ := metadata[dsl.ImportURLFormTemplateValueEncodingMetadataKey].(string)
+		contract, used, err := aurapayload.PromoteTemplateContractWithWorkAccounting(body, encoding, strings.TrimSpace(policy), metadata[dsl.ImportAuraTemplateContractMetadataKey], maxAuraInspectionBytes-work)
+		work += used
+		if err != nil {
+			return err
+		}
 		replaced, used, err := aurapayload.ReplaceWithWorkAccounting(body, encoding, edits, maxAuraInspectionBytes-work)
 		work += used
 		if err != nil {
 			return err
 		}
-		plans[ref.Path] = auraBodyPlan{Body: replaced, Diffs: diffs[ref.Path]}
+		// Edits cannot redirect a retained occurrence. Check the final body
+		// before publishing any part of the atomic application plan.
+		_, _, used, err = aurapayload.ResolveContextualWithWorkAccounting(replaced, encoding, contract, func(value string, _ aurapayload.TemplateContext) (string, string) { return value, value }, maxAuraInspectionBytes-work)
+		work += used
+		if err != nil {
+			return err
+		}
+		plans[ref.Path] = auraBodyPlan{Body: replaced, Diffs: diffs[ref.Path], Contract: contract}
 		return nil
 	})
 	if err != nil {
@@ -633,6 +648,7 @@ func applyAuraPlans(script *dsl.Script, plans map[string]auraBodyPlan) ([]Diff, 
 			metadata = map[string]any{}
 		}
 		metadata[dsl.ImportURLFormTemplateValueEncodingMetadataKey] = dsl.ImportAuraJSONTemplateValueEncoding
+		metadata[dsl.ImportAuraTemplateContractMetadataKey] = plan.Contract
 		ref.SetMetadata(metadata)
 		diffs = append(diffs, plan.Diffs...)
 		return nil

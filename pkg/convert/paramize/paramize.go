@@ -337,18 +337,43 @@ func newNameRegistry(script *dsl.Script) *nameRegistry {
 			}
 		}
 		if ref.Request != nil {
-			if raw, ok := ref.Request["extractors"].([]any); ok {
-				for _, value := range raw {
-					if e, ok := value.(map[string]any); ok {
-						name, _ := e["name"].(string)
-						registry.taken[name] = true
-					}
-				}
-			}
+			// Native imports keep typed extractors in sequence request maps;
+			// JSON round trips turn them into maps. Reserve the same names in
+			// both representations so suggestion IDs remain selectable on import.
+			reserveExtractorNames(registry.taken, ref.Request["extractors"])
 		}
 		return nil
 	})
 	return registry
+}
+
+func reserveExtractorNames(taken map[string]bool, raw any) {
+	reserve := func(value any) {
+		var name string
+		switch extractor := value.(type) {
+		case dsl.Extractor:
+			name = extractor.Name
+		case map[string]any:
+			name, _ = extractor["name"].(string)
+		}
+		if name != "" {
+			taken[name] = true
+		}
+	}
+	switch extractors := raw.(type) {
+	case []dsl.Extractor:
+		for _, extractor := range extractors {
+			reserve(extractor)
+		}
+	case []map[string]any:
+		for _, extractor := range extractors {
+			reserve(extractor)
+		}
+	case []any:
+		for _, extractor := range extractors {
+			reserve(extractor)
+		}
+	}
 }
 
 func (r *nameRegistry) claim(base string) string {

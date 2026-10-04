@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
 )
 
 const (
@@ -72,11 +74,14 @@ const (
 	ImportURLFormTemplateValueEncodingMetadataKey = "body_template_value_encoding"
 	// ImportURLFormTemplateValueEncodingQueryComponent escapes each resolved
 	// template as a form component while preserving imported literal spans.
-	ImportURLFormTemplateValueEncodingQueryComponent = "url_query_component"
+	ImportURLFormTemplateValueEncodingQueryComponent = aurapayload.TemplateValueEncodingQueryComponent
 	// ImportAuraJSONTemplateValueEncoding opts into bounded structural Aura
 	// substitution through JSON strings and the outer form component. Invalid
 	// or unsupported payloads fail before traffic; legacy modes are unchanged.
-	ImportAuraJSONTemplateValueEncoding = "aura_json_strings"
+	ImportAuraJSONTemplateValueEncoding = aurapayload.TemplateValueEncodingJSONStrings
+	// ImportAuraTemplateContractMetadataKey binds retained form-wire template
+	// occurrences to value-free typed consumer and token fingerprints.
+	ImportAuraTemplateContractMetadataKey = "body_aura_template_contract"
 )
 
 type Script struct {

@@ -6,6 +6,8 @@ import (
 	"compress/gzip"
 	"compress/zlib"
 	"context"
+	"encoding/binary"
+	"hash/adler32"
 	"io"
 	"strings"
 	"sync"
@@ -265,3 +267,133 @@ func TestDecodeRejectsInvalidZlibHeaderAndPreservesConstructorLimits(t *testing.
 		t.Fatal("valid concatenated gzip members rejected")
 	}
 }
+
+// The stored block's ignored padding makes CMF look like zlib, but 0x7802
+// fails FCHECK. It is nevertheless a complete raw-deflate encoding of "ab".
+var combinedReviewRawDeflate = []byte{0x78, 0x02, 0x00, 0xfd, 0xff, 'a', 'b', 0x01, 0x00, 0x00, 0xff, 0xff}
+
+func TestDeflateCombinedReviewHeaderSelection(t *testing.T) {
+	wrapped := encoded(t, []byte("ab"), "deflate")
+	stacked := encoded(t, combinedReviewRawDeflate, "gzip")
+	for _, tc := range []struct {
+		name    string
+		body    []byte
+		headers []string
+	}{
+		{"raw_with_zlib_CMF", combinedReviewRawDeflate, []string{"deflate"}},
+		{"wrapped", wrapped, []string{"deflate"}},
+		{"raw_inside_gzip", stacked, []string{"deflate, gzip"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Decode(context.Background(), tc.body, tc.headers, DefaultLimits(1024))
+			if err != nil || string(result) != "ab" {
+				t.Fatalf("valid deflate rejected: body=%q kind=%s", result, Kind(err))
+			}
+		})
+	}
+
+	limits := DefaultLimits(1024)
+	limits.MemoryBudget = NewMemoryBudget(MaxMemoryBytes)
+	reader, err := NewReader(context.Background(), &combinedReviewByteSource{Reader: bytes.NewReader(combinedReviewRawDeflate)}, []string{"deflate"}, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	var result bytes.Buffer
+	chunk := make([]byte, 1)
+	for {
+		n, err := reader.Read(chunk)
+		result.Write(chunk[:n])
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("fragmented streaming deflate rejected: %s", Kind(err))
+		}
+	}
+	if result.String() != "ab" || !reader.Complete() || reader.EncodedBytes() != int64(len(combinedReviewRawDeflate)) || reader.DecodedBytes() != 2 {
+		t.Fatal("raw-deflate stream lost completion or byte receipts")
+	}
+	_ = reader.Close()
+	if limits.MemoryBudget.Used() != 0 {
+		t.Fatal("raw-deflate stream retained codec workspace after Close")
+	}
+}
+
+func TestDeflateCombinedReviewRawLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		limits Limits
+		kind   ErrorKind
+	}{
+		{"encoded", Limits{MaxEncodedBytes: int64(len(combinedReviewRawDeflate) - 1), MaxDecodedBytes: 1024, MaxWorkBytes: 1024}, EncodedLimit},
+		{"decoded", Limits{MaxEncodedBytes: 1024, MaxDecodedBytes: 1, MaxWorkBytes: 1024}, DecodedLimit},
+		{"work", Limits{MaxEncodedBytes: 1024, MaxDecodedBytes: 1024, MaxWorkBytes: int64(len(combinedReviewRawDeflate) + 1)}, WorkLimit},
+		{"workspace", Limits{MaxEncodedBytes: 1024, MaxDecodedBytes: 1024, MaxWorkBytes: 1024, MemoryBudget: NewMemoryBudget(100)}, MemoryLimit},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Decode(context.Background(), combinedReviewRawDeflate, []string{"deflate"}, tc.limits)
+			if result != nil || Kind(err) != tc.kind {
+				t.Fatalf("raw-deflate limit reason=%s, want %s", Kind(err), tc.kind)
+			}
+			if tc.limits.MemoryBudget != nil && tc.limits.MemoryBudget.Used() != 0 {
+				t.Fatal("failed raw-deflate decoder retained workspace")
+			}
+		})
+	}
+}
+
+// This has two valid interpretations. The wrapped stream contains one stored
+// block and an Adler-32 footer; raw flate consumes that footer as payload. A
+// corrupt footer must fail the selected wrapped codec even though raw retry
+// would produce a complete, different representation.
+func combinedReviewAmbiguousDeflate() []byte {
+	wire := make([]byte, 65448)
+	copy(wire, []byte{0x78, 0x5e, 0x00, 0xa1, 0xff, 0x5e, 0x00})
+	wire[99] = 0x01
+	binary.LittleEndian.PutUint16(wire[100:102], 65353)
+	binary.LittleEndian.PutUint16(wire[102:104], ^uint16(65353))
+	wire = append(wire, 0x01, 0x00, 0x00, 0xff, 0xff)
+	return binary.BigEndian.AppendUint32(wire, adler32.Checksum(wire[7:65448]))
+}
+
+func TestDeflateCombinedReviewWrappedChecksumNoRawRetry(t *testing.T) {
+	wire := combinedReviewAmbiguousDeflate()
+	if result, err := Decode(context.Background(), wire, []string{"deflate"}, DefaultLimits(1<<20)); err != nil || len(result) != 65441 {
+		t.Fatalf("valid wrapped fixture rejected: %s", Kind(err))
+	}
+	wire[len(wire)-1] ^= 1
+	raw := flate.NewReader(bytes.NewReader(wire))
+	result, err := io.ReadAll(raw)
+	_ = raw.Close()
+	if err != nil || len(result) != 65447 {
+		t.Fatal("fixture does not distinguish unsafe raw retry")
+	}
+	limits := DefaultLimits(1 << 20)
+	limits.MemoryBudget = NewMemoryBudget(MaxMemoryBytes)
+	if result, err := Decode(context.Background(), wire, []string{"deflate"}, limits); result != nil || Kind(err) != InvalidData {
+		t.Fatalf("corrupt wrapped checksum accepted or retained partial bytes: %s", Kind(err))
+	}
+	if limits.MemoryBudget.Used() != 0 {
+		t.Fatal("failed wrapped decoder retained workspace")
+	}
+	reader, err := NewReader(context.Background(), io.NopCloser(bytes.NewReader(wire)), []string{"deflate"}, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.Copy(io.Discard, reader)
+	_ = reader.Close()
+	if Kind(err) != InvalidData || reader.Complete() || limits.MemoryBudget.Used() != 0 {
+		t.Fatal("streaming wrapped checksum failure retried raw or claimed completion")
+	}
+}
+
+type combinedReviewByteSource struct{ *bytes.Reader }
+
+func (s *combinedReviewByteSource) Read(data []byte) (int, error) {
+	if len(data) > 1 {
+		data = data[:1]
+	}
+	return s.Reader.Read(data)
+}
+func (*combinedReviewByteSource) Close() error { return nil }

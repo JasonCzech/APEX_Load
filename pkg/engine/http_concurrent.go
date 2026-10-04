@@ -47,10 +47,117 @@ type preparedHTTPChild struct {
 	structuredBody                         bool
 	publicEvidenceUnavailable              bool
 	publicationRedactionFailed             bool
+	retrySensitiveValues                   []string
 	result                                 *protocol.Result
 	err                                    error
 	started, completed                     time.Time
 }
+
+// Fixed source-ordinal allowances include every attempt, including values from
+// discarded failures. Charge entry overhead as well as detached value bytes so
+// tiny values cannot turn the group allowance into an unbounded map/slice.
+const maxConcurrentRetryClassificationBytes = 16 << 20
+
+type httpRetryClassificationHistory struct {
+	base      *RedactionConfig
+	values    map[string]struct{}
+	used      int
+	allowance int
+}
+
+func (h *httpRetryClassificationHistory) observedValues() []string {
+	values := make([]string, 0, len(h.values))
+	for value := range h.values {
+		values = append(values, value)
+	}
+	sort.Strings(values)
+	return values
+}
+
+func (h *httpRetryClassificationHistory) observe(vu *VUser, result *protocol.Result) error {
+	fail := func() error {
+		vu.failRuntimeCredentialRedaction(fmt.Errorf("concurrent HTTP retry classification unavailable"))
+		return vu.runtimeCredentialRedactionErr
+	}
+	if result.ExtractionsIncomplete || protocol.ValidateExtractions(result.Extractions) != nil {
+		return fail()
+	}
+	values := concurrentSensitiveExtractionValues(result.Extractions)
+	pending := make(map[string]struct{}, len(values))
+	cost := 0
+	for _, value := range values {
+		if _, known := h.values[value]; known {
+			continue
+		}
+		if _, known := pending[value]; known {
+			continue
+		}
+		if len(value)+64 > h.allowance-h.used-cost {
+			return fail()
+		}
+		pending[value] = struct{}{}
+		cost += len(value) + 64
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	if h.values == nil {
+		h.values = make(map[string]struct{}, len(pending))
+	}
+	for value := range pending {
+		h.values[strings.Clone(value)] = struct{}{}
+	}
+	h.used += cost
+	matcher, err := WithSecretValueRedactionChecked(nil, h.observedValues())
+	if err != nil {
+		return fail()
+	}
+	config, err := attachConcurrentRuntimeMatcher(h.base, matcher)
+	if err != nil {
+		return fail()
+	}
+	// Only this detached executor changes. The shared protocol's callback stays
+	// bound to the parent, whose classification advances after all workers join.
+	vu.RedactionConfig = config
+	return nil
+}
+
+func (vu *VUser) admitConcurrentRetryClassifications(children []preparedHTTPChild) ([]string, error) {
+	unique := make(map[string]struct{})
+	for _, child := range children {
+		for _, value := range child.retrySensitiveValues {
+			unique[value] = struct{}{}
+		}
+	}
+	if len(unique) == 0 {
+		return nil, nil
+	}
+	observed := make([]string, 0, len(unique))
+	for value := range unique {
+		observed = append(observed, value)
+	}
+	sort.Strings(observed)
+	vu.ensureRuntimeCredentialRedactionState()
+	prior := vu.runtimeCredentialScopes["extraction:observed"]
+	var updated []string
+	for _, value := range observed {
+		index := sort.SearchStrings(prior, value)
+		if index < len(prior) && prior[index] == value {
+			continue
+		}
+		if updated == nil {
+			updated = append([]string{}, prior...)
+		}
+		updated = append(updated, value)
+	}
+	if updated != nil {
+		if err := vu.replaceRuntimeCredentialScope("extraction:observed", updated); err != nil {
+			return nil, err
+		}
+	}
+	return observed, nil
+}
+
 type concurrentHTTPGroup struct {
 	children            []preparedHTTPChild
 	started, completed  time.Time
@@ -206,11 +313,13 @@ func (vu *VUser) runConcurrentHTTP(ctx context.Context, action dsl.Action, errCf
 					if child.structuredBody {
 						executor.structuredBodyResolvedAction = child.action
 					}
-					child.result, child.err = executor.executeRetryInternal(ctx, child.action, errCfg, nil, true)
+					history := &httpRetryClassificationHistory{base: child.redaction, allowance: maxConcurrentRetryClassificationBytes / len(children)}
+					child.result, child.err = executor.executeRetryInternal(ctx, child.action, errCfg, nil, history)
+					child.retrySensitiveValues = history.observedValues()
 					if executor.runtimeCredentialRedactionErr != nil {
 						child.publicationRedactionFailed = true
 					}
-					config, projectionErr := boundConcurrentCompletedResult(child.result, len(children), child.redaction)
+					config, projectionErr := boundConcurrentCompletedResult(child.result, len(children), child.redaction, child.retrySensitiveValues)
 					if projectionErr != nil {
 						child.publicationRedactionFailed = true
 						child.err = projectionErr
@@ -242,6 +351,11 @@ func (vu *VUser) runConcurrentHTTP(ctx context.Context, action dsl.Action, errCf
 			return group, fmt.Errorf("concurrent HTTP publication redaction failed")
 		}
 	}
+	observed, classificationErr := vu.admitConcurrentRetryClassifications(group.children)
+	if classificationErr != nil {
+		omitConcurrentJoinedPublicEvidence(group.children)
+		return group, fmt.Errorf("concurrent HTTP publication redaction failed")
+	}
 	if ctx.Err() != nil {
 		omitConcurrentJoinedPublicEvidence(group.children)
 		return group, ctx.Err()
@@ -265,7 +379,7 @@ func (vu *VUser) runConcurrentHTTP(ctx context.Context, action dsl.Action, errCf
 			}
 		}
 	}
-	if err := scrubConcurrentJoinedEvidence(group.children, outputs.Extractions); err != nil {
+	if err := scrubConcurrentJoinedEvidence(group.children, outputs.Extractions, observed); err != nil {
 		return group, err
 	}
 	group.extractions = outputs.Extractions

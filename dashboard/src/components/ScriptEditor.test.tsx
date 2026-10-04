@@ -5805,6 +5805,100 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain('stale-get-value')
   })
 
+  it.each([false, true])('continues Run To after its socket acknowledgement without replacing newer breakpoints (newer=%s)', async newer => {
+    let resolveUpdate!: (value: unknown) => void
+    const script = { ...initialScript, actions: [...initialScript.actions, { name: 'Run To target', type: 'GET', target: '/target' }] }
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({ session: heldDebugSession('10') })
+    apiMock.getScriptDebugSession.mockReturnValue(new Promise(() => {}))
+    apiMock.updateScriptDebugBreakpoints.mockReturnValueOnce(new Promise(resolve => { resolveUpdate = resolve }))
+    apiMock.resumeScriptDebugSession.mockReturnValueOnce(new Promise(() => {}))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Action 2') && button.textContent?.includes('Run To target'))!.click())
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Run to selected action')!.click())
+    expect(apiMock.updateScriptDebugBreakpoints).toHaveBeenCalledTimes(1)
+    const requested = apiMock.updateScriptDebugBreakpoints.mock.calls[0][1]
+    const acknowledgement = { ...heldDebugSession('11', 'acknowledgement-value'), breakpoints: requested }
+    const latestBreakpoints = newer ? [{ phase: 'action', action_index: 0, disabled: true }, ...requested] : requested
+    const latest = { ...heldDebugSession(newer ? '12' : '11', 'latest-held-value'), breakpoints: latestBreakpoints }
+    const socket = () => (useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage: (message: unknown) => void }).onMessage
+    await act(async () => socket()({ type: 'script_debug_breakpoints_updated', debug_session_id: 'debug-session-1', session: latest }))
+    expect(apiMock.resumeScriptDebugSession).not.toHaveBeenCalled()
+    expect(container.querySelector('.debugger-statusbar')?.textContent).toContain(`${latestBreakpoints.length} breakpoint`)
+    await act(async () => { resolveUpdate({ session: acknowledgement }); await Promise.resolve() })
+    expect(apiMock.resumeScriptDebugSession).toHaveBeenCalledWith('debug-session-1')
+    expect(container.querySelector('.debugger-statusbar')?.textContent).toContain(`${latestBreakpoints.length} breakpoint`)
+    expect(container.textContent).not.toContain('acknowledgement-value')
+  })
+
+  it.each(['terminal', 'foreign', 'rejected', 'incomplete', 'context reset', 'superseded command', 'session expiry'])('does not continue a delayed Run To after %s', async gate => {
+    let resolveUpdate!: (value: unknown) => void, rejectUpdate!: (cause: unknown) => void
+    const script = { ...initialScript, actions: [...initialScript.actions, { name: 'Run To target', type: 'GET', target: '/target' }] }
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({ session: heldDebugSession('10') })
+    if (gate === 'session expiry') apiMock.getScriptDebugSession.mockResolvedValue({ session: heldDebugSession('10') })
+    else apiMock.getScriptDebugSession.mockReturnValue(new Promise(() => {}))
+    apiMock.updateScriptDebugBreakpoints.mockReturnValueOnce(new Promise((resolve, reject) => { resolveUpdate = resolve; rejectUpdate = reject }))
+    apiMock.resumeScriptDebugSession.mockReturnValue(new Promise(() => {}))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Action 2') && button.textContent?.includes('Run To target'))!.click())
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Run to selected action')!.click())
+    const requested = apiMock.updateScriptDebugBreakpoints.mock.calls[0][1]
+    const acknowledgement = { ...heldDebugSession('11', 'acknowledgement-value'), breakpoints: requested }
+    const socket = () => (useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage: (message: unknown) => void }).onMessage
+    await act(async () => socket()({ type: 'script_debug_breakpoints_updated', debug_session_id: 'debug-session-1', session: acknowledgement }))
+    let expectedResumes = 0
+    if (gate === 'terminal') {
+      const ended = { ...heldDebugSession('12'), status: 'completed', completed_at: '2026-10-04T00:00:02Z', runtime_state: { ...heldDebugSession('12').runtime_state, state: 'unavailable', reason: 'session_terminal', snapshot: null } }
+      await act(async () => socket()({ type: 'script_debug_completed', debug_session_id: 'debug-session-1', session: ended }))
+    } else if (gate === 'session expiry') {
+      apiMock.getScriptDebugSession.mockRejectedValue(new ApiError('Session not found', 404))
+      await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 1250)) })
+      await flushReact()
+      expect(container.textContent).toContain('Debugger session expired')
+    } else if (gate === 'context reset') {
+      await act(async () => root.render(<ScriptEditor scriptId="script-2" initialScript={script} projectId="project-2" />))
+    } else if (gate === 'superseded command') {
+      expect(findButtonByTitle(container, 'Continue')).toBeDefined()
+      await act(async () => findButtonByTitle(container, 'Continue')!.click())
+      expectedResumes = 1
+    }
+    await act(async () => {
+      if (gate === 'rejected') rejectUpdate(new ApiError('Breakpoint command rejected', 409))
+      else if (gate === 'foreign') resolveUpdate({ session: { ...acknowledgement, id: 'foreign-session' } })
+      else if (gate === 'incomplete') resolveUpdate({})
+      else resolveUpdate({ session: acknowledgement })
+      await Promise.resolve()
+    })
+    expect(apiMock.resumeScriptDebugSession).toHaveBeenCalledTimes(expectedResumes)
+  })
+
+  it('continues an acknowledged Run To while keeping runtime privacy suppression sticky', async () => {
+    let resolveUpdate!: (value: unknown) => void
+    const script = { ...initialScript, actions: [...initialScript.actions, { name: 'Run To target', type: 'GET', target: '/target' }] }
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({ session: heldDebugSession('10') })
+    apiMock.getScriptDebugSession.mockReturnValue(new Promise(() => {}))
+    apiMock.updateScriptDebugBreakpoints.mockReturnValueOnce(new Promise(resolve => { resolveUpdate = resolve }))
+    apiMock.resumeScriptDebugSession.mockReturnValueOnce(new Promise(() => {}))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Action 2') && button.textContent?.includes('Run To target'))!.click())
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Run to selected action')!.click())
+    const requested = apiMock.updateScriptDebugBreakpoints.mock.calls[0][1]
+    const acknowledgement = { ...heldDebugSession('11', 'stale-unmasked-value'), breakpoints: requested }
+    const socket = () => (useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage: (message: unknown) => void }).onMessage
+    await act(async () => socket()({ type: 'script_debug_breakpoints_updated', debug_session_id: 'debug-session-1', session: { ...heldDebugSession('12', 'private-value'), breakpoints: requested, runtime_evidence_unavailable: true } }))
+    await act(async () => { resolveUpdate({ session: acknowledgement }); await Promise.resolve() })
+    expect(apiMock.resumeScriptDebugSession).toHaveBeenCalledWith('debug-session-1')
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent === 'Live Variables')!.click())
+    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+    expect(container.textContent).not.toContain('private-value')
+    expect(container.textContent).not.toContain('stale-unmasked-value')
+  })
+
   it('keeps an explicitly inspected runtime frame source distinct from an older retained event', async () => {
     const event = { phase: 'action', action_index: 0, action_name: 'Earlier request', action_type: 'request', target: '/earlier', success: true, started_at: '2026-10-04T00:00:00Z', completed_at: '2026-10-04T00:00:01Z', duration_ms: 1 }
     const script = { ...initialScript, actions: [initialScript.actions[0], { type: 'http_sequence', name: 'Current sequence', target: '', params: { requests: [{ type: 'request', name: 'Current child', method: 'GET', target: '/child' }] } }] } as ScriptDefinition

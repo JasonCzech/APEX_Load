@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
@@ -167,6 +168,12 @@ func (b *httpConcurrentSourceBudget) chargeWork(n int) error {
 }
 
 func (b *httpConcurrentSourceBudget) walk(v reflect.Value, depth int, visit func(string) error) error {
+	return b.walkWithRootBodyVisit(v, depth, visit, visit)
+}
+
+// The root action body retains the exact ordinary source-byte/node charges
+// while its dependency visitor can be replaced by a structural codec visitor.
+func (b *httpConcurrentSourceBudget) walkWithRootBodyVisit(v reflect.Value, depth int, visit, bodyVisit func(string) error) error {
 	if !v.IsValid() {
 		return nil
 	}
@@ -243,7 +250,11 @@ func (b *httpConcurrentSourceBudget) walk(v reflect.Value, depth int, visit func
 	case reflect.Struct:
 		for i := 0; i < v.NumField(); i++ {
 			if v.Type().Field(i).IsExported() {
-				if err := b.walk(v.Field(i), depth+1, visit); err != nil {
+				fieldVisit := visit
+				if depth == 0 && v.Type().Field(i).Name == "Body" {
+					fieldVisit = bodyVisit
+				}
+				if err := b.walk(v.Field(i), depth+1, fieldVisit); err != nil {
 					return err
 				}
 			}
@@ -301,9 +312,12 @@ func HTTPConcurrentExtractorOutputSource(name string, outputs map[string]string)
 	return base, true
 }
 
-// HTTPConcurrentTemplateDependency scans a bounded decoded scalar once. It is
-// usable by codec callbacks without importing the codec into the DSL package.
+// HTTPConcurrentTemplateDependency scans a bounded decoded scalar once.
 func HTTPConcurrentTemplateDependency(value string, outputs map[string]string, remaining *int, maxWork int) (int, error) {
+	return httpConcurrentTemplateDependency(value, outputs, remaining, maxWork, nil)
+}
+
+func httpConcurrentTemplateDependency(value string, outputs map[string]string, remaining *int, maxWork int, literal func(int) bool) (int, error) {
 	work := 2 * len(value)
 	if work > maxWork || maxWork < 0 {
 		return 0, fmt.Errorf("concurrent HTTP preparation work limit exceeded")
@@ -316,7 +330,10 @@ func HTTPConcurrentTemplateDependency(value string, outputs map[string]string, r
 		return work, fmt.Errorf("concurrent HTTP template occurrence limit exceeded")
 	}
 	*remaining -= len(matches)
-	for _, match := range matches {
+	for index, match := range matches {
+		if literal != nil && literal(index) {
+			continue
+		}
 		expr := strings.TrimSpace(match[1])
 		if key, ok := strings.CutPrefix(expr, "var."); ok {
 			if _, found := HTTPConcurrentExtractorOutputSource(strings.TrimSpace(key), outputs); found {
@@ -378,6 +395,43 @@ func ValidateHTTPConcurrentChildrenWithWorkLimit(children []Action, maxWork int)
 	b.remaining = MaxHTTPConcurrentPreparationBytes
 	b.nodes = 32768
 	for _, child := range children {
+		policy, _ := child.Metadata[ImportURLFormTemplateValueEncodingMetadataKey].(string)
+		if strings.TrimSpace(policy) == ImportAuraJSONTemplateValueEncoding {
+			if err := b.walkWithRootBodyVisit(reflect.ValueOf(child), 0, visit, nil); err != nil {
+				return 0, err
+			}
+			// Keep the existing decoded-source byte admissions while replacing
+			// only dependency interpretation with the structural contract.
+			text := child.Body
+			body, encoded, decodeErr := DecodeBodyEncoding(child.Body, child.BodyEncoding, max(1, min(b.remaining, b.workRemaining)/2))
+			if decodeErr != nil {
+				return 0, fmt.Errorf("concurrent HTTP body decoding failed")
+			}
+			if encoded {
+				if err := b.charge(2 * len(body)); err != nil {
+					return 0, err
+				}
+				text = string(body)
+			}
+			if strings.Contains(text, "%") {
+				if err := b.charge(len(text)); err != nil {
+					return 0, err
+				}
+			}
+			var scanErr error
+			codecWork, codecErr := aurapayload.VisitTemplatesContextualWithWorkAccounting(child.Body, child.BodyEncoding, child.Metadata[ImportAuraTemplateContractMetadataKey], func(value string, templateContext aurapayload.TemplateContext) error {
+				_, scanErr = httpConcurrentTemplateDependency(value, outputs, &remaining, aurapayload.MaxWorkBytes, templateContext.IsLiteralToken)
+				return scanErr
+			}, b.workRemaining)
+			b.workRemaining -= codecWork
+			if scanErr != nil {
+				return 0, scanErr
+			}
+			if codecErr != nil {
+				return 0, fmt.Errorf("concurrent HTTP structured body is invalid")
+			}
+			continue
+		}
 		if err := b.walk(reflect.ValueOf(child), 0, visit); err != nil {
 			return 0, err
 		}

@@ -256,6 +256,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		action.Body,
 		action.BodyEncoding,
 		actionBodyTemplateValueEncoding(action.Metadata),
+		action.Metadata[dsl.ImportAuraTemplateContractMetadataKey],
 	)
 	auth, redactedAuth := toProtocolAuthConfig(action.Auth, vu)
 	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
@@ -411,11 +412,11 @@ func actionBodyTemplateValueEncoding(metadata map[string]any) string {
 	return strings.TrimSpace(value)
 }
 
-func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding string) (string, string) {
+func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding string, rawContract any) (string, string) {
 	if templateValueEncoding == dsl.ImportAuraJSONTemplateValueEncoding {
 		remaining := aurapayload.MaxTemplateOccurrences
 		var interpolationErr error
-		resolve := func(value string) (string, string) {
+		resolve := func(value string, templateContext aurapayload.TemplateContext) (string, string) {
 			if interpolationErr != nil {
 				return value, value
 			}
@@ -423,7 +424,20 @@ func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding str
 			if budget := vu.concurrentPreparation; budget != nil {
 				allowance = &budget.templatesRemaining
 			}
-			actual, safe, err := vu.interpolateWithSecretsTransformBounded(value, nil, aurapayload.MaxBodyBytes, allowance)
+			transform := func(index int, _ string, actual, safe string) (string, string, error) {
+				if !templateContext.IsFormWireToken(index) {
+					return actual, safe, nil
+				}
+				decoded, err := url.QueryUnescape(actual)
+				if err != nil {
+					return "", "", &aurapayload.Error{Code: aurapayload.InvalidForm}
+				}
+				if safe == actual {
+					safe = decoded
+				}
+				return decoded, safe, nil
+			}
+			actual, safe, err := vu.interpolateWithSecretsPolicyBounded(value, transform, aurapayload.MaxBodyBytes, allowance, templateContext.IsLiteralToken)
 			if err != nil {
 				interpolationErr = err
 				return value, value
@@ -438,10 +452,10 @@ func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding str
 			allowance := min(aurapayload.MaxWorkBytes, budget.workRemaining/2, budget.bytesRemaining)
 			budget.workRemaining -= allowance
 			var work int
-			resolved, redacted, work, err = aurapayload.ResolveWithWorkAccounting(body, encoding, resolve, allowance)
+			resolved, redacted, work, err = aurapayload.ResolveContextualWithWorkAccounting(body, encoding, rawContract, resolve, allowance)
 			budget.workRemaining += allowance - work
 		} else {
-			resolved, redacted, err = aurapayload.Resolve(body, encoding, resolve)
+			resolved, redacted, _, err = aurapayload.ResolveContextualWithWorkAccounting(body, encoding, rawContract, resolve, aurapayload.MaxWorkBytes)
 		}
 		if interpolationErr != nil {
 			err = interpolationErr
@@ -457,6 +471,10 @@ func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding str
 			}
 		}
 		return resolved, redacted
+	}
+	if rawContract != nil {
+		vu.bodyResolutionError = &aurapayload.Error{Code: aurapayload.InvalidTemplateContract}
+		return body, body
 	}
 	interpolate := vu.interpolateWithSecrets
 	if templateValueEncoding == dsl.ImportURLFormTemplateValueEncodingQueryComponent {
@@ -779,6 +797,23 @@ func (vu *VUser) interpolateWithSecretsTransform(s string, transform func(string
 // occurrence. Runtime values are never expanded into an unbounded temporary
 // string before the codec can enforce its own escaped/output work bounds.
 func (vu *VUser) interpolateWithSecretsTransformBounded(s string, transform func(string) string, maxBytes int, remaining *int) (string, string, error) {
+	var occurrenceTransform func(int, string, string, string) (string, string, error)
+	if transform != nil {
+		occurrenceTransform = func(_ int, _ string, actual, safe string) (string, string, error) {
+			if budget := vu.concurrentPreparation; budget != nil && (len(actual) > budget.bytesRemaining/3 || len(safe) > budget.bytesRemaining/3) {
+				return "", "", fmt.Errorf("concurrent HTTP preparation byte limit exceeded")
+			}
+			return transform(actual), transform(safe), nil
+		}
+	}
+	return vu.interpolateWithSecretsOccurrenceTransformBounded(s, occurrenceTransform, maxBytes, remaining)
+}
+
+func (vu *VUser) interpolateWithSecretsOccurrenceTransformBounded(s string, transform func(int, string, string, string) (string, string, error), maxBytes int, remaining *int) (string, string, error) {
+	return vu.interpolateWithSecretsPolicyBounded(s, transform, maxBytes, remaining, nil)
+}
+
+func (vu *VUser) interpolateWithSecretsPolicyBounded(s string, transform func(int, string, string, string) (string, string, error), maxBytes int, remaining *int, literal func(int) bool) (string, string, error) {
 	if maxBytes > 0 && len(s) > maxBytes {
 		return "", "", &aurapayload.Error{Code: aurapayload.ByteLimit}
 	}
@@ -823,21 +858,21 @@ func (vu *VUser) interpolateWithSecretsTransformBounded(s string, transform func
 		return nil
 	}
 	hasRedaction, last := false, 0
-	for _, match := range matches {
+	for occurrenceIndex, match := range matches {
 		token := s[match[0]:match[1]]
 		expr := strings.TrimSpace(token[2 : len(token)-2])
-		if budget := vu.concurrentPreparation; budget != nil && strings.HasPrefix(expr, "var.") {
-			budget.references = append(budget.references, strings.TrimSpace(strings.TrimPrefix(expr, "var.")))
-		}
 		if err := writePair(s[last:match[0]], s[last:match[0]]); err != nil {
 			return "", "", err
 		}
 		last = match[1]
-		if expr == "" {
+		if expr == "" || literal != nil && literal(occurrenceIndex) {
 			if err := writePair(token, token); err != nil {
 				return "", "", err
 			}
 			continue
+		}
+		if budget := vu.concurrentPreparation; budget != nil && strings.HasPrefix(expr, "var.") {
+			budget.references = append(budget.references, strings.TrimSpace(strings.TrimPrefix(expr, "var.")))
 		}
 		resolvedValue, redactedValue, resolvedOK := token, token, false
 		if value, ok := vu.resolveTemplateValue(expr); ok {
@@ -865,11 +900,11 @@ func (vu *VUser) interpolateWithSecretsTransformBounded(s string, transform func
 			}
 		}
 		if resolvedOK && transform != nil {
-			if budget := vu.concurrentPreparation; budget != nil && (len(resolvedValue) > budget.bytesRemaining/3 || len(redactedValue) > budget.bytesRemaining/3) {
-				return "", "", fmt.Errorf("concurrent HTTP preparation byte limit exceeded")
+			var err error
+			resolvedValue, redactedValue, err = transform(occurrenceIndex, token, resolvedValue, redactedValue)
+			if err != nil {
+				return "", "", err
 			}
-			resolvedValue = transform(resolvedValue)
-			redactedValue = transform(redactedValue)
 		}
 		if err := writePair(resolvedValue, redactedValue); err != nil {
 			return "", "", err

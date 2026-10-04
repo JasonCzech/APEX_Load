@@ -127,11 +127,14 @@ func collectExecutableSecretNames(value any, path string, root, dedicatedField b
 			encoding, _ := typed["body_encoding"].(string)
 			metadata, _ := typed["metadata"].(map[string]any)
 			mode, _ := metadata[dsl.ImportURLFormTemplateValueEncodingMetadataKey].(string)
+			if metadata[dsl.ImportAuraTemplateContractMetadataKey] != nil && strings.TrimSpace(mode) != dsl.ImportAuraJSONTemplateValueEncoding {
+				return &aurapayload.Error{Code: aurapayload.InvalidTemplateContract}
+			}
 			if strings.TrimSpace(mode) == dsl.ImportAuraJSONTemplateValueEncoding {
 				structuredBody = true
 				var referenceErr error
 				remaining := aurapayload.MaxTemplateOccurrences
-				_, _, codecErr := aurapayload.Resolve(body, encoding, func(value string) (string, string) {
+				_, _, _, codecErr := aurapayload.ResolveContextualWithWorkAccounting(body, encoding, metadata[dsl.ImportAuraTemplateContractMetadataKey], func(value string, templateContext aurapayload.TemplateContext) (string, string) {
 					if referenceErr == nil {
 						// Apply the selected runtime occurrence cap before the legacy
 						// reference collector allocates match details for this leaf.
@@ -140,11 +143,18 @@ func collectExecutableSecretNames(value any, path string, root, dedicatedField b
 							referenceErr = &aurapayload.Error{Code: aurapayload.TokenLimit}
 						} else {
 							remaining -= len(matches)
-							referenceErr = collectExecutableSecretNames(value, path+"/body", false, false, seen, dedicated)
+							for index, match := range matches {
+								if !templateContext.IsLiteralToken(index) {
+									referenceErr = collectExecutableSecretNames(value[match[0]:match[1]], path+"/body", false, false, seen, dedicated)
+									if referenceErr != nil {
+										break
+									}
+								}
+							}
 						}
 					}
 					return value, value
-				})
+				}, aurapayload.MaxWorkBytes)
 				if codecErr != nil {
 					return fmt.Errorf("script structured body is invalid: %w", codecErr)
 				}
