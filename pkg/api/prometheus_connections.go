@@ -105,17 +105,55 @@ func applyPrometheusConnection(c *storage.PrometheusConnection, r PrometheusConn
 	}
 }
 
-func (s *Server) prometheusTrustAllowed(r *http.Request, req PrometheusConnectionRequest, existing *storage.PrometheusConnection) bool {
+// prometheusTrustDenial returns the reason a request needs system-administrator
+// approval, or "" when it does not. Private egress and the controller's own
+// ambient Azure identity are deployment trust rather than project configuration.
+func (s *Server) prometheusTrustDenial(r *http.Request, req PrometheusConnectionRequest, existing *storage.PrometheusConnection) string {
 	effective := &storage.PrometheusConnection{}
 	if existing != nil {
 		*effective = *existing
 	}
 	applyPrometheusConnection(effective, req)
-	if len(effective.Config.ApprovedCIDRs) == 0 && !effective.Config.AllowPrivateHTTP || existing != nil && reflect.DeepEqual(effective.Config.ApprovedCIDRs, existing.Config.ApprovedCIDRs) && effective.Config.Endpoint == existing.Config.Endpoint && effective.Config.AllowPrivateHTTP == existing.Config.AllowPrivateHTTP {
-		return true
+	reason := ""
+	if !(len(effective.Config.ApprovedCIDRs) == 0 && !effective.Config.AllowPrivateHTTP || existing != nil && reflect.DeepEqual(effective.Config.ApprovedCIDRs, existing.Config.ApprovedCIDRs) && effective.Config.Endpoint == existing.Config.Endpoint && effective.Config.AllowPrivateHTTP == existing.Config.AllowPrivateHTTP) {
+		reason = "system administrator approval is required for private Prometheus egress"
+	} else if prometheusAmbientIdentityChanged(effective, existing) {
+		reason = "system administrator approval is required to use the controller's Azure identity"
+	}
+	if reason == "" {
+		return ""
 	}
 	user, _ := AuthenticatedUserFromContext(r.Context())
-	return s.authSettingsForRequest().Mode == authModeDev || user != nil && user.hasGlobalRole(RoleSystemAdmin)
+	if s.authSettingsForRequest().Mode == authModeDev || user != nil && user.hasGlobalRole(RoleSystemAdmin) {
+		return ""
+	}
+	return reason
+}
+
+// Managed and workload identities carry no project secret: in direct mode the
+// controller's own Azure principal authenticates. The identity tuple selects
+// which of the controller's principals is used, so any change to it is gated.
+func prometheusAmbientIdentity(c *storage.PrometheusConnection) (string, bool) {
+	cfg := c.Config.Defaults()
+	mode := c.CollectionMode
+	if mode == "" {
+		mode = "direct"
+	}
+	if mode != "direct" || cfg.AuthType != prometheus.AuthAzure || cfg.AzureCredentialMode != "managed_identity" && cfg.AzureCredentialMode != "workload_identity" {
+		return "", false
+	}
+	return strings.Join([]string{cfg.Endpoint, cfg.AzureCredentialMode, cfg.ClientID, cfg.AzureTenantID}, "\x00"), true
+}
+func prometheusAmbientIdentityChanged(effective, existing *storage.PrometheusConnection) bool {
+	next, ambient := prometheusAmbientIdentity(effective)
+	if !ambient {
+		return false
+	}
+	if existing == nil {
+		return true
+	}
+	previous, wasAmbient := prometheusAmbientIdentity(existing)
+	return !wasAmbient || previous != next
 }
 func prometheusVerificationIdentity(c *storage.PrometheusConnection) any {
 	return struct {
@@ -172,8 +210,8 @@ func (s *Server) handleCreatePrometheusConnection(w http.ResponseWriter, r *http
 		writeError(w, 409, "save the connection disabled and verify it before enabling")
 		return
 	}
-	if !s.prometheusTrustAllowed(r, req, nil) {
-		writeError(w, 403, "system administrator approval is required for private Prometheus egress")
+	if reason := s.prometheusTrustDenial(r, req, nil); reason != "" {
+		writeError(w, 403, reason)
 		return
 	}
 	c := &storage.PrometheusConnection{ID: uuid.NewString(), ProjectID: r.PathValue("id")}
@@ -245,8 +283,8 @@ func (s *Server) handleUpdatePrometheusConnection(w http.ResponseWriter, r *http
 		writeError(w, 400, "revision is required")
 		return
 	}
-	if !s.prometheusTrustAllowed(r, req, c) {
-		writeError(w, 403, "system administrator approval is required for private Prometheus egress")
+	if reason := s.prometheusTrustDenial(r, req, c); reason != "" {
+		writeError(w, 403, reason)
 		return
 	}
 	previousIdentity := prometheusVerificationIdentity(c)

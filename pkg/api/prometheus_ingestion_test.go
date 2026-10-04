@@ -113,6 +113,38 @@ func TestPrometheusDirectExecutorCollectsWithoutSyntheticCollector(t *testing.T)
 	}
 }
 
+func TestProviderSettledClaimToleratesSmallClockSkew(t *testing.T) {
+	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name      string
+		age       time.Duration
+		settled   bool
+		premature bool
+	}{
+		{"fully settled", 125 * time.Second, true, false},
+		{"exactly at allowance", 120 * time.Second, true, false},
+		{"collector clock five seconds ahead", 115 * time.Second, true, false},
+		{"at tolerance edge", 110 * time.Second, true, false},
+		{"beyond tolerance", 105 * time.Second, true, true},
+		{"fresh observation", time.Second, true, true},
+		{"provisional claim is never premature", time.Second, false, false},
+	} {
+		if got := providerSettledClaimPremature(tc.settled, now.Add(-tc.age), 120, now); got != tc.premature {
+			t.Errorf("%s: premature=%v, want %v", tc.name, got, tc.premature)
+		}
+	}
+	s, _, job, p := apiPrometheusFixture(t)
+	recent := prometheusGridAnchor(job.StartedAt)
+	for recent.Before(time.Now().UTC().Add(-30 * time.Second)) {
+		recent = recent.Add(15 * time.Second)
+	}
+	p.TimestampUTC = recent
+	payload := storage.ProviderMonitorBatch{QueryFromUTC: job.StartedAt, QueryUntilUTC: time.Now().UTC(), Points: []analysis.MetricPoint{p}}
+	if err := s.ingestPrometheusBatch(context.Background(), job, 0, payload, executionLeaseTerm{}); err == nil || !strings.Contains(err.Error(), "unsettled") {
+		t.Fatalf("recent evaluation claimed settled: %v", err)
+	}
+}
+
 func TestPrometheusCanonicalRetryRevisionAndPublicProjection(t *testing.T) {
 	s, store, job, p := apiPrometheusFixture(t)
 	payload := storage.ProviderMonitorBatch{QueryFromUTC: job.StartedAt, QueryUntilUTC: job.StartedAt.Add(time.Minute), Points: []analysis.MetricPoint{p}}

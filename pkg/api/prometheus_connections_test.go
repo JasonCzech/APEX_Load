@@ -310,6 +310,77 @@ func TestPrometheusConnectionViewerProjectionAndPrivateTrustAccess(t *testing.T)
 	}
 }
 
+// Direct managed/workload identity authenticates as the controller itself, so a
+// project administrator must not be able to select or retarget that principal.
+func TestPrometheusAmbientAzureIdentityRequiresSystemAdministrator(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	enableTrustedHeaderAuth(t, server)
+	base := "/api/v1/projects/proj-a/monitoring/prometheus-connections"
+	send := func(method, path, role string, body any) *httptest.ResponseRecorder {
+		r := scopedLibraryRequest(t, method, path, body)
+		r.Header.Set("X-Auth-Request-User", "prom-"+role)
+		r.Header.Set("X-APEXLoad-Roles", role)
+		r.Header.Set("X-APEXLoad-Project-Roles", "proj-a="+role)
+		w := httptest.NewRecorder()
+		server.mux.ServeHTTP(w, r)
+		return w
+	}
+	created := func(w *httptest.ResponseRecorder) (string, int64) {
+		t.Helper()
+		var body struct {
+			ID       string `json:"id"`
+			Revision int64  `json:"revision"`
+		}
+		if w.Code != 201 || json.Unmarshal(w.Body.Bytes(), &body) != nil || body.ID == "" {
+			t.Fatalf("create %d %s", w.Code, w.Body.String())
+		}
+		return body.ID, body.Revision
+	}
+	azure := func(mode string) PrometheusConnectionRequest {
+		cfg := prometheus.Config{Endpoint: "https://workspace-abcd.eastus.prometheus.monitor.azure.com", BackendProfile: prometheus.BackendAzureManaged, AuthType: prometheus.AuthAzure, AzureCredentialMode: mode, ClientID: "11111111-1111-1111-1111-111111111111"}
+		if mode != "managed_identity" {
+			cfg.AzureTenantID = "22222222-2222-2222-2222-222222222222"
+		}
+		return PrometheusConnectionRequest{Name: "Azure workspace", CollectionMode: "direct", Config: cfg}
+	}
+	ambientDenied := func(w *httptest.ResponseRecorder, what string) {
+		t.Helper()
+		if w.Code != 403 || !strings.Contains(w.Body.String(), "controller's Azure identity") {
+			t.Fatalf("%s: %d %s", what, w.Code, w.Body.String())
+		}
+	}
+
+	for _, mode := range []string{"managed_identity", "workload_identity"} {
+		ambientDenied(send(http.MethodPost, base, RoleProjectAdmin, azure(mode)), "project admin created direct "+mode)
+	}
+	id, revision := created(send(http.MethodPost, base, RoleSystemAdmin, azure("managed_identity")))
+
+	rename := azure("managed_identity")
+	rename.Name, rename.Revision = "Renamed workspace", revision
+	if w := send(http.MethodPut, base+"/"+id, RoleProjectAdmin, rename); w.Code != 200 {
+		t.Fatalf("project admin rename with unchanged identity %d %s", w.Code, w.Body.String())
+	}
+	revision++
+	retarget := azure("managed_identity")
+	retarget.Config.ClientID, retarget.Revision = "33333333-3333-3333-3333-333333333333", revision
+	ambientDenied(send(http.MethodPut, base+"/"+id, RoleProjectAdmin, retarget), "project admin changed client ID")
+	remode := azure("workload_identity")
+	remode.Revision = revision
+	ambientDenied(send(http.MethodPut, base+"/"+id, RoleProjectAdmin, remode), "project admin changed credential mode and tenant")
+
+	collector := azure("managed_identity")
+	collector.CollectionMode, collector.CollectorAgentID = "collector", "prom-collector"
+	collectorID, collectorRevision := created(send(http.MethodPost, base, RoleProjectAdmin, collector))
+	direct := azure("managed_identity")
+	direct.Revision = collectorRevision
+	ambientDenied(send(http.MethodPut, base+"/"+collectorID, RoleProjectAdmin, direct), "project admin switched collector identity to direct")
+
+	secret := "AZURE_PROMETHEUS_SECRET"
+	principal := azure("service_principal")
+	principal.ClientSecretSecret = &secret
+	created(send(http.MethodPost, base, RoleProjectAdmin, principal))
+}
+
 func TestPrometheusConnectionIdentityChangesAndProtectedTrustProjection(t *testing.T) {
 	original := &storage.PrometheusConnection{ID: "c", ProjectID: "p", Name: "name", Config: prometheus.Config{Endpoint: "https://old.example.com", AuthType: "basic", CAPEM: "private-ca-material", ApprovedCIDRs: []string{"10.0.0.0/8"}}, UsernameSecretName: "original-user", PasswordSecretName: "original-password", ClientCertificateSecretName: "original-cert", ClientKeySecretName: "original-key"}
 	public := prometheusConnectionResponse(original)

@@ -121,7 +121,7 @@ func (s *Server) ingestPrometheusBatch(ctx context.Context, job storage.RunMonit
 				return errors.New("invalid provider identity")
 			}
 		}
-		if m.Settled && now.Before(p.TimestampUTC.Add(time.Duration(settle)*time.Second)) {
+		if providerSettledClaimPremature(m.Settled, p.TimestampUTC, settle, now) {
 			return errors.New("unsettled evaluation claims terminal eligibility")
 		}
 		if len(p.Dimensions) > len(query.AllowedLabels) {

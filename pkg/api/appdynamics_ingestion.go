@@ -267,6 +267,17 @@ func (s *Server) ingestAppDynamicsBatch(ctx context.Context, job storage.RunMoni
 	return s.persistProviderBatch(ctx, job, sequence, payload, term, now)
 }
 
+// providerSettleSkewTolerance absorbs small executor/controller clock skew when
+// a collector marks an observation settled. The claim itself is never rewritten:
+// the batch digest covers it, so an identical retry must stay identical.
+const providerSettleSkewTolerance = 10 * time.Second
+
+// providerSettledClaimPremature reports a settled claim made before the
+// observation's settling allowance has elapsed on the controller clock.
+func providerSettledClaimPremature(settled bool, observedEnd time.Time, settleSeconds int, now time.Time) bool {
+	return settled && now.Add(providerSettleSkewTolerance).Before(observedEnd.Add(time.Duration(settleSeconds)*time.Second))
+}
+
 func (s *Server) persistProviderBatch(ctx context.Context, job storage.RunMonitorJob, sequence int64, payload storage.ProviderMonitorBatch, term executionLeaseTerm, now time.Time) error {
 	store, ok := s.store.(providerMonitorStore)
 	if !ok {
