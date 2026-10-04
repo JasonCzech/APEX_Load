@@ -1632,6 +1632,60 @@ describe('NewTestPage', () => {
     expect(profileCard?.textContent).not.toContain('peak VUsers')
   })
 
+  it('sends run-level trace context for approved origins', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [{
+        id: 'scenario-1', name: 'Checkout Smoke', duration: '10m', scenario_mode: 'vuser_driven',
+        scripts: [{ order: 1, name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', vusers: 10, ramp_up: '1m', ramp_down: '30s' }],
+        script_count: 1, created_at: '2026-05-12T20:00:00Z', updated_at: '2026-05-12T20:00:00Z', associated_releases: [],
+      }],
+    })
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    await act(async () => {
+      scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const traceToggle = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Propagate W3C trace context'))?.querySelector('input') as HTMLInputElement | null
+    expect(traceToggle).toBeTruthy()
+    if (!traceToggle) return
+    await act(async () => {
+      traceToggle.click()
+    })
+    const summaryBeforeOrigins = container.querySelector('.new-test-summary-list')?.textContent || ''
+    expect(summaryBeforeOrigins).toContain('Origins need review')
+    const originsInput = container.querySelector('.run-trace-context textarea') as HTMLTextAreaElement | null
+    expect(originsInput).toBeTruthy()
+    if (!originsInput) return
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      setter?.call(originsInput, 'https://shop.example.test\n')
+      originsInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(container.querySelector('.new-test-summary-list')?.textContent).toContain('traceparent to 1 approved origin')
+
+    await flushDebouncedPreflight()
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    await act(async () => {
+      createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      scenario_id: 'scenario-1',
+      trace_context: { enabled: true, transaction_marker: false, origins: ['https://shop.example.test'] },
+    }))
+  })
+
   it('saves per-script runtime settings as run-only group overrides', async () => {
     apiMock.listScenarios.mockResolvedValue({
       scenarios: [

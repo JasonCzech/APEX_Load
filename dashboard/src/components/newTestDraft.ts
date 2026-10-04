@@ -1,5 +1,6 @@
 import type { MonitorBinding, MonitorRule } from '../types/appdynamics'
 import type { GroupRunOverride, RunDefaultOverrides } from './newTestRunModel'
+import type { RunTraceContextSettings } from './runTraceContext'
 
 export type ScheduleWindowDraft = {
   name: string
@@ -41,6 +42,7 @@ export interface NewTestDraft {
   elkConnectionId?: string
   dynatraceConnectionId?: string
   monitorBindings?: MonitorBinding[]
+  traceContext?: RunTraceContextSettings
   monitorRules?: MonitorRule[]
   newReleaseName: string
   showNewRelease: boolean
@@ -56,6 +58,9 @@ function validDraft(value: unknown): value is NewTestDraft {
   if (value.elkConnectionId !== undefined && typeof value.elkConnectionId !== 'string') return false
   if (value.dynatraceConnectionId !== undefined && typeof value.dynatraceConnectionId !== 'string') return false
   if (value.monitorBindings !== undefined && (!Array.isArray(value.monitorBindings) || value.monitorBindings.length > 32 || !value.monitorBindings.every(binding => record(binding) && typeof binding.source_id === 'string' && typeof binding.required === 'boolean'))) return false
+  if (value.traceContext !== undefined && (!record(value.traceContext) || typeof value.traceContext.enabled !== 'boolean'
+    || (value.traceContext.transaction_marker !== undefined && typeof value.traceContext.transaction_marker !== 'boolean')
+    || (value.traceContext.origins !== undefined && (!Array.isArray(value.traceContext.origins) || value.traceContext.origins.length > 64 || !value.traceContext.origins.every(origin => typeof origin === 'string'))))) return false
   if (value.monitorRules !== undefined && (!Array.isArray(value.monitorRules) || value.monitorRules.length > 32 || !value.monitorRules.every(rule => record(rule) && typeof rule.source_id === 'string' && typeof rule.metric === 'string' && typeof rule.threshold === 'number'))) return false
   if (typeof value.showNewRelease !== 'boolean') return false
   if (!['launch', 'schedules'].includes(String(value.pageMode))) return false

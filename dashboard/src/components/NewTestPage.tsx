@@ -99,6 +99,8 @@ import NewTestReadiness from './NewTestReadiness'
 import NewTestScheduleCatalog from './NewTestScheduleCatalog'
 import { scenarioIdentity } from './newTestPresentation'
 import { readNewTestDraft, saveNewTestDraft, clearNewTestDraft, type NewTestDraft, type ScheduleDraft, type ScheduleWindowDraft } from './newTestDraft'
+import RunTraceContextSelector from './RunTraceContextSelector'
+import { traceContextErrors, traceContextPayload, traceContextSummary, type RunTraceContextSettings } from './runTraceContext'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -564,6 +566,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [dynatraceConnections, setDynatraceConnections] = useState<DynatraceConnection[]>([])
   const [dynatraceConnectionId, setDynatraceConnectionId] = useState('')
   const [monitorBindings, setMonitorBindings] = useState<MonitorBinding[] | undefined>()
+  const [traceContext, setTraceContext] = useState<RunTraceContextSettings | undefined>()
+  const traceContextNeedsReview = traceContextErrors(traceContext).length > 0
   const [monitorRules, setMonitorRules] = useState<MonitorRule[] | undefined>()
   useEffect(() => { setELKConnectionId(''); setDynatraceConnectionId(''); setMonitorBindings(undefined); setMonitorRules(undefined); setELKConnections([]); setDynatraceConnections([]) }, [activeProjectID])
   const captureNeedsReview = captureSelectionNeedsReview(elkConnectionId, elkConnections, elkLoading, elkError) || captureSelectionNeedsReview(dynatraceConnectionId, dynatraceConnections, dynatraceLoading, dynatraceError)
@@ -1351,7 +1355,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     [effectiveScenarioGroups, scenario, timeslotValidationError],
   )
   const monitorRuleValidationError = validateGoalConfig({ monitor_rules: monitorRules ?? scenario?.goal_config?.monitor_rules })
-  const canLaunch = !monitorRuleValidationError && !scenario?.archived_at && archivedDependencies.length === 0 && readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError && !captureNeedsReview
+  const canLaunch = !monitorRuleValidationError && !scenario?.archived_at && archivedDependencies.length === 0 && readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError && !captureNeedsReview && !traceContextNeedsReview
   const buildCurrentRunCreatePayload = useCallback((
     currentRunDefaults: RunDefaultOverrides,
     currentGroupOverrides: Record<string, GroupRunOverride>,
@@ -1375,9 +1379,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       ...(elkConnectionId ? { elk_capture: { connection_id: elkConnectionId } } : {}),
 	  ...(dynatraceConnectionId ? { dynatrace_capture: { connection_id: dynatraceConnectionId } } : {}),
       ...(monitorBindings !== undefined ? { monitor_bindings: monitorBindings } : {}),
+      ...(traceContextPayload(traceContext) ? { trace_context: traceContextPayload(traceContext) } : {}),
       ...(monitorRules !== undefined ? { goal_config: { ...scenario.goal_config, monitor_rules: monitorRules } } : {}),
     }
-  }, [activeApplication, activeProject?.id, dynatraceConnectionId, elkConnectionId, monitorBindings, monitorRules, releaseId, runName, scenario])
+  }, [activeApplication, activeProject?.id, dynatraceConnectionId, elkConnectionId, monitorBindings, monitorRules, releaseId, runName, scenario, traceContext])
   const runCreatePayload = useMemo(
     () => buildCurrentRunCreatePayload(runDefaultOverrides, groupRunOverrides),
     [buildCurrentRunCreatePayload, groupRunOverrides, runDefaultOverrides],
@@ -1541,6 +1546,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const createRun = async (intent: 'start' | 'reserve' | 'queue' | 'schedule', options: { navigate?: boolean } = {}): Promise<boolean> => {
     if (monitorRuleValidationError) { setError(monitorRuleValidationError); return false }
     if (captureNeedsReview) { setError('Review the unavailable capture connection, retry, or explicitly turn capture off before launching.'); return false }
+    if (traceContextNeedsReview) { setError('Fix the trace context origins, or turn trace context off, before launching.'); return false }
     if (creatingRef.current) return false
     const navigate = options.navigate ?? true
     const currentRunDefaults = runDefaultOverridesRef.current
@@ -1831,6 +1837,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     || elkConnectionId
 	|| dynatraceConnectionId
     || monitorBindings !== undefined
+    || traceContext !== undefined
     || monitorRules !== undefined
     || scheduledStartLocal !== scheduledStartBaselineRef.current
     || newReleaseName.trim()
@@ -1842,7 +1849,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       version: 1, projectId: activeProjectID, applicationId: activeApplication?.id || '',
       scenarioId: scenario?.id || '', scenarioUpdatedAt: scenario?.updated_at || '', pageMode,
       runName, releaseId, runDefaultOverrides: runDefaultOverridesRef.current,
-      groupRunOverrides: groupRunOverridesRef.current, scheduledStartLocal, selectedTimeslotId, elkConnectionId, dynatraceConnectionId, monitorBindings, monitorRules, newReleaseName, showNewRelease,
+      groupRunOverrides: groupRunOverridesRef.current, scheduledStartLocal, selectedTimeslotId, elkConnectionId, dynatraceConnectionId, monitorBindings, traceContext, monitorRules, newReleaseName, showNewRelease,
       scheduleDraft, editingScheduleId,
     })
   const savedDraftMatches = savedDraft && JSON.stringify({ ...savedDraft, pageMode: null }) === JSON.stringify({ ...buildCurrentDraft(), pageMode: null })
@@ -2645,6 +2652,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setELKConnectionId(restoreDraft.elkConnectionId || '')
 	setDynatraceConnectionId(restoreDraft.dynatraceConnectionId || '')
     setMonitorBindings(restoreDraft.monitorBindings)
+    setTraceContext(restoreDraft.traceContext)
     setMonitorRules(restoreDraft.monitorRules)
     setScheduleDraft(restoreDraft.editingScheduleId ? restoreDraft.scheduleDraft : { ...restoreDraft.scheduleDraft, approval_policy: scheduleDefaults.approval_policy || 'auto', missed_run_policy: scheduleDefaults.missed_run_policy || 'skip' })
     setEditingScheduleId(restoreDraft.editingScheduleId)
@@ -3440,6 +3448,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   </select>
                   <CaptureSelectionHelp provider="dynatrace" capabilities={dynatraceCapabilities(dynatraceConnections.find(c => c.id === dynatraceConnectionId))} count={dynatraceConnections.length} error={dynatraceError} loading={dynatraceLoading} retry={() => setCaptureRetry(value => value + 1)} selected={dynatraceConnections.find(c => c.id === dynatraceConnectionId)?.name} canManage={canManageProjects} />
                 </div>
+                <RunTraceContextSelector value={traceContext} onChange={setTraceContext} suggest={Boolean(elkConnectionId || dynatraceConnectionId || (monitorBindings?.length ?? 0) > 0)} />
               </div>
             </section>
 
@@ -3724,6 +3733,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
             <dl className="new-test-summary-list" aria-label="Run settings summary">
               <div><dt>Elastic capture</dt><dd>{elkConnections.find(c => c.id === elkConnectionId)?.name || (elkConnectionId ? 'Selected connection unavailable — review required' : 'Off for this test')}</dd></div>
               <div><dt>Dynatrace capture</dt><dd>{dynatraceConnections.find(c => c.id === dynatraceConnectionId)?.name || (dynatraceConnectionId ? 'Selected connection unavailable — review required' : 'Off for this test')}</dd></div>
+              <div className={traceContextNeedsReview ? 'warning' : undefined}><dt>Trace context</dt><dd>{traceContextNeedsReview ? 'Origins need review' : traceContextSummary(traceContext)}</dd></div>
               {launchSummaryItems.map(item => (
                 <div key={item.label} className={item.tone === 'warning' ? 'warning' : undefined}>
                   <dt>{item.label}</dt>
