@@ -2566,6 +2566,26 @@
       "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/monitoring/collectors/{id}/dynatrace-operations",
+      "operationId": "handlePollDynatraceOperations",
+      "summary": "Poll Dynatrace Operations",
+      "category": "Operations \u0026 Observability",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/collectors/{id}/dynatrace-operations/{operation_id}/result",
+      "operationId": "handleDynatraceOperationResult",
+      "summary": "Dynatrace Operation Result",
+      "category": "Operations \u0026 Observability",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
       "method": "POST",
       "path": "/api/v1/monitoring/collectors/{id}/heartbeat",
       "operationId": "handleCollectorHeartbeat",
@@ -2610,6 +2630,16 @@
       "path": "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/samples",
       "operationId": "handleRunMonitorSamples",
       "summary": "Run Monitor Samples",
+      "category": "Operations \u0026 Observability",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/scan-reservations",
+      "operationId": "handleDynatraceScanReservation",
+      "summary": "Dynatrace Scan Reservation",
       "category": "Operations \u0026 Observability",
       "public": true,
       "authenticated": false,
@@ -3223,7 +3253,7 @@
       "category": "Workspace \u0026 Assets",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
     },
     {
       "method": "POST",
@@ -3264,6 +3294,26 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/operations",
+      "operationId": "handleCreateDynatraceOperation",
+      "summary": "Create Dynatrace Operation",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/operations/{operation_id}",
+      "operationId": "handleGetDynatraceOperation",
+      "summary": "Get Dynatrace Operation",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read"
     },
     {
       "method": "POST",

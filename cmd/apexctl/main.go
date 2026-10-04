@@ -37,6 +37,7 @@ var apexctlCommandHandlers = map[string]func(){
 	"monitor":      monitorCmd,
 	"analysis":     analysisCmd,
 	"appdynamics":  appDynamicsCmd,
+	"dynatrace":    dynatraceCmd,
 }
 
 func main() {
@@ -424,6 +425,7 @@ Commands:
   prepare   Prepare, inspect, renew, cancel, or start a prepared run
   monitor   Configure run-bound monitoring sources and scenario bindings
   appdynamics Manage AppDynamics connections and asynchronous inspections
+  dynatrace  Manage Dynatrace SaaS connections, discovery and query previews
   analysis  Import/query datasets, save analysis definitions, and assess baseline regressions
   version   Print version information
   help      Show this help

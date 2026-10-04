@@ -9,6 +9,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -21,6 +22,7 @@ type RunMonitorCoverage struct {
 	ConnectionRevision int64                           `json:"connection_revision,omitempty"`
 	ExecutorMode       string                          `json:"executor_mode,omitempty"`
 	Selection          *appdynamics.Selection          `json:"appdynamics,omitempty"`
+	Dynatrace          *dynatrace.Selection            `json:"dynatrace,omitempty"`
 	Required           bool                            `json:"required"`
 	State              string                          `json:"state"`
 	Reason             string                          `json:"reason,omitempty"`
@@ -68,6 +70,15 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 		if job.ConnectionSnapshot != nil {
 			coverage.ConnectionRevision = job.ConnectionSnapshot.Revision
 		}
+		if job.DynatraceSnapshot != nil {
+			coverage.ConnectionRevision = job.DynatraceSnapshot.Revision
+		}
+		if job.Source.Dynatrace != nil {
+			selection := *job.Source.Dynatrace
+			selection.QueryOffset = 0
+			selection.Cursor = ""
+			coverage.Dynatrace = &selection
+		}
 		if job.Source.AppDynamics != nil {
 			selection := *job.Source.AppDynamics
 			selection.QueryOffset = 0
@@ -100,7 +111,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 	reserve := int64(1<<20) + 4*int64(len(encodedManifest))
 	truncatedSources := map[string]bool{}
 	recordPoint := func(encoder *json.Encoder, p analysis.MetricPoint) error {
-		if p.Provider != nil && p.Provider.Name == "appdynamics" {
+		if p.Provider != nil && nativeProviderPack(p.Provider.Name) {
 			written, err := encodeProviderMonitorArchiveRecord(encoder, budget, reserve, p)
 			if err != nil {
 				return err
@@ -149,7 +160,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			}
 			for _, receipt := range page {
 				afterJob, afterSequence = receipt.JobID, receipt.Sequence
-				if packs[receipt.JobID] == "appdynamics" {
+				if nativeProviderPack(packs[receipt.JobID]) {
 					continue
 				}
 				body, err := readMonitorArtifact(ctx, receipt.ArtifactKey, receipt.Digest)
@@ -179,7 +190,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 		// Each provider bucket appears once with its latest accepted revision. Delayed
 		// values supersede older receipt contents rather than inflating counts.
 		for _, job := range jobs {
-			if job.Source.Pack != "appdynamics" {
+			if !nativeProviderPack(job.Source.Pack) {
 				continue
 			}
 			after := ""
@@ -212,6 +223,11 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			coverage.Reason = "no_eligible_metric_buckets"
 			manifest.MonitoringStatus = "incomplete"
 		}
+		if coverage.Dynatrace != nil && !selectedDynatraceMetricsObserved(*coverage.Dynatrace, eligibleMetrics[coverage.SourceID]) {
+			coverage.State = "incomplete"
+			coverage.Reason = "no_eligible_metric_buckets"
+			manifest.MonitoringStatus = "incomplete"
+		}
 	}
 	if err := updateRunArchiveSingleArtifactIntegrity(record.ArchivePath, manifest, RunArchiveArtifact{Name: pointsName, Kind: "evidence", Format: "jsonl", RecordType: "monitor_points_v1", Count: pointCount}); err != nil {
 		return err
@@ -220,13 +236,13 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 	var diagnosticCount int64
 	hasProvider := false
 	for _, job := range jobs {
-		hasProvider = hasProvider || job.Source.Pack == "appdynamics"
+		hasProvider = hasProvider || nativeProviderPack(job.Source.Pack)
 	}
 	if hasProvider {
 		err = writeArchiveArtifactDurableWithWriter(record.ArchivePath, diagnosticsName, nil, 0600, func(file *os.File, _ []byte) (int, error) {
 			encoder := json.NewEncoder(&archiveOutputFile{file: file, budget: budget})
 			for _, job := range jobs {
-				if job.Source.Pack != "appdynamics" {
+				if !nativeProviderPack(job.Source.Pack) {
 					continue
 				}
 				after := ""
@@ -352,7 +368,7 @@ func manifestLoadStart(manifest *RunArchiveManifest) time.Time {
 // A captured percentile or unweighted average is still evidence even when it
 // cannot support a whole-run acceptance statistic.
 func monitorPointSatisfiesCapture(point analysis.MetricPoint, start, end time.Time) bool {
-	return point.Provider != nil && point.Value != nil && point.Quality == analysis.QualityValid && point.Validate() == nil && point.Provider.Settled && !point.Provider.BucketStart.Before(start) && !point.Provider.BucketEnd.After(end)
+	return point.Provider != nil && !point.Provider.Synthetic && point.Value != nil && point.Quality == analysis.QualityValid && point.Validate() == nil && point.Provider.Settled && !point.Provider.BucketStart.Before(start) && !point.Provider.BucketEnd.After(end)
 }
 
 func selectedMonitorMetricsObserved(selection appdynamics.Selection, observed map[string]bool) bool {
@@ -363,6 +379,20 @@ func selectedMonitorMetricsObserved(selection appdynamics.Selection, observed ma
 	}
 	for _, query := range selection.Analytics {
 		if query.Kind == "metric" && !observed[query.ApplicationID+":"+query.Name] {
+			return false
+		}
+	}
+	return true
+}
+
+func selectedDynatraceMetricsObserved(selection dynatrace.Selection, observed map[string]bool) bool {
+	for _, metric := range selection.Metrics {
+		if !observed[":"+metric.Name] {
+			return false
+		}
+	}
+	for _, query := range selection.Grail {
+		if (query.Kind == "metric" || query.Kind == "aggregate") && !observed[":"+query.Name] {
 			return false
 		}
 	}

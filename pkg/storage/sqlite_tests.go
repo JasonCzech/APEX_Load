@@ -3,6 +3,7 @@ package storage
 // SQLite store — tests. Split from sqlite.go (same package, behavior-preserving).
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -1438,6 +1439,10 @@ func schedulerLeaseHeldInTransaction(tx *storeTx, dialect storeDialect, leaseNam
 // from committing; the monotonic generation also fences a controller identity
 // that is accidentally reused after a later owner has taken over.
 func schedulerLeaseTermHeldInTransaction(tx *storeTx, dialect storeDialect, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
+	return schedulerLeaseTermHeldInTransactionContext(context.Background(), tx, dialect, leaseName, leaseOwnerID, leaseGeneration)
+}
+
+func schedulerLeaseTermHeldInTransactionContext(ctx context.Context, tx *storeTx, dialect storeDialect, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
 	if leaseGeneration == 0 {
 		return false, fmt.Errorf("scheduler lease generation must be positive")
 	}
@@ -1450,7 +1455,7 @@ func schedulerLeaseTermHeldInTransaction(tx *storeTx, dialect storeDialect, leas
 		generation int64
 		expiresAt  time.Time
 	)
-	if err := tx.QueryRow(leaseQuery, leaseName).Scan(&owner, &generation, &expiresAt); err != nil {
+	if err := tx.QueryRowContext(ctx, leaseQuery, leaseName).Scan(&owner, &generation, &expiresAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -1459,7 +1464,7 @@ func schedulerLeaseTermHeldInTransaction(tx *storeTx, dialect storeDialect, leas
 	if generation <= 0 {
 		return false, fmt.Errorf("scheduler lease %q has invalid generation %d", leaseName, generation)
 	}
-	databaseNow, err := preciseDatabaseTime(tx, dialect)
+	databaseNow, err := preciseDatabaseTimeContext(ctx, tx, dialect)
 	if err != nil {
 		return false, fmt.Errorf("read scheduler-lease database clock: %w", err)
 	}

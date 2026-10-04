@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -14,10 +15,13 @@ func validateSelectedMonitorRules(bindings *storage.MonitorBindings, sources []s
 	if goals == nil || len(goals.MonitorRules) == 0 {
 		return nil
 	}
+	if bindings == nil {
+		return errors.New("monitoring rules require an attached native source")
+	}
 	selected := map[string]storage.MonitorSource{}
 	for _, b := range bindings.Sources {
 		for _, s := range sources {
-			if s.ID == b.SourceID && s.Enabled && s.Pack == "appdynamics" && s.AppDynamics != nil {
+			if s.ID == b.SourceID && s.Enabled && nativeProviderPack(s.Pack) {
 				selected[s.ID] = s
 			}
 		}
@@ -28,18 +32,39 @@ func validateSelectedMonitorRules(bindings *storage.MonitorBindings, sources []s
 		}
 		source, ok := selected[rule.SourceID]
 		if !ok {
-			return errors.New("monitoring rule must select an enabled AppDynamics source attached to this test")
+			return errors.New("monitoring rule must select an enabled native source attached to this test")
 		}
 		found := false
-		for _, metric := range source.AppDynamics.Metrics {
-			found = found || metric.Name == rule.Metric && appDynamicsExpectedUnit(metric, metric.Path) == rule.Unit
-		}
-		for _, query := range source.AppDynamics.Analytics {
-			unit := query.Unit
-			if unit == "" {
-				unit = "count"
+		if source.AppDynamics != nil {
+			for _, metric := range source.AppDynamics.Metrics {
+				found = found || metric.Name == rule.Metric && appDynamicsExpectedUnit(metric, metric.Path) == rule.Unit
 			}
-			found = found || query.Kind == "metric" && query.Name == rule.Metric && unit == rule.Unit
+			for _, query := range source.AppDynamics.Analytics {
+				unit := query.Unit
+				if unit == "" {
+					unit = "count"
+				}
+				found = found || query.Kind == "metric" && query.Name == rule.Metric && unit == rule.Unit
+			}
+		}
+		if source.Dynatrace != nil {
+			windowAggregate := false
+			for _, query := range source.Dynatrace.Grail {
+				windowAggregate = windowAggregate || query.Kind == "metric" && query.BucketSeconds == 0 && query.Name == rule.Metric && rule.MetricID == dynatrace.GrailMetricID(query)
+			}
+			if rule.Provider != "dynatrace" || rule.MetricID == "" || rule.SourceStatistic == "" || rule.ResolutionSeconds <= 0 && !windowAggregate || rule.Backend != "classic" && rule.Backend != "grail" {
+				return errors.New("Dynatrace rules require an exact provider, backend, metric identity, source statistic and resolution")
+			}
+			for _, metric := range source.Dynatrace.Metrics {
+				// Classic descriptor units may be discovered at preparation time.
+				// The rule still declares an exact unit, which actual observations
+				// must match before they become eligible for evaluation.
+				unitMatches := metric.Unit == "" || dynatrace.NormalizeUnit(metric.Unit) == rule.Unit
+				found = found || metric.Name == rule.Metric && unitMatches && rule.Backend == "classic" && rule.MetricID == dynatrace.MetricID(metric) && rule.SourceStatistic == dynatrace.MetricStatistic(metric)
+			}
+			for _, query := range source.Dynatrace.Grail {
+				found = found || query.Kind == "metric" && query.Name == rule.Metric && dynatrace.NormalizeUnit(query.Unit) == rule.Unit && rule.Backend == "grail" && rule.MetricID == dynatrace.GrailMetricID(query) && rule.SourceStatistic == query.Statistic
+			}
 		}
 		if !found {
 			return errors.New("monitoring rule metric and unit must match an approved numeric selection")
@@ -118,8 +143,8 @@ func (tr *TestRunner) validateAppDynamicsSharedArtifacts(sources []storage.Monit
 	}
 	for _, binding := range bindings.Sources {
 		for _, source := range sources {
-			if source.ID == binding.SourceID && source.Enabled && source.Pack == "appdynamics" && !strings.EqualFold(os.Getenv("APEXLOAD_MONITOR_SHARED_FILESYSTEM"), "true") {
-				return errors.New("AppDynamics in HA requires shared monitoring artifacts; configure object storage or attest the shared filesystem with APEXLOAD_MONITOR_SHARED_FILESYSTEM=true")
+			if source.ID == binding.SourceID && source.Enabled && nativeProviderPack(source.Pack) && !strings.EqualFold(os.Getenv("APEXLOAD_MONITOR_SHARED_FILESYSTEM"), "true") {
+				return errors.New("native monitoring in HA requires shared monitoring artifacts; configure object storage or attest the shared filesystem with APEXLOAD_MONITOR_SHARED_FILESYSTEM=true")
 			}
 		}
 	}

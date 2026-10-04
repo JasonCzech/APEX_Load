@@ -393,6 +393,10 @@ func (tx *storeTx) Query(query string, args ...any) (*sql.Rows, error) {
 	return tx.tx.Query(rewriteSQL(query, tx.dialect), args...)
 }
 
+func (tx *storeTx) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return tx.tx.QueryContext(ctx, rewriteSQL(query, tx.dialect), args...)
+}
+
 func (tx *storeTx) QueryRow(query string, args ...any) *sql.Row {
 	return tx.tx.QueryRow(rewriteSQL(query, tx.dialect), args...)
 }

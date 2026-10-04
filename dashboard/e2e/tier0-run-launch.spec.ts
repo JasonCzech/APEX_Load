@@ -60,9 +60,9 @@ test('[U10] preflight and estimate lead to an immediate launch that reaches RUNN
   }), 'create Elastic connection')
   const elkConnectionId = idFrom(elkConnection, 'create Elastic connection')
   const dynatraceConnection = await requireJSON(await request.post(`/api/v1/projects/${workspace.projectId}/monitoring/dynatrace-connections`, {
-    data: { name: 'Tier-0 Dynatrace', enabled: true, environment_url: 'https://tier0.live.dynatrace.com', metrics_enabled: false, problems_enabled: true, logs_enabled: false, environment_token_secret: 'e2e-dynatrace-token', platform_auth_type: '', oauth_resource: '', oauth_scopes: [], metric_queries: [], problem_selector: '', problem_entity_selector: '', log_base_filter: '', log_test_id_field: 'apex.test_id', log_timestamp_field: 'timestamp', log_status_field: 'status', log_message_field: 'content', log_trace_id_field: 'trace_id', poll_interval_seconds: 15 },
+    data: { name: 'Tier-0 Dynatrace', enabled: false, environment_url: 'https://tier0.live.dynatrace.com', metrics_enabled: false, problems_enabled: true, logs_enabled: false, environment_token_secret: 'e2e-dynatrace-token', platform_auth_type: '', oauth_resource: '', oauth_scopes: [], metric_queries: [], problem_selector: '', problem_entity_selector: '', log_base_filter: '', log_test_id_field: 'apex.test_id', log_timestamp_field: 'timestamp', log_status_field: 'status', log_message_field: 'content', log_trace_id_field: 'trace_id', poll_interval_seconds: 15 },
   }), 'create Dynatrace connection')
-  const dynatraceConnectionId = idFrom(dynatraceConnection, 'create Dynatrace connection')
+  expect(dynatraceConnection.enabled).toBe(false)
   const estimateResponses: Response[] = []
   const preflightResponses: Response[] = []
   page.on('response', response => {
@@ -77,8 +77,8 @@ test('[U10] preflight and estimate lead to an immediate launch that reaches RUNN
   await expect(elkSelector).toContainText('Tier-0 Elastic logs')
   await elkSelector.selectOption(elkConnectionId)
   const dynatraceSelector = page.getByRole('combobox', { name: 'Dynatrace SaaS capture', exact: true })
-  await expect(dynatraceSelector).toContainText('Tier-0 Dynatrace')
-  await dynatraceSelector.selectOption(dynatraceConnectionId)
+  await expect(dynatraceSelector).not.toContainText('Tier-0 Dynatrace')
+  await expect(dynatraceSelector).toHaveValue('')
   const startNow = page.getByRole('button', { name: 'Start Now' })
   await expect(startNow, 'launch stays disabled until preflight has made a start-now decision').toBeEnabled({ timeout: 30_000 })
   expect(estimateResponses.some(response => response.ok()), 'the UI must obtain a successful capacity estimate').toBeTruthy()
@@ -88,7 +88,8 @@ test('[U10] preflight and estimate lead to an immediate launch that reaches RUNN
     && new URL(response.url()).pathname === '/api/v1/tests')
   await startNow.click()
   const createdResponse = await created
-  expect(createdResponse.request().postDataJSON()).toMatchObject({ elk_capture: { connection_id: elkConnectionId }, dynatrace_capture: { connection_id: dynatraceConnectionId } })
+  expect(createdResponse.request().postDataJSON()).toMatchObject({ elk_capture: { connection_id: elkConnectionId } })
+  expect(createdResponse.request().postDataJSON().dynatrace_capture).toBeUndefined()
   const createdPayload = await requireJSON(createdResponse, 'create immediate run')
   const testId = idFrom(createdPayload, 'create immediate run')
 

@@ -94,6 +94,9 @@ func (s *Server) handleMonitorSources(w http.ResponseWriter, r *http.Request) {
 	if source.AppDynamics != nil {
 		source.AppDynamics.ProjectID = project
 	}
+	if source.Dynatrace != nil {
+		source.Dynatrace.ProjectID = project
+	}
 	if r.Method == http.MethodPost {
 		if source.ID != "" || source.Revision != 0 {
 			writeError(w, 400, "new monitor source must omit id and revision")
@@ -199,6 +202,7 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 	}
 	now := time.Now().UTC()
 	appDynamicsContract := false
+	dynatraceContract := false
 	if advertisement := r.Header.Get("X-APEX-Monitor-Readiness"); advertisement != "" {
 		var ad collectoragent.RunJobReadiness
 		if len(advertisement) > 8192 || json.Unmarshal([]byte(advertisement), &ad) != nil || ad.SigningKey != base64.StdEncoding.EncodeToString(key.Public().(ed25519.PublicKey)) {
@@ -209,11 +213,15 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 			writeError(w, 400, "invalid collector readiness contracts")
 			return
 		}
-		if slices.Contains(ad.Packs, collectoragent.AppDynamicsBatchContract) {
+		if slices.Contains(ad.Packs, collectoragent.AppDynamicsBatchContract) || slices.Contains(ad.Packs, collectoragent.DynatraceBatchContract) {
 			writeError(w, 400, "collector contracts must be advertised separately")
 			return
 		}
 		for _, contract := range ad.Contracts {
+			if contract == collectoragent.DynatraceBatchContract && slices.Contains(ad.Packs, "dynatrace") {
+				dynatraceContract = true
+				continue
+			}
 			if contract != collectoragent.AppDynamicsBatchContract || !slices.Contains(ad.Packs, "appdynamics") {
 				writeError(w, 400, "unsupported collector readiness contract")
 				return
@@ -222,6 +230,9 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 		}
 		if appDynamicsContract {
 			ad.Packs = append(ad.Packs, collectoragent.AppDynamicsBatchContract)
+		}
+		if dynatraceContract {
+			ad.Packs = append(ad.Packs, collectoragent.DynatraceBatchContract)
 		}
 		if err := store.SaveCollectorRunReadiness(c.ProjectID, c.ID, ad.Packs, ad.Destinations, now); err != nil {
 			writeError(w, 400, "invalid collector readiness")
@@ -267,6 +278,14 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 			}
 			if err := s.populateAppDynamicsGrant(r.Context(), &job, j); err != nil {
 				job.UnavailableReason = "AppDynamics credential unavailable"
+			}
+		}
+		if j.Source.Pack == "dynatrace" {
+			if !dynatraceContract {
+				continue
+			}
+			if err := s.populateDynatraceGrant(r.Context(), &job, j); err != nil {
+				job.UnavailableReason = "Dynatrace credential or quota unavailable"
 			}
 		}
 		if j.Source.CredentialRef != "" {
@@ -342,6 +361,23 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 		}
 		payload := storage.ProviderMonitorBatch{Points: batch.Points, Evidence: batch.Evidence, Coverage: batch.Coverage, QueryWindowEnd: batch.QueryWindowEnd, Final: batch.Final, Topology: batch.Topology, Progress: batch.Progress, QueryFromUTC: batch.QueryFromUTC, QueryUntilUTC: batch.QueryUntilUTC}
 		if err := s.ingestAppDynamicsBatch(r.Context(), *job, batch.Sequence, payload, executionLeaseTerm{}); err != nil {
+			writeError(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]any{"accepted": true, "sequence": batch.Sequence})
+		return
+	}
+	if job.Source.Pack == "dynatrace" {
+		if !dynatraceGrantMatchesJob(grant, *job, c.ID) || batch.Sequence < 0 || batch.Sequence > grant.NextSequence+int64(max(1, grant.MaxBatches))-1 {
+			writeError(w, 403, "Dynatrace grant does not match job")
+			return
+		}
+		if !batch.QueryFromUTC.Equal(grant.QueryFromUTC) || !batch.QueryUntilUTC.Equal(grant.QueryUntilUTC) {
+			writeError(w, 400, "Dynatrace query does not match signed window")
+			return
+		}
+		payload := storage.ProviderMonitorBatch{Points: batch.Points, Evidence: batch.Evidence, Coverage: batch.Coverage, QueryWindowEnd: batch.QueryWindowEnd, Final: batch.Final, Topology: batch.Topology, Progress: batch.Progress, QueryFromUTC: batch.QueryFromUTC, QueryUntilUTC: batch.QueryUntilUTC}
+		if err := s.ingestDynatraceBatch(r.Context(), *job, batch.Sequence, payload, executionLeaseTerm{}); err != nil {
 			writeError(w, 409, err.Error())
 			return
 		}
@@ -462,7 +498,7 @@ func (s *Server) handleRunMonitorSeries(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	job, jobErr := store.GetRunMonitorJob(project, r.PathValue("id")+":"+source)
-	if jobErr == nil && job.Source.Pack == "appdynamics" {
+	if jobErr == nil && nativeProviderPack(job.Source.Pack) {
 		limit := 999
 		if raw := r.URL.Query().Get("limit"); raw != "" {
 			parsed, err := strconv.Atoi(raw)

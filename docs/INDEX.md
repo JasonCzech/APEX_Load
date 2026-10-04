@@ -31,6 +31,7 @@ kept for planning or audit context only.
 | [ENTERPRISE_PLATFORM_RUNBOOK.md](ENTERPRISE_PLATFORM_RUNBOOK.md) | Enterprise platform architecture, data platform operations, and database migration |
 | [OBSERVABILITY_INTEGRATIONS.md](OBSERVABILITY_INTEGRATIONS.md) | Prometheus, OpenTelemetry, Power BI, Dynatrace, and Elastic integrations |
 | [APPDYNAMICS.md](APPDYNAMICS.md) | Classic Controller connection setup, governed collection, run evidence, and troubleshooting |
+| [DYNATRACE.md](DYNATRACE.md) | Dynatrace SaaS Classic/Grail setup, sources, run evidence, scan budgets, and troubleshooting |
 | [ENTERPRISE_FLEET_AND_CAPACITY.md](ENTERPRISE_FLEET_AND_CAPACITY.md) | Generator fleet inventory, autoscaling, capacity reservations, and run supervision |
 
 ## Engineering and product references
@@ -43,6 +44,7 @@ kept for planning or audit context only.
 | [SCRIPT_LIFECYCLE.md](SCRIPT_LIFECYCLE.md) | Script source-to-run lifecycle |
 | [OBJECT_ACTIVITY.md](OBJECT_ACTIVITY.md) | Object history, dependency evidence, archive admission, and restoration |
 | [APPDYNAMICS_SPEC.md](APPDYNAMICS_SPEC.md) | AppDynamics integration contracts, lifecycle, limits, and fixture qualification |
+| [DYNATRACE_SPEC.md](DYNATRACE_SPEC.md) | Dynatrace SaaS native monitoring contracts, migration, lifecycle, limits, and fixture qualification |
 | [SCRIPT_DEBUGGER_GUIDE.md](SCRIPT_DEBUGGER_GUIDE.md) | Script replay debugger workflow, routes, and imported runtime-setting/capture diagnostics |
 | [EVENT_HUBS_HOWTO.md](EVENT_HUBS_HOWTO.md) | Native Event Hubs deployment defaults, observer isolation and terminal lag gates |
 | [PROTOCOL_SUPPORT.md](PROTOCOL_SUPPORT.md) | Web/API, browser, messaging, Java Vuser, and SAP GUI support boundaries |

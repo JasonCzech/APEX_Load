@@ -62,14 +62,23 @@ func (tr *TestRunner) validateTestMonitorBindings(project string, b *storage.Mon
 	return nil
 }
 func safeMonitorSource(source storage.MonitorSource) storage.MonitorSource {
-	if source.Pack == "appdynamics" {
+	if nativeProviderPack(source.Pack) {
 		source.CredentialRef = ""
 		source.CollectorPublicKey = ""
+	}
+	if source.Dynatrace != nil {
+		selection := *source.Dynatrace
+		selection.Cursor = ""
+		selection.QueryOffset = 0
+		source.Dynatrace = &selection
 	}
 	return source
 }
 func safeMonitorJob(job storage.RunMonitorJob) storage.RunMonitorJob {
 	job.ConnectionSnapshot = nil
+	job.DynatraceSnapshot = nil
+	job.ProviderCursor = ""
+	job.RunTraceIDs = nil
 	job.QueryCoverage = nil
 	job.StableSinceAt = nil
 	job.Source = safeMonitorSource(job.Source)
@@ -85,6 +94,7 @@ func safePreparation(p *storage.Preparation) *storage.Preparation {
 	_ = json.Unmarshal(raw, &out)
 	if out.Monitors != nil {
 		out.Monitors.Connections = nil
+		out.Monitors.DynatraceConnections = nil
 		for id, s := range out.Monitors.Sources {
 			out.Monitors.Sources[id] = safeMonitorSource(s)
 		}

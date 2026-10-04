@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // startMonitoring starts at most one worker per provider. Publication only reads
@@ -21,20 +22,50 @@ func (a *runArtifacts) startMonitoring(test *ManagedTest) {
 	}
 	if a.runner != nil {
 		a.runner.mu.RLock()
-		defer a.runner.mu.RUnlock()
-	}
-	if test.ELKCapture == nil && test.DynatraceCapture == nil {
-		return
 	}
 	parent := test.executionCtx
-	if parent == nil || parent.Err() != nil || test.remoteFinalizing || isTerminalTestStatus(test.Status) {
+	eligible := parent != nil && parent.Err() == nil && !test.remoteFinalizing && !isTerminalTestStatus(test.Status)
+	snapshot := &ManagedTest{ID: test.ID, ProjectID: test.ProjectID, CreatedAt: test.CreatedAt, StartedAt: cloneTimePtr(test.StartedAt),
+		executionFence: test.executionFence, executionGeneration: test.executionGeneration,
+		ELKCapture: cloneELKCaptureConfig(test.ELKCapture), DynatraceCapture: cloneDynatraceCaptureConfig(test.DynatraceCapture)}
+	if a.runner != nil {
+		a.runner.mu.RUnlock()
+	}
+	if !eligible {
 		return
 	}
-	snapshot := &ManagedTest{ID: test.ID, CreatedAt: test.CreatedAt, StartedAt: cloneTimePtr(test.StartedAt),
-		ELKCapture: cloneELKCaptureConfig(test.ELKCapture), DynatraceCapture: cloneDynatraceCaptureConfig(test.DynatraceCapture)}
+	if !a.nativeTraceChecked {
+		if a.runner != nil && runMonitoringEnabled(snapshot.ProjectID) {
+			if store, ok := a.runner.testStore.(storage.RunMonitorStore); ok {
+				jobs, err := store.ListRunMonitorJobs(snapshot.ProjectID, snapshot.ID)
+				if err != nil {
+					return
+				}
+				for _, job := range jobs {
+					if job.Source.Pack == "dynatrace" && (job.State == "collecting" || job.State == "reconciling") {
+						a.nativeDynatrace.Store(true)
+						break
+					}
+				}
+			}
+		}
+		a.nativeTraceChecked = true
+	}
+	if snapshot.ELKCapture == nil && snapshot.DynatraceCapture == nil && !a.nativeDynatrace.Load() {
+		return
+	}
 	ctx, cancel := context.WithCancel(parent)
 	a.monitorCancel = cancel
 	a.monitorStarted = true
+	if a.nativeDynatrace.Load() {
+		if snapshot.StartedAt != nil {
+			term := executionLeaseTerm{ownerID: snapshot.executionFence, generation: snapshot.executionGeneration}
+			if !term.valid() {
+				term, _ = executionLeaseTermFromContext(parent)
+			}
+			a.startNativeDynatraceTraceWorker(ctx, snapshot.ProjectID, snapshot.ID, *snapshot.StartedAt, term)
+		}
+	}
 	start := func(interval time.Duration, poll func(context.Context, *ManagedTest, *LiveMetrics) map[string]float64) {
 		a.monitorWorkers.Add(1)
 		go func() {
@@ -90,7 +121,7 @@ func (a *runArtifacts) stopMonitoring() {
 // Distributed metrics carry observed W3C correlations even though no local
 // VUser result sink exists. Feed that bounded evidence into the same collector.
 func (a *runArtifacts) observeMonitoringTraces(live *LiveMetrics) {
-	if a == nil || live == nil || a.test == nil || (a.test.ELKCapture == nil && a.test.DynatraceCapture == nil) {
+	if a == nil || live == nil || a.test == nil || (a.test.ELKCapture == nil && a.test.DynatraceCapture == nil && !a.nativeDynatrace.Load()) {
 		return
 	}
 	sink := elkTraceEvidenceSink{artifacts: a}

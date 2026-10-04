@@ -222,7 +222,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 				}
 			} else {
 				if *evidenceKind != "" {
-					if !strings.Contains("|event|violation|snapshot|log|transaction|", "|"+*evidenceKind+"|") {
+					if !strings.Contains("|event|violation|snapshot|log|transaction|problem|span|trace|topology|", "|"+*evidenceKind+"|") {
 						return errors.New("unsupported diagnostic --kind")
 					}
 					query.Set("kind", *evidenceKind)

@@ -10,7 +10,8 @@ export interface AnalysisImport {
   mapping?: AnalysisMapping; accepted: number; rejected: number; error?: string; run_id?: string
 }
 export interface AnalysisProviderMeasurement {
-  name: 'appdynamics'; metric_id: string; catalog_path?: string; entity_ids?: Record<string, string>
+  name: 'appdynamics' | 'dynatrace'; metric_id: string; catalog_path?: string; entity_ids?: Record<string, string>
+  backend?: string; synthetic?: boolean
   bucket_start: string; bucket_end: string; resolution_seconds: number; statistic: string
   count?: number; sum?: number; min?: number; max?: number; settled: boolean; aggregation_eligible: boolean
   query_window?: boolean

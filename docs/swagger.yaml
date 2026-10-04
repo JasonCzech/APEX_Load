@@ -8751,6 +8751,10 @@ paths:
                               connection_revision:
                                 type: integer
                                 format: int64
+                              dynatrace:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               executor_mode:
                                 type: string
                               job_id:
@@ -9438,32 +9442,7 @@ paths:
                         properties:
                           diagnostic:
                             type: object
-                            properties:
-                              application_id:
-                                type: string
-                              deep_link:
-                                type: string
-                              entity_ids:
-                                type: object
-                                additionalProperties:
-                                  type: string
-                              id:
-                                type: string
-                              kind:
-                                type: string
-                              properties:
-                                type: object
-                                additionalProperties:
-                                  type: string
-                              severity:
-                                type: string
-                              status:
-                                type: string
-                              summary:
-                                type: string
-                              timestamp_utc:
-                                type: string
-                                format: date-time
+                            additionalProperties: true
                           source_id:
                             type: string
                     monitor_rule_results:
@@ -9486,6 +9465,8 @@ paths:
                           rule:
                             type: object
                             properties:
+                              backend:
+                                type: string
                               comparator:
                                 type: string
                               dimensions:
@@ -9496,14 +9477,29 @@ paths:
                                 type: integer
                                 format: int64
                                 nullable: true
+                              entity_ids:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              evaluation_operation:
+                                type: string
                               metric:
+                                type: string
+                              metric_id:
                                 type: string
                               min_coverage_pct:
                                 type: number
                                 format: double
+                              provider:
+                                type: string
+                              resolution_seconds:
+                                type: integer
+                                format: int64
                               severity:
                                 type: string
                               source_id:
+                                type: string
+                              source_statistic:
                                 type: string
                               start_offset_seconds:
                                 type: integer
@@ -11257,6 +11253,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              backend:
+                                type: string
                               comparator:
                                 type: string
                               dimensions:
@@ -11267,14 +11265,29 @@ paths:
                                 type: integer
                                 format: int64
                                 nullable: true
+                              entity_ids:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              evaluation_operation:
+                                type: string
                               metric:
+                                type: string
+                              metric_id:
                                 type: string
                               min_coverage_pct:
                                 type: number
                                 format: double
+                              provider:
+                                type: string
+                              resolution_seconds:
+                                type: integer
+                                format: int64
                               severity:
                                 type: string
                               source_id:
+                                type: string
+                              source_statistic:
                                 type: string
                               start_offset_seconds:
                                 type: integer
@@ -35376,6 +35389,8 @@ paths:
                       items:
                         type: object
                         properties:
+                          backend:
+                            type: string
                           comparator:
                             type: string
                           dimensions:
@@ -35386,14 +35401,29 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          entity_ids:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          evaluation_operation:
+                            type: string
                           metric:
+                            type: string
+                          metric_id:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          provider:
+                            type: string
+                          resolution_seconds:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           source_id:
+                            type: string
+                          source_statistic:
                             type: string
                           start_offset_seconds:
                             type: integer
@@ -35518,6 +35548,8 @@ paths:
                         rule:
                           type: object
                           properties:
+                            backend:
+                              type: string
                             comparator:
                               type: string
                             dimensions:
@@ -35528,14 +35560,29 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_operation:
+                              type: string
                             metric:
+                              type: string
+                            metric_id:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            provider:
+                              type: string
+                            resolution_seconds:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             source_id:
+                              type: string
+                            source_statistic:
                               type: string
                             start_offset_seconds:
                               type: integer
@@ -35717,6 +35764,8 @@ paths:
                         rule:
                           type: object
                           properties:
+                            backend:
+                              type: string
                             comparator:
                               type: string
                             dimensions:
@@ -35727,14 +35776,29 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_operation:
+                              type: string
                             metric:
+                              type: string
+                            metric_id:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            provider:
+                              type: string
+                            resolution_seconds:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             source_id:
+                              type: string
+                            source_statistic:
                               type: string
                             start_offset_seconds:
                               type: integer
@@ -35887,6 +35951,8 @@ paths:
                         rule:
                           type: object
                           properties:
+                            backend:
+                              type: string
                             comparator:
                               type: string
                             dimensions:
@@ -35897,14 +35963,29 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_operation:
+                              type: string
                             metric:
+                              type: string
+                            metric_id:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            provider:
+                              type: string
+                            resolution_seconds:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             source_id:
+                              type: string
+                            source_statistic:
                               type: string
                             start_offset_seconds:
                               type: integer
@@ -45267,6 +45348,24 @@ paths:
                   - execution_target_id
                   - generator_id
                   - transport
+        "101":
+          description: Switching Protocols
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Upgrades an authenticated generator-originated WebSocket to the reverse gRPC transport.
+                properties:
+                  execution_target_id:
+                    type: string
+                  generator_id:
+                    type: string
+                  transport:
+                    type: string
+                required:
+                  - execution_target_id
+                  - generator_id
+                  - transport
         "400":
           description: Bad Request
           content:
@@ -49318,6 +49417,461 @@ paths:
       tags:
         - Monitoring
       x-handler: handlePatchMonitoringCollector
+  /api/v1/monitoring/collectors/{id}/dynatrace-operations:
+    get:
+      summary: Poll Dynatrace Operations
+      description: '**Access Control:** Public (no authentication required)'
+      operationId: handlePollDynatraceOperations
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    payload:
+                      type: string
+                    signature:
+                      type: string
+                  required:
+                    - payload
+                    - signature
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: Public (no authentication required)
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: capacity
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
+      tags:
+        - Monitoring
+      x-handler: handlePollDynatraceOperations
+  /api/v1/monitoring/collectors/{id}/dynatrace-operations/{operation_id}/result:
+    post:
+      summary: Dynatrace Operation Result
+      description: '**Access Control:** Public (no authentication required)'
+      operationId: handleDynatraceOperationResult
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                capabilities:
+                  type: object
+                  properties:
+                    classic_topology:
+                      type: boolean
+                    environment_id:
+                      type: string
+                    environment_origin:
+                      type: string
+                    events:
+                      type: boolean
+                    grail_events:
+                      type: boolean
+                    grail_metrics:
+                      type: boolean
+                    logs:
+                      type: boolean
+                    metrics:
+                      type: boolean
+                    platform_environment_id:
+                      type: string
+                    platform_origin:
+                      type: string
+                    problems:
+                      type: boolean
+                    smartscape:
+                      type: boolean
+                    spans:
+                      type: boolean
+                    status:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    tenant_id:
+                      type: string
+                    verified_origins:
+                      type: array
+                      items:
+                        type: string
+                discovery:
+                  type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          entity_ids:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          id:
+                            type: string
+                          name:
+                            type: string
+                          parent_id:
+                            type: string
+                          path:
+                            type: string
+                          type:
+                            type: string
+                    message:
+                      type: string
+                    next_cursor:
+                      type: string
+                    truncated:
+                      type: boolean
+                job:
+                  type: object
+                  properties:
+                    payload:
+                      type: string
+                    signature:
+                      type: string
+                message:
+                  type: string
+                preview:
+                  type: object
+                  properties:
+                    capabilities:
+                      type: object
+                      properties:
+                        classic_topology:
+                          type: boolean
+                        environment_id:
+                          type: string
+                        environment_origin:
+                          type: string
+                        events:
+                          type: boolean
+                        grail_events:
+                          type: boolean
+                        grail_metrics:
+                          type: boolean
+                        logs:
+                          type: boolean
+                        metrics:
+                          type: boolean
+                        platform_environment_id:
+                          type: string
+                        platform_origin:
+                          type: string
+                        problems:
+                          type: boolean
+                        smartscape:
+                          type: boolean
+                        spans:
+                          type: boolean
+                        status:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        tenant_id:
+                          type: string
+                        verified_origins:
+                          type: array
+                          items:
+                            type: string
+                    coverage:
+                      type: object
+                      additionalProperties:
+                        type: object
+                        properties:
+                          evidence:
+                            type: integer
+                            format: int64
+                          from:
+                            type: string
+                            format: date-time
+                          message:
+                            type: string
+                          points:
+                            type: integer
+                            format: int64
+                          status:
+                            type: string
+                          to:
+                            type: string
+                            format: date-time
+                          truncated:
+                            type: boolean
+                    evidence:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          application_id:
+                            type: string
+                          backend:
+                            type: string
+                          deep_link:
+                            type: string
+                          entity_ids:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          id:
+                            type: string
+                          kind:
+                            type: string
+                          properties:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          provider:
+                            type: string
+                          severity:
+                            type: string
+                          status:
+                            type: string
+                          summary:
+                            type: string
+                          timestamp_utc:
+                            type: string
+                            format: date-time
+                    points:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          active_runtime_ms:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          dataset_id:
+                            type: string
+                          dimensions:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          host:
+                            type: string
+                          input_kind:
+                            type: string
+                          kind:
+                            type: string
+                          metric_name:
+                            type: string
+                          project_id:
+                            type: string
+                          provider:
+                            type: object
+                            properties:
+                              aggregation_eligible:
+                                type: boolean
+                              backend:
+                                type: string
+                              bucket_end:
+                                type: string
+                                format: date-time
+                              bucket_start:
+                                type: string
+                                format: date-time
+                              catalog_path:
+                                type: string
+                              count:
+                                type: number
+                                format: double
+                                nullable: true
+                              entity_ids:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              max:
+                                type: number
+                                format: double
+                                nullable: true
+                              metric_id:
+                                type: string
+                              min:
+                                type: number
+                                format: double
+                                nullable: true
+                              name:
+                                type: string
+                              query_window:
+                                type: boolean
+                              resolution_seconds:
+                                type: integer
+                                format: int64
+                              settled:
+                                type: boolean
+                              statistic:
+                                type: string
+                              sum:
+                                type: number
+                                format: double
+                                nullable: true
+                              synthetic:
+                                type: boolean
+                            nullable: true
+                          quality:
+                            type: string
+                          received_at:
+                            type: string
+                            format: date-time
+                          relative_time_ms:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_id:
+                            type: string
+                          scenario_id:
+                            type: string
+                          schema_version:
+                            type: string
+                          service:
+                            type: string
+                          source:
+                            type: string
+                          timestamp_utc:
+                            type: string
+                            format: date-time
+                          unit:
+                            type: string
+                          value:
+                            type: number
+                            format: double
+                            nullable: true
+                    progress:
+                      type: object
+                      properties:
+                        complete:
+                          type: boolean
+                        cursor:
+                          type: string
+                        cursor_expires_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        next_query:
+                          type: integer
+                          format: int64
+                        query_cost_known:
+                          type: boolean
+                        scan_reservation_bytes:
+                          type: integer
+                          format: int64
+                        scan_reservation_ids:
+                          type: array
+                          items:
+                            type: string
+                        scanned_bytes:
+                          type: integer
+                          format: int64
+                        total_queries:
+                          type: integer
+                          format: int64
+                    topology:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          entity_ids:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          id:
+                            type: string
+                          name:
+                            type: string
+                          parent_id:
+                            type: string
+                          path:
+                            type: string
+                          type:
+                            type: string
+                  nullable: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: Public (no authentication required)
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: operation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
+      x-handler: handleDynatraceOperationResult
   /api/v1/monitoring/collectors/{id}/heartbeat:
     post:
       summary: Collector Heartbeat
@@ -49740,6 +50294,8 @@ paths:
                     properties:
                       application_id:
                         type: string
+                      backend:
+                        type: string
                       deep_link:
                         type: string
                       entity_ids:
@@ -49754,6 +50310,8 @@ paths:
                         type: object
                         additionalProperties:
                           type: string
+                      provider:
+                        type: string
                       severity:
                         type: string
                       status:
@@ -49802,6 +50360,8 @@ paths:
                         properties:
                           aggregation_eligible:
                             type: boolean
+                          backend:
+                            type: string
                           bucket_end:
                             type: string
                             format: date-time
@@ -49843,6 +50403,8 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          synthetic:
+                            type: boolean
                         nullable: true
                       quality:
                         type: string
@@ -49877,7 +50439,25 @@ paths:
                   properties:
                     complete:
                       type: boolean
+                    cursor:
+                      type: string
+                    cursor_expires_at:
+                      type: string
+                      format: date-time
+                      nullable: true
                     next_query:
+                      type: integer
+                      format: int64
+                    query_cost_known:
+                      type: boolean
+                    scan_reservation_bytes:
+                      type: integer
+                      format: int64
+                    scan_reservation_ids:
+                      type: array
+                      items:
+                        type: string
+                    scanned_bytes:
                       type: integer
                       format: int64
                     total_queries:
@@ -49978,6 +50558,86 @@ paths:
       tags:
         - Monitoring
       x-handler: handleRunMonitorSamples
+  /api/v1/monitoring/collectors/{id}/jobs/{job_id}/scan-reservations:
+    post:
+      summary: Dynatrace Scan Reservation
+      description: '**Access Control:** Public (no authentication required)'
+      operationId: handleDynatraceScanReservation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                attempt_id:
+                  type: string
+                bytes:
+                  type: integer
+                  format: int64
+                job:
+                  type: object
+                  properties:
+                    payload:
+                      type: string
+                    signature:
+                      type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: Public (no authentication required)
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
+      x-handler: handleDynatraceScanReservation
   /api/v1/monitoring/collectors/{id}/metrics:
     get:
       summary: Get Collector Metrics
@@ -55060,6 +55720,103 @@ paths:
                     type: string
                   destination:
                     type: string
+                  dynatrace:
+                    type: object
+                    properties:
+                      cursor:
+                        type: string
+                      entity_selector:
+                        type: string
+                      event_selector:
+                        type: string
+                      events:
+                        type: boolean
+                      grail:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bucket_seconds:
+                              type: integer
+                              format: int64
+                            entity_id_field:
+                              type: string
+                            entity_ids:
+                              type: array
+                              items:
+                                type: string
+                            fields:
+                              type: array
+                              items:
+                                type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            query:
+                              type: string
+                            run_id_field:
+                              type: string
+                            statistic:
+                              type: string
+                            unit:
+                              type: string
+                            value_field:
+                              type: string
+                          required:
+                            - kind
+                            - name
+                            - query
+                      header_origins:
+                        type: array
+                        items:
+                          type: string
+                      metrics:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            aggregation:
+                              type: string
+                            entity_selector:
+                              type: string
+                            metric_selector:
+                              type: string
+                            name:
+                              type: string
+                            semantics:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - aggregation
+                            - metric_selector
+                            - name
+                      problem_selector:
+                        type: string
+                      problems:
+                        type: boolean
+                      project_id:
+                        type: string
+                      query_offset:
+                        type: integer
+                        format: int64
+                      run_header:
+                        type: boolean
+                      settle_seconds:
+                        type: integer
+                        format: int64
+                      smartscape_entity_ids:
+                        type: array
+                        items:
+                          type: string
+                      smartscape_node_type:
+                        type: string
+                      topology_mode:
+                        type: string
+                    required:
+                      - project_id
+                    nullable: true
                   enabled:
                     type: boolean
                   executor_mode:
@@ -55067,6 +55824,9 @@ paths:
                   id:
                     type: string
                   interval_seconds:
+                    type: integer
+                    format: int64
+                  legacy_connection_revision:
                     type: integer
                     format: int64
                   name:
@@ -55249,6 +56009,93 @@ paths:
                   type: string
                 destination:
                   type: string
+                dynatrace:
+                  type: object
+                  properties:
+                    cursor:
+                      type: string
+                    entity_selector:
+                      type: string
+                    event_selector:
+                      type: string
+                    events:
+                      type: boolean
+                    grail:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          bucket_seconds:
+                            type: integer
+                            format: int64
+                          entity_id_field:
+                            type: string
+                          entity_ids:
+                            type: array
+                            items:
+                              type: string
+                          fields:
+                            type: array
+                            items:
+                              type: string
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          query:
+                            type: string
+                          run_id_field:
+                            type: string
+                          statistic:
+                            type: string
+                          unit:
+                            type: string
+                          value_field:
+                            type: string
+                    header_origins:
+                      type: array
+                      items:
+                        type: string
+                    metrics:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          aggregation:
+                            type: string
+                          entity_selector:
+                            type: string
+                          metric_selector:
+                            type: string
+                          name:
+                            type: string
+                          semantics:
+                            type: string
+                          unit:
+                            type: string
+                    problem_selector:
+                      type: string
+                    problems:
+                      type: boolean
+                    project_id:
+                      type: string
+                    query_offset:
+                      type: integer
+                      format: int64
+                    run_header:
+                      type: boolean
+                    settle_seconds:
+                      type: integer
+                      format: int64
+                    smartscape_entity_ids:
+                      type: array
+                      items:
+                        type: string
+                    smartscape_node_type:
+                      type: string
+                    topology_mode:
+                      type: string
+                  nullable: true
                 enabled:
                   type: boolean
                 executor_mode:
@@ -55256,6 +56103,9 @@ paths:
                 id:
                   type: string
                 interval_seconds:
+                  type: integer
+                  format: int64
+                legacy_connection_revision:
                   type: integer
                   format: int64
                 name:
@@ -55381,6 +56231,103 @@ paths:
                     type: string
                   destination:
                     type: string
+                  dynatrace:
+                    type: object
+                    properties:
+                      cursor:
+                        type: string
+                      entity_selector:
+                        type: string
+                      event_selector:
+                        type: string
+                      events:
+                        type: boolean
+                      grail:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bucket_seconds:
+                              type: integer
+                              format: int64
+                            entity_id_field:
+                              type: string
+                            entity_ids:
+                              type: array
+                              items:
+                                type: string
+                            fields:
+                              type: array
+                              items:
+                                type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            query:
+                              type: string
+                            run_id_field:
+                              type: string
+                            statistic:
+                              type: string
+                            unit:
+                              type: string
+                            value_field:
+                              type: string
+                          required:
+                            - kind
+                            - name
+                            - query
+                      header_origins:
+                        type: array
+                        items:
+                          type: string
+                      metrics:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            aggregation:
+                              type: string
+                            entity_selector:
+                              type: string
+                            metric_selector:
+                              type: string
+                            name:
+                              type: string
+                            semantics:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - aggregation
+                            - metric_selector
+                            - name
+                      problem_selector:
+                        type: string
+                      problems:
+                        type: boolean
+                      project_id:
+                        type: string
+                      query_offset:
+                        type: integer
+                        format: int64
+                      run_header:
+                        type: boolean
+                      settle_seconds:
+                        type: integer
+                        format: int64
+                      smartscape_entity_ids:
+                        type: array
+                        items:
+                          type: string
+                      smartscape_node_type:
+                        type: string
+                      topology_mode:
+                        type: string
+                    required:
+                      - project_id
+                    nullable: true
                   enabled:
                     type: boolean
                   executor_mode:
@@ -55388,6 +56335,9 @@ paths:
                   id:
                     type: string
                   interval_seconds:
+                    type: integer
+                    format: int64
+                  legacy_connection_revision:
                     type: integer
                     format: int64
                   name:
@@ -55571,6 +56521,93 @@ paths:
                   type: string
                 destination:
                   type: string
+                dynatrace:
+                  type: object
+                  properties:
+                    cursor:
+                      type: string
+                    entity_selector:
+                      type: string
+                    event_selector:
+                      type: string
+                    events:
+                      type: boolean
+                    grail:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          bucket_seconds:
+                            type: integer
+                            format: int64
+                          entity_id_field:
+                            type: string
+                          entity_ids:
+                            type: array
+                            items:
+                              type: string
+                          fields:
+                            type: array
+                            items:
+                              type: string
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          query:
+                            type: string
+                          run_id_field:
+                            type: string
+                          statistic:
+                            type: string
+                          unit:
+                            type: string
+                          value_field:
+                            type: string
+                    header_origins:
+                      type: array
+                      items:
+                        type: string
+                    metrics:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          aggregation:
+                            type: string
+                          entity_selector:
+                            type: string
+                          metric_selector:
+                            type: string
+                          name:
+                            type: string
+                          semantics:
+                            type: string
+                          unit:
+                            type: string
+                    problem_selector:
+                      type: string
+                    problems:
+                      type: boolean
+                    project_id:
+                      type: string
+                    query_offset:
+                      type: integer
+                      format: int64
+                    run_header:
+                      type: boolean
+                    settle_seconds:
+                      type: integer
+                      format: int64
+                    smartscape_entity_ids:
+                      type: array
+                      items:
+                        type: string
+                    smartscape_node_type:
+                      type: string
+                    topology_mode:
+                      type: string
+                  nullable: true
                 enabled:
                   type: boolean
                 executor_mode:
@@ -55578,6 +56615,9 @@ paths:
                 id:
                   type: string
                 interval_seconds:
+                  type: integer
+                  format: int64
+                legacy_connection_revision:
                   type: integer
                   format: int64
                 name:
@@ -55703,6 +56743,103 @@ paths:
                     type: string
                   destination:
                     type: string
+                  dynatrace:
+                    type: object
+                    properties:
+                      cursor:
+                        type: string
+                      entity_selector:
+                        type: string
+                      event_selector:
+                        type: string
+                      events:
+                        type: boolean
+                      grail:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bucket_seconds:
+                              type: integer
+                              format: int64
+                            entity_id_field:
+                              type: string
+                            entity_ids:
+                              type: array
+                              items:
+                                type: string
+                            fields:
+                              type: array
+                              items:
+                                type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            query:
+                              type: string
+                            run_id_field:
+                              type: string
+                            statistic:
+                              type: string
+                            unit:
+                              type: string
+                            value_field:
+                              type: string
+                          required:
+                            - kind
+                            - name
+                            - query
+                      header_origins:
+                        type: array
+                        items:
+                          type: string
+                      metrics:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            aggregation:
+                              type: string
+                            entity_selector:
+                              type: string
+                            metric_selector:
+                              type: string
+                            name:
+                              type: string
+                            semantics:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - aggregation
+                            - metric_selector
+                            - name
+                      problem_selector:
+                        type: string
+                      problems:
+                        type: boolean
+                      project_id:
+                        type: string
+                      query_offset:
+                        type: integer
+                        format: int64
+                      run_header:
+                        type: boolean
+                      settle_seconds:
+                        type: integer
+                        format: int64
+                      smartscape_entity_ids:
+                        type: array
+                        items:
+                          type: string
+                      smartscape_node_type:
+                        type: string
+                      topology_mode:
+                        type: string
+                    required:
+                      - project_id
+                    nullable: true
                   enabled:
                     type: boolean
                   executor_mode:
@@ -55710,6 +56847,9 @@ paths:
                   id:
                     type: string
                   interval_seconds:
+                    type: integer
+                    format: int64
+                  legacy_connection_revision:
                     type: integer
                     format: int64
                   name:
@@ -55897,6 +57037,93 @@ paths:
                   type: string
                 destination:
                   type: string
+                dynatrace:
+                  type: object
+                  properties:
+                    cursor:
+                      type: string
+                    entity_selector:
+                      type: string
+                    event_selector:
+                      type: string
+                    events:
+                      type: boolean
+                    grail:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          bucket_seconds:
+                            type: integer
+                            format: int64
+                          entity_id_field:
+                            type: string
+                          entity_ids:
+                            type: array
+                            items:
+                              type: string
+                          fields:
+                            type: array
+                            items:
+                              type: string
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          query:
+                            type: string
+                          run_id_field:
+                            type: string
+                          statistic:
+                            type: string
+                          unit:
+                            type: string
+                          value_field:
+                            type: string
+                    header_origins:
+                      type: array
+                      items:
+                        type: string
+                    metrics:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          aggregation:
+                            type: string
+                          entity_selector:
+                            type: string
+                          metric_selector:
+                            type: string
+                          name:
+                            type: string
+                          semantics:
+                            type: string
+                          unit:
+                            type: string
+                    problem_selector:
+                      type: string
+                    problems:
+                      type: boolean
+                    project_id:
+                      type: string
+                    query_offset:
+                      type: integer
+                      format: int64
+                    run_header:
+                      type: boolean
+                    settle_seconds:
+                      type: integer
+                      format: int64
+                    smartscape_entity_ids:
+                      type: array
+                      items:
+                        type: string
+                    smartscape_node_type:
+                      type: string
+                    topology_mode:
+                      type: string
+                  nullable: true
                 enabled:
                   type: boolean
                 executor_mode:
@@ -55904,6 +57131,9 @@ paths:
                 id:
                   type: string
                 interval_seconds:
+                  type: integer
+                  format: int64
+                legacy_connection_revision:
                   type: integer
                   format: int64
                 name:
@@ -56029,6 +57259,103 @@ paths:
                     type: string
                   destination:
                     type: string
+                  dynatrace:
+                    type: object
+                    properties:
+                      cursor:
+                        type: string
+                      entity_selector:
+                        type: string
+                      event_selector:
+                        type: string
+                      events:
+                        type: boolean
+                      grail:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bucket_seconds:
+                              type: integer
+                              format: int64
+                            entity_id_field:
+                              type: string
+                            entity_ids:
+                              type: array
+                              items:
+                                type: string
+                            fields:
+                              type: array
+                              items:
+                                type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            query:
+                              type: string
+                            run_id_field:
+                              type: string
+                            statistic:
+                              type: string
+                            unit:
+                              type: string
+                            value_field:
+                              type: string
+                          required:
+                            - kind
+                            - name
+                            - query
+                      header_origins:
+                        type: array
+                        items:
+                          type: string
+                      metrics:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            aggregation:
+                              type: string
+                            entity_selector:
+                              type: string
+                            metric_selector:
+                              type: string
+                            name:
+                              type: string
+                            semantics:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - aggregation
+                            - metric_selector
+                            - name
+                      problem_selector:
+                        type: string
+                      problems:
+                        type: boolean
+                      project_id:
+                        type: string
+                      query_offset:
+                        type: integer
+                        format: int64
+                      run_header:
+                        type: boolean
+                      settle_seconds:
+                        type: integer
+                        format: int64
+                      smartscape_entity_ids:
+                        type: array
+                        items:
+                          type: string
+                      smartscape_node_type:
+                        type: string
+                      topology_mode:
+                        type: string
+                    required:
+                      - project_id
+                    nullable: true
                   enabled:
                     type: boolean
                   executor_mode:
@@ -56036,6 +57363,9 @@ paths:
                   id:
                     type: string
                   interval_seconds:
+                    type: integer
+                    format: int64
+                  legacy_connection_revision:
                     type: integer
                     format: int64
                   name:
@@ -57250,7 +58580,7 @@ paths:
   /api/v1/projects/{id}/monitoring/dynatrace-connections:
     get:
       summary: List Dynatrace Connections
-      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleListDynatraceConnections
       responses:
         "200":
@@ -57280,7 +58610,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: id
           in: path
@@ -57301,8 +58631,15 @@ paths:
             schema:
               type: object
               properties:
+                collection_mode:
+                  type: string
+                collector_agent_id:
+                  type: string
                 description:
                   type: string
+                drain_reserve_bytes:
+                  type: integer
+                  format: int64
                 enabled:
                   type: boolean
                 environment_token_secret:
@@ -57310,6 +58647,15 @@ paths:
                   nullable: true
                 environment_url:
                   type: string
+                events_enabled:
+                  type: boolean
+                expected_revision:
+                  type: integer
+                  format: int64
+                grail_events_enabled:
+                  type: boolean
+                grail_metrics_enabled:
+                  type: boolean
                 log_base_filter:
                   type: string
                 log_message_field:
@@ -57324,6 +58670,12 @@ paths:
                   type: string
                 logs_enabled:
                   type: boolean
+                max_run_scan_bytes:
+                  type: integer
+                  format: int64
+                max_scan_bytes:
+                  type: integer
+                  format: int64
                 metric_queries:
                   type: array
                   items:
@@ -57355,6 +58707,9 @@ paths:
                     type: string
                 platform_auth_type:
                   type: string
+                platform_requests_per_minute:
+                  type: integer
+                  format: int64
                 platform_token_secret:
                   type: string
                   nullable: true
@@ -57369,6 +58724,13 @@ paths:
                   type: string
                 problems_enabled:
                   type: boolean
+                requests_per_minute:
+                  type: integer
+                  format: int64
+                spans_enabled:
+                  type: boolean
+                topology_mode:
+                  type: string
                 updated_at:
                   type: string
                   format: date-time
@@ -57380,15 +58742,77 @@ paths:
               schema:
                 type: object
                 properties:
+                  capabilities:
+                    type: object
+                    properties:
+                      classic_topology:
+                        type: boolean
+                      environment_id:
+                        type: string
+                      environment_origin:
+                        type: string
+                      events:
+                        type: boolean
+                      grail_events:
+                        type: boolean
+                      grail_metrics:
+                        type: boolean
+                      logs:
+                        type: boolean
+                      metrics:
+                        type: boolean
+                      platform_environment_id:
+                        type: string
+                      platform_origin:
+                        type: string
+                      problems:
+                        type: boolean
+                      smartscape:
+                        type: boolean
+                      spans:
+                        type: boolean
+                      status:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      tenant_id:
+                        type: string
+                      verified_origins:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - classic_topology
+                      - events
+                      - grail_events
+                      - grail_metrics
+                      - logs
+                      - metrics
+                      - problems
+                      - smartscape
+                      - spans
+                  collection_mode:
+                    type: string
+                  collector_agent_id:
+                    type: string
                   created_at:
                     type: string
                     format: date-time
                   description:
                     type: string
+                  drain_reserve_bytes:
+                    type: integer
+                    format: int64
                   enabled:
                     type: boolean
                   environment_url:
                     type: string
+                  events_enabled:
+                    type: boolean
+                  grail_events_enabled:
+                    type: boolean
+                  grail_metrics_enabled:
+                    type: boolean
                   has_environment_token:
                     type: boolean
                   has_oauth_client_id:
@@ -57432,6 +58856,12 @@ paths:
                     type: string
                   logs_enabled:
                     type: boolean
+                  max_run_scan_bytes:
+                    type: integer
+                    format: int64
+                  max_scan_bytes:
+                    type: integer
+                    format: int64
                   metric_queries:
                     type: array
                     items:
@@ -57461,6 +58891,9 @@ paths:
                       type: string
                   platform_auth_type:
                     type: string
+                  platform_requests_per_minute:
+                    type: integer
+                    format: int64
                   platform_url:
                     type: string
                   poll_interval_seconds:
@@ -57474,14 +58907,32 @@ paths:
                     type: boolean
                   project_id:
                     type: string
+                  requests_per_minute:
+                    type: integer
+                    format: int64
+                  revision:
+                    type: integer
+                    format: int64
+                  spans_enabled:
+                    type: boolean
                   status:
+                    type: string
+                  topology_mode:
                     type: string
                   updated_at:
                     type: string
                     format: date-time
+                  verified_revision:
+                    type: integer
+                    format: int64
                 required:
+                  - capabilities
+                  - collection_mode
                   - created_at
                   - enabled
+                  - events_enabled
+                  - grail_events_enabled
+                  - grail_metrics_enabled
                   - has_environment_token
                   - has_oauth_client_id
                   - has_oauth_client_secret
@@ -57495,8 +58946,11 @@ paths:
                   - poll_interval_seconds
                   - problems_enabled
                   - project_id
+                  - revision
+                  - spans_enabled
                   - status
                   - updated_at
+                  - verified_revision
         "400":
           description: Bad Request
           content:
@@ -57523,6 +58977,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "413":
           description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:
@@ -57559,14 +59019,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Not Found
+        "409":
+          description: Conflict
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "409":
-          description: Conflict
+        "428":
+          description: Precondition Required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:
@@ -57585,6 +59051,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: expected_revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
       tags:
         - Projects
       x-handler: handleDeleteDynatraceConnection
@@ -57600,15 +59072,77 @@ paths:
               schema:
                 type: object
                 properties:
+                  capabilities:
+                    type: object
+                    properties:
+                      classic_topology:
+                        type: boolean
+                      environment_id:
+                        type: string
+                      environment_origin:
+                        type: string
+                      events:
+                        type: boolean
+                      grail_events:
+                        type: boolean
+                      grail_metrics:
+                        type: boolean
+                      logs:
+                        type: boolean
+                      metrics:
+                        type: boolean
+                      platform_environment_id:
+                        type: string
+                      platform_origin:
+                        type: string
+                      problems:
+                        type: boolean
+                      smartscape:
+                        type: boolean
+                      spans:
+                        type: boolean
+                      status:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      tenant_id:
+                        type: string
+                      verified_origins:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - classic_topology
+                      - events
+                      - grail_events
+                      - grail_metrics
+                      - logs
+                      - metrics
+                      - problems
+                      - smartscape
+                      - spans
+                  collection_mode:
+                    type: string
+                  collector_agent_id:
+                    type: string
                   created_at:
                     type: string
                     format: date-time
                   description:
                     type: string
+                  drain_reserve_bytes:
+                    type: integer
+                    format: int64
                   enabled:
                     type: boolean
                   environment_url:
                     type: string
+                  events_enabled:
+                    type: boolean
+                  grail_events_enabled:
+                    type: boolean
+                  grail_metrics_enabled:
+                    type: boolean
                   has_environment_token:
                     type: boolean
                   has_oauth_client_id:
@@ -57652,6 +59186,12 @@ paths:
                     type: string
                   logs_enabled:
                     type: boolean
+                  max_run_scan_bytes:
+                    type: integer
+                    format: int64
+                  max_scan_bytes:
+                    type: integer
+                    format: int64
                   metric_queries:
                     type: array
                     items:
@@ -57681,6 +59221,9 @@ paths:
                       type: string
                   platform_auth_type:
                     type: string
+                  platform_requests_per_minute:
+                    type: integer
+                    format: int64
                   platform_url:
                     type: string
                   poll_interval_seconds:
@@ -57694,14 +59237,32 @@ paths:
                     type: boolean
                   project_id:
                     type: string
+                  requests_per_minute:
+                    type: integer
+                    format: int64
+                  revision:
+                    type: integer
+                    format: int64
+                  spans_enabled:
+                    type: boolean
                   status:
+                    type: string
+                  topology_mode:
                     type: string
                   updated_at:
                     type: string
                     format: date-time
+                  verified_revision:
+                    type: integer
+                    format: int64
                 required:
+                  - capabilities
+                  - collection_mode
                   - created_at
                   - enabled
+                  - events_enabled
+                  - grail_events_enabled
+                  - grail_metrics_enabled
                   - has_environment_token
                   - has_oauth_client_id
                   - has_oauth_client_secret
@@ -57715,8 +59276,11 @@ paths:
                   - poll_interval_seconds
                   - problems_enabled
                   - project_id
+                  - revision
+                  - spans_enabled
                   - status
                   - updated_at
+                  - verified_revision
         "401":
           description: Authentication required or invalid.
           content:
@@ -57757,8 +59321,15 @@ paths:
             schema:
               type: object
               properties:
+                collection_mode:
+                  type: string
+                collector_agent_id:
+                  type: string
                 description:
                   type: string
+                drain_reserve_bytes:
+                  type: integer
+                  format: int64
                 enabled:
                   type: boolean
                 environment_token_secret:
@@ -57766,6 +59337,15 @@ paths:
                   nullable: true
                 environment_url:
                   type: string
+                events_enabled:
+                  type: boolean
+                expected_revision:
+                  type: integer
+                  format: int64
+                grail_events_enabled:
+                  type: boolean
+                grail_metrics_enabled:
+                  type: boolean
                 log_base_filter:
                   type: string
                 log_message_field:
@@ -57780,6 +59360,12 @@ paths:
                   type: string
                 logs_enabled:
                   type: boolean
+                max_run_scan_bytes:
+                  type: integer
+                  format: int64
+                max_scan_bytes:
+                  type: integer
+                  format: int64
                 metric_queries:
                   type: array
                   items:
@@ -57811,6 +59397,9 @@ paths:
                     type: string
                 platform_auth_type:
                   type: string
+                platform_requests_per_minute:
+                  type: integer
+                  format: int64
                 platform_token_secret:
                   type: string
                   nullable: true
@@ -57825,6 +59414,13 @@ paths:
                   type: string
                 problems_enabled:
                   type: boolean
+                requests_per_minute:
+                  type: integer
+                  format: int64
+                spans_enabled:
+                  type: boolean
+                topology_mode:
+                  type: string
                 updated_at:
                   type: string
                   format: date-time
@@ -57836,15 +59432,77 @@ paths:
               schema:
                 type: object
                 properties:
+                  capabilities:
+                    type: object
+                    properties:
+                      classic_topology:
+                        type: boolean
+                      environment_id:
+                        type: string
+                      environment_origin:
+                        type: string
+                      events:
+                        type: boolean
+                      grail_events:
+                        type: boolean
+                      grail_metrics:
+                        type: boolean
+                      logs:
+                        type: boolean
+                      metrics:
+                        type: boolean
+                      platform_environment_id:
+                        type: string
+                      platform_origin:
+                        type: string
+                      problems:
+                        type: boolean
+                      smartscape:
+                        type: boolean
+                      spans:
+                        type: boolean
+                      status:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      tenant_id:
+                        type: string
+                      verified_origins:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - classic_topology
+                      - events
+                      - grail_events
+                      - grail_metrics
+                      - logs
+                      - metrics
+                      - problems
+                      - smartscape
+                      - spans
+                  collection_mode:
+                    type: string
+                  collector_agent_id:
+                    type: string
                   created_at:
                     type: string
                     format: date-time
                   description:
                     type: string
+                  drain_reserve_bytes:
+                    type: integer
+                    format: int64
                   enabled:
                     type: boolean
                   environment_url:
                     type: string
+                  events_enabled:
+                    type: boolean
+                  grail_events_enabled:
+                    type: boolean
+                  grail_metrics_enabled:
+                    type: boolean
                   has_environment_token:
                     type: boolean
                   has_oauth_client_id:
@@ -57888,6 +59546,12 @@ paths:
                     type: string
                   logs_enabled:
                     type: boolean
+                  max_run_scan_bytes:
+                    type: integer
+                    format: int64
+                  max_scan_bytes:
+                    type: integer
+                    format: int64
                   metric_queries:
                     type: array
                     items:
@@ -57917,6 +59581,9 @@ paths:
                       type: string
                   platform_auth_type:
                     type: string
+                  platform_requests_per_minute:
+                    type: integer
+                    format: int64
                   platform_url:
                     type: string
                   poll_interval_seconds:
@@ -57930,14 +59597,32 @@ paths:
                     type: boolean
                   project_id:
                     type: string
+                  requests_per_minute:
+                    type: integer
+                    format: int64
+                  revision:
+                    type: integer
+                    format: int64
+                  spans_enabled:
+                    type: boolean
                   status:
+                    type: string
+                  topology_mode:
                     type: string
                   updated_at:
                     type: string
                     format: date-time
+                  verified_revision:
+                    type: integer
+                    format: int64
                 required:
+                  - capabilities
+                  - collection_mode
                   - created_at
                   - enabled
+                  - events_enabled
+                  - grail_events_enabled
+                  - grail_metrics_enabled
                   - has_environment_token
                   - has_oauth_client_id
                   - has_oauth_client_secret
@@ -57951,8 +59636,11 @@ paths:
                   - poll_interval_seconds
                   - problems_enabled
                   - project_id
+                  - revision
+                  - spans_enabled
                   - status
                   - updated_at
+                  - verified_revision
         "400":
           description: Bad Request
           content:
@@ -57983,6 +59671,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "428":
+          description: Precondition Required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
@@ -58000,18 +59700,167 @@ paths:
       tags:
         - Projects
       x-handler: handleUpdateDynatraceConnection
-  /api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/test:
+  /api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/operations:
     post:
-      summary: Test Dynatrace Connection
-      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
-      operationId: handleTestDynatraceConnection
+      summary: Create Dynatrace Operation
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      operationId: handleCreateDynatraceOperation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind:
+                  type: string
+                options:
+                  type: object
+                  properties:
+                    cursor:
+                      type: string
+                    kind:
+                      type: string
+                    limit:
+                      type: integer
+                      format: int64
+                    search:
+                      type: string
+                    selector:
+                      type: string
+                    topology_mode:
+                      type: string
+                selection:
+                  type: object
+                  properties:
+                    cursor:
+                      type: string
+                    entity_selector:
+                      type: string
+                    event_selector:
+                      type: string
+                    events:
+                      type: boolean
+                    grail:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          bucket_seconds:
+                            type: integer
+                            format: int64
+                          entity_id_field:
+                            type: string
+                          entity_ids:
+                            type: array
+                            items:
+                              type: string
+                          fields:
+                            type: array
+                            items:
+                              type: string
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          query:
+                            type: string
+                          run_id_field:
+                            type: string
+                          statistic:
+                            type: string
+                          unit:
+                            type: string
+                          value_field:
+                            type: string
+                    header_origins:
+                      type: array
+                      items:
+                        type: string
+                    metrics:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          aggregation:
+                            type: string
+                          entity_selector:
+                            type: string
+                          metric_selector:
+                            type: string
+                          name:
+                            type: string
+                          semantics:
+                            type: string
+                          unit:
+                            type: string
+                    problem_selector:
+                      type: string
+                    problems:
+                      type: boolean
+                    project_id:
+                      type: string
+                    query_offset:
+                      type: integer
+                      format: int64
+                    run_header:
+                      type: boolean
+                    settle_seconds:
+                      type: integer
+                      format: int64
+                    smartscape_entity_ids:
+                      type: array
+                      items:
+                        type: string
+                    smartscape_node_type:
+                      type: string
+                    topology_mode:
+                      type: string
+                  nullable: true
+                source_id:
+                  type: string
       responses:
-        2XX:
-          description: Successful response; exact status is selected by the handler.
+        "202":
+          description: Accepted
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  connection_id:
+                    type: string
+                  connection_revision:
+                    type: integer
+                    format: int64
+                  created_at:
+                    type: string
+                    format: date-time
+                  expires_at:
+                    type: string
+                    format: date-time
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  message:
+                    type: string
+                  result: {}
+                  status:
+                    type: string
+                required:
+                  - connection_id
+                  - connection_revision
+                  - created_at
+                  - expires_at
+                  - id
+                  - kind
+                  - status
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -58026,6 +59875,273 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleCreateDynatraceOperation
+  /api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/operations/{operation_id}:
+    get:
+      summary: Get Dynatrace Operation
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleGetDynatraceOperation
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection_id:
+                    type: string
+                  connection_revision:
+                    type: integer
+                    format: int64
+                  created_at:
+                    type: string
+                    format: date-time
+                  expires_at:
+                    type: string
+                    format: date-time
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  message:
+                    type: string
+                  result: {}
+                  status:
+                    type: string
+                required:
+                  - connection_id
+                  - connection_revision
+                  - created_at
+                  - expires_at
+                  - id
+                  - kind
+                  - status
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: operation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleGetDynatraceOperation
+  /api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/test:
+    post:
+      summary: Test Dynatrace Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleTestDynatraceConnection
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  capabilities:
+                    type: object
+                    properties:
+                      classic_topology:
+                        type: boolean
+                      environment_id:
+                        type: string
+                      environment_origin:
+                        type: string
+                      events:
+                        type: boolean
+                      grail_events:
+                        type: boolean
+                      grail_metrics:
+                        type: boolean
+                      logs:
+                        type: boolean
+                      metrics:
+                        type: boolean
+                      platform_environment_id:
+                        type: string
+                      platform_origin:
+                        type: string
+                      problems:
+                        type: boolean
+                      smartscape:
+                        type: boolean
+                      spans:
+                        type: boolean
+                      status:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      tenant_id:
+                        type: string
+                      verified_origins:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - classic_topology
+                      - events
+                      - grail_events
+                      - grail_metrics
+                      - logs
+                      - metrics
+                      - problems
+                      - smartscape
+                      - spans
+                  checked_at:
+                    type: string
+                    format: date-time
+                  message:
+                    type: string
+                  status:
+                    type: string
+                required:
+                  - capabilities
+                  - checked_at
+                  - message
+                  - status
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection_id:
+                    type: string
+                  connection_revision:
+                    type: integer
+                    format: int64
+                  created_at:
+                    type: string
+                    format: date-time
+                  expires_at:
+                    type: string
+                    format: date-time
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  message:
+                    type: string
+                  result: {}
+                  status:
+                    type: string
+                required:
+                  - connection_id
+                  - connection_revision
+                  - created_at
+                  - expires_at
+                  - id
+                  - kind
+                  - status
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:
@@ -62109,6 +64225,8 @@ paths:
                       items:
                         type: object
                         properties:
+                          backend:
+                            type: string
                           comparator:
                             type: string
                           dimensions:
@@ -62119,14 +64237,29 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          entity_ids:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          evaluation_operation:
+                            type: string
                           metric:
+                            type: string
+                          metric_id:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          provider:
+                            type: string
+                          resolution_seconds:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           source_id:
+                            type: string
+                          source_statistic:
                             type: string
                           start_offset_seconds:
                             type: integer
@@ -63095,6 +65228,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              backend:
+                                type: string
                               comparator:
                                 type: string
                               dimensions:
@@ -63105,14 +65240,29 @@ paths:
                                 type: integer
                                 format: int64
                                 nullable: true
+                              entity_ids:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              evaluation_operation:
+                                type: string
                               metric:
+                                type: string
+                              metric_id:
                                 type: string
                               min_coverage_pct:
                                 type: number
                                 format: double
+                              provider:
+                                type: string
+                              resolution_seconds:
+                                type: integer
+                                format: int64
                               severity:
                                 type: string
                               source_id:
+                                type: string
+                              source_statistic:
                                 type: string
                               start_offset_seconds:
                                 type: integer
@@ -65299,6 +67449,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -65309,14 +67461,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -69954,6 +72121,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -69964,14 +72133,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -74610,6 +76794,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -74620,14 +76806,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -79278,6 +81479,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -79288,14 +81491,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -83946,6 +86164,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -83956,14 +86176,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -88614,6 +90849,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -88624,14 +90861,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -93282,6 +95534,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -93292,14 +95546,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -108111,6 +110380,8 @@ paths:
                       items:
                         type: object
                         properties:
+                          backend:
+                            type: string
                           comparator:
                             type: string
                           dimensions:
@@ -108121,14 +110392,29 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          entity_ids:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          evaluation_operation:
+                            type: string
                           metric:
+                            type: string
+                          metric_id:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          provider:
+                            type: string
+                          resolution_seconds:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           source_id:
+                            type: string
+                          source_statistic:
                             type: string
                           start_offset_seconds:
                             type: integer
@@ -110142,6 +112428,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            backend:
+                              type: string
                             comparator:
                               type: string
                             dimensions:
@@ -110152,14 +112440,29 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_operation:
+                              type: string
                             metric:
+                              type: string
+                            metric_id:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            provider:
+                              type: string
+                            resolution_seconds:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             source_id:
+                              type: string
+                            source_statistic:
                               type: string
                             start_offset_seconds:
                               type: integer
@@ -112672,6 +114975,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            backend:
+                              type: string
                             comparator:
                               type: string
                             dimensions:
@@ -112682,14 +114987,29 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_operation:
+                              type: string
                             metric:
+                              type: string
+                            metric_id:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            provider:
+                              type: string
+                            resolution_seconds:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             source_id:
+                              type: string
+                            source_statistic:
                               type: string
                             start_offset_seconds:
                               type: integer
@@ -114967,6 +117287,8 @@ paths:
                       items:
                         type: object
                         properties:
+                          backend:
+                            type: string
                           comparator:
                             type: string
                           dimensions:
@@ -114977,14 +117299,29 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          entity_ids:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          evaluation_operation:
+                            type: string
                           metric:
+                            type: string
+                          metric_id:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          provider:
+                            type: string
+                          resolution_seconds:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           source_id:
+                            type: string
+                          source_statistic:
                             type: string
                           start_offset_seconds:
                             type: integer
@@ -116998,6 +119335,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            backend:
+                              type: string
                             comparator:
                               type: string
                             dimensions:
@@ -117008,14 +119347,29 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_operation:
+                              type: string
                             metric:
+                              type: string
+                            metric_id:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            provider:
+                              type: string
+                            resolution_seconds:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             source_id:
+                              type: string
+                            source_statistic:
                               type: string
                             start_offset_seconds:
                               type: integer
@@ -119501,6 +121855,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            backend:
+                              type: string
                             comparator:
                               type: string
                             dimensions:
@@ -119511,14 +121867,29 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_operation:
+                              type: string
                             metric:
+                              type: string
+                            metric_id:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            provider:
+                              type: string
+                            resolution_seconds:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             source_id:
+                              type: string
+                            source_statistic:
                               type: string
                             start_offset_seconds:
                               type: integer
@@ -122715,6 +125086,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            backend:
+                              type: string
                             comparator:
                               type: string
                             dimensions:
@@ -122725,14 +125098,29 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_operation:
+                              type: string
                             metric:
+                              type: string
+                            metric_id:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            provider:
+                              type: string
+                            resolution_seconds:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             source_id:
+                              type: string
+                            source_statistic:
                               type: string
                             start_offset_seconds:
                               type: integer
@@ -125370,6 +127758,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -125380,14 +127770,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -128729,6 +131134,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              backend:
+                                type: string
                               comparator:
                                 type: string
                               dimensions:
@@ -128739,14 +131146,29 @@ paths:
                                 type: integer
                                 format: int64
                                 nullable: true
+                              entity_ids:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              evaluation_operation:
+                                type: string
                               metric:
+                                type: string
+                              metric_id:
                                 type: string
                               min_coverage_pct:
                                 type: number
                                 format: double
+                              provider:
+                                type: string
+                              resolution_seconds:
+                                type: integer
+                                format: int64
                               severity:
                                 type: string
                               source_id:
+                                type: string
+                              source_statistic:
                                 type: string
                               start_offset_seconds:
                                 type: integer
@@ -130533,6 +132955,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -130543,14 +132967,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -132562,6 +135001,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -132572,14 +135013,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -134209,6 +136665,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              backend:
+                                type: string
                               comparator:
                                 type: string
                               dimensions:
@@ -134219,14 +136677,29 @@ paths:
                                 type: integer
                                 format: int64
                                 nullable: true
+                              entity_ids:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              evaluation_operation:
+                                type: string
                               metric:
+                                type: string
+                              metric_id:
                                 type: string
                               min_coverage_pct:
                                 type: number
                                 format: double
+                              provider:
+                                type: string
+                              resolution_seconds:
+                                type: integer
+                                format: int64
                               severity:
                                 type: string
                               source_id:
+                                type: string
+                              source_statistic:
                                 type: string
                               start_offset_seconds:
                                 type: integer
@@ -136013,6 +138486,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -136023,14 +138498,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -137557,6 +140047,8 @@ paths:
                       items:
                         type: object
                         properties:
+                          backend:
+                            type: string
                           comparator:
                             type: string
                           dimensions:
@@ -137567,14 +140059,29 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          entity_ids:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          evaluation_operation:
+                            type: string
                           metric:
+                            type: string
+                          metric_id:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          provider:
+                            type: string
+                          resolution_seconds:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           source_id:
+                            type: string
+                          source_statistic:
                             type: string
                           start_offset_seconds:
                             type: integer
@@ -224121,8 +226628,8 @@ paths:
                     revision:
                       type: string
       responses:
-        2XX:
-          description: Successful response; exact status is selected by the handler.
+        "200":
+          description: OK
           content:
             application/json:
               schema:
@@ -231123,8 +233630,8 @@ paths:
                     revision:
                       type: string
       responses:
-        2XX:
-          description: Successful response; exact status is selected by the handler.
+        "200":
+          description: OK
           content:
             application/json:
               schema:
@@ -264912,6 +267419,8 @@ paths:
                       items:
                         type: object
                         properties:
+                          backend:
+                            type: string
                           comparator:
                             type: string
                           dimensions:
@@ -264922,14 +267431,29 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          entity_ids:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          evaluation_operation:
+                            type: string
                           metric:
+                            type: string
+                          metric_id:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          provider:
+                            type: string
+                          resolution_seconds:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           source_id:
+                            type: string
+                          source_statistic:
                             type: string
                           start_offset_seconds:
                             type: integer
@@ -268865,6 +271389,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            backend:
+                              type: string
                             comparator:
                               type: string
                             dimensions:
@@ -268875,14 +271401,29 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_operation:
+                              type: string
                             metric:
+                              type: string
+                            metric_id:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            provider:
+                              type: string
+                            resolution_seconds:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             source_id:
+                              type: string
+                            source_statistic:
                               type: string
                             start_offset_seconds:
                               type: integer
@@ -280275,6 +282816,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            backend:
+                              type: string
                             comparator:
                               type: string
                             dimensions:
@@ -280285,14 +282828,29 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_operation:
+                              type: string
                             metric:
+                              type: string
+                            metric_id:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            provider:
+                              type: string
+                            resolution_seconds:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             source_id:
+                              type: string
+                            source_statistic:
                               type: string
                             start_offset_seconds:
                               type: integer
@@ -291334,6 +293892,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -291344,14 +293904,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -292664,6 +295239,56 @@ paths:
                         connection_revision:
                           type: integer
                           format: int64
+                        dynatrace:
+                          type: object
+                          properties:
+                            cursor:
+                              type: string
+                            entity_selector:
+                              type: string
+                            event_selector:
+                              type: string
+                            events:
+                              type: boolean
+                            grail:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            header_origins:
+                              type: array
+                              items:
+                                type: string
+                            metrics:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            problem_selector:
+                              type: string
+                            problems:
+                              type: boolean
+                            project_id:
+                              type: string
+                            query_offset:
+                              type: integer
+                              format: int64
+                            run_header:
+                              type: boolean
+                            settle_seconds:
+                              type: integer
+                              format: int64
+                            smartscape_entity_ids:
+                              type: array
+                              items:
+                                type: string
+                            smartscape_node_type:
+                              type: string
+                            topology_mode:
+                              type: string
+                          required:
+                            - project_id
+                          nullable: true
                         executor_mode:
                           type: string
                         job_id:
@@ -292769,6 +295394,8 @@ paths:
                         rule:
                           type: object
                           properties:
+                            backend:
+                              type: string
                             comparator:
                               type: string
                             dimensions:
@@ -292779,14 +295406,29 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_operation:
+                              type: string
                             metric:
+                              type: string
+                            metric_id:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            provider:
+                              type: string
+                            resolution_seconds:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             source_id:
+                              type: string
+                            source_statistic:
                               type: string
                             start_offset_seconds:
                               type: integer
@@ -293560,6 +296202,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -293570,14 +296214,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -303405,6 +306064,58 @@ paths:
                             connection_revision:
                               type: integer
                               format: int64
+                            dynatrace:
+                              type: object
+                              properties:
+                                cursor:
+                                  type: string
+                                entity_selector:
+                                  type: string
+                                event_selector:
+                                  type: string
+                                events:
+                                  type: boolean
+                                grail:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: GrailQuery'
+                                    additionalProperties: true
+                                header_origins:
+                                  type: array
+                                  items:
+                                    type: string
+                                metrics:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MetricSelection'
+                                    additionalProperties: true
+                                problem_selector:
+                                  type: string
+                                problems:
+                                  type: boolean
+                                project_id:
+                                  type: string
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                run_header:
+                                  type: boolean
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                smartscape_entity_ids:
+                                  type: array
+                                  items:
+                                    type: string
+                                smartscape_node_type:
+                                  type: string
+                                topology_mode:
+                                  type: string
+                              required:
+                                - project_id
+                              nullable: true
                             executor_mode:
                               type: string
                             job_id:
@@ -303468,6 +306179,8 @@ paths:
                             rule:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -303478,14 +306191,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -305009,6 +307737,8 @@ paths:
                           properties:
                             application_id:
                               type: string
+                            backend:
+                              type: string
                             deep_link:
                               type: string
                             entity_ids:
@@ -305023,6 +307753,8 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            provider:
+                              type: string
                             severity:
                               type: string
                             status:
@@ -305062,6 +307794,8 @@ paths:
                         rule:
                           type: object
                           properties:
+                            backend:
+                              type: string
                             comparator:
                               type: string
                             dimensions:
@@ -305072,14 +307806,29 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_operation:
+                              type: string
                             metric:
+                              type: string
+                            metric_id:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            provider:
+                              type: string
+                            resolution_seconds:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             source_id:
+                              type: string
+                            source_statistic:
                               type: string
                             start_offset_seconds:
                               type: integer
@@ -313002,6 +315751,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            backend:
+                              type: string
                             comparator:
                               type: string
                             dimensions:
@@ -313012,14 +315763,29 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_operation:
+                              type: string
                             metric:
+                              type: string
+                            metric_id:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            provider:
+                              type: string
+                            resolution_seconds:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             source_id:
+                              type: string
+                            source_statistic:
                               type: string
                             start_offset_seconds:
                               type: integer
@@ -324356,6 +327122,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            backend:
+                              type: string
                             comparator:
                               type: string
                             dimensions:
@@ -324366,14 +327134,29 @@ paths:
                               type: integer
                               format: int64
                               nullable: true
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_operation:
+                              type: string
                             metric:
+                              type: string
+                            metric_id:
                               type: string
                             min_coverage_pct:
                               type: number
                               format: double
+                            provider:
+                              type: string
+                            resolution_seconds:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             source_id:
+                              type: string
+                            source_statistic:
                               type: string
                             start_offset_seconds:
                               type: integer
@@ -339250,6 +342033,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -339260,14 +342045,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -340687,6 +343487,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                backend:
+                                  type: string
                                 comparator:
                                   type: string
                                 dimensions:
@@ -340697,14 +343499,29 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                entity_ids:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                evaluation_operation:
+                                  type: string
                                 metric:
+                                  type: string
+                                metric_id:
                                   type: string
                                 min_coverage_pct:
                                   type: number
                                   format: double
+                                provider:
+                                  type: string
+                                resolution_seconds:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 source_id:
+                                  type: string
+                                source_statistic:
                                   type: string
                                 start_offset_seconds:
                                   type: integer
@@ -343695,6 +346512,8 @@ paths:
                           properties:
                             aggregation_eligible:
                               type: boolean
+                            backend:
+                              type: string
                             bucket_end:
                               type: string
                               format: date-time
@@ -343736,6 +346555,8 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            synthetic:
+                              type: boolean
                           required:
                             - aggregation_eligible
                             - bucket_end
@@ -344437,6 +347258,58 @@ paths:
                               type: string
                             destination:
                               type: string
+                            dynatrace:
+                              type: object
+                              properties:
+                                cursor:
+                                  type: string
+                                entity_selector:
+                                  type: string
+                                event_selector:
+                                  type: string
+                                events:
+                                  type: boolean
+                                grail:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: GrailQuery'
+                                    additionalProperties: true
+                                header_origins:
+                                  type: array
+                                  items:
+                                    type: string
+                                metrics:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MetricSelection'
+                                    additionalProperties: true
+                                problem_selector:
+                                  type: string
+                                problems:
+                                  type: boolean
+                                project_id:
+                                  type: string
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                run_header:
+                                  type: boolean
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                smartscape_entity_ids:
+                                  type: array
+                                  items:
+                                    type: string
+                                smartscape_node_type:
+                                  type: string
+                                topology_mode:
+                                  type: string
+                              required:
+                                - project_id
+                              nullable: true
                             enabled:
                               type: boolean
                             executor_mode:
@@ -344444,6 +347317,9 @@ paths:
                             id:
                               type: string
                             interval_seconds:
+                              type: integer
+                              format: int64
+                            legacy_connection_revision:
                               type: integer
                               format: int64
                             name:
@@ -344623,6 +347499,58 @@ paths:
                               type: string
                             destination:
                               type: string
+                            dynatrace:
+                              type: object
+                              properties:
+                                cursor:
+                                  type: string
+                                entity_selector:
+                                  type: string
+                                event_selector:
+                                  type: string
+                                events:
+                                  type: boolean
+                                grail:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: GrailQuery'
+                                    additionalProperties: true
+                                header_origins:
+                                  type: array
+                                  items:
+                                    type: string
+                                metrics:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MetricSelection'
+                                    additionalProperties: true
+                                problem_selector:
+                                  type: string
+                                problems:
+                                  type: boolean
+                                project_id:
+                                  type: string
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                run_header:
+                                  type: boolean
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                smartscape_entity_ids:
+                                  type: array
+                                  items:
+                                    type: string
+                                smartscape_node_type:
+                                  type: string
+                                topology_mode:
+                                  type: string
+                              required:
+                                - project_id
+                              nullable: true
                             enabled:
                               type: boolean
                             executor_mode:
@@ -344630,6 +347558,9 @@ paths:
                             id:
                               type: string
                             interval_seconds:
+                              type: integer
+                              format: int64
+                            legacy_connection_revision:
                               type: integer
                               format: int64
                             name:
@@ -344886,6 +347817,58 @@ paths:
                               type: string
                             destination:
                               type: string
+                            dynatrace:
+                              type: object
+                              properties:
+                                cursor:
+                                  type: string
+                                entity_selector:
+                                  type: string
+                                event_selector:
+                                  type: string
+                                events:
+                                  type: boolean
+                                grail:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: GrailQuery'
+                                    additionalProperties: true
+                                header_origins:
+                                  type: array
+                                  items:
+                                    type: string
+                                metrics:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MetricSelection'
+                                    additionalProperties: true
+                                problem_selector:
+                                  type: string
+                                problems:
+                                  type: boolean
+                                project_id:
+                                  type: string
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                run_header:
+                                  type: boolean
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                smartscape_entity_ids:
+                                  type: array
+                                  items:
+                                    type: string
+                                smartscape_node_type:
+                                  type: string
+                                topology_mode:
+                                  type: string
+                              required:
+                                - project_id
+                              nullable: true
                             enabled:
                               type: boolean
                             executor_mode:
@@ -344893,6 +347876,9 @@ paths:
                             id:
                               type: string
                             interval_seconds:
+                              type: integer
+                              format: int64
+                            legacy_connection_revision:
                               type: integer
                               format: int64
                             name:
@@ -345072,6 +348058,58 @@ paths:
                               type: string
                             destination:
                               type: string
+                            dynatrace:
+                              type: object
+                              properties:
+                                cursor:
+                                  type: string
+                                entity_selector:
+                                  type: string
+                                event_selector:
+                                  type: string
+                                events:
+                                  type: boolean
+                                grail:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: GrailQuery'
+                                    additionalProperties: true
+                                header_origins:
+                                  type: array
+                                  items:
+                                    type: string
+                                metrics:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MetricSelection'
+                                    additionalProperties: true
+                                problem_selector:
+                                  type: string
+                                problems:
+                                  type: boolean
+                                project_id:
+                                  type: string
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                run_header:
+                                  type: boolean
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                smartscape_entity_ids:
+                                  type: array
+                                  items:
+                                    type: string
+                                smartscape_node_type:
+                                  type: string
+                                topology_mode:
+                                  type: string
+                              required:
+                                - project_id
+                              nullable: true
                             enabled:
                               type: boolean
                             executor_mode:
@@ -345079,6 +348117,9 @@ paths:
                             id:
                               type: string
                             interval_seconds:
+                              type: integer
+                              format: int64
+                            legacy_connection_revision:
                               type: integer
                               format: int64
                             name:
@@ -345355,6 +348396,58 @@ paths:
                               type: string
                             destination:
                               type: string
+                            dynatrace:
+                              type: object
+                              properties:
+                                cursor:
+                                  type: string
+                                entity_selector:
+                                  type: string
+                                event_selector:
+                                  type: string
+                                events:
+                                  type: boolean
+                                grail:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: GrailQuery'
+                                    additionalProperties: true
+                                header_origins:
+                                  type: array
+                                  items:
+                                    type: string
+                                metrics:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MetricSelection'
+                                    additionalProperties: true
+                                problem_selector:
+                                  type: string
+                                problems:
+                                  type: boolean
+                                project_id:
+                                  type: string
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                run_header:
+                                  type: boolean
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                smartscape_entity_ids:
+                                  type: array
+                                  items:
+                                    type: string
+                                smartscape_node_type:
+                                  type: string
+                                topology_mode:
+                                  type: string
+                              required:
+                                - project_id
+                              nullable: true
                             enabled:
                               type: boolean
                             executor_mode:
@@ -345362,6 +348455,9 @@ paths:
                             id:
                               type: string
                             interval_seconds:
+                              type: integer
+                              format: int64
+                            legacy_connection_revision:
                               type: integer
                               format: int64
                             name:
@@ -345541,6 +348637,58 @@ paths:
                               type: string
                             destination:
                               type: string
+                            dynatrace:
+                              type: object
+                              properties:
+                                cursor:
+                                  type: string
+                                entity_selector:
+                                  type: string
+                                event_selector:
+                                  type: string
+                                events:
+                                  type: boolean
+                                grail:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: GrailQuery'
+                                    additionalProperties: true
+                                header_origins:
+                                  type: array
+                                  items:
+                                    type: string
+                                metrics:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MetricSelection'
+                                    additionalProperties: true
+                                problem_selector:
+                                  type: string
+                                problems:
+                                  type: boolean
+                                project_id:
+                                  type: string
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                run_header:
+                                  type: boolean
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                smartscape_entity_ids:
+                                  type: array
+                                  items:
+                                    type: string
+                                smartscape_node_type:
+                                  type: string
+                                topology_mode:
+                                  type: string
+                              required:
+                                - project_id
+                              nullable: true
                             enabled:
                               type: boolean
                             executor_mode:
@@ -345548,6 +348696,9 @@ paths:
                             id:
                               type: string
                             interval_seconds:
+                              type: integer
+                              format: int64
+                            legacy_connection_revision:
                               type: integer
                               format: int64
                             name:
@@ -347498,6 +350649,8 @@ paths:
                       items:
                         type: object
                         properties:
+                          backend:
+                            type: string
                           comparator:
                             type: string
                           dimensions:
@@ -347508,14 +350661,29 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          entity_ids:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          evaluation_operation:
+                            type: string
                           metric:
+                            type: string
+                          metric_id:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          provider:
+                            type: string
+                          resolution_seconds:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           source_id:
+                            type: string
+                          source_statistic:
                             type: string
                           start_offset_seconds:
                             type: integer
@@ -350841,6 +354009,8 @@ paths:
                       items:
                         type: object
                         properties:
+                          backend:
+                            type: string
                           comparator:
                             type: string
                           dimensions:
@@ -350851,14 +354021,29 @@ paths:
                             type: integer
                             format: int64
                             nullable: true
+                          entity_ids:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          evaluation_operation:
+                            type: string
                           metric:
+                            type: string
+                          metric_id:
                             type: string
                           min_coverage_pct:
                             type: number
                             format: double
+                          provider:
+                            type: string
+                          resolution_seconds:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           source_id:
+                            type: string
+                          source_statistic:
                             type: string
                           start_offset_seconds:
                             type: integer

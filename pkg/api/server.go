@@ -619,6 +619,7 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 	s.configureReplaySessionReservations()
 	runner.appDynamicsPrepare = s.verifyPreparedAppDynamics
+	runner.dynatracePrepare = s.verifyPreparedDynatrace
 	hub.SetOriginAuthProvider(s.authSettingsForRequest)
 	if leadership != nil {
 		leadership.setOnLoss(func() {
@@ -1100,6 +1101,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.registerAPIRouteCatalog(baselineComparisonAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(runMonitoringAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(appDynamicsAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(dynatraceNativeAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(analysisAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(objectActivityAPIRouteCatalog, standardRouteMiddleware)
 	s.mux.Handle("GET /api/v1/scenarios/{id}/results", cors(log(auth(http.HandlerFunc(s.handleScenarioResults)))))

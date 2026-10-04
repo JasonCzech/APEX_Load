@@ -25,6 +25,9 @@ var intentionallyPublicAPIRoutes = map[string]bool{
 	// submitted results also require a signed, expiring operation grant.
 	"GET /api/v1/monitoring/collectors/{id}/inspections":                        true,
 	"POST /api/v1/monitoring/collectors/{id}/inspections/{operation_id}/result": true,
+	"GET /api/v1/monitoring/collectors/{id}/dynatrace-operations": true,
+	"POST /api/v1/monitoring/collectors/{id}/dynatrace-operations/{operation_id}/result":true,
+	"POST /api/v1/monitoring/collectors/{id}/jobs/{job_id}/scan-reservations":true,
 	"GET /api/v1/auth/login":    true,
 	"POST /api/v1/auth/login":   true,
 	"GET /api/v1/auth/callback": true,

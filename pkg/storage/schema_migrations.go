@@ -54,6 +54,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 27, Name: "object-activity-and-archives", Fingerprint: "10e70e6ffc7829b2d9e594c854903b1db57d4807b1c2878cea751e0eeb37d1d2"},
 	{Version: 28, Name: "archive-restoration-schedule-boundary", Fingerprint: "ba1ac64df70d019c92b5aaae2e4d6ed14f927d8fa4b30d9083a1f533e71981ed"},
 	{Version: 29, Name: "appdynamics-durable-run-monitoring", Fingerprint: "ba1618a00f60ea7b120e07b375d67d8fd7c6368d1a9e8a18ef25c09f9b4c0186"},
+	{Version: 30, Name: "dynatrace-saas-durable-run-monitoring", Fingerprint: "dfd3e49a2a84822ebd3e5570ead96610d0a044425bdb0e74b7ed28eed406b2e0"},
 }
 
 type SchemaMigrationRecord struct {

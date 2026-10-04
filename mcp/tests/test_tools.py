@@ -231,3 +231,35 @@ async def test_appdynamics_source_and_test_selection_parity():
     assert json.loads(seen[-1].content)["goal_config"]["monitor_rules"] == []
     await run_endpoint_tool(tool("run_monitor_series"), path_params={"id": "run"}, query={"source_id": "source", "metric": "calls", "after_key": "cursor"}, client=client)
     assert seen[-1].url.params["after_key"] == "cursor"
+
+
+@pytest.mark.asyncio
+async def test_dynatrace_native_operations_revision_and_evidence_parity():
+    seen: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(202 if request.method == "POST" else 200, json={"id": "op", "status": "pending"})
+
+    client = APEXLoadClient(APEXLoadClientConfig(base_url="http://storm.test/api/v1"), transport=httpx.MockTransport(handler))
+    params = {"id": "project", "connection_id": "connection"}
+    payload = {"kind": "discover", "options": {"kind": "entities", "selector": "type(SERVICE)", "limit": 100}}
+    guarded = json.loads(await run_endpoint_tool(tool("dynatrace_operation_create"), path_params=params, payload=payload, client=client))
+    assert guarded["error"]["code"] == "confirmation_required"
+    assert seen == []
+    result = json.loads(await run_endpoint_tool(tool("dynatrace_operation_create"), path_params=params, payload=payload, confirm=True, client=client))
+    assert result["ok"] is True
+    assert seen[-1].url.path == "/api/v1/projects/project/monitoring/dynatrace-connections/connection/operations"
+    assert json.loads(seen[-1].content) == payload
+    approved_preview = {"kind": "preview", "source_id": "approved-source"}
+    await run_endpoint_tool(tool("dynatrace_operation_create"), path_params=params, payload=approved_preview, confirm=True, client=client)
+    assert json.loads(seen[-1].content) == approved_preview
+    await run_endpoint_tool(tool("dynatrace_operation_get"), path_params={**params, "operation_id": "op"}, client=client)
+    assert seen[-1].url.path.endswith("/operations/op")
+    await run_endpoint_tool(tool("dynatrace_connection_delete"), path_params=params, query={"expected_revision": 3}, confirm=True, reason="Retire approved connection", client=client)
+    assert seen[-1].url.params["expected_revision"] == "3"
+    selection = {"project_id": "project", "metrics": [], "problems": True, "grail": []}
+    await run_endpoint_tool(tool("monitor_source_create"), path_params={"id": "project"}, payload={"pack": "dynatrace", "connection_id": "connection", "executor_mode": "collector", "dynatrace": selection}, confirm=True, client=client)
+    assert json.loads(seen[-1].content)["dynatrace"] == selection
+    await run_endpoint_tool(tool("run_monitor_evidence"), path_params={"id": "run"}, query={"kind": "span", "after_key": "page"}, client=client)
+    assert seen[-1].url.params["kind"] == "span"

@@ -17,24 +17,26 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
 )
 
 // AdapterTarget is a local operator approval. A signed job cannot add a remote
 // identity, executable, driver, command, query, or credential destination.
 type AdapterTarget struct {
-	Cloud           *CloudQuery `json:"cloud,omitempty"`
-	ApprovedCIDRs   []string    `json:"approved_cidrs,omitempty"`
-	CAPEM           string      `json:"ca_pem,omitempty"`
-	EventsEndpoint  string      `json:"events_endpoint,omitempty"`
-	Applications    []string    `json:"applications,omitempty"`
-	Pack            string      `json:"pack"`
-	Destination     string      `json:"destination"`
-	HostKey         string      `json:"host_key,omitempty"`
-	JavaExecutable  string      `json:"java_executable,omitempty"`
-	HelperClassPath string      `json:"helper_class_path,omitempty"`
-	QueryPack       string      `json:"query_pack,omitempty"`
-	TLSCAFile       string      `json:"tls_ca_file,omitempty"`
-	JVMTrustStore   string      `json:"jvm_trust_store,omitempty"`
+	DynatraceOrigins []string    `json:"dynatrace_origins,omitempty"`
+	Cloud            *CloudQuery `json:"cloud,omitempty"`
+	ApprovedCIDRs    []string    `json:"approved_cidrs,omitempty"`
+	CAPEM            string      `json:"ca_pem,omitempty"`
+	EventsEndpoint   string      `json:"events_endpoint,omitempty"`
+	Applications     []string    `json:"applications,omitempty"`
+	Pack             string      `json:"pack"`
+	Destination      string      `json:"destination"`
+	HostKey          string      `json:"host_key,omitempty"`
+	JavaExecutable   string      `json:"java_executable,omitempty"`
+	HelperClassPath  string      `json:"helper_class_path,omitempty"`
+	QueryPack        string      `json:"query_pack,omitempty"`
+	TLSCAFile        string      `json:"tls_ca_file,omitempty"`
+	JVMTrustStore    string      `json:"jvm_trust_store,omitempty"`
 }
 
 func LoadAdapterTargets(path string) ([]AdapterTarget, error) {
@@ -116,12 +118,22 @@ func (a *Agent) approvedDestinations() []string {
 	}
 	for _, target := range a.cfg.AdapterTargets {
 		destination := target.Destination
-		if target.Pack == "ssh-linux" || target.Pack == "jmx" || target.Pack == "jdbc" || target.Pack == "appdynamics" {
+		if target.Pack == "ssh-linux" || target.Pack == "jmx" || target.Pack == "jdbc" || target.Pack == "appdynamics" || target.Pack == "dynatrace" {
 			if key, err := ecdh.X25519().NewPrivateKey(a.cfg.CredentialPrivateKey); err == nil {
 				destination += "#" + base64.StdEncoding.EncodeToString(key.PublicKey().Bytes())
 			}
 		}
 		destinations = append(destinations, destination)
+		if target.Pack == "dynatrace" {
+			for _, origin := range target.DynatraceOrigins {
+				if origin == target.Destination {
+					continue
+				}
+				if key, err := ecdh.X25519().NewPrivateKey(a.cfg.CredentialPrivateKey); err == nil {
+					destinations = append(destinations, origin+"#"+base64.StdEncoding.EncodeToString(key.PublicKey().Bytes()))
+				}
+			}
+		}
 	}
 	sort.Strings(destinations)
 	return destinations
@@ -133,9 +145,9 @@ func validateAdapterTargets(cfg Config) error {
 	}
 	seen := map[string]bool{}
 	for _, target := range cfg.AdapterTargets {
-		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "appdynamics": "https", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[target.Pack]
+		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "appdynamics": "https", "dynatrace": "https", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[target.Pack]
 		endpoint, err := url.Parse(target.Destination)
-		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && endpoint.Path != "" && !(target.Pack == "appdynamics" && endpoint.Path == "/") {
+		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && endpoint.Path != "" && !((target.Pack == "appdynamics" || target.Pack == "dynatrace") && endpoint.Path == "/") {
 			return errors.New("invalid approved monitor destination")
 		}
 		if seen[target.Pack+"\x00"+target.Destination] {
@@ -143,6 +155,22 @@ func validateAdapterTargets(cfg Config) error {
 		}
 		seen[target.Pack+"\x00"+target.Destination] = true
 		switch target.Pack {
+		case "dynatrace":
+			if len(target.DynatraceOrigins) > 3 || len(target.DynatraceOrigins) == 0 {
+				return errors.New("Dynatrace requires locally approved origins")
+			}
+			for _, origin := range append([]string{target.Destination}, target.DynatraceOrigins...) {
+				if origin == "https://sso.dynatrace.com" {
+					continue
+				}
+				suffix := ".live.dynatrace.com"
+				if strings.HasSuffix(strings.TrimRight(origin, "/"), ".apps.dynatrace.com") {
+					suffix = ".apps.dynatrace.com"
+				}
+				if err := dynatrace.ValidateOrigin(origin, suffix); err != nil {
+					return err
+				}
+			}
 		case "appdynamics":
 			cfg := appdynamics.Config{Endpoint: target.Destination, AccountName: "validation", ApprovedCIDRs: target.ApprovedCIDRs, CAPEM: target.CAPEM, EventsEndpoint: target.EventsEndpoint}
 			if err := cfg.Validate(); err != nil {

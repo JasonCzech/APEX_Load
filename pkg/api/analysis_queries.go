@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,13 +33,21 @@ type AnalysisSeriesSelection struct {
 }
 
 type AnalysisComparisonRequest struct {
-	Left          AnalysisSeriesSelection `json:"left"`
-	Right         AnalysisSeriesSelection `json:"right"`
-	From          time.Time               `json:"from"`
-	To            time.Time               `json:"to"`
-	BucketSeconds int                     `json:"bucket_seconds"`
-	MaxLagSeconds int                     `json:"max_lag_seconds"`
-	Mode          string                  `json:"mode"` // overlay or correlation
+	Left           AnalysisSeriesSelection                             `json:"left"`
+	Right          AnalysisSeriesSelection                             `json:"right"`
+	From           time.Time                                           `json:"from"`
+	To             time.Time                                           `json:"to"`
+	BucketSeconds  int                                                 `json:"bucket_seconds"`
+	MaxLagSeconds  int                                                 `json:"max_lag_seconds"`
+	Mode           string                                              `json:"mode"` // overlay or correlation
+	providerSeries map[analysisSeriesSelectionKey]analysis.MetricPoint `json:"-"`
+}
+
+type analysisSeriesSelectionKey string
+
+func analysisSelectionKey(selection AnalysisSeriesSelection) analysisSeriesSelectionKey {
+	body, _ := json.Marshal(selection)
+	return analysisSeriesSelectionKey(body)
 }
 
 func (q AnalysisComparisonRequest) validate() error {
@@ -126,6 +136,7 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 	defer func() { <-analysisPipelineJobs }()
 	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
 	defer cancel()
+	q.providerSeries = map[analysisSeriesSelectionKey]analysis.MetricPoint{}
 	left, leftRun, err := s.loadAnalysisSelection(ctx, project, q.Left, q)
 	if err != nil {
 		writeError(w, 422, err.Error())
@@ -144,6 +155,12 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 	}
 	response := map[string]any{"left": left, "right": right, "request": q, "advisory": true, "interpretation": "Correlation is association, not proof of causation."}
 	if q.Mode == "overlay" {
+		leftProvider, leftNative := q.providerSeries[analysisSelectionKey(q.Left)]
+		rightProvider, rightNative := q.providerSeries[analysisSelectionKey(q.Right)]
+		if leftNative && rightNative && !compatibleNativeMonitorComparison(leftProvider, rightProvider) {
+			writeError(w, 422, "provider metric identity, dimensions, statistic and resolution must match for comparison")
+			return
+		}
 		if q.Left.Aggregation != q.Right.Aggregation || len(left) > 0 && len(right) > 0 && (left[0].Unit == "" || right[0].Unit == "" || left[0].Unit != right[0].Unit || left[0].Kind != right[0].Kind || left[0].InputKind != right[0].InputKind) {
 			writeError(w, 422, "incompatible units or measurement semantics prevent overlay")
 			return
@@ -168,6 +185,14 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 		response["correlation"] = scores
 	}
 	writeJSON(w, 200, response)
+}
+
+func compatibleNativeMonitorComparison(a, b analysis.MetricPoint) bool {
+	if a.Provider == nil || b.Provider == nil {
+		return false
+	}
+	x, y := a.Provider, b.Provider
+	return a.Unit == b.Unit && a.Kind == b.Kind && a.InputKind == b.InputKind && maps.Equal(a.Dimensions, b.Dimensions) && maps.Equal(x.EntityIDs, y.EntityIDs) && x.Name == y.Name && x.Backend == y.Backend && x.MetricID == y.MetricID && x.Statistic == y.Statistic && x.ResolutionSeconds == y.ResolutionSeconds && x.QueryWindow == y.QueryWindow && x.Synthetic == y.Synthetic
 }
 
 func (s *Server) loadAnalysisSelection(ctx context.Context, project string, selection AnalysisSeriesSelection, q AnalysisComparisonRequest) ([]analysis.MetricPoint, string, error) {
@@ -210,7 +235,7 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 			return nil, "", errors.New("monitor storage unavailable")
 		}
 		job, jobErr := store.GetRunMonitorJob(project, selection.RunID+":"+selection.SourceID)
-		if jobErr == nil && job.Source.Pack == "appdynamics" {
+		if jobErr == nil && nativeProviderPack(job.Source.Pack) {
 			after := ""
 			for n := 0; n < 100; n++ {
 				page, err := loadCanonicalMonitorData(ctx, store, project, selection.RunID, selection.SourceID, "point", after, 999)
@@ -226,6 +251,9 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 					}
 				}
 				if !page.HasMore {
+					if q.providerSeries != nil && len(points) > 0 {
+						q.providerSeries[analysisSelectionKey(selection)] = points[0]
+					}
 					result, err := analysis.BucketSeries(points, q.From, q.To, q.BucketSeconds, selection.Aggregation)
 					return result, selection.RunID, err
 				}

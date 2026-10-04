@@ -67,6 +67,8 @@ type MetricPoint struct {
 // one-day maximum resolution of an individual source bucket.
 type ProviderMeasurement struct {
 	Name                string            `json:"name"`
+	Backend             string            `json:"backend,omitempty"`
+	Synthetic           bool              `json:"synthetic,omitempty"`
 	MetricID            string            `json:"metric_id"`
 	CatalogPath         string            `json:"catalog_path,omitempty"`
 	EntityIDs           map[string]string `json:"entity_ids,omitempty"`
@@ -88,7 +90,7 @@ type ProviderMeasurement struct {
 func (p MetricPoint) Validate() error {
 	if p.Provider != nil {
 		m := p.Provider
-		if m.Name != "appdynamics" || m.MetricID == "" || len(m.MetricID) > 256 || len(m.CatalogPath) > 4096 || len(m.EntityIDs) > 16 || m.BucketStart.Location() != time.UTC || m.BucketEnd.Location() != time.UTC || m.BucketStart.IsZero() || !m.BucketEnd.After(m.BucketStart) || m.ResolutionSeconds < 1 || (!m.QueryWindow && m.ResolutionSeconds > 86400) || int64(m.ResolutionSeconds) > math.MaxInt64/int64(time.Second) || m.BucketEnd.Year() < 1 || m.BucketEnd.Year() > 9999 || !m.BucketStart.Add(time.Duration(m.ResolutionSeconds)*time.Second).Equal(m.BucketEnd) || !p.TimestampUTC.Equal(m.BucketStart) || len(m.Statistic) > 64 {
+		if (m.Name != "appdynamics" && m.Name != "dynatrace") || m.MetricID == "" || len(m.MetricID) > 256 || len(m.CatalogPath) > 4096 || len(m.EntityIDs) > 16 || m.BucketStart.Location() != time.UTC || m.BucketEnd.Location() != time.UTC || m.BucketStart.IsZero() || !m.BucketEnd.After(m.BucketStart) || m.ResolutionSeconds < 1 || (!m.QueryWindow && m.ResolutionSeconds > 86400) || int64(m.ResolutionSeconds) > math.MaxInt64/int64(time.Second) || m.BucketEnd.Year() < 1 || m.BucketEnd.Year() > 9999 || !m.BucketStart.Add(time.Duration(m.ResolutionSeconds)*time.Second).Equal(m.BucketEnd) || !p.TimestampUTC.Equal(m.BucketStart) || len(m.Statistic) > 64 || len(m.Backend) > 64 {
 			return errors.New("invalid provider bucket measurement")
 		}
 		for k, v := range m.EntityIDs {
@@ -201,7 +203,16 @@ func sameMetric(a, b MetricPoint) bool {
 	return a.ProjectID == b.ProjectID && a.Source == b.Source &&
 		a.ScenarioID == b.ScenarioID && a.Host == b.Host && a.Service == b.Service &&
 		a.MetricName == b.MetricName && a.Kind == b.Kind && a.InputKind == b.InputKind && a.Unit == b.Unit &&
-		maps.Equal(a.Dimensions, b.Dimensions)
+		maps.Equal(a.Dimensions, b.Dimensions) && compatibleProvider(a.Provider, b.Provider)
+}
+
+// ProviderCompatibility excludes bucket clocks and mutable settlement state,
+// but retains source identity and the semantics required for valid comparisons.
+func compatibleProvider(a, b *ProviderMeasurement) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Name == b.Name && a.Backend == b.Backend && a.Synthetic == b.Synthetic && a.MetricID == b.MetricID && maps.Equal(a.EntityIDs, b.EntityIDs) && a.ResolutionSeconds == b.ResolutionSeconds && a.Statistic == b.Statistic && a.QueryWindow == b.QueryWindow
 }
 
 func sameSeries(a, b MetricPoint) bool {

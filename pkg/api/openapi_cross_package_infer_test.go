@@ -304,6 +304,33 @@ func TestExplicitJSONRequestContractsRemainTypedAndPreserveBodyOptionality(t *te
 	}
 }
 
+func TestGeneratedOpenAPIDynatraceVerificationHasNoCallerBody(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document oasDoc
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	operation := document.Paths["/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/test"]["post"]
+	if operation.RequestBody != nil {
+		t.Fatalf("the compatibility verifier consumes no caller body: %#v", operation.RequestBody)
+	}
+	direct := operation.Responses["200"].Content["application/json"].Schema
+	if len(direct.Properties) != 4 || direct.Properties["status"].Type != "string" || direct.Properties["message"].Type != "string" || direct.Properties["checked_at"].Format != "date-time" || direct.Properties["capabilities"].Properties["metrics"].Type != "boolean" {
+		t.Fatalf("direct verification response must retain its actual typed fields: %#v", direct)
+	}
+	accepted := operation.Responses["202"].Content["application/json"].Schema
+	if accepted.Properties["id"].Type != "string" || accepted.Properties["kind"].Type != "string" || accepted.Properties["connection_revision"].Type != "integer" {
+		t.Fatalf("collector verification operation response is opaque: %#v", accepted)
+	}
+	request := document.Paths["/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/operations"]["post"].RequestBody
+	if request == nil || !request.Required || request.Content["application/json"].Schema.Properties["kind"].Type != "string" {
+		t.Fatalf("operation creation must retain its typed caller request: %#v", request)
+	}
+}
+
 func TestGeneratedOpenAPIAppDynamicsRequestContracts(t *testing.T) {
 	data, err := GenerateOpenAPIYAML("server.go")
 	if err != nil {

@@ -81,6 +81,15 @@ func (tr *TestRunner) preparationRevision(id string) (string, error) {
 							snapshot.Connections = append(snapshot.Connections, c.Revision)
 						}
 					}
+					if source.Pack == "dynatrace" {
+						if connections, ok := tr.testStore.(storage.DynatraceConnectionStore); ok {
+							c, e := connections.GetDynatraceConnection(source.ConnectionID)
+							if e != nil {
+								return "", e
+							}
+							snapshot.Connections = append(snapshot.Connections, c.Revision)
+						}
+					}
 					break
 				}
 			}
@@ -493,6 +502,9 @@ func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
 		return err
 	}
 	if err := tr.validateAppDynamicsCollectionBudgets(bindings, sources); err != nil {
+		return err
+	}
+	if err := tr.validateDynatraceReadiness(readinessContext, record.ProjectID, bindings, sources); err != nil {
 		return err
 	}
 	for _, binding := range bindings.Sources {

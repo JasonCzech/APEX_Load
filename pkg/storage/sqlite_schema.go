@@ -20,6 +20,29 @@ import (
 func schemaCreateTableStatements() []string {
 	return []string{
 		schemaMigrationLedgerDDL,
+		`CREATE TABLE IF NOT EXISTS dynatrace_operations (
+ id TEXT PRIMARY KEY,
+ project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+ connection_id TEXT NOT NULL,
+ connection_revision BIGINT NOT NULL,
+ collector_id TEXT NOT NULL DEFAULT '',
+ kind TEXT NOT NULL,
+ state TEXT NOT NULL,
+ payload_json TEXT NOT NULL,
+ result_json TEXT NOT NULL DEFAULT '',
+ error TEXT NOT NULL DEFAULT '',
+ owner_token TEXT NOT NULL DEFAULT '',
+ lease_expires_at DATETIME,
+ created_at DATETIME NOT NULL,
+ expires_at DATETIME NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS dynatrace_scan_reservations (
+ job_id TEXT NOT NULL REFERENCES run_monitor_jobs(id) ON DELETE CASCADE,
+ attempt_id TEXT NOT NULL,
+ reserved_bytes BIGINT NOT NULL,
+ consumed_bytes BIGINT NOT NULL DEFAULT 0,
+ state TEXT NOT NULL DEFAULT 'pending',
+ created_at DATETIME NOT NULL,
+ PRIMARY KEY(job_id,attempt_id))`,
 		`CREATE TABLE IF NOT EXISTS appdynamics_quota_pools (resource_key TEXT PRIMARY KEY,updated_at DATETIME NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS appdynamics_quota_leases (
  resource_key TEXT NOT NULL REFERENCES appdynamics_quota_pools(resource_key) ON DELETE CASCADE,
@@ -1704,6 +1727,9 @@ func schemaCreateTableStatements() []string {
 // columns added here (e.g. boolean flags added to existing tables).
 func schemaColumnMigrations() []optionalSchemaMigration {
 	return []optionalSchemaMigration{
+		{name: "dynatrace_connections.revision", query: `ALTER TABLE dynatrace_connections ADD COLUMN revision BIGINT NOT NULL DEFAULT 1`},
+		{name: "dynatrace_connections.verified_revision", query: `ALTER TABLE dynatrace_connections ADD COLUMN verified_revision BIGINT NOT NULL DEFAULT 0`},
+		{name: "dynatrace_connections.native_config_json", query: `ALTER TABLE dynatrace_connections ADD COLUMN native_config_json TEXT NOT NULL DEFAULT '{}'`},
 		{name: "object_activity_events.status", query: `ALTER TABLE object_activity_events ADD COLUMN status TEXT NOT NULL DEFAULT 'success'`},
 		{name: "object_archive_states.restored_at", query: `ALTER TABLE object_archive_states ADD COLUMN restored_at DATETIME`},
 		{name: "run_archive_collection_intents.cache_limit_bytes", query: `ALTER TABLE run_archive_collection_intents ADD COLUMN cache_limit_bytes BIGINT NOT NULL DEFAULT 0`},

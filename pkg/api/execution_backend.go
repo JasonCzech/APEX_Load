@@ -482,7 +482,7 @@ func (a *runArtifacts) resultSink() engine.ResultSink {
 type elkTraceEvidenceSink struct{ artifacts *runArtifacts }
 
 func (sink elkTraceEvidenceSink) RecordResult(result *protocol.Result) error {
-	if sink.artifacts == nil || result == nil || sink.artifacts.test == nil || (sink.artifacts.test.ELKCapture == nil && sink.artifacts.test.DynatraceCapture == nil) {
+	if sink.artifacts == nil || result == nil || sink.artifacts.test == nil || (sink.artifacts.test.ELKCapture == nil && sink.artifacts.test.DynatraceCapture == nil && !sink.artifacts.nativeDynatrace.Load()) {
 		return nil
 	}
 	traceID := strings.TrimSpace(traceIDFromCorrelationID(result.CorrelationID))
@@ -499,7 +499,7 @@ func (sink elkTraceEvidenceSink) RecordResult(result *protocol.Result) error {
 		}
 		sink.artifacts.elkMu.Unlock()
 	}
-	if sink.artifacts.test.DynatraceCapture != nil {
+	if sink.artifacts.test.DynatraceCapture != nil || sink.artifacts.nativeDynatrace.Load() {
 		sink.artifacts.dynatraceMu.Lock()
 		if sink.artifacts.dynatraceTraceIDs == nil {
 			sink.artifacts.dynatraceTraceIDs = make(map[string]struct{})
@@ -615,8 +615,12 @@ func (a *runArtifacts) enrichLiveMetrics(test *ManagedTest, live *LiveMetrics) {
 	if a.externalMetrics != nil {
 		values = a.externalMetrics.collect(context.Background(), externalMetricTargetsForTest(test))
 	}
+	nativeWasActive := a.nativeDynatrace.Load()
 	a.observeMonitoringTraces(live)
 	a.startMonitoring(test)
+	if !nativeWasActive && a.nativeDynatrace.Load() {
+		a.observeMonitoringTraces(live)
+	}
 	a.elkMu.Lock()
 	live.ELK = cloneELKCaptureStatus(a.elkStatus)
 	a.elkMu.Unlock()

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"slices"
 	"strings"
@@ -58,6 +59,7 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 	cache := map[string]storage.ProviderMonitorBatch{}
 	receipts := map[string]storage.MonitorBatchReceipt{}
 	sources := map[string]string{}
+	traceProofs := map[string]map[string]bool{}
 	if kind != "point" && len(heads) > 0 {
 		jobs, err := store.ListRunMonitorJobs(project, run)
 		if err != nil {
@@ -65,6 +67,12 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 		}
 		for _, job := range jobs {
 			sources[job.ID] = job.Source.ID
+			if job.Source.Pack == "dynatrace" {
+				traceProofs[job.ID] = map[string]bool{}
+				for _, id := range job.RunTraceIDs {
+					traceProofs[job.ID][id] = true
+				}
+			}
 		}
 	}
 	for _, h := range heads {
@@ -99,6 +107,9 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 			if storage.ObservationKey(p) != h.Key {
 				return out, errors.New("canonical point identity mismatch")
 			}
+			if err := storage.VerifyProviderHeadContent(h, p); err != nil {
+				return out, err
+			}
 			p.ReceivedAt = receipt.ReceivedAt
 			out.Points = append(out.Points, p)
 		} else {
@@ -108,6 +119,19 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 			d := batch.Evidence[h.Index]
 			if storage.DiagnosticKeyForJob(h.JobID, d) != h.Key {
 				return out, errors.New("canonical diagnostic identity mismatch")
+			}
+			if err := storage.VerifyProviderHeadContent(h, d); err != nil {
+				return out, err
+			}
+			if d.Provider == "dynatrace" && d.Properties["trace_id"] != "" {
+				d.Properties = maps.Clone(d.Properties)
+				if d.Properties["correlation"] == "trace_id" {
+					d.Properties["correlation"] = "entity_time"
+				}
+				if d.Properties["correlation"] != "run_header" && traceProofs[h.JobID][strings.ToLower(d.Properties["trace_id"])] {
+					d.Properties["correlation"] = "trace_id"
+				}
+				d.Properties["correlation_sampling"] = "up_to_64_run_observed_trace_ids"
 			}
 			if sources[h.JobID] == "" {
 				return out, errors.New("canonical diagnostic source unavailable")
@@ -123,10 +147,6 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 // This is shared by direct workers and authenticated collector submissions.
 // Artifacts are durable before their receipt, cursor and canonical heads commit.
 func (s *Server) ingestAppDynamicsBatch(ctx context.Context, job storage.RunMonitorJob, sequence int64, payload storage.ProviderMonitorBatch, term executionLeaseTerm) error {
-	store, ok := s.store.(providerMonitorStore)
-	if !ok {
-		return errors.New("provider monitor storage unavailable")
-	}
 	if job.ConnectionSnapshot == nil || job.Source.AppDynamics == nil || sequence < 0 || len(payload.Points) > 512 || len(payload.Evidence) > 100 || len(payload.Coverage) > 128 || len(payload.Topology) > 256 {
 		return errors.New("invalid AppDynamics batch")
 	}
@@ -194,6 +214,17 @@ func (s *Server) ingestAppDynamicsBatch(ctx context.Context, job storage.RunMoni
 		c.Message = scrubTextBounded(c.Message, 256)
 		payload.Coverage[key] = c
 	}
+	return s.persistProviderMonitorBatch(ctx, job, sequence, payload, term)
+}
+
+// Validation remains provider-specific. Durable artifact writing, fencing and
+// receipt/cursor transactions use one path for every native provider.
+func (s *Server) persistProviderMonitorBatch(ctx context.Context, job storage.RunMonitorJob, sequence int64, payload storage.ProviderMonitorBatch, term executionLeaseTerm) error {
+	store, ok := s.store.(providerMonitorStore)
+	if !ok {
+		return errors.New("provider monitor storage unavailable")
+	}
+	now := time.Now().UTC()
 	body, err := json.Marshal(payload)
 	if err != nil || len(body) > 1<<20 {
 		return errors.New("provider batch exceeds byte limit")
@@ -237,7 +268,7 @@ func (tr *TestRunner) ensureRunMonitorFinalization(project, run string) error {
 		return err
 	}
 	for _, job := range jobs {
-		if job.Source.Pack == "appdynamics" && (job.State == "reconciling" || job.State == "collecting") {
+		if nativeProviderPack(job.Source.Pack) && (job.State == "reconciling" || job.State == "collecting") {
 			return errMonitoringPending
 		}
 	}

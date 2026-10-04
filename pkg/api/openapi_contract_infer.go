@@ -173,6 +173,7 @@ var openAPICrossPackageDirectories = map[string]string{
 	"analysis":       "analysis",
 	"analytics":      "analysis/duckdb",
 	"appdynamics":    "appdynamics",
+	"dynatrace":      "dynatrace",
 	"collectoragent": "collectoragent",
 	"dsl":            "dsl",
 	"engine":         "engine",
@@ -241,9 +242,18 @@ func addOpenAPICrossPackageTypeDefinitions(apiDir string, typeDefinitions map[st
 var explicitRouteContractTypes = map[string]struct {
 	requestType         string
 	requestOptional     bool
+	noRequestBody       bool
 	responseTypes       map[int]string
 	responseDescription string
 }{
+	// The compatibility test handler creates its own verification body before
+	// delegation. That internal body is not a caller-visible request contract.
+	"POST /api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/test": {
+		noRequestBody: true,
+		responseTypes: map[int]string{200: "DynatraceConnectionVerificationResponse", 202: "DynatraceOperationResponse"},
+	},
+	"POST /api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/operations":               {requestType: "DynatraceOperationRequest", responseTypes: map[int]string{202: "DynatraceOperationResponse"}},
+	"GET /api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/operations/{operation_id}": {responseTypes: map[int]string{200: "DynatraceOperationResponse"}},
 	"GET /api/v1/projects/{id}/activity":  {responseTypes: map[int]string{200: "ObjectActivityListResponse"}},
 	"POST /api/v1/scripts/{id}/archive":   {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScript"}},
 	"POST /api/v1/scripts/{id}/restore":   {requestType: "ObjectArchiveRequest", responseTypes: map[int]string{200: "StoredScript"}},
@@ -389,6 +399,12 @@ func applyExplicitRouteContractTypes(route discoveredRoute, analysis *handlerCon
 	if !ok {
 		return
 	}
+	if override.noRequestBody {
+		analysis.jsonRequest = false
+		analysis.rawRequest = false
+		analysis.multipartRequest = false
+		analysis.requestSchema = nil
+	}
 	if override.requestType != "" {
 		schema := openAPISchemaForASTType(explicitOpenAPITypeExpression(override.requestType), typeDefinitions, map[string]bool{}, 0)
 		if route.Method == http.MethodPut && route.Path == "/api/v1/system/settings" {
@@ -442,6 +458,10 @@ func applyExplicitRouteContractTypes(route discoveredRoute, analysis *handlerCon
 		}
 		schema.Description = override.responseDescription
 		analysis.jsonResponse = true
+		// A declared response is part of the route contract even when its
+		// handler chooses the status through a variable that AST inference
+		// cannot resolve.
+		analysis.statuses[status] = true
 		analysis.responseSchemas[status] = schema
 	}
 }

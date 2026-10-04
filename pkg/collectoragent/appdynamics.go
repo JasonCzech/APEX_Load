@@ -117,31 +117,71 @@ func (a *Agent) dispatchAppDynamicsJob(ctx context.Context, job RunJob, envelope
 	go func() {
 		defer a.providerWorkers.Done()
 		defer func() { <-a.providerSlots; a.stateMu.Lock(); delete(a.providerBusy, job.ID); a.stateMu.Unlock() }()
-		_ = a.collectAppDynamicsJob(ctx, job, envelope)
+		if job.Pack == "dynatrace" {
+			_ = a.collectDynatraceJob(ctx, job, envelope)
+		} else {
+			_ = a.collectAppDynamicsJob(ctx, job, envelope)
+		}
 	}()
 }
 func (a *Agent) collectAppDynamicsJob(ctx context.Context, job RunJob, envelope SignedRunJob) error {
+	return a.collectProviderJob(ctx, job, envelope, a.readAppDynamicsJob)
+}
+
+type providerRead func(context.Context, RunJob) (appdynamics.Result, error)
+
+func (a *Agent) readAppDynamicsJob(ctx context.Context, job RunJob) (appdynamics.Result, error) {
 	target, approved := a.adapterTarget(job)
 	if !approved || job.AppDynamics == nil || job.AppDynamics.Validate() != nil || job.AppDynamics.Config.Endpoint != target.Destination {
-		return errors.New("AppDynamics job configuration is not locally approved")
+		return appdynamics.Result{}, errors.New("AppDynamics job configuration is not locally approved")
 	}
 	cfg := job.AppDynamics.Config
 	// Trust/egress approval is local. A controller grant cannot broaden it.
 	cfg.ApprovedCIDRs = append([]string(nil), target.ApprovedCIDRs...)
 	cfg.CAPEM = target.CAPEM
 	if target.EventsEndpoint != "" && cfg.EventsEndpoint != target.EventsEndpoint {
-		return errors.New("Analytics endpoint is not locally approved")
+		return appdynamics.Result{}, errors.New("Analytics endpoint is not locally approved")
 	}
 	if cfg.EventsEndpoint != "" && target.EventsEndpoint == "" {
-		return errors.New("Analytics endpoint requires local approval")
+		return appdynamics.Result{}, errors.New("Analytics endpoint requires local approval")
 	}
 	if len(target.Applications) > 0 {
 		for _, id := range job.AppDynamics.Selection.Applications {
 			if !slices.Contains(target.Applications, id) {
-				return errors.New("application scope is not locally approved")
+				return appdynamics.Result{}, errors.New("application scope is not locally approved")
 			}
 		}
 	}
+	credentials, err := OpenCredentials(job, a.cfg.CredentialPrivateKey, time.Now().UTC())
+	if err != nil || credentials.AppDynamics == nil {
+		return appdynamics.Result{}, errors.New("AppDynamics credential lease unavailable")
+	}
+	client, err := appdynamics.NewClient(cfg, credentials.AppDynamics.Runtime())
+	if err != nil {
+		return appdynamics.Result{}, err
+	}
+	from, to := providerQueryWindow(job, time.Now().UTC())
+	if !to.After(from) {
+		return appdynamics.Result{}, errors.New("empty provider query window")
+	}
+	leaseCtx, cancel := context.WithDeadline(ctx, job.LeaseExpiresAt)
+	defer cancel()
+	return client.Collect(leaseCtx, job.AppDynamics.Selection, from, to, job.RunID)
+}
+func providerQueryWindow(job RunJob, now time.Time) (time.Time, time.Time) {
+	from, to := job.QueryFromUTC, job.QueryUntilUTC
+	if from.IsZero() {
+		from = job.StartedAt
+	}
+	if to.IsZero() {
+		to = now
+	}
+	if job.LoadEndedAt != nil && to.After(*job.LoadEndedAt) {
+		to = *job.LoadEndedAt
+	}
+	return from, to
+}
+func (a *Agent) collectProviderJob(ctx context.Context, job RunJob, envelope SignedRunJob, read providerRead) error {
 	now := time.Now().UTC()
 	a.stateMu.Lock()
 	pending := a.pendingBatches[job.ID]
@@ -176,14 +216,6 @@ func (a *Agent) collectAppDynamicsJob(ctx context.Context, job RunJob, envelope 
 		if now.Before(until) {
 			return nil
 		}
-		credentials, err := OpenCredentials(job, a.cfg.CredentialPrivateKey, now)
-		if err != nil || credentials.AppDynamics == nil {
-			return errors.New("AppDynamics credential lease unavailable")
-		}
-		client, err := appdynamics.NewClient(cfg, credentials.AppDynamics.Runtime())
-		if err != nil {
-			return err
-		}
 		from, to := job.QueryFromUTC, job.QueryUntilUTC
 		if from.IsZero() {
 			from = job.StartedAt
@@ -197,13 +229,11 @@ func (a *Agent) collectAppDynamicsJob(ctx context.Context, job RunJob, envelope 
 		if !to.After(from) {
 			return nil
 		}
-		leaseCtx, cancel := context.WithDeadline(ctx, job.LeaseExpiresAt)
-		result, collectErr := client.Collect(leaseCtx, job.AppDynamics.Selection, from, to, job.RunID)
-		cancel()
+		result, collectErr := read(ctx, job)
 		// Failed provider reads may still produce capability/coverage evidence. Keep
 		// them visible without inventing zero-valued measurements.
 		if collectErr != nil && len(result.Coverage) == 0 {
-			result.Coverage = map[string]appdynamics.Coverage{"controller": {Status: "unavailable", From: from, To: to, Message: "AppDynamics collection failed"}}
+			result.Coverage = map[string]appdynamics.Coverage{"controller": {Status: "unavailable", From: from, To: to, Message: "Provider collection failed"}}
 		}
 		chunks, err := appDynamicsBatches(job, envelope, result, to)
 		if err != nil {

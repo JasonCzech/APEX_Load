@@ -141,17 +141,21 @@ func finishRunMonitorLoadTx(tx *storeTx, project, run string, at time.Time) erro
 		return err
 	}
 	for _, j := range jobs {
-		if j.Source.Pack == "appdynamics" {
+		if j.Source.IsProvider() {
 			end := at.UTC()
 			deadline := end.Add(5 * time.Minute)
 			j.LoadEndedAt = &end
 			j.DrainDeadline = &deadline
 			j.ExpiresAt = deadline
 			j.State = "reconciling"
-			j.QueryOffset = 0
-			j.QueryFromUTC = time.Time{}
-			j.QueryUntilUTC = time.Time{}
-			j.QueryCoverage = nil
+			// Dynatrace may have an async request or a partially committed chunk
+			// sequence. Finish its frozen window before querying the terminal one.
+			if j.Source.Pack != "dynatrace" || j.QueryUntilUTC.IsZero() {
+				j.QueryOffset = 0
+				j.QueryFromUTC = time.Time{}
+				j.QueryUntilUTC = time.Time{}
+				j.QueryCoverage = nil
+			}
 		} else {
 			j.State = "stopped"
 			if j.NextSequence == 0 {
@@ -173,34 +177,43 @@ func finishRunMonitorLoadTx(tx *storeTx, project, run string, at time.Time) erro
 // ObservationHead points into a verified immutable receipt artifact. The head
 // can change for delayed buckets; archive publication freezes the job first.
 type ObservationHead struct {
-	JobID    string
-	Key      string
-	Sequence int64
-	Index    int
-	Kind     string
+	JobID         string
+	Key           string
+	Sequence      int64
+	Index         int
+	Kind          string
+	ContentDigest string `json:"-"`
 }
 type ProviderMonitorBatch struct {
-	Topology       []appdynamics.Entity            `json:"topology,omitempty"`
-	Points         []analysis.MetricPoint          `json:"points"`
-	Evidence       []appdynamics.Diagnostic        `json:"evidence,omitempty"`
-	Coverage       map[string]appdynamics.Coverage `json:"coverage,omitempty"`
-	QueryWindowEnd *time.Time                      `json:"query_window_end,omitempty"`
-	Progress       *appdynamics.QueryProgress      `json:"progress,omitempty"`
-	QueryFromUTC   time.Time                       `json:"query_from_utc,omitempty"`
-	QueryUntilUTC  time.Time                       `json:"query_until_utc,omitempty"`
-	Final          bool                            `json:"final,omitempty"`
+	Topology       []analysis.ProviderEntity            `json:"topology,omitempty"`
+	Points         []analysis.MetricPoint               `json:"points"`
+	Evidence       []analysis.ProviderDiagnostic        `json:"evidence,omitempty"`
+	Coverage       map[string]analysis.ProviderCoverage `json:"coverage,omitempty"`
+	QueryWindowEnd *time.Time                           `json:"query_window_end,omitempty"`
+	Progress       *analysis.ProviderQueryProgress      `json:"progress,omitempty"`
+	QueryFromUTC   time.Time                            `json:"query_from_utc,omitempty"`
+	QueryUntilUTC  time.Time                            `json:"query_until_utc,omitempty"`
+	Final          bool                                 `json:"final,omitempty"`
 }
 
 func ObservationKey(p analysis.MetricPoint) string {
 	if p.Provider == nil {
 		return ""
 	}
-	raw, _ := json.Marshal([]any{p.Source, p.MetricName, p.Unit, p.Provider.MetricID, p.Provider.EntityIDs, p.Dimensions, p.Provider.BucketStart, p.Provider.ResolutionSeconds, p.Provider.Statistic})
+	identity := []any{p.Source, p.MetricName, p.Unit, p.Provider.MetricID, p.Provider.EntityIDs, p.Dimensions, p.Provider.BucketStart, p.Provider.ResolutionSeconds, p.Provider.Statistic}
+	if p.Provider.Name == "dynatrace" {
+		identity = append(identity, p.Provider.Name, p.Provider.Backend, p.Provider.Synthetic, p.Provider.BucketEnd)
+	}
+	raw, _ := json.Marshal(identity)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
 func DiagnosticKeyForJob(job string, d appdynamics.Diagnostic) string {
-	raw, _ := json.Marshal([]string{job, d.Kind, d.ApplicationID, d.ID})
+	identity := []string{job, d.Kind, d.ApplicationID, d.ID}
+	if d.Provider == "dynatrace" {
+		identity = append(identity, d.Provider, d.Backend)
+	}
+	raw, _ := json.Marshal(identity)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
@@ -208,7 +221,7 @@ func (s *SQLiteStore) ListProviderObservationHeads(project, run, source, kind, a
 	if limit < 1 || limit > 1000 {
 		return nil, errors.New("invalid head page size")
 	}
-	rows, err := s.db.Query(`SELECT h.job_id,h.record_key,h.sequence,h.record_index,h.record_kind FROM run_monitor_observation_heads h JOIN run_monitor_jobs j ON j.id=h.job_id WHERE j.project_id=? AND j.test_id=? AND (?='' OR j.id=?) AND h.record_kind=? AND h.record_key>? ORDER BY h.record_key,h.job_id LIMIT ?`, project, run, source, run+":"+source, kind, after, limit)
+	rows, err := s.db.Query(`SELECT h.job_id,h.record_key,h.sequence,h.record_index,h.record_kind,h.content_digest FROM run_monitor_observation_heads h JOIN run_monitor_jobs j ON j.id=h.job_id WHERE j.project_id=? AND j.test_id=? AND (?='' OR j.id=?) AND h.record_kind=? AND h.record_key>? ORDER BY h.record_key,h.job_id LIMIT ?`, project, run, source, run+":"+source, kind, after, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +229,7 @@ func (s *SQLiteStore) ListProviderObservationHeads(project, run, source, kind, a
 	heads := []ObservationHead{}
 	for rows.Next() {
 		var h ObservationHead
-		if err := rows.Scan(&h.JobID, &h.Key, &h.Sequence, &h.Index, &h.Kind); err != nil {
+		if err := rows.Scan(&h.JobID, &h.Key, &h.Sequence, &h.Index, &h.Kind, &h.ContentDigest); err != nil {
 			return nil, err
 		}
 		heads = append(heads, h)
@@ -264,8 +277,8 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	if err = json.Unmarshal([]byte(raw), &job); err != nil {
 		return err
 	}
-	if job.Source.Pack != "appdynamics" {
-		return errors.New("provider payload requires AppDynamics job")
+	if !job.Source.IsProvider() {
+		return errors.New("provider payload requires a native provider job")
 	}
 	var prior string
 	err = tx.QueryRow(`SELECT digest FROM run_monitor_batches WHERE job_id=? AND sequence=?`, b.JobID, b.Sequence).Scan(&prior)
@@ -280,6 +293,11 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	}
 	if (state != "collecting" && state != "reconciling") || next != b.Sequence || !expires.After(b.ReceivedAt) || (state == "collecting" && status != "RUNNING" && status != "PAUSED") {
 		return errors.New("provider job stopped, expired or sequence changed")
+	}
+	if job.Source.Pack == "dynatrace" {
+		if err = commitDynatraceScanProgressTx(tx, &job, payload.Progress); err != nil {
+			return err
+		}
 	}
 	if !payload.QueryUntilUTC.IsZero() {
 		if payload.QueryFromUTC.Before(job.StartedAt) || !payload.QueryUntilUTC.After(payload.QueryFromUTC) || payload.QueryUntilUTC.After(b.ReceivedAt.Add(30*time.Second)) || job.LoadEndedAt != nil && payload.QueryUntilUTC.After(*job.LoadEndedAt) || (!job.QueryUntilUTC.IsZero() && (!job.QueryFromUTC.Equal(payload.QueryFromUTC) || !job.QueryUntilUTC.Equal(payload.QueryUntilUTC))) {
@@ -296,7 +314,7 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	}
 	limited := false
 	for i, p := range payload.Points {
-		if p.Provider == nil || p.Validate() != nil || p.ProjectID != project || p.RunID != job.RunID || p.Source != job.Source.ID {
+		if p.Provider == nil || p.Validate() != nil || p.Provider.Name != job.Source.Pack || p.ProjectID != project || p.RunID != job.RunID || p.Source != job.Source.ID {
 			return errors.New("provider metadata required")
 		}
 		allowed, e := providerHeadWithinLimits(tx, job, p, nil)
@@ -312,6 +330,9 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 		}
 	}
 	for i, d := range payload.Evidence {
+		if d.Provider != "" && d.Provider != job.Source.Pack || job.Source.Pack == "dynatrace" && d.Provider != "dynatrace" {
+			return errors.New("diagnostic provider does not match the assigned job")
+		}
 		allowed, e := providerHeadWithinLimits(tx, job, analysis.MetricPoint{}, &d)
 		if e != nil {
 			return e
@@ -362,13 +383,17 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	}
 	if payload.Progress != nil && payload.Progress.TotalQueries > 0 {
 		progress := payload.Progress
-		if progress.TotalQueries > 128 || progress.NextQuery < job.QueryOffset || progress.NextQuery > progress.TotalQueries || progress.Complete != (progress.NextQuery == progress.TotalQueries) || payload.QueryFromUTC.IsZero() || !payload.QueryUntilUTC.After(payload.QueryFromUTC) || (!job.QueryUntilUTC.IsZero() && (!job.QueryFromUTC.Equal(payload.QueryFromUTC) || !job.QueryUntilUTC.Equal(payload.QueryUntilUTC))) {
+		if progress.TotalQueries > 128 || progress.NextQuery < job.QueryOffset || progress.NextQuery > progress.TotalQueries || progress.Complete != (progress.NextQuery == progress.TotalQueries) || progress.Complete && progress.Cursor != "" || payload.QueryFromUTC.IsZero() || !payload.QueryUntilUTC.After(payload.QueryFromUTC) || (!job.QueryUntilUTC.IsZero() && (!job.QueryFromUTC.Equal(payload.QueryFromUTC) || !job.QueryUntilUTC.Equal(payload.QueryUntilUTC))) {
 			return errors.New("invalid provider query continuation")
 		}
 		job.QueryOffset = progress.NextQuery
+		if len(progress.Cursor) > 16<<10 {
+			return errors.New("provider cursor exceeds bound")
+		}
+		job.ProviderCursor = progress.Cursor
 		job.QueryFromUTC = payload.QueryFromUTC
 		job.QueryUntilUTC = payload.QueryUntilUTC
-		if progress.Complete {
+		if progress.Complete && progress.Cursor == "" {
 			job.QueryOffset = 0
 			job.QueryFromUTC = time.Time{}
 			job.QueryUntilUTC = time.Time{}
@@ -378,7 +403,13 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	for _, c := range job.QueryCoverage {
 		complete = complete && c.Status == "complete" && !c.Truncated
 	}
+	if job.Source.Pack == "dynatrace" {
+		complete = complete && dynatraceSelectedCoverageComplete(job.Source.Dynatrace, job.QueryCoverage, payload.QueryFromUTC, payload.QueryUntilUTC)
+	}
 	if payload.QueryWindowEnd != nil {
+		if job.Source.Pack == "dynatrace" && (payload.Progress == nil || payload.Progress.TotalQueries < 1 || !payload.Progress.Complete) {
+			return errors.New("Dynatrace watermark requires committed terminal query progress")
+		}
 		if payload.Progress != nil && !payload.Progress.Complete {
 			return errors.New("incomplete query cannot advance watermark")
 		}
@@ -391,6 +422,9 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	settle := 120
 	if job.Source.AppDynamics != nil && job.Source.AppDynamics.SettleSeconds > 0 {
 		settle = job.Source.AppDynamics.SettleSeconds
+	}
+	if job.Source.Dynatrace != nil && job.Source.Dynatrace.SettleSeconds > 0 {
+		settle = job.Source.Dynatrace.SettleSeconds
 	}
 	if state == "reconciling" && payload.Final && complete && job.LoadEndedAt != nil && b.ReceivedAt.After(job.LoadEndedAt.Truncate(time.Minute).Add(time.Duration(settle+60)*time.Second)) && payload.QueryWindowEnd != nil && payload.QueryWindowEnd.Equal(*job.LoadEndedAt) {
 		rows, e := tx.Query(`SELECT content_digest FROM run_monitor_observation_heads WHERE job_id=? ORDER BY record_key`, b.JobID)
@@ -412,8 +446,12 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 		}
 		rows.Close()
 		current := hex.EncodeToString(hash.Sum(nil))
+		stableInterval := 50 * time.Second
+		if job.Source.Pack == "dynatrace" {
+			stableInterval = time.Duration(max(60, job.Source.IntervalSeconds)) * time.Second
+		}
 		if job.FinalDigest == current && job.StableSinceAt != nil {
-			if b.ReceivedAt.Sub(*job.StableSinceAt) >= 50*time.Second {
+			if b.ReceivedAt.Sub(*job.StableSinceAt) >= stableInterval {
 				job.StablePasses++
 			}
 		} else {
@@ -445,12 +483,10 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	return tx.Commit()
 }
 func upsertProviderHeadTx(tx *storeTx, job, key string, seq int64, index int, kind string, value any) error {
-	body, err := json.Marshal(value)
+	digest, err := providerRecordDigest(value)
 	if err != nil {
 		return err
 	}
-	sum := sha256.Sum256(body)
-	digest := hex.EncodeToString(sum[:])
 	series, diag := "", ""
 	switch v := value.(type) {
 	case analysis.MetricPoint:
@@ -460,6 +496,29 @@ func upsertProviderHeadTx(tx *storeTx, job, key string, seq int64, index int, ki
 	}
 	_, err = tx.Exec(`INSERT INTO run_monitor_observation_heads(job_id,record_key,sequence,record_index,record_kind,content_digest,series_key,diagnostic_kind) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(job_id,record_key) DO UPDATE SET sequence=excluded.sequence,record_index=excluded.record_index,content_digest=excluded.content_digest WHERE run_monitor_observation_heads.sequence<excluded.sequence`, job, key, seq, index, kind, digest, series, diag)
 	return err
+}
+
+func providerRecordDigest(value any) (string, error) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// VerifyProviderHeadContent checks a parsed immutable artifact record before
+// receive-time enrichment. Identity checks alone cannot detect redirection to
+// an older accepted receipt carrying a different value for the same bucket.
+func VerifyProviderHeadContent(head ObservationHead, value any) error {
+	digest, err := providerRecordDigest(value)
+	if err != nil {
+		return err
+	}
+	if head.ContentDigest == "" || digest != head.ContentDigest {
+		return errors.New("canonical provider content digest mismatch")
+	}
+	return nil
 }
 func (s *SQLiteStore) CloseExpiredProviderMonitors(project, run string, now time.Time) error {
 	tx, err := s.db.Begin()
@@ -478,7 +537,11 @@ func (s *SQLiteStore) CloseExpiredProviderMonitors(project, run string, now time
 }
 
 func providerSeriesKey(p analysis.MetricPoint) string {
-	body, _ := json.Marshal([]any{p.Source, p.MetricName, p.Unit, p.Provider.MetricID, p.Provider.EntityIDs, p.Dimensions, p.Unit, p.Provider.Statistic})
+	identity := []any{p.Source, p.MetricName, p.Unit, p.Provider.MetricID, p.Provider.EntityIDs, p.Dimensions, p.Unit, p.Provider.Statistic}
+	if p.Provider.Name == "dynatrace" {
+		identity = append(identity, p.Provider.Name, p.Provider.Backend, p.Provider.Synthetic)
+	}
+	body, _ := json.Marshal(identity)
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:])
 }
@@ -492,7 +555,7 @@ func providerHeadWithinLimits(tx *storeTx, job RunMonitorJob, p analysis.MetricP
 		if count > 0 {
 			return true, nil
 		}
-		limits := map[string]int{"event": 1000, "violation": 200, "snapshot": 200, "log": 100, "transaction": 100}
+		limits := map[string]int{"event": 1000, "violation": 200, "snapshot": 200, "log": 100, "transaction": 100, "problem": 200, "span": 200, "trace": 100}
 		limit, ok := limits[d.Kind]
 		if !ok {
 			return false, errors.New("invalid evidence kind")

@@ -21,13 +21,22 @@ import (
 )
 
 func distributedMonitoringArtifacts(tr *TestRunner, test *ManagedTest) *runArtifacts {
-	if tr == nil || test == nil || (test.ELKCapture == nil && test.DynatraceCapture == nil) {
+	if tr == nil || test == nil {
 		return nil
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	current := tr.tests[test.ID]
 	if current == nil {
+		return nil
+	}
+	// Omitted bindings may inherit a scenario selection. Admission only creates
+	// the bounded trace buffer; startMonitoring checks the frozen durable jobs
+	// outside this lock before activating a native Dynatrace worker.
+	nativeSelection := runMonitoringEnabled(current.ProjectID) &&
+		(current.MonitorBindings != nil && len(current.MonitorBindings.Sources) > 0 ||
+			current.MonitorBindings == nil && current.ScenarioID != "")
+	if current.ELKCapture == nil && current.DynatraceCapture == nil && !nativeSelection {
 		return nil
 	}
 	artifacts := current.elkArtifacts

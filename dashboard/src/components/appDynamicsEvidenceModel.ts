@@ -28,7 +28,7 @@ export async function readBoundedMonitorArchive(response: Response): Promise<Ana
     text += decoder.decode()
   } finally { await reader.cancel() }
   const rows = text.split('\n').filter(line => line.trim()).map(line => JSON.parse(line) as AnalysisPoint)
-  const points = rows.filter(row => row.provider?.name === 'appdynamics')
+  const points = rows.filter(row => row.provider?.name === 'appdynamics' || row.provider?.name === 'dynatrace')
   if (points.length > 10000) throw new Error('Monitoring artifact exceeds the 10,000 point preview limit. Download the complete evidence for analysis.')
   return points
 }

@@ -54,10 +54,17 @@ func (tr *TestRunner) runMonitorCorrelationOrigins(id string) []string {
 	}
 	out := []string{}
 	for _, source := range sources {
-		if !source.Enabled || source.Pack != "appdynamics" || source.AppDynamics == nil || !source.AppDynamics.RunHeader {
+		if !source.Enabled {
 			continue
 		}
-		for _, origin := range source.AppDynamics.HeaderOrigins {
+		origins := []string{}
+		if source.Pack == "appdynamics" && source.AppDynamics != nil && source.AppDynamics.RunHeader {
+			origins = source.AppDynamics.HeaderOrigins
+		}
+		if source.Pack == "dynatrace" && source.Dynatrace != nil && source.Dynatrace.RunHeader {
+			origins = source.Dynatrace.HeaderOrigins
+		}
+		for _, origin := range origins {
 			origin = strings.TrimSuffix(origin, "/")
 			if !slices.Contains(out, origin) {
 				out = append(out, origin)

@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"io"
 	"log/slog"
 	"math"
@@ -58,19 +59,25 @@ type Config struct {
 
 // Agent pushes heartbeats to the controller on an interval.
 type Agent struct {
-	stateMu         sync.Mutex
-	providerBusy    map[string]bool
-	providerSlots   chan struct{}
-	providerWorkers sync.WaitGroup
-	providerBacklog map[string][]*RunSampleBatch
-	cfg             Config
-	client          *http.Client
-	pendingBatches  map[string]*RunSampleBatch
-	nextCollection  map[string]time.Time
-	otlpAccepted    map[string]map[string]time.Time
-	jobPollAfterKey string
-	jobScanUnseen   map[string]bool
-	jobScanOffset   int
+	stateMu               sync.Mutex
+	providerBusy          map[string]bool
+	providerSlots         chan struct{}
+	providerWorkers       sync.WaitGroup
+	providerBacklog       map[string][]*RunSampleBatch
+	dynatraceJobs         map[string]RunJob
+	dynatraceCancelTimers map[string]*time.Timer
+	dynatraceCancelSlots  chan struct{}
+	providerClosing       bool
+	// Tests may inject a trusted fixture client; runtime configuration cannot.
+	dynatraceClientFactory func(dynatrace.Config, dynatrace.Credentials) (*dynatrace.Client, error)
+	cfg                    Config
+	client                 *http.Client
+	pendingBatches         map[string]*RunSampleBatch
+	nextCollection         map[string]time.Time
+	otlpAccepted           map[string]map[string]time.Time
+	jobPollAfterKey        string
+	jobScanUnseen          map[string]bool
+	jobScanOffset          int
 }
 
 type metricPack struct {
@@ -124,6 +131,7 @@ func New(cfg Config) (*Agent, error) {
 	cfg.CredentialPrivateKey = append([]byte(nil), cfg.CredentialPrivateKey...)
 	cfg.AdapterTargets = append([]AdapterTarget(nil), cfg.AdapterTargets...)
 	for i := range cfg.AdapterTargets {
+		cfg.AdapterTargets[i].DynatraceOrigins = append([]string(nil), cfg.AdapterTargets[i].DynatraceOrigins...)
 		if cfg.AdapterTargets[i].Cloud != nil {
 			body, _ := json.Marshal(cfg.AdapterTargets[i].Cloud)
 			var cloned CloudQuery
@@ -141,14 +149,14 @@ func New(cfg Config) (*Agent, error) {
 		}
 		seenPacks[pack] = true
 		switch pack {
-		case "ssh-linux", "jmx", "jdbc", "otel-metrics", "appdynamics", "cloudwatch", "azure-monitor":
+		case "ssh-linux", "jmx", "jdbc", "otel-metrics", "appdynamics", "dynatrace", "cloudwatch", "azure-monitor":
 			if len(cfg.ControllerPublicKey) == 0 {
 				return nil, fmt.Errorf("remote adapters require signed run jobs")
 			}
 			if pack == "otel-metrics" && cfg.OTLP == nil {
 				return nil, fmt.Errorf("OTLP receiver not configured")
 			}
-			if (pack == "ssh-linux" || pack == "jmx" || pack == "jdbc" || pack == "appdynamics") && len(cfg.CredentialPrivateKey) != 32 {
+			if (pack == "ssh-linux" || pack == "jmx" || pack == "jdbc" || pack == "appdynamics" || pack == "dynatrace") && len(cfg.CredentialPrivateKey) != 32 {
 				return nil, fmt.Errorf("collector encryption private key required")
 			}
 			approved := false
@@ -193,7 +201,7 @@ func New(cfg Config) (*Agent, error) {
 		cfg.OTLP.requireJournal = true
 	}
 	cfg.ControllerPublicKey = append(ed25519.PublicKey(nil), cfg.ControllerPublicKey...)
-	return &Agent{cfg: cfg, client: client, providerSlots: make(chan struct{}, 4), providerBacklog: map[string][]*RunSampleBatch{}, pendingBatches: map[string]*RunSampleBatch{}, nextCollection: map[string]time.Time{}}, nil
+	return &Agent{cfg: cfg, client: client, providerSlots: make(chan struct{}, 4), providerBacklog: map[string][]*RunSampleBatch{}, dynatraceJobs: map[string]RunJob{}, dynatraceCancelTimers: map[string]*time.Timer{}, dynatraceCancelSlots: make(chan struct{}, 2), pendingBatches: map[string]*RunSampleBatch{}, nextCollection: map[string]time.Time{}}, nil
 }
 
 // validateControllerURL rejects a controller URL that would leak the collector
@@ -241,7 +249,9 @@ func (a *Agent) Run(ctx context.Context) error {
 		return err
 	}
 	defer unlock()
+	defer a.cancelDynatraceJobs()
 	defer a.providerWorkers.Wait()
+	defer a.stopDynatraceTimers()
 	if err = a.loadSpool(); err != nil {
 		return err
 	}
@@ -277,6 +287,11 @@ func (a *Agent) tick(ctx context.Context) {
 		if slicesContainsAppDynamics(a.cfg.Packs) {
 			if err := a.inspectionTick(ctx); err != nil {
 				slog.Debug("AppDynamics inspection poll unavailable")
+			}
+		}
+		if slicesContainsDynatrace(a.cfg.Packs) {
+			if err := a.dynatraceInspectionTick(ctx); err != nil {
+				slog.Debug("Dynatrace inspection poll unavailable")
 			}
 		}
 		if err := a.runJobTick(ctx); err != nil {
