@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard
+
+
+ Test Files  5 passed (5)
+      Tests  75 passed (75)
+   Start at  01:21:45
+   Duration  4.56s (transform 592ms, setup 132ms, import 970ms, tests 872ms, environment 2.02s)
+

@@ -19,7 +19,7 @@ The Kafka management slice implements fixed read-only metadata/coordinator/offse
 
 The Kafka owned-seek slice qualifies complete current owned/previously-polled earliest/latest/exact seek and configured-group commit fences on a genuine Apache Kafka 3.9.2 single-broker fixture with TLS/SASL PLAIN and read-uncommitted isolation. Independent Describe-only committed-offset reads, actual fetched buffers, real broker-driven revocation during held lookup and disjoint peer handoff pass; bounded transport controls qualify only the harness. [Review and evidence](qa/reviews/feature-completion-kafka-seek-2026-10-05/README.md) retain failed attempts and final checks. This read-uncommitted profile leaves transaction qualification to the separate slice below; restart/recovery, multi-broker and other provider/authentication gates remain open.
 
-The Kafka fresh-source transaction slice qualifies read-committed latest/last-stable seek, production consume-transform commit, buffered-output abort with real SDK input rewind/redelivery, and stale-producer fencing on a separate genuine Apache Kafka 3.9.2 single-broker TLS/PLAIN profile. Independently authenticated stable-offset and output readers reconcile positions and visible records; real open/aborted transaction visibility is tested separately from Go-buffered output discard. [Review and evidence](qa/reviews/feature-completion-kafka-transactions-2026-10-05/README.md) retain the failed initial oracle attempt and actual code-88 stable-offset retry proof. Runtime initialization rejects invalid isolation and teardown preserves unconfirmed abort errors. Fresh per-VUser IDs do not establish restart continuity; transaction revocation/cancellation, broker recovery, multi-broker and other-provider qualification remain open. Full composed repository verification remains required before integration.
+The Kafka fresh-source transaction slice qualifies read-committed latest/last-stable seek, production consume-transform commit, buffered-output abort with real SDK input rewind/redelivery, and stale-producer fencing on a separate genuine Apache Kafka 3.9.2 single-broker TLS/PLAIN profile. Independently authenticated stable-offset and output readers reconcile positions and visible records; real open/aborted transaction visibility is tested separately from Go-buffered output discard. [Review and evidence](qa/reviews/feature-completion-kafka-transactions-2026-10-05/README.md) retain the failed initial oracle attempt and actual code-88 stable-offset retry proof. Runtime initialization rejects invalid isolation and teardown preserves unconfirmed abort errors. Fresh per-VUser IDs do not establish restart continuity; transaction revocation/cancellation, broker recovery, multi-broker and other-provider qualification remain open. The final composed repository Go gate passed with this slice integrated; its receipt is retained in the browser-availability review record.
 
 The Service Bus management slice adds the executable `servicebus-runtime` reader and saved source-authoring workflow under the existing project management capability flag. Fixed HTTPS entity-description reads retain exact nullable populations, pinned Manage identity/trust and bounded physical ownership. Collector/targeted API races, full Go, SQLite compatibility and full dashboard checks pass in both auth profiles; [verification](qa/reviews/feature-completion-servicebus-management-2026-10-04/README.md) retains the original failures and repeats. PostgreSQL integration remains pending. Live Azure and data-plane transaction continuity remain separate gates.
 
@@ -37,6 +37,8 @@ The Event Hubs processor capacity slice exposes process-wide processor/worker ce
 
 The goals-persistence authoring slice now stores script `goal_config` in nullable schema release 36 across normal/conditional saves, GitHub synchronization, Bruno/native import and ID repair, with canonical/list/source readers preserving nil, empty, zero and scoped-rule semantics. SQLite storage/race, actual PostgreSQL migration/writer/reopen and controller-reopen API checks pass; the registered editor save/reopen/Source workflows pass in both authentication profiles. The final bounded full Go repository gate also passes, recorded with the retained initial timeout in the [goals-only verification record](qa/reviews/feature-completion-authoring-goals-2026-10-05/README.md). Persisted opaque revisions, atomic ownership/If-Match fencing, shared authoring owners, idempotent ordinary creates, exhaustive lifecycle parity and adapter retirement remain open.
 
+The browser availability correction makes legacy action-summary estimates explicitly unscored when any required component or valid sample count is absent. Live/archive/comparison cards, charts, CSV and root-cause advisories preserve unavailable evidence and exact cohort identities; only complete device summaries are ranked. The full dashboard cycle passes in both authentication profiles and affected Go normal/race checks pass in [the review record](qa/reviews/feature-completion-browser-availability-2026-10-05/README.md); the final composed repository Go gate also passed against the final embedded dashboard. This is `legacy-summary-availability-v2`, not standards-qualified document scoring. BE-1–BE-4 and BI-1–BI-4 remain open.
+
 ## Track status
 
 | Track | Status | Open work |
@@ -46,7 +48,7 @@ The goals-persistence authoring slice now stores script `goal_config` in nullabl
 | [Script authoring consolidation](#script-authoring-consolidation) | Phases 1-2 done; 3-5 in progress | Scenario-assembly tightening, cross-entry-point lifecycle parity and adapter removal; canonical save/reopen and SLA reseeding fixes landed |
 | [PT Analysis Parquet import](#pt-analysis-native-parquet-import) | Native import, saved mappings, bounded queries and comparisons implemented behind a project flag | 10 GB acceptance skipped at user direction; cross-platform release and broader scale acceptance remain unverified |
 | [Messaging](#messaging) | Most of the program landed | Event Hubs recovery and live Azure qualification, provider depth, IBM MQ native (P2.5) and Solace SMF (P2.6) |
-| [Browser and mobile](#browser-and-mobile) | Device emulation, client metrics, import MVP and UX health slice landed | Measured benchmark publication, WebKit process attribution, TrueClient fixtures, HAR V2, UX intelligence beyond thresholds |
+| [Browser and mobile](#browser-and-mobile) | Device emulation, client metrics, import MVP and qualified legacy-summary availability correction landed | Measured benchmark publication, WebKit process attribution, TrueClient fixtures, HAR V2, UX intelligence beyond thresholds |
 | [CloudTest outcome parity](#cloudtest-outcome-parity) | Active; initial vertical slices implemented | Fixture-proven import mappings, additional analytics dimensions/live intersections, live provider acceptance, media and remaining chart exports |
 
 ## Completed implementation and remaining acceptance — 2026-10-01
@@ -251,7 +253,7 @@ Original items were checked against the tree on 2026-09-24; Event Hubs defaults 
 | P1.3 | Request-reply correlation with safe requeue | Landed as `pkg/protocol/messaging/correlation.go` |
 | P1.4 | DSL catalog enrichment and catalog/runtime parity | Landed for JMS; regenerate with `go generate ./pkg/dsl` |
 | P1.5 | Consumer-lag / queue-depth / DLQ telemetry and dashboard | Largely landed; lag is not yet a single offset/queue-depth model across providers |
-| P2.1 | Kafka depth: idempotence, transactions, isolation, batching, seek | Owned read-uncommitted seek and configured-group fences qualified on Apache Kafka 3.9.2/TLS+PLAIN; read-committed LSO, EOS/fencing/restart, multi-broker and hosted-provider acceptance pending |
+| P2.1 | Kafka depth: idempotence, transactions, isolation, batching, seek | Owned seek, configured-group fences, read-committed LSO and fresh-source commit/abort/fencing qualified on Apache Kafka 3.9.2/TLS+PLAIN; durable transaction restart/recovery, multi-broker and hosted-provider acceptance pending |
 | P2.2 | Schema Registry / Avro / Protobuf / JSON-Schema serde | Largely landed in `pkg/protocol/kafka`; Protobuf/JSON-Schema not re-audited |
 | P2.3 | JMS semantics: message types, selectors, priority, TTL, delivery mode, browse, topic fan-out | Landed |
 | P2.4 | Azure Service Bus: settlement, lock renewal, sessions, scheduled/deferred, DLQ receive | Landed in `realadapter_servicebus.go`; cross-entity transactions and backlog probes shallow |
@@ -271,7 +273,7 @@ Ratings: None (not implemented or mock-only), Thin/Partial, Basic (core ops over
 | Platform | Import | Run | Results | Remaining gaps |
 | --- | --- | --- | --- | --- |
 | JMS (generic) | Partial (AMQP server drafts) | Thin | Partial | Durable/shared subscription breadth, provider breadth |
-| Apache Kafka | Partial (AsyncAPI) | Basic (`kafka_real`) | Partial | Owned-partition real seek and opt-in consumer-offset transactions implemented; broker-backed EOS/rebalance acceptance and offset-lag in every view remain pending |
+| Apache Kafka | Partial (AsyncAPI) | Basic (`kafka_real`) | Partial | Owned-partition seek, real revocation handoff and fresh-source commit/abort/fencing qualified on the pinned single-broker profile; transaction revocation/recovery, multi-broker and offset-lag in every view remain pending |
 | Solace PubSub+ | Partial (AsyncAPI to `jms-solace`) | AMQP-only (`jms_solace_real`) | Partial | Native SMF (P2.6) |
 | IBM MQ | None | Mock only | Partial | Entire native MQI adapter (P2.5) |
 | Azure Service Bus | None | Basic (`jms_servicebus_real`) | Partial | Cross-entity transactions, backlog probes, emulator/live breadth |
@@ -361,7 +363,7 @@ Seams: `pkg/dsl/types.go`, `pkg/protocol/protocol.go`, `pkg/protocol/browser/` (
 
 ### Status (rechecked 2026-09-24)
 
-Implemented: named device profiles; DSL/engine wiring and validation (including profile/engine compatibility); touch actions `browser_tap`, `browser_long_press`, `browser_swipe`, `browser_set_orientation` plus click-to-touch mapping; Chromium and WebKit both on Playwright with WebKit prerequisite warnings in validation, replay APIs and the editor; editor/scenario/library/queued-preview/archive preservation of browser defaults; per-action `ClientMetrics` (FCP, LCP, CLS, INP, DOM timing, blocking resources, long tasks, JS heap, layout/style/task duration, Chromium process CPU/RSS), live `browser`/`browser_by_device` summaries, archive persistence, `browser_by_engine`/`browser_by_platform`/`browser_by_device` rollups, LCP/INP/CLS comparison, per-action drilldown and a capped resource waterfall; TrueClient MobileWeb import MVP; explainable UX slice (health score, weakest-device callout, threshold-backed issue cards); opt-in benchmark harness (`APEXLOAD_BROWSER_BENCHMARKS=1`).
+Implemented: named device profiles; DSL/engine wiring and validation (including profile/engine compatibility); touch actions `browser_tap`, `browser_long_press`, `browser_swipe`, `browser_set_orientation` plus click-to-touch mapping; Chromium and WebKit both on Playwright with WebKit prerequisite warnings in validation, replay APIs and the editor; editor/scenario/library/queued-preview/archive preservation of browser defaults; per-action `ClientMetrics` (FCP, LCP, CLS, INP, DOM timing, blocking resources, long tasks, JS heap, layout/style/task duration, Chromium process CPU/RSS), live `browser`/`browser_by_device` summaries, archive persistence, `browser_by_engine`/`browser_by_platform`/`browser_by_device` rollups, LCP/INP/CLS comparison, per-action drilldown and a capped resource waterfall; TrueClient MobileWeb import MVP; versioned legacy-summary estimates with explicit unscored states, observed components, complete-device ranking and threshold-backed legacy advisories; opt-in benchmark harness (`APEXLOAD_BROWSER_BENCHMARKS=1`).
 
 Still open:
 
@@ -428,7 +430,7 @@ Import responses include `review_sections` and deterministic `repair_suggestions
 
 ### Dashboard and UX intelligence
 
-Scenario authoring carries device preset, orientation, touch and headed/headless into queued-run payloads, capacity estimates, previews and archived comparisons. The script editor has the profile selector, orientation toggle, aspect-ratio viewport preview, touch actions and replay/config warnings. The archive has device/engine/platform rollups, LCP/INP/CLS comparison, drilldown, waterfall and explainable UX health scoring. Long-term goal: answer "will this release degrade checkout on iPhone SE over 4G?" before deploying, with anomaly detection (Layer 3, to start only once stages 1-4 produce real data).
+Scenario authoring carries device preset, orientation, touch and headed/headless into queued-run payloads, capacity estimates, previews and archived comparisons. The script editor has the profile selector, orientation toggle, aspect-ratio viewport preview, touch actions and replay/config warnings. The archive has device/engine/platform rollups, LCP/INP/CLS comparison, drilldown, waterfall and versioned legacy-summary estimates with explicit availability and unscored states. Long-term goal: answer "will this release degrade checkout on iPhone SE over 4G?" before deploying, with anomaly detection (Layer 3, to start only once stages 1-4 produce real data).
 
 ### Browser replay HAR capture
 
@@ -448,7 +450,7 @@ HAR is evidence for debugging, migration review and browser-to-HTTP conversion, 
 | 3 Client metrics collection | `ClientMetrics` on `protocol.Result`, `browser.client_metrics` | Complete for the current contract |
 | 4 Aggregation and dashboard | Device-segmented aggregation, comparison and waterfall views | Complete for the current contract |
 | 5 TrueClient import | `pkg/convert/trueclient`, device profile extraction, replay validation | Partial; sample-backed hardening open |
-| 6 UX intelligence | Explainable scoring slice | First slice complete; frustration, heatmap, business-impact, anomaly work future |
+| 6 UX intelligence | Legacy-summary availability correction verified | Standards-qualified document findings, baseline anomalies, interaction maps and configured journey impact remain open |
 
 | Risk | Mitigation |
 |:---|:---|

@@ -1,6 +1,7 @@
 import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, CapacityAdvisory, GoalStatus, GroupLiveMetrics, LiveCapacityStatus, TelemetryHealth, TestSummary, TxMetrics } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
-import { formatBrowserEngineLabel, formatDevicePlatformLabel } from './browserBreakdownModel'
+import { browserMetricRecord, finiteBrowserMetric, formatBrowserSampleCount, formatBrowserEngineLabel, formatDevicePlatformLabel } from './browserBreakdownModel'
+import BrowserUXAssessment from './BrowserUXAssessment'
 
 interface LiveMetricsSummary {
   tps?: number
@@ -50,13 +51,13 @@ function formatTelemetryTime(value?: string): string {
 }
 
 function formatBrowserMetric(value: number | undefined, suffix = '', digits = 1): string {
-  if (value === undefined) return 'n/a'
-  return `${value.toFixed(digits)}${suffix}`
+  const observed = finiteBrowserMetric(value)
+  return observed === undefined ? 'n/a' : `${observed.toFixed(digits)}${suffix}`
 }
 
 function formatBrowserScore(value: number | undefined): string {
-  if (value === undefined) return 'n/a'
-  return value.toFixed(3)
+  const observed = finiteBrowserMetric(value)
+  return observed === undefined ? 'n/a' : observed.toFixed(3)
 }
 
 function formatThroughputGap(value?: number): string {
@@ -188,7 +189,7 @@ export default function TestExecutionStatusPanels({
   groupMetrics,
   groupColors,
 }: Props) {
-  const browserDevices = Object.entries(metrics?.browser_by_device ?? {})
+  const browserDevices = Object.entries(metrics?.browser_by_device ?? {}).map(([profile, value]) => [profile, { ...browserMetricRecord(value), malformed: !browserMetricRecord(value) }] as const)
   const capacityAdvisory = test.capacity_advisory
   const capacityStatus = metrics?.capacity_status
   const protocolRows = capacityProtocolRows(test, capacityStatus)
@@ -391,8 +392,8 @@ export default function TestExecutionStatusPanels({
               <h3 className="goal-status-title">Browser UX Signals</h3>
               <p className="goal-status-subtitle">Client-side timings captured from browser actions and normalized by device profile.</p>
             </div>
-            <div className="goal-status-badge healthy">
-              {metrics.browser.samples} samples
+            <div className="goal-status-badge neutral">
+              {formatBrowserSampleCount(metrics.browser.samples)}
             </div>
           </div>
 
@@ -439,14 +440,17 @@ export default function TestExecutionStatusPanels({
             </div>
           </div>
 
+          <BrowserUXAssessment summary={metrics.browser} devices={metrics.browser_by_device} />
+
           {browserDevices.length > 0 && (
             <div className="browser-device-grid">
               {browserDevices.map(([profile, deviceMetrics]) => (
                 <div key={profile} className="browser-device-card">
                   <div className="browser-device-header">
                     <span className="browser-device-name">{profile}</span>
-                    <span className="browser-device-tier">{formatDevicePlatformLabel(deviceMetrics.device_platform)} · {formatBrowserEngineLabel(deviceMetrics.browser_engine)} · {deviceMetrics.device_tier || 'unknown'} tier</span>
+                    <span className="browser-device-tier">{formatDevicePlatformLabel(deviceMetrics.device_platform)} · {formatBrowserEngineLabel(deviceMetrics.browser_engine)} · {typeof deviceMetrics.device_tier === 'string' && deviceMetrics.device_tier ? deviceMetrics.device_tier : 'unknown'} tier</span>
                   </div>
+                  {deviceMetrics.malformed && <p className="archive-section-copy">Malformed summary: expected an object.</p>}
                   <div className="browser-device-stats">
                     <span>TTFB {formatBrowserMetric(deviceMetrics.avg_ttfb_ms, ' ms')}</span>
                     <span>FCP {formatBrowserMetric(deviceMetrics.avg_fcp_ms, ' ms')}</span>

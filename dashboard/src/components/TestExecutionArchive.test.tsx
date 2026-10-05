@@ -595,10 +595,13 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('generator-1 · healthy · 50 available')
     expect(container.textContent).toContain('Browser Metrics')
     expect(container.textContent).toContain('UX Intelligence')
-    expect(container.textContent).toContain('Healthy · 100/100')
-    expect(container.textContent).toContain('Browser UX signals are within the current canary thresholds; weakest device is iphone_se.')
-    expect(container.textContent).toContain('Weakest: iphone_se')
-    expect(container.textContent).toContain('Largest Contentful Paint reflects perceived page-load speed.')
+    expect(container.textContent).toContain('Unscored')
+    expect(container.textContent).toContain('5/7 required fields available')
+    expect(container.querySelector('.browser-ux-card.good')).toBeNull()
+    expect(container.textContent).toContain('not a standards-qualified Core Web Vitals score')
+    expect(container.textContent).toContain('1 device summary unranked')
+    expect(container.textContent).not.toContain('Weakest complete summary:')
+    expect(container.textContent).toContain('Legacy threshold: 2500 ms to 4000 ms; weight 1/7.')
     const reportLink = container.querySelector('a[href="/api/v1/tests/test-1/report"]') as HTMLAnchorElement | null
     expect(reportLink).toBeTruthy()
     expect(reportLink?.textContent).toContain('Download Report')
@@ -1171,7 +1174,9 @@ describe('TestExecutionArchive', () => {
 
     expect(container.textContent).toContain('UX Intelligence')
     expect(container.textContent).toContain('Poor ·')
-    expect(container.textContent).toContain('UX signals need attention; weakest device is iphone_se.')
+    expect(container.textContent).toContain('observed components need attention')
+    expect(container.textContent).toContain('2 device summaries unranked')
+    expect(container.textContent).not.toContain('Weakest complete summary:')
     expect(container.textContent).toContain('LCP')
     expect(container.textContent).toContain('4300.0 ms')
     expect(container.textContent).toContain('Blocking resources')
@@ -1566,6 +1571,35 @@ describe('TestExecutionArchive', () => {
 
     await renderArchiveView('report-completeness', instrumentedReport)
     expect(regionReads).toBe(1)
+  })
+
+  it.each([null, 0, false, 'bad', []])('keeps malformed direct browser summaries %j visible without crashing', raw => {
+    const malformed = raw as unknown as NonNullable<RunArchiveReport['browser_by_device']>[string]
+    return renderArchiveView('report-browser-summary', {
+      ...archiveReport,
+      browser_by_device: { invalid_device: malformed },
+      browser_by_engine: { invalid_engine: malformed },
+      browser_by_platform: { invalid_platform: malformed },
+    }).then(() => {
+      expect(container.querySelectorAll('.browser-device-card')).toHaveLength(3)
+      expect(container.textContent).toContain('invalid_device')
+      expect(container.textContent).toContain('invalid_engine')
+      expect(container.textContent).toContain('invalid_platform')
+      expect(container.textContent).toContain('Malformed summary: expected an object')
+      expect(container.textContent).toContain('Sample count unavailable')
+      expect(container.textContent).toContain('1 device summary unranked')
+      expect(container.textContent).not.toContain('Weakest complete summary:')
+      expect(Array.from(container.querySelectorAll('.browser-device-stats')).every(node => node.textContent?.includes('LCP n/a'))).toBe(true)
+    })
+  })
+
+  it('renders object-valued browser label metadata as unavailable scalar labels', async () => {
+    const value = { samples: 1, browser_engine: {}, device_platform: {}, device_tier: {} } as unknown as NonNullable<RunArchiveReport['browser_by_device']>[string]
+    await renderArchiveView('report-browser-summary', { ...archiveReport, browser_by_device: { native: value }, browser_by_engine: { native: value }, browser_by_platform: { native: value } })
+    expect(container.querySelectorAll('.browser-device-card')).toHaveLength(3)
+    expect(container.textContent).toContain('unknown · browser · unknown tier')
+    expect(container.textContent).not.toContain('[object Object]')
+    expect(Array.from(container.querySelectorAll('.browser-device-stats')).every(node => node.textContent?.includes('LCP n/a'))).toBe(true)
   })
 
   async function renderArchiveView(

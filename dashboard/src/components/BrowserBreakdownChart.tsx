@@ -31,6 +31,7 @@ export default function BrowserBreakdownChart({
     return null
   }
 
+  const chartData = data.map(row => ({ ...row, cohortKey: row.cohortKey ?? JSON.stringify(['display', row.segment]) }))
   const hasScoreAxis = series.some(item => item.yAxisId === 'cls')
   const seriesByKey = new Map(series.map(item => [item.dataKey, item]))
   const resolvedSeries = (() => {
@@ -59,11 +60,12 @@ export default function BrowserBreakdownChart({
     <div className="results-compare-chart-card">
       <h4 className="results-compare-chart-title">{title}</h4>
       {copy && <p className="results-compare-chart-copy">{copy}</p>}
-      <SeriesChartExport id="browser-breakdown" title={title} rows={data} axes={[{ key: "segment", label: segmentLabel, value: row => row.segment }]} series={series.map(item => ({ key: item.dataKey, label: item.name, unit: item.yAxisId === "cls" ? "score" : "ms" }))} context={{ description: copy }}><ResponsiveContainer width="100%" height={height}>
-        <LineChart data={data} margin={{ top: 10, right: hasScoreAxis ? 92 : 18, bottom: 12, left: 24 }}>
+      <SeriesChartExport id="browser-breakdown" title={title} rows={data} axes={[{ key: "segment", label: segmentLabel, value: row => row.segment }, ...(data.some(row => row.cohortKey !== undefined) ? [{ key: "cohortKey", label: "Cohort identity", value: (row: BrowserBreakdownDatum) => row.cohortKey }] : [])]} series={series.map(item => ({ key: item.dataKey, label: item.name, unit: item.yAxisId === "cls" ? "score" : "ms" }))} context={{ description: copy, applicability: 'Legacy action-summary averages; missing values remain empty and gaps are not interpolated.' }}><ResponsiveContainer width="100%" height={height}>
+        <LineChart data={chartData} margin={{ top: 10, right: hasScoreAxis ? 92 : 18, bottom: 12, left: 24 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
           <XAxis
-            dataKey="segment"
+            dataKey="cohortKey"
+            tickFormatter={key => chartData.find(row => row.cohortKey === key)?.segment ?? String(key)}
             stroke="var(--text-muted)"
             fontSize={11}
             height={42}
@@ -90,7 +92,11 @@ export default function BrowserBreakdownChart({
           <Tooltip
             contentStyle={chartTooltipContentStyle}
             labelStyle={chartTooltipLabelStyle}
-            labelFormatter={value => formatBrowserBreakdownTooltipLabel(value, segmentLabel)}
+            labelFormatter={value => {
+              const row = chartData.find(row => row.cohortKey === value)
+              const label = formatBrowserBreakdownTooltipLabel(row?.segment ?? value, segmentLabel)
+              return data.some(item => item.cohortKey !== undefined) ? `${label} · ${String(value)}` : label
+            }}
             formatter={(value, name, item) => {
               const metadata = seriesByKey.get(String((item as { dataKey?: string } | undefined)?.dataKey ?? ''))
               return [formatBrowserBreakdownTooltipValue(value, metadata?.valueFormat), metadata?.name || String(name)]
@@ -109,7 +115,7 @@ export default function BrowserBreakdownChart({
               strokeWidth={2}
               strokeDasharray={item.strokeDasharray}
               dot={{ r: 3 }}
-              connectNulls
+              connectNulls={false}
               isAnimationActive={false}
             />
           ))}

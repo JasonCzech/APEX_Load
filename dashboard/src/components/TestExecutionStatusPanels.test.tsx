@@ -214,6 +214,10 @@ describe('TestExecutionStatusPanels', () => {
     })
 
     expect(container.textContent).toContain('Browser UX Signals')
+    expect(container.querySelector('.browser-metrics-card .goal-status-badge')?.classList.contains('healthy')).toBe(false)
+    expect(container.textContent).toContain('Unscored')
+    expect(container.textContent).toContain('5/7 required fields available')
+    expect(container.textContent).toContain('not a standards-qualified Core Web Vitals score')
     expect(container.textContent).toContain('Avg FCP')
     expect(container.textContent).toContain('120.0 ms')
     expect(container.textContent).toContain('Avg CLS')
@@ -431,5 +435,31 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('us-east')
     expect(container.textContent).toContain('120 tx · 2 errors · 150.0 ms p95')
     expect(container.querySelector('[aria-label="eu-west activity 80 transactions"]')).toBeTruthy()
+  })
+
+  it.each([null, 0, false, 'bad', []])('renders malformed live device %j as unavailable without losing its source key', async raw => {
+    await act(async () => root.render(<TestExecutionStatusPanels
+      isGoalOriented={false} goalDescription="" test={{ id: 'malformed-run', groups: [], total_vusers: 1 } as never}
+      metrics={{ browser: { samples: 1 }, browser_by_device: { invalid_device: raw as never } }}
+      isMultiGroup={false} groupMetrics={[]} groupColors={[]}
+    />))
+    expect(container.querySelectorAll('.browser-device-card')).toHaveLength(1)
+    expect(container.textContent).toContain('invalid_device')
+    expect(container.textContent).toContain('Malformed summary: expected an object')
+    expect(container.textContent).toContain('1 device summary unranked')
+    expect(container.textContent).not.toContain('Weakest complete summary:')
+    expect(container.querySelector('.browser-device-stats')?.textContent).toContain('LCP n/a')
+    expect(container.querySelector('.browser-metrics-card .goal-status-badge')?.classList.contains('healthy')).toBe(false)
+  })
+
+  it('renders object-valued live browser labels through the scalar guards', async () => {
+    await act(async () => root.render(<TestExecutionStatusPanels
+      isGoalOriented={false} goalDescription="" test={{ id: 'malformed-labels', groups: [], total_vusers: 1 } as never}
+      metrics={{ browser: { samples: 1 }, browser_by_device: { native: { samples: 1, browser_engine: {}, device_platform: {}, device_tier: {} } as never } }}
+      isMultiGroup={false} groupMetrics={[]} groupColors={[]}
+    />))
+    expect(container.querySelector('.browser-device-tier')?.textContent).toBe('unknown · browser · unknown tier')
+    expect(container.textContent).not.toContain('[object Object]')
+    expect(container.textContent).toContain('Unscored')
   })
 })

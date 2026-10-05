@@ -1,0 +1,16 @@
+Building controller...
+Starting controller on http://127.0.0.1:18472 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.XpnOyS568d)...
+Controller healthy.
+Starting controller on http://127.0.0.1:18472 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.XpnOyS568d)...
+Controller healthy.
+Auth profile verified: local-auth.
+
+Running 3 tests using 1 worker
+
+(node:64228) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/workflow-browser-resource-evidence.spec.ts:4:1 › browser resource evidence filters retained failures and inspects action attribution (7.4s)
+  ✓  2 e2e/workflow-browser-resource-evidence.spec.ts:31:1 › live browser legacy summary refuses unavailable values and distinguishes explicit zero without standards qualification (13.5s)
+  ✓  3 e2e/workflow-browser-resource-evidence.spec.ts:81:1 › archived browser legacy summary preserves mixed-cohort gaps in engine CSV and ranks only complete devices (8.1s)
+
+  3 passed (29.8s)

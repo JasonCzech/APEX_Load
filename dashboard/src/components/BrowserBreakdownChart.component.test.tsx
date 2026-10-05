@@ -11,10 +11,11 @@ import type { BrowserBreakdownDatum, BrowserBreakdownSeries } from './browserBre
 vi.mock('recharts', () => ({
   CartesianGrid: () => <div data-testid="cartesian-grid" />,
   Legend: () => <div data-testid="legend" />,
-  Line: ({ name, stroke }: { name?: string; stroke?: string }) => (
+  Line: ({ name, stroke, connectNulls }: { name?: string; stroke?: string; connectNulls?: boolean }) => (
     <div
       data-testid="line-series"
       data-stroke={stroke}
+      data-connect-nulls={String(connectNulls)}
     >
       {name}
     </div>
@@ -81,6 +82,8 @@ describe('BrowserBreakdownChart', () => {
     })
 
     expect(container.querySelector('[data-testid="x-axis"]')?.getAttribute('data-label')).toBe('Engine')
+    expect(Array.from(container.querySelectorAll('[data-testid="line-series"]')).every(line => line.getAttribute('data-connect-nulls') === 'false')).toBe(true)
+    expect(container.textContent).toContain('missing values remain empty and gaps are not interpolated')
     expect(Array.from(container.querySelectorAll('[data-testid="y-axis"]')).map(axis => axis.getAttribute('data-label'))).toEqual([
       'Timing (ms)',
       'CLS score',

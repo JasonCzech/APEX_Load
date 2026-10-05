@@ -156,12 +156,17 @@ func buildRunRootCauseSummary(testID string, report *RunArchiveReport) RunRootCa
 		addSignal("Load model", "missed_target", fmt.Sprintf("%d interval(s)", report.Overview.ThroughputMissedIntervals), "warning", 55)
 		addFinding("load_model", "warning", "Configured throughput target was missed", fmt.Sprintf("The run missed configured throughput in %d archived interval(s); max throughput gap was %.1f%%.", report.Overview.ThroughputMissedIntervals, report.Overview.MaxThroughputGapPct), []string{"overview.throughput_missed_intervals", "summary_timeline"}, 55)
 	}
+	// Legacy summaries use non-presence-aware floats and one action-sample
+	// denominator. They cannot establish document-final metric eligibility,
+	// even when every reported average happens to be below a threshold.
+	browserUnqualified := report.Overview.Browser != nil
 	if browser := report.Overview.Browser; browser != nil {
-		if browser.AvgLCPMs > 2500 || browser.AvgINPMs > 200 || browser.AvgCLSScore > 0.1 {
-			addSignal("Browser UX", "degraded", fmt.Sprintf("LCP %.0f ms, INP %.0f ms, CLS %.3f", browser.AvgLCPMs, browser.AvgINPMs, browser.AvgCLSScore), "warning", 58)
-			addFinding("browser", "warning", "Browser canary experience degraded", "Archived browser diagnostics exceeded common Core Web Vitals guidance for one or more client-side metrics.", []string{"overview.browser", "browser_by_device"}, 58)
-		} else if browser.Samples > 0 {
-			addSignal("Browser UX", "healthy", fmt.Sprintf("%d samples", browser.Samples), "healthy", 5)
+		summary.Report["browser_ux_model"] = "legacy-summary-availability-v2"
+		summary.Report["browser_ux_applicability"] = "legacy action summaries; document metric eligibility unavailable"
+		addSignal("Browser UX", "unscored", "Document metric eligibility is unavailable in legacy action summaries.", "unknown", 0)
+		if observations := legacyBrowserAdvisoryThresholds(browser); len(observations) > 0 {
+			addSignal("Browser timing thresholds", "observed_above_threshold", strings.Join(observations, "; "), "warning", 58)
+			addFinding("browser", "warning", "Legacy browser timing exceeds advisory thresholds", "Reported action-summary averages exceeded legacy canary thresholds. Document-finality and per-metric eligibility are unavailable; this is not a standards-qualified Core Web Vitals result.", []string{"overview.browser", "browser_by_device"}, 58)
 		}
 	}
 	if report.Completeness.Status != "" && report.Completeness.Status != "complete" {
@@ -191,16 +196,51 @@ func buildRunRootCauseSummary(testID string, report *RunArchiveReport) RunRootCa
 		summary.Status = "breached"
 	case warning:
 		summary.Status = "degraded"
+	case browserUnqualified:
+		summary.Status = "unknown"
 	default:
 		summary.Status = "healthy"
 	}
 	summary.Confidence = rootCauseConfidence(report)
 	summary.Summary = rootCauseNarrative(summary.Status, summary.TopFindings)
+	if summary.Status == "unknown" && browserUnqualified {
+		summary.Confidence = "low"
+		summary.Summary = "Browser action summaries are available, but document metric eligibility is missing. Browser UX remains unscored."
+	}
 	summary.NextActions = rootCauseNextActions(categories)
+	if browserUnqualified {
+		summary.NextActions = append(summary.NextActions, "Review browser evidence availability and document metric eligibility before assigning a browser UX verdict.")
+	}
 	if len(summary.NextActions) == 0 {
 		summary.NextActions = []string{"Use the engineer report profile to review timeline, action, and resource evidence before closing the release gate."}
 	}
 	return summary
+}
+
+// Only finite, above-threshold reported values with a valid legacy sample
+// count can produce an advisory component finding. Missing/zero values have
+// no eligibility proof in this historical contract and never prove health.
+func legacyBrowserAdvisoryThresholds(browser *BrowserLiveMetrics) []string {
+	if browser == nil || browser.Samples <= 0 || browser.Samples > (1<<53)-1 {
+		return nil
+	}
+	var observations []string
+	for _, metric := range []struct {
+		label     string
+		value     float64
+		threshold float64
+		suffix    string
+		digits    int
+	}{
+		{"Reported LCP", browser.AvgLCPMs, 2500, " ms", 0},
+		{"Reported INP", browser.AvgINPMs, 200, " ms", 0},
+		{"Reported CLS", browser.AvgCLSScore, 0.1, "", 3},
+	} {
+		if !math.IsNaN(metric.value) && !math.IsInf(metric.value, 0) && metric.value > metric.threshold {
+			observations = append(observations, fmt.Sprintf("%s %.*f%s", metric.label, metric.digits, metric.value, metric.suffix))
+		}
+	}
+	return observations
 }
 
 func telemetrySeverity(status string) string {

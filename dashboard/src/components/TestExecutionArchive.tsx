@@ -13,13 +13,16 @@ import { Fragment, useMemo, useState } from 'react'
 
 import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, MetricsHistoryPoint, RunArchiveAnalysisEdge, RunArchiveAnalysisNode, RunArchiveAnalysisResponse, RunArchiveAnalysisStats, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, RunArchiveSOAPPayloadTimelineBucket, RunArchiveTransactionDrilldown, TestSummary, TransactionEvent } from '../types'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
+import BrowserUXAssessment from './BrowserUXAssessment'
 import { SortIndicator as ArchiveSortIndicator } from './SortIndicator'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
 import {
   BrowserBreakdown,
   buildBrowserBreakdownData,
   buildArchiveBrowserBreakdownSeries,
-  buildBrowserUXInsight,
+  finiteBrowserMetric,
+  browserMetricRecord,
+  formatBrowserSampleCount,
   formatBrowserEngineLabel,
   formatDevicePlatformLabel,
   getBrowserBreakdownChartCopy,
@@ -127,13 +130,13 @@ function formatArchiveTime(value?: string): string {
 }
 
 function formatBrowserMetric(value: number | undefined, suffix = '', digits = 1): string {
-  if (value === undefined) return 'n/a'
-  return `${value.toFixed(digits)}${suffix}`
+  const observed = finiteBrowserMetric(value)
+  return observed === undefined ? 'n/a' : `${observed.toFixed(digits)}${suffix}`
 }
 
 function formatBrowserScore(value: number | undefined): string {
-  if (value === undefined) return 'n/a'
-  return value.toFixed(3)
+  const observed = finiteBrowserMetric(value)
+  return observed === undefined ? 'n/a' : observed.toFixed(3)
 }
 
 function formatArchiveNumber(value: number | undefined, digits = 1): string {
@@ -615,15 +618,16 @@ function renderBrowserSummary(
   breakdown: BrowserBreakdown = 'device',
   onBreakdownChange?: (value: BrowserBreakdown) => void,
 ) {
-  const engineEntries = Object.values(engines ?? {}).sort((left, right) => formatBrowserEngineLabel(left.browser_engine).localeCompare(formatBrowserEngineLabel(right.browser_engine)))
-  const platformEntries = Object.values(platforms ?? {}).sort((left, right) => formatDevicePlatformLabel(left.device_platform).localeCompare(formatDevicePlatformLabel(right.device_platform)))
-  const deviceEntries = Object.entries(devices ?? {})
+  const engineEntries = Object.entries(engines ?? {}).map(([sourceKey, value]) => ({ ...browserMetricRecord(value), sourceKey, malformed: !browserMetricRecord(value) }))
+    .sort((left, right) => formatBrowserEngineLabel(left.browser_engine ?? left.sourceKey).localeCompare(formatBrowserEngineLabel(right.browser_engine ?? right.sourceKey)))
+  const platformEntries = Object.entries(platforms ?? {}).map(([sourceKey, value]) => ({ ...browserMetricRecord(value), sourceKey, malformed: !browserMetricRecord(value) }))
+    .sort((left, right) => formatDevicePlatformLabel(left.device_platform ?? left.sourceKey).localeCompare(formatDevicePlatformLabel(right.device_platform ?? right.sourceKey)))
+  const deviceEntries = Object.entries(devices ?? {}).map(([profile, value]) => [profile, { ...browserMetricRecord(value), malformed: !browserMetricRecord(value) }] as const)
   const breakdownChartData = buildBrowserBreakdownData(breakdown, { summary, devices, platforms, engines })
   const breakdownSeries = buildArchiveBrowserBreakdownSeries()
   const chartTitle = getBrowserBreakdownTitle(breakdown, 'Breakdown', 'LCP / INP / CLS')
   const chartCopy = getBrowserBreakdownChartCopy(breakdownSeries)
   const segmentLabel = getBrowserBreakdownSegmentLabel(breakdown)
-  const uxInsight = buildBrowserUXInsight(summary, devices)
 
   return (
     <div className="archive-browser-section">
@@ -632,7 +636,7 @@ function renderBrowserSummary(
           <h3 className="chart-title">Browser Metrics</h3>
           <p className="archive-section-copy">Client-side rendering and interaction timings captured during browser actions.</p>
         </div>
-        <span className="archive-chip">{summary.samples} samples</span>
+        <span className="archive-chip">{formatBrowserSampleCount(summary?.samples)}</span>
       </div>
 
       <div className="archive-overview-grid">
@@ -674,29 +678,7 @@ function renderBrowserSummary(
         </div>
       </div>
 
-      {uxInsight && (
-        <div className={`browser-ux-card ${uxInsight.severity}`}>
-          <div className="browser-ux-header">
-            <div>
-              <span className="results-compare-label">UX Intelligence</span>
-              <h4 className="browser-ux-title">{uxInsight.label} · {uxInsight.score}/100</h4>
-            </div>
-            {uxInsight.worstDevice && <span className="archive-chip">Weakest: {uxInsight.worstDevice}</span>}
-          </div>
-          <p className="archive-section-copy">{uxInsight.summary}</p>
-          <div className="browser-ux-signal-grid">
-            {uxInsight.signals.map(signal => (
-              <div key={signal.label} className={`browser-ux-signal ${signal.severity}`}>
-                <div className="browser-ux-signal-row">
-                  <span className="browser-ux-signal-label">{signal.label}</span>
-                  <span className="browser-ux-signal-value">{signal.value}</span>
-                </div>
-                <span className="browser-ux-signal-detail">{signal.detail}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <BrowserUXAssessment summary={summary} devices={devices} />
 
       {onBreakdownChange && breakdownChartData.length > 0 && (
         <>
@@ -723,11 +705,12 @@ function renderBrowserSummary(
           <span className="results-compare-label">Engine Rollup</span>
           <div className="browser-device-grid archive-browser-device-grid">
             {engineEntries.map(metrics => (
-              <div key={metrics.browser_engine || 'browser'} className="browser-device-card">
+              <div key={metrics.sourceKey} className="browser-device-card">
                 <div className="browser-device-header">
-                  <span className="browser-device-name">{formatBrowserEngineLabel(metrics.browser_engine)}</span>
-                  <span className="browser-device-tier">{metrics.samples} samples</span>
+                  <span className="browser-device-name">{formatBrowserEngineLabel(metrics.browser_engine ?? metrics.sourceKey)}</span>
+                  <span className="browser-device-tier">{formatBrowserSampleCount(metrics.samples)}</span>
                 </div>
+                {metrics.malformed && <p className="archive-section-copy">Malformed summary: expected an object.</p>}
                 <div className="browser-device-stats">
                   <span>TTFB {formatBrowserMetric(metrics.avg_ttfb_ms, ' ms')}</span>
                   <span>FCP {formatBrowserMetric(metrics.avg_fcp_ms, ' ms')}</span>
@@ -746,11 +729,12 @@ function renderBrowserSummary(
           <span className="results-compare-label">Platform Rollup</span>
           <div className="browser-device-grid archive-browser-device-grid">
             {platformEntries.map(metrics => (
-              <div key={metrics.device_platform || 'unknown'} className="browser-device-card">
+              <div key={metrics.sourceKey} className="browser-device-card">
                 <div className="browser-device-header">
-                  <span className="browser-device-name">{formatDevicePlatformLabel(metrics.device_platform)}</span>
-                  <span className="browser-device-tier">{formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.samples} samples</span>
+                  <span className="browser-device-name">{formatDevicePlatformLabel(metrics.device_platform ?? metrics.sourceKey)}</span>
+                  <span className="browser-device-tier">{formatBrowserEngineLabel(metrics.browser_engine)} · {formatBrowserSampleCount(metrics.samples)}</span>
                 </div>
+                {metrics.malformed && <p className="archive-section-copy">Malformed summary: expected an object.</p>}
                 <div className="browser-device-stats">
                   <span>TTFB {formatBrowserMetric(metrics.avg_ttfb_ms, ' ms')}</span>
                   <span>FCP {formatBrowserMetric(metrics.avg_fcp_ms, ' ms')}</span>
@@ -772,8 +756,9 @@ function renderBrowserSummary(
               <div key={profile} className="browser-device-card">
                 <div className="browser-device-header">
                   <span className="browser-device-name">{profile}</span>
-                  <span className="browser-device-tier">{formatDevicePlatformLabel(metrics.device_platform)} · {formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
+                  <span className="browser-device-tier">{formatDevicePlatformLabel(metrics.device_platform)} · {formatBrowserEngineLabel(metrics.browser_engine)} · {typeof metrics.device_tier === 'string' && metrics.device_tier ? metrics.device_tier : 'unknown'} tier</span>
                 </div>
+                {metrics.malformed && <p className="archive-section-copy">Malformed summary: expected an object.</p>}
                 <div className="browser-device-stats">
                   <span>TTFB {formatBrowserMetric(metrics.avg_ttfb_ms, ' ms')}</span>
                   <span>FCP {formatBrowserMetric(metrics.avg_fcp_ms, ' ms')}</span>
