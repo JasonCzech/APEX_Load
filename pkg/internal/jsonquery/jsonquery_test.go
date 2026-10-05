@@ -199,3 +199,19 @@ func TestFilterSelectsMatchingElements(t *testing.T) {
 		t.Errorf("first mobile account = %v", got)
 	}
 }
+
+func TestFilterComparesLargeIntegersExactly(t *testing.T) {
+	document, err := Decode([]byte(`{"rows":[{"id":9007199254740992,"name":"a"},{"id":9007199254740993,"name":"b"},{"id":1.0,"name":"c"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct{ expr, want string }{
+		{"$.rows[?(@.id == 9007199254740993)].name", "b"},
+		{"$.rows[?(@.id < 9007199254740993)].name", "a|c"},
+		{"$.rows[?(@.id == 1)].name", "c"},
+	} {
+		if got := strings.Join(selectStrings(t, document, tt.expr, 0), "|"); got != tt.want {
+			t.Errorf("%s = %q, want %q", tt.expr, got, tt.want)
+		}
+	}
+}

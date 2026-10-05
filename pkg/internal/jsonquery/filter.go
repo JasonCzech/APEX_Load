@@ -52,9 +52,20 @@ func (f filterCompare) matches(node any) bool {
 	if !leftFound || !rightFound {
 		return false // an element without the field matches no comparison
 	}
-	if leftNumber, ok := filterNumber(left); ok {
-		if rightNumber, ok := filterNumber(right); ok {
-			return compareOrdered(leftNumber, rightNumber, f.op)
+	if leftNumber, ok := left.(json.Number); ok {
+		if rightNumber, ok := right.(json.Number); ok {
+			// Integers compare exactly: as float64, distinct ids above 2^53
+			// would be equal.
+			if leftInt, err := leftNumber.Int64(); err == nil {
+				if rightInt, err := rightNumber.Int64(); err == nil {
+					return compareOrdered(leftInt, rightInt, f.op)
+				}
+			}
+			if leftFloat, ok := filterNumber(leftNumber); ok {
+				if rightFloat, ok := filterNumber(rightNumber); ok {
+					return compareOrdered(leftFloat, rightFloat, f.op)
+				}
+			}
 		}
 	}
 	if leftText, ok := left.(string); ok {
@@ -92,11 +103,7 @@ func resolveRelative(node any, path []step) (any, bool) {
 	return current, true
 }
 
-func filterNumber(value any) (float64, bool) {
-	number, ok := value.(json.Number)
-	if !ok {
-		return 0, false
-	}
+func filterNumber(number json.Number) (float64, bool) {
 	parsed, err := number.Float64()
 	return parsed, err == nil
 }
@@ -113,7 +120,7 @@ func filterScalarEqual(left, right any) bool {
 	}
 }
 
-func compareOrdered[T float64 | string](left, right T, op string) bool {
+func compareOrdered[T int64 | float64 | string](left, right T, op string) bool {
 	switch op {
 	case "==":
 		return left == right
