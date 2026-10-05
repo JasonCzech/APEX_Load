@@ -82,11 +82,34 @@ func TestDuplicateMembersAndStrictUnicode(t *testing.T) {
 		`{"actions":[],"actions":[]}`,
 		`{"actions":[{"id":"x","id":"y","descriptor":"synthetic"}]}`,
 		`{"actions":[{"id":"x","\u0069d":"y","descriptor":"synthetic"}]}`,
-		`{"actions":[{"id":"x","descriptor":"synthetic","params":{"a":1,"a":2}}]}`,
+		`{"actions":[{"id":"x","descriptor":"synthetic","\u0064escriptor":"other"}]}`,
 	} {
 		report := ValidateRequest([]byte(body))
 		if report.Complete || len(report.Issues) == 0 || report.Issues[0].Code != DuplicateMember {
 			t.Fatalf("duplicate accepted: %+v", report)
+		}
+	}
+	// Members the validator does not read cannot change its result, so their
+	// duplicates (common in captured component payloads) are accepted.
+	if report := ValidateRequest([]byte(`{"actions":[{"id":"x","descriptor":"synthetic","params":{"a":1,"a":2},"params":{}}],"actions_count":1,"actions_count":2}`)); !report.Success {
+		t.Fatalf("unread duplicate rejected: %+v", report)
+	}
+	for _, body := range []string{
+		`{"actions":[{"id":"x","state":"SUCCESS","returnValue":{"icon":1,"icon":2}}]}`,
+		`{"actions":[{"id":"x","state":"SUCCESS","error":[],"error":[]}],"context":{"loaded":{"a":1,"a":1}},"context":{}}`,
+		`{"actions":[{"id":"x","state":"SUCCESS","returnValue":[{"\u0073tate":"ERROR","state":"ERROR"}]}]}`,
+	} {
+		if report := InspectResponse([]byte(body)); !report.Success || !report.Complete {
+			t.Fatalf("unread duplicate rejected: %s %+v", body, report)
+		}
+	}
+	for _, body := range []string{
+		`{"actions":[{"id":"x","state":"SUCCESS"}],"actions":[{"id":"x","state":"SUCCESS"}]}`,
+		`{"actions":[{"id":"x","state":"SUCCESS","id":"x"}]}`,
+		`{"exceptionEvent":false,"exceptionEvent":false,"actions":[{"id":"x","state":"SUCCESS"}]}`,
+	} {
+		if report := InspectResponse([]byte(body)); report.Complete || len(report.Issues) == 0 || report.Issues[0].Code != DuplicateMember {
+			t.Fatalf("read duplicate accepted: %s %+v", body, report)
 		}
 	}
 	for _, body := range []string{
@@ -257,6 +280,8 @@ func TestFrameworkErrorResponses(t *testing.T) {
 		"malformed JSON":          {"*/{not json/*ERROR*/", FrameworkError},
 		"no opening marker":       {`{"exceptionEvent":true}/*ERROR*/`, FrameworkError},
 		"unwrapped exception":     {event("markup://aura:invalidSession"), InvalidSession},
+		"unread duplicate":        {`*/{"exceptionEvent":true,"event":{"descriptor":"markup://aura:invalidSession","attributes":{},"attributes":{}},"message":"private-message"}/*ERROR*/`, InvalidSession},
+		"duplicate descriptor":    {`*/{"exceptionEvent":true,"event":{"descriptor":"markup://aura:invalidSession","descriptor":"markup://aura:clientOutOfSync"}}/*ERROR*/`, FrameworkError},
 	} {
 		report := Validate([]byte(request), []byte(tc.response))
 		if !report.Complete || report.Success || len(report.Issues) != 1 || report.Issues[0].Code != tc.want || len(report.Outcomes) != 0 {

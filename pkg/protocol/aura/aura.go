@@ -482,9 +482,11 @@ func (s *scanner) token() (json.Token, Code) {
 }
 
 // read validates all JSON (including ignored payloads), but retains only the
-// envelope/actions/id/descriptor/state structure needed for matching. Object
-// key sets detect duplicates, including escaped aliases, without retaining
-// payload values. Both token count and nesting are bounded before recursion.
+// envelope/actions/id/descriptor/state structure needed for matching. A member
+// the validator reads may appear once per object, escaped aliases included, so
+// its value cannot depend on which duplicate a decoder keeps; duplicates
+// elsewhere (payloads, unread fields) do not change the result and are
+// accepted. Both token count and nesting are bounded before recursion.
 func (s *scanner) read(depth int, retain mode) (any, Code) {
 	token, code := s.token()
 	if code != "" {
@@ -502,7 +504,6 @@ func (s *scanner) read(depth int, retain mode) (any, Code) {
 	}
 	switch delimiter {
 	case '{':
-		seen := make(map[string]bool)
 		var object map[string]any
 		if retain == envelopeMode || retain == actionMode || retain == frameworkErrorMode || retain == eventMode {
 			object = make(map[string]any)
@@ -516,10 +517,6 @@ func (s *scanner) read(depth int, retain mode) (any, Code) {
 			if !ok {
 				return nil, InvalidJSON
 			}
-			if seen[key] {
-				return nil, DuplicateMember
-			}
-			seen[key] = true
 			childMode := discardMode
 			switch {
 			case retain == envelopeMode && key == "actions":
@@ -531,13 +528,20 @@ func (s *scanner) read(depth int, retain mode) (any, Code) {
 			case retain == frameworkErrorMode && key == "event":
 				childMode = eventMode
 			}
+			if childMode == discardMode {
+				if _, code := s.read(depth+1, discardMode); code != "" {
+					return nil, code
+				}
+				continue
+			}
+			if _, repeated := object[key]; repeated {
+				return nil, DuplicateMember
+			}
 			value, code := s.read(depth+1, childMode)
 			if code != "" {
 				return nil, code
 			}
-			if childMode != discardMode && object != nil {
-				object[key] = value
-			}
+			object[key] = value
 		}
 		close, code := s.token()
 		if code != "" {

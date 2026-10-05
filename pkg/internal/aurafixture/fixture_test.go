@@ -236,6 +236,11 @@ func TestFixtureRequestBoundariesAndAmbiguousFormsRejectExplicitly(t *testing.T)
 		badContext[key] = append([]string(nil), value...)
 	}
 	badContext.Set("aura.context", `{"fwuid":"discarded","fwuid":`+strconvQuote(bootstrap.Context.FWUID)+`,"mode":"PROD","app":"synthetic:reactAura"}`)
+	caseContext := url.Values{}
+	for key, value := range values {
+		caseContext[key] = append([]string(nil), value...)
+	}
+	caseContext.Set("aura.context", `{"fwuid":"discarded","FWUID":`+strconvQuote(bootstrap.Context.FWUID)+`,"mode":"PROD","app":"synthetic:reactAura"}`)
 	tooMany := make([]string, maxActions+1)
 	for index := range tooMany {
 		tooMany[index] = actionID(bootstrap.Nonce, index+1)
@@ -249,6 +254,7 @@ func TestFixtureRequestBoundariesAndAmbiguousFormsRejectExplicitly(t *testing.T)
 		{"duplicate message", valid + "&message=" + url.QueryEscape(values.Get("message")), "application/x-www-form-urlencoded", http.StatusBadRequest},
 		{"duplicate token", valid + "&aura.token=synthetic-other", "application/x-www-form-urlencoded", http.StatusBadRequest},
 		{"duplicate context member", badContext.Encode(), "application/x-www-form-urlencoded", http.StatusBadRequest},
+		{"case-variant context member", caseContext.Encode(), "application/x-www-form-urlencoded", http.StatusBadRequest},
 		{"too many actions", batchForm(t, bootstrap, tooMany), "application/x-www-form-urlencoded", http.StatusBadRequest},
 		{"wrong content type", valid, "application/json", http.StatusBadRequest},
 	} {
@@ -263,7 +269,7 @@ func TestFixtureRequestBoundariesAndAmbiguousFormsRejectExplicitly(t *testing.T)
 			}
 		})
 	}
-	if stats := fixture.Stats(); stats.AcceptedBatches != 0 || stats.RejectedBatches != 7 {
+	if stats := fixture.Stats(); stats.AcceptedBatches != 0 || stats.RejectedBatches != 8 {
 		t.Fatalf("malformed request silently reached an outcome: %+v", stats)
 	}
 	if status, _ := sendBatch(t, client, server.URL, valid); status != http.StatusOK {
