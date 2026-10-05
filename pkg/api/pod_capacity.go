@@ -323,6 +323,7 @@ func podCapacityShards(group TestGroup, loads map[string]generatorLoadSnapshot, 
 		if available, ok := protocolRuntimeAvailableVUsers(load, group.Protocol); ok {
 			maxV = math.Min(maxV, float64(available))
 		}
+		maxV = math.Min(maxV, float64(maximumVUsersWithinRuntimeResources(group, load, group.VUsers)))
 		if n := int(math.Floor(maxV + 1e-9)); n > 0 {
 			candidates = append(candidates, candidate{target, n, load.PodCapacity.ReservedPct})
 		}

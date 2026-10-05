@@ -1,0 +1,16 @@
+[
+  {
+    "package": "./cmd/generator",
+    "tag": "analytics_duckdb",
+    "dependencies": 818,
+    "duckdb_native_dependencies": [],
+    "seconds": 0.175
+  },
+  {
+    "package": "./cmd/apexload-collector-agent",
+    "tag": "analytics_duckdb",
+    "dependencies": 378,
+    "duckdb_native_dependencies": [],
+    "seconds": 0.071
+  }
+]

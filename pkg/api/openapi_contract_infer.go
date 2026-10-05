@@ -140,6 +140,7 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		applyDataPoolImportExportContract(route, &contract)
 		applyGenericImportBatchContract(route, &contract)
 		applyEnterpriseArchiveCollectionContract(route, &contract)
+		applyMonitorManagementContract(route, &contract, typeDefinitions)
 		applyObjectActivityContract(route, &contract)
 		contracts[route.Method+" "+route.Path] = contract
 	}
@@ -170,17 +171,19 @@ func applyGenericImportBatchContract(route discoveredRoute, contract *inferredRo
 // variants; these packages cover the public storage, DSL, execution, recorder,
 // protocol, and converter models that handlers decode or return directly.
 var openAPICrossPackageDirectories = map[string]string{
-	"analysis":       "analysis",
-	"analytics":      "analysis/duckdb",
-	"appdynamics":    "appdynamics",
-	"collectoragent": "collectoragent",
-	"dsl":            "dsl",
-	"engine":         "engine",
-	"k6":             "convert/k6",
-	"protocol":       "protocol",
-	"recorder":       "recorder",
-	"sample":         "convert/sample",
-	"storage":        "storage",
+	"analysis":        "analysis",
+	"analytics":       "analysis/duckdb",
+	"appdynamics":     "appdynamics",
+	"prometheus":      "prometheus",
+	"monitorprovider": "monitorprovider",
+	"collectoragent":  "collectoragent",
+	"dsl":             "dsl",
+	"engine":          "engine",
+	"k6":              "convert/k6",
+	"protocol":        "protocol",
+	"recorder":        "recorder",
+	"sample":          "convert/sample",
+	"storage":         "storage",
 }
 
 func addOpenAPICrossPackageTypeDefinitions(apiDir string, typeDefinitions map[string]ast.Expr) error {
@@ -260,6 +263,15 @@ var explicitRouteContractTypes = map[string]struct {
 	"PUT /api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}": {
 		requestType: "AppDynamicsConnectionRequest",
 	},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections":                                          {requestType: "PrometheusConnectionRequest", responseTypes: map[int]string{201: "PrometheusConnectionResponse"}},
+	"PUT /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}":                           {requestType: "PrometheusConnectionRequest", responseTypes: map[int]string{200: "PrometheusConnectionResponse"}},
+	"GET /api/v1/projects/{id}/monitoring/prometheus-connections":                                           {responseTypes: map[int]string{200: "[]PrometheusConnectionResponse"}},
+	"GET /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}":                           {responseTypes: map[int]string{200: "PrometheusConnectionResponse"}},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/test":                     {requestType: "PrometheusInspectionRequest", responseTypes: map[int]string{202: "PrometheusOperationResponse"}},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/discover":                 {requestType: "PrometheusInspectionRequest", responseTypes: map[int]string{202: "PrometheusOperationResponse"}},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/preview":                  {requestType: "PrometheusInspectionRequest", responseTypes: map[int]string{202: "PrometheusOperationResponse"}},
+	"POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/adopt-dashboard":          {requestType: "PrometheusDashboardAdoptionRequest", responseTypes: map[int]string{200: "PrometheusDashboardAdoptionResponse"}},
+	"GET /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/operations/{operation_id}": {responseTypes: map[int]string{200: "PrometheusOperationResponse"}},
 	"POST /api/v1/monitoring/collectors/{id}/inspections/{operation_id}/result": {
 		requestType: "collectoragent.InspectionResult",
 	},
@@ -887,6 +899,13 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 			if expressionContainsRequestBody(call) {
 				analysis.rawRequest = true
 			}
+		case "readAnalysisUploadBody":
+			// The upload reader owns the bounded raw-body operation without
+			// receiving the request itself. Attribute only its body argument;
+			// recursive helper inspection cannot trace that argument to r.Body.
+			if len(call.Args) == 3 && expressionContainsRequestBody(call.Args[2]) {
+				analysis.rawRequest = true
+			}
 		case "writeJSON":
 			analysis.jsonResponse = true
 			if len(call.Args) > 1 {
@@ -1244,6 +1263,8 @@ func explicitRequestRequiredFields(method, path string, properties map[string]oa
 	declared := map[string][]string{
 		"POST /api/v1/auth/login":                                                                       {"password", "username"},
 		"POST /api/v1/auth/ci/github/exchange":                                                          {"id_token", "project_id"},
+		"POST /api/v1/projects/{id}/monitoring/prometheus-connections":                                  {"name"},
+		"PUT /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}":                   {"name", "revision"},
 		"POST /api/v1/projects/{id}/monitoring/appdynamics-connections":                                 {"name"},
 		"PUT /api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}":                  {"name", "revision"},
 		"POST /api/v1/monitoring/collectors/{id}/inspections/{operation_id}/result":                     {"job"},
@@ -1457,6 +1478,9 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 		case "any", "interface{}":
 			return oasSchema{}
 		}
+		if completeBoundedEvidenceModel(currentPackage, value.Name) {
+			depth = 0
+		}
 		if depth > 8 {
 			additional := true
 			return oasSchema{Type: "object", Description: "Go type: " + value.Name, AdditionalProperties: &additional}
@@ -1537,7 +1561,7 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 				// These bounded evidence records sit inside deeply nested run
 				// responses. Resolve their complete contract with a fresh depth
 				// budget; retain the cycle guard and the general model limit.
-				if pkg.Name == "protocol" && (value.Sel.Name == "GRPCDiagnostics" || value.Sel.Name == "GRPCSummary" || value.Sel.Name == "WebSocketDiagnostics" || value.Sel.Name == "WebSocketSummary" || value.Sel.Name == "ServerTelemetry") {
+				if completeBoundedEvidenceModel(pkg.Name, value.Sel.Name) {
 					modelDepth = 0
 				}
 				schema := openAPISchemaForASTTypeInPackage(definition, typeDefinitions, visiting, modelDepth, pkg.Name)

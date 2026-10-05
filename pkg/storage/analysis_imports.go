@@ -14,9 +14,10 @@ import (
 var ErrAnalysisRevision = errors.New("analysis import revision conflict")
 
 type AnalysisChunk struct {
-	Offset int64  `json:"offset"`
-	Size   int64  `json:"size"`
-	SHA256 string `json:"sha256"`
+	ObjectKey string `json:"object_key,omitempty"`
+	Offset    int64  `json:"offset"`
+	Size      int64  `json:"size"`
+	SHA256    string `json:"sha256"`
 }
 type AnalysisImportFile struct {
 	ID           string          `json:"id"`
@@ -27,30 +28,31 @@ type AnalysisImportFile struct {
 	Chunks       []AnalysisChunk `json:"chunks,omitempty"`
 }
 type AnalysisImport struct {
-	ID                 string                             `json:"id"`
-	ProjectID          string                             `json:"project_id"`
-	Name               string                             `json:"name"`
-	Revision           int64                              `json:"revision"`
-	State              string                             `json:"state"`
-	Files              []AnalysisImportFile               `json:"files"`
-	Mapping            *analysis.ParquetMapping           `json:"mapping,omitempty"`
-	AllowRejected      bool                               `json:"allow_rejected"`
-	Accepted           int64                              `json:"accepted"`
-	Rejected           int64                              `json:"rejected"`
-	Rejections         []analysis.ParquetRejectionSummary `json:"rejections,omitempty"`
-	RejectionArtifacts []string                           `json:"rejection_artifacts,omitempty"`
-	RejectionSHA256    map[string]string                  `json:"rejection_sha256,omitempty"`
-	Normalized         []string                           `json:"normalized,omitempty"`
-	NormalizedSHA256   map[string]string                  `json:"normalized_sha256,omitempty"`
-	ObsoleteObjects    []string                           `json:"obsolete_objects,omitempty"`
-	MappingID          string                             `json:"mapping_id,omitempty"`
-	MappingRevision    int64                              `json:"mapping_revision,omitempty"`
-	RunID              string                             `json:"run_id,omitempty"`
-	Error              string                             `json:"error,omitempty"`
-	Owner              string                             `json:"-"`
-	LeaseExpiresAt     time.Time                          `json:"-"`
-	CreatedAt          time.Time                          `json:"created_at"`
-	UpdatedAt          time.Time                          `json:"updated_at"`
+	UploadWriterVersion int                                `json:"upload_writer_version,omitempty"`
+	ID                  string                             `json:"id"`
+	ProjectID           string                             `json:"project_id"`
+	Name                string                             `json:"name"`
+	Revision            int64                              `json:"revision"`
+	State               string                             `json:"state"`
+	Files               []AnalysisImportFile               `json:"files"`
+	Mapping             *analysis.ParquetMapping           `json:"mapping,omitempty"`
+	AllowRejected       bool                               `json:"allow_rejected"`
+	Accepted            int64                              `json:"accepted"`
+	Rejected            int64                              `json:"rejected"`
+	Rejections          []analysis.ParquetRejectionSummary `json:"rejections,omitempty"`
+	RejectionArtifacts  []string                           `json:"rejection_artifacts,omitempty"`
+	RejectionSHA256     map[string]string                  `json:"rejection_sha256,omitempty"`
+	Normalized          []string                           `json:"normalized,omitempty"`
+	NormalizedSHA256    map[string]string                  `json:"normalized_sha256,omitempty"`
+	ObsoleteObjects     []string                           `json:"obsolete_objects,omitempty"`
+	MappingID           string                             `json:"mapping_id,omitempty"`
+	MappingRevision     int64                              `json:"mapping_revision,omitempty"`
+	RunID               string                             `json:"run_id,omitempty"`
+	Error               string                             `json:"error,omitempty"`
+	Owner               string                             `json:"-"`
+	LeaseExpiresAt      time.Time                          `json:"-"`
+	CreatedAt           time.Time                          `json:"created_at"`
+	UpdatedAt           time.Time                          `json:"updated_at"`
 }
 
 type AnalysisImportStore interface {
@@ -96,12 +98,35 @@ func (s *SQLiteStore) SaveAnalysisImport(in AnalysisImport, expected int64) (*An
 			return nil, errors.New("dataset association requires a run in the same project")
 		}
 	}
+	// Administrative cancellation revokes publication centrally. Existing callers
+	// need not know the internal worker token, and cannot acquire a new one here.
+	if in.State == "cancelled" || in.State == "deleting" || in.State == "deleted" {
+		in.Owner = ""
+		in.LeaseExpiresAt = time.Time{}
+	}
+	if in.State == "normalizing" || in.Owner != "" || !in.LeaseExpiresAt.IsZero() {
+		return nil, errors.New("worker ownership requires dedicated analysis attempt methods")
+	}
+	if expected == 0 && (len(in.Normalized) != 0 || len(in.NormalizedSHA256) != 0 || len(in.RejectionArtifacts) != 0 || len(in.RejectionSHA256) != 0 || in.Accepted != 0 || in.Rejected != 0 || len(in.Rejections) != 0 || len(in.ObsoleteObjects) != 0) {
+		return nil, errors.New("unclaimed analytical output metadata")
+	}
+	if expected == 0 && in.UploadWriterVersion != 0 && in.UploadWriterVersion != AnalysisUploadWriterVersion {
+		return nil, ErrAnalysisAuthority
+	}
+	if expected == 0 && in.UploadWriterVersion == AnalysisUploadWriterVersion {
+		for _, file := range in.Files {
+			if file.Uploaded != 0 || file.SHA256 != "" || len(file.Chunks) != 0 {
+				return nil, ErrAnalysisAuthority
+			}
+		}
+	}
 	if expected == 0 && in.State != "uploading" {
 		return nil, errors.New("imports must begin in uploading state")
 	}
 	if expected > 0 {
-		var oldBody string
-		if err = tx.QueryRow(`SELECT payload FROM analysis_imports WHERE id=? AND project_id=? AND revision=?`, in.ID, in.ProjectID, expected).Scan(&oldBody); err != nil {
+		var oldBody, oldOwner string
+		var oldExpiry time.Time
+		if err = tx.QueryRow(`SELECT payload,owner,lease_expires_at FROM analysis_imports WHERE id=? AND project_id=? AND revision=?`, in.ID, in.ProjectID, expected).Scan(&oldBody, &oldOwner, &oldExpiry); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil, ErrAnalysisRevision
 			}
@@ -111,7 +136,13 @@ func (s *SQLiteStore) SaveAnalysisImport(in AnalysisImport, expected int64) (*An
 		if err = json.Unmarshal([]byte(oldBody), &old); err != nil {
 			return nil, err
 		}
-		allowed := map[string]string{"uploading": " uploading mapped cancelled", "mapped": " mapped normalizing cancelled", "normalizing": " normalizing ready failed cancelled", "failed": " mapped normalizing cancelled", "ready": " ready deleting", "cancelled": " cancelled", "deleting": " deleting deleted", "deleted": " deleted"}
+		if old.UploadWriterVersion != in.UploadWriterVersion {
+			return nil, ErrAnalysisAuthority
+		}
+		if old.UploadWriterVersion == AnalysisUploadWriterVersion && !reflect.DeepEqual(old.Files, in.Files) {
+			return nil, errors.New("upload cursors require physical writer publication")
+		}
+		allowed := map[string]string{"uploading": " uploading mapped cancelled", "mapped": " mapped cancelled", "normalizing": " cancelled", "failed": " mapped cancelled", "ready": " ready deleting", "cancelled": " cancelled", "deleting": " deleting deleted", "deleted": " deleted"}
 		if !strings.Contains(allowed[old.State]+" ", " "+in.State+" ") {
 			return nil, errors.New("invalid analysis lifecycle transition")
 		}
@@ -124,12 +155,32 @@ func (s *SQLiteStore) SaveAnalysisImport(in AnalysisImport, expected int64) (*An
 				return nil, errors.New("immutable import file or durable cursor changed")
 			}
 		}
+		if !analysisImportOwnedOutputsEqual(old, in) {
+			return nil, errors.New("owner-managed analytical outputs are immutable outside attempt methods")
+		}
+		if old.State != "uploading" {
+			for i, file := range in.Files {
+				if file.SHA256 != old.Files[i].SHA256 || !reflect.DeepEqual(file.Chunks, old.Files[i].Chunks) {
+					return nil, errors.New("sealed analytical input is immutable")
+				}
+			}
+		}
+		if oldOwner != "" || !oldExpiry.IsZero() {
+			if in.State != "cancelled" && in.State != "deleting" && in.State != "deleted" {
+				return nil, errors.New("active analytical ownership cannot be changed by generic save")
+			}
+		}
 		if old.State == "ready" {
 			a, _ := json.Marshal(old.Mapping)
 			b, _ := json.Marshal(in.Mapping)
-			if string(a) != string(b) || old.Accepted != in.Accepted || old.Rejected != in.Rejected || old.AllowRejected != in.AllowRejected || old.MappingID != in.MappingID || old.MappingRevision != in.MappingRevision || !reflect.DeepEqual(old.Normalized, in.Normalized) || !reflect.DeepEqual(old.NormalizedSHA256, in.NormalizedSHA256) || !reflect.DeepEqual(old.Rejections, in.Rejections) || !reflect.DeepEqual(old.RejectionArtifacts, in.RejectionArtifacts) || !reflect.DeepEqual(old.RejectionSHA256, in.RejectionSHA256) {
+			if string(a) != string(b) || old.AllowRejected != in.AllowRejected || old.MappingID != in.MappingID || old.MappingRevision != in.MappingRevision || !analysisImportOwnedOutputsEqual(old, in) {
 				return nil, errors.New("committed analytical data is immutable")
 			}
+		}
+	}
+	if in.State == "cancelled" || in.State == "deleting" || in.State == "deleted" {
+		if err = queueAnalysisImportAttemptsCleanupTx(tx, in.ProjectID, in.ID); err != nil {
+			return nil, err
 		}
 	}
 	var result sql.Result
@@ -194,4 +245,18 @@ func (s *SQLiteStore) ListAnalysisImports(project string, limit, offset int) ([]
 		result = append(result, in)
 	}
 	return result, rows.Err()
+}
+
+// These collections are all omitted when empty in durable/public JSON. A
+// claimed in-memory [] therefore reloads as nil without changing any evidence.
+// Equivalence is restricted to that zero-field representation: nonempty plans,
+// hashes, summary rows, ordering and counts retain exact existing equality.
+func analysisImportOwnedOutputsEqual(a, b AnalysisImport) bool {
+	return a.Accepted == b.Accepted && a.Rejected == b.Rejected &&
+		(len(a.Normalized) == 0 && len(b.Normalized) == 0 || reflect.DeepEqual(a.Normalized, b.Normalized)) &&
+		(len(a.NormalizedSHA256) == 0 && len(b.NormalizedSHA256) == 0 || reflect.DeepEqual(a.NormalizedSHA256, b.NormalizedSHA256)) &&
+		(len(a.RejectionArtifacts) == 0 && len(b.RejectionArtifacts) == 0 || reflect.DeepEqual(a.RejectionArtifacts, b.RejectionArtifacts)) &&
+		(len(a.RejectionSHA256) == 0 && len(b.RejectionSHA256) == 0 || reflect.DeepEqual(a.RejectionSHA256, b.RejectionSHA256)) &&
+		(len(a.Rejections) == 0 && len(b.Rejections) == 0 || reflect.DeepEqual(a.Rejections, b.Rejections)) &&
+		(len(a.ObsoleteObjects) == 0 && len(b.ObsoleteObjects) == 0 || reflect.DeepEqual(a.ObsoleteObjects, b.ObsoleteObjects))
 }

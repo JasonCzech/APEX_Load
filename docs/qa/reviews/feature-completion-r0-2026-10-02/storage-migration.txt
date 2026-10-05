@@ -1,0 +1,6 @@
+=== RUN   TestPostgresHistoryDropAvailabilityMigrationAndRoundTrip
+--- PASS: TestPostgresHistoryDropAvailabilityMigrationAndRoundTrip (1.33s)
+=== RUN   TestHistoryDropAvailabilitySurvivesRestartAndMigration
+--- PASS: TestHistoryDropAvailabilitySurvivesRestartAndMigration (0.05s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/storage	1.788s

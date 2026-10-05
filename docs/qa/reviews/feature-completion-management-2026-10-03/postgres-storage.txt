@@ -1,0 +1,35 @@
+Disposable PostgreSQL16 migration/roundtrip fixture; one CPU,512MiB,loopback only.
+=== RUN   TestPostgresAnalysisWorkflows
+=== RUN   TestPostgresAnalysisWorkflows/preparation_takeover
+=== RUN   TestPostgresAnalysisWorkflows/preparation_expiry
+--- PASS: TestPostgresAnalysisWorkflows (2.80s)
+    --- PASS: TestPostgresAnalysisWorkflows/preparation_takeover (0.05s)
+    --- PASS: TestPostgresAnalysisWorkflows/preparation_expiry (0.03s)
+=== RUN   TestPostgresManagementRelease28LegacyUpgrade
+--- PASS: TestPostgresManagementRelease28LegacyUpgrade (2.57s)
+=== RUN   TestPostgresManagementCohortConcurrentFences
+--- PASS: TestPostgresManagementCohortConcurrentFences (1.99s)
+=== RUN   TestPostgresManagementTerminalStatusSerializesIssuanceAndPublication
+=== RUN   TestPostgresManagementTerminalStatusSerializesIssuanceAndPublication/issuance
+=== RUN   TestPostgresManagementTerminalStatusSerializesIssuanceAndPublication/publication
+--- PASS: TestPostgresManagementTerminalStatusSerializesIssuanceAndPublication (2.16s)
+    --- PASS: TestPostgresManagementTerminalStatusSerializesIssuanceAndPublication/issuance (1.13s)
+    --- PASS: TestPostgresManagementTerminalStatusSerializesIssuanceAndPublication/publication (1.03s)
+=== RUN   TestPostgresManagementConcurrentStartsRespectAssignedCapacity
+--- PASS: TestPostgresManagementConcurrentStartsRespectAssignedCapacity (1.74s)
+=== RUN   TestPostgresManagementRetentionCursorSerializesPeers
+--- PASS: TestPostgresManagementRetentionCursorSerializesPeers (1.52s)
+=== RUN   TestPostgresManagementRetentionCancellationLeavesNoPartialProgress
+--- PASS: TestPostgresManagementRetentionCancellationLeavesNoPartialProgress (1.67s)
+=== RUN   TestPostgresManagementPollRetentionSweepProjectPrefix
+--- PASS: TestPostgresManagementPollRetentionSweepProjectPrefix (2.00s)
+=== RUN   TestPostgresManagementPollRetentionSweepConcurrentCursor
+--- PASS: TestPostgresManagementPollRetentionSweepConcurrentCursor (1.78s)
+=== RUN   TestPostgresManagementPollRetentionSweepCancelsLockWaits
+=== RUN   TestPostgresManagementPollRetentionSweepCancelsLockWaits/cursor
+=== RUN   TestPostgresManagementPollRetentionSweepCancelsLockWaits/project
+--- PASS: TestPostgresManagementPollRetentionSweepCancelsLockWaits (2.00s)
+    --- PASS: TestPostgresManagementPollRetentionSweepCancelsLockWaits/cursor (0.99s)
+    --- PASS: TestPostgresManagementPollRetentionSweepCancelsLockWaits/project (1.02s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/storage	20.942s

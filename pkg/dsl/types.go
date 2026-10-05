@@ -527,6 +527,9 @@ type KafkaTLSConfig struct {
 // the Kafka-endpoint profile under config.kafka). The real azeventhubs adapter is
 // opt-in (build -tags eventhubs_real); the default build uses the in-memory mock.
 type EventHubsConfig struct {
+	ObservePartitionTail   bool   `json:"observe_partition_tail,omitempty"`                                                 // Opt-in management-plane tail queries in processor mode.
+	TailPollIntervalMs     int    `json:"tail_poll_interval_ms,omitempty" jsonschema:"minimum=0,maximum=300000"`            // Zero uses 10 seconds; explicit intervals are 10 seconds to 5 minutes.
+	ProcessorMaxPartitions int    `json:"processor_max_partitions,omitempty" jsonschema:"minimum=0,maximum=32"`             // Immutable partition-worker ceiling per processor; omitted uses 32.
 	OwnerLevel             *int64 `json:"owner_level,omitempty" jsonschema:"minimum=0,maximum=9007199254740991"`            // Explicit exclusive consumer epoch; absent for observer and processor.
 	ConsumerMode           string `json:"consumer_mode,omitempty" jsonschema:"enum=observer,enum=processor,enum=exclusive"` // observer default; processor checkpoints or explicitly scoped exclusive epoch.
 	CheckpointContainerURL string `json:"checkpoint_container_url,omitempty" jsonschema:"maxLength=1024"`                   // Operator-approved existing Blob container; processor AAD authentication.

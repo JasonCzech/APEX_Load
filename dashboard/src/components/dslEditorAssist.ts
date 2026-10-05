@@ -11,7 +11,7 @@
 
 import { autocompletion, type Completion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete'
 import { jsonParseLinter } from '@codemirror/lang-json'
-import { syntaxTree } from '@codemirror/language'
+import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
 import { linter, type Diagnostic } from '@codemirror/lint'
 import type { EditorState, Extension } from '@codemirror/state'
 import { hoverTooltip, type Tooltip } from '@codemirror/view'
@@ -90,7 +90,13 @@ function objectPropertyValue(state: EditorState, objectNode: SyntaxNode, key: st
  * the envelope when present.
  */
 function scriptRootNode(state: EditorState): SyntaxNode | null {
-  const root = syntaxTree(state).topNode.firstChild
+  if (state.doc.length > APEX_DSL_SEMANTIC_MAX_DOC_CHARS) return null
+  // The state's immutable tree can remain partial after its parse context has
+  // advanced. Admit only the completed tree returned for this exact document,
+  // within a bounded synchronous assist budget; never resolve recovery ranges
+  // from the older state snapshot while background parsing catches up.
+  const tree = ensureSyntaxTree(state, state.doc.length, 50)
+  const root = tree?.topNode.firstChild
   if (!root || root.name !== 'Object') return null
   const wrapped = objectPropertyValue(state, root, 'script')
   if (wrapped?.name === 'Object') return wrapped
@@ -137,7 +143,7 @@ export function locateJsonPath(state: EditorState, path: string): { from: number
       node = objectPropertyValue(state, node, segment)
     }
   }
-  if (!node) return null
+  if (!node || node.name === '⚠' || node.to <= node.from) return null
   return { from: node.from, to: node.to }
 }
 

@@ -1,0 +1,223 @@
+=== RUN   TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions
+=== RUN   TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/SHAKEOUT
+=== RUN   TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/STARTING
+=== RUN   TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/INITIALIZING
+=== RUN   TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/RUNNING
+=== RUN   TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/PAUSED
+=== RUN   TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/STOPPING
+=== RUN   TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/QUEUED
+=== RUN   TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/PENDING
+=== RUN   TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/COMPLETE
+=== RUN   TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/FAILED
+=== RUN   TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/SHAKEOUT_REVIEW
+--- PASS: TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions (0.00s)
+    --- PASS: TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/SHAKEOUT (0.00s)
+    --- PASS: TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/STARTING (0.00s)
+    --- PASS: TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/INITIALIZING (0.00s)
+    --- PASS: TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/RUNNING (0.00s)
+    --- PASS: TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/PAUSED (0.00s)
+    --- PASS: TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/STOPPING (0.00s)
+    --- PASS: TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/QUEUED (0.00s)
+    --- PASS: TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/PENDING (0.00s)
+    --- PASS: TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/COMPLETE (0.00s)
+    --- PASS: TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/FAILED (0.00s)
+    --- PASS: TestRuntimeCapacityReservationStatusesIncludeExecutionTransitions/SHAKEOUT_REVIEW (0.00s)
+=== RUN   TestCapacityReservationTotalsAtRespectsWindow
+--- PASS: TestCapacityReservationTotalsAtRespectsWindow (0.00s)
+=== RUN   TestExecutionPlanRunGovernanceGate
+2026/10/03 23:44:06 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+--- PASS: TestExecutionPlanRunGovernanceGate (3.21s)
+=== RUN   TestExecutionPlanRunGovernanceIncludesStagesAndGoalMax
+2026/10/03 23:44:10 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+=== RUN   TestExecutionPlanRunGovernanceIncludesStagesAndGoalMax/stage_peak
+=== RUN   TestExecutionPlanRunGovernanceIncludesStagesAndGoalMax/goal_max
+--- PASS: TestExecutionPlanRunGovernanceIncludesStagesAndGoalMax (2.91s)
+    --- PASS: TestExecutionPlanRunGovernanceIncludesStagesAndGoalMax/stage_peak (0.02s)
+    --- PASS: TestExecutionPlanRunGovernanceIncludesStagesAndGoalMax/goal_max (0.04s)
+=== RUN   TestBuildRunCalendarCapacityMarksZeroCapacityReservationsOver
+2026/10/03 23:44:12 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+--- PASS: TestBuildRunCalendarCapacityMarksZeroCapacityReservationsOver (1.83s)
+=== RUN   TestCapacityReservationApprovalIsAtomic
+2026/10/03 23:44:14 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:14 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=4 remote=192.0.2.1:1234
+2026/10/03 23:44:14 INFO http request method=POST path=/api/v1/capacity/timeslots/af7ea200-c0cf-4426-9491-cd26f4a3eb11/approve status=200 duration_ms=8 remote=192.0.2.1:1234
+2026/10/03 23:44:14 INFO http request method=POST path=/api/v1/capacity/timeslots/af7ea200-c0cf-4426-9491-cd26f4a3eb11/approve status=409 duration_ms=4 remote=192.0.2.1:1234
+2026/10/03 23:44:14 INFO http request method=POST path=/api/v1/capacity/timeslots/af7ea200-c0cf-4426-9491-cd26f4a3eb11/reject status=200 duration_ms=4 remote=192.0.2.1:1234
+--- PASS: TestCapacityReservationApprovalIsAtomic (1.86s)
+=== RUN   TestCapacityReservationRequiresPositiveRequestedCapacity
+2026/10/03 23:44:16 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:16 INFO http request method=POST path=/api/v1/capacity/timeslots status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/03 23:44:16 INFO http request method=POST path=/api/v1/capacity/timeslots status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/03 23:44:16 INFO http request method=POST path=/api/v1/capacity/timeslots status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/03 23:44:16 INFO http request method=POST path=/api/v1/capacity/timeslots status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/03 23:44:16 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=4 remote=192.0.2.1:1234
+2026/10/03 23:44:16 INFO http request method=PUT path=/api/v1/capacity/timeslots/a73ca08b-d189-4c84-a24c-b4bbb4f42de4 status=400 duration_ms=2 remote=192.0.2.1:1234
+2026/10/03 23:44:16 INFO http request method=PUT path=/api/v1/capacity/timeslots/a73ca08b-d189-4c84-a24c-b4bbb4f42de4 status=400 duration_ms=2 remote=192.0.2.1:1234
+2026/10/03 23:44:16 INFO http request method=PUT path=/api/v1/capacity/timeslots/a73ca08b-d189-4c84-a24c-b4bbb4f42de4 status=400 duration_ms=2 remote=192.0.2.1:1234
+2026/10/03 23:44:16 INFO http request method=PUT path=/api/v1/capacity/timeslots/a73ca08b-d189-4c84-a24c-b4bbb4f42de4 status=400 duration_ms=2 remote=192.0.2.1:1234
+--- PASS: TestCapacityReservationRequiresPositiveRequestedCapacity (1.77s)
+=== RUN   TestCapacityReservationCreateValidation
+2026/10/03 23:44:18 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+=== RUN   TestCapacityReservationCreateValidation/happy_path
+2026/10/03 23:44:18 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=9 remote=192.0.2.1:1234
+=== RUN   TestCapacityReservationCreateValidation/missing_project
+2026/10/03 23:44:18 INFO http request method=POST path=/api/v1/capacity/timeslots status=400 duration_ms=0 remote=192.0.2.1:1234
+=== RUN   TestCapacityReservationCreateValidation/inverted_window
+2026/10/03 23:44:18 INFO http request method=POST path=/api/v1/capacity/timeslots status=400 duration_ms=0 remote=192.0.2.1:1234
+=== RUN   TestCapacityReservationCreateValidation/bad_timezone
+2026/10/03 23:44:18 INFO http request method=POST path=/api/v1/capacity/timeslots status=400 duration_ms=4 remote=192.0.2.1:1234
+--- PASS: TestCapacityReservationCreateValidation (2.72s)
+    --- PASS: TestCapacityReservationCreateValidation/happy_path (0.01s)
+    --- PASS: TestCapacityReservationCreateValidation/missing_project (0.00s)
+    --- PASS: TestCapacityReservationCreateValidation/inverted_window (0.00s)
+    --- PASS: TestCapacityReservationCreateValidation/bad_timezone (0.01s)
+=== RUN   TestCapacityReservationApprovalOverbookingGuard
+2026/10/03 23:44:21 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:21 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=4 remote=192.0.2.1:1234
+2026/10/03 23:44:21 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=4 remote=192.0.2.1:1234
+2026/10/03 23:44:21 INFO http request method=POST path=/api/v1/capacity/timeslots/80bbd0fb-4b3d-4a26-b4bf-58d640edda25/approve status=200 duration_ms=20 remote=192.0.2.1:1234
+2026/10/03 23:44:21 INFO http request method=POST path=/api/v1/capacity/timeslots/2619cd46-8800-44d4-ae96-e96c0260aceb/approve status=409 duration_ms=11 remote=192.0.2.1:1234
+2026/10/03 23:44:21 INFO http request method=POST path=/api/v1/capacity/timeslots/2619cd46-8800-44d4-ae96-e96c0260aceb/approve status=400 duration_ms=2 remote=192.0.2.1:1234
+2026/10/03 23:44:21 INFO http request method=POST path=/api/v1/capacity/timeslots/2619cd46-8800-44d4-ae96-e96c0260aceb/approve status=200 duration_ms=10 remote=192.0.2.1:1234
+--- PASS: TestCapacityReservationApprovalOverbookingGuard (2.89s)
+=== RUN   TestCapacityReservationApprovalCountsSettingsReservations
+=== RUN   TestCapacityReservationApprovalCountsSettingsReservations/atomic
+=== RUN   TestCapacityReservationApprovalCountsSettingsReservations/atomic/global_envelope
+2026/10/03 23:44:24 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:24 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=18 remote=192.0.2.1:1234
+2026/10/03 23:44:24 INFO http request method=POST path=/api/v1/capacity/timeslots/5bba0d88-70aa-4c67-8eb7-e175cb6d2eac/approve status=409 duration_ms=10 remote=192.0.2.1:1234
+=== RUN   TestCapacityReservationApprovalCountsSettingsReservations/atomic/pool_envelope
+2026/10/03 23:44:26 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:26 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=7 remote=192.0.2.1:1234
+2026/10/03 23:44:26 INFO http request method=POST path=/api/v1/capacity/timeslots/81b96f75-3d2a-465c-b366-fca1d03328a4/approve status=409 duration_ms=10 remote=192.0.2.1:1234
+=== RUN   TestCapacityReservationApprovalCountsSettingsReservations/atomic/unrelated_pool_is_isolated
+2026/10/03 23:44:27 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:28 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=5 remote=192.0.2.1:1234
+2026/10/03 23:44:28 INFO http request method=POST path=/api/v1/capacity/timeslots/b0184671-19fb-4fa2-8af4-e81925ceccb4/approve status=200 duration_ms=12 remote=192.0.2.1:1234
+=== RUN   TestCapacityReservationApprovalCountsSettingsReservations/fallback
+=== RUN   TestCapacityReservationApprovalCountsSettingsReservations/fallback/global_envelope
+2026/10/03 23:44:29 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:29 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=4 remote=192.0.2.1:1234
+2026/10/03 23:44:29 INFO http request method=POST path=/api/v1/capacity/timeslots/335c27ef-93f4-4556-863d-b41f2c0dba65/approve status=409 duration_ms=4 remote=192.0.2.1:1234
+=== RUN   TestCapacityReservationApprovalCountsSettingsReservations/fallback/pool_envelope
+2026/10/03 23:44:31 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:31 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=7 remote=192.0.2.1:1234
+2026/10/03 23:44:31 INFO http request method=POST path=/api/v1/capacity/timeslots/1a762bed-8b21-4dea-9384-3d5bbc8d7042/approve status=409 duration_ms=8 remote=192.0.2.1:1234
+=== RUN   TestCapacityReservationApprovalCountsSettingsReservations/fallback/unrelated_pool_is_isolated
+2026/10/03 23:44:35 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:35 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=16 remote=192.0.2.1:1234
+2026/10/03 23:44:35 INFO http request method=POST path=/api/v1/capacity/timeslots/dfcf3507-15a0-42d4-9e87-0896a34c9b33/approve status=200 duration_ms=24 remote=192.0.2.1:1234
+--- PASS: TestCapacityReservationApprovalCountsSettingsReservations (13.87s)
+    --- PASS: TestCapacityReservationApprovalCountsSettingsReservations/atomic (6.34s)
+        --- PASS: TestCapacityReservationApprovalCountsSettingsReservations/atomic/global_envelope (2.40s)
+        --- PASS: TestCapacityReservationApprovalCountsSettingsReservations/atomic/pool_envelope (2.07s)
+        --- PASS: TestCapacityReservationApprovalCountsSettingsReservations/atomic/unrelated_pool_is_isolated (1.87s)
+    --- PASS: TestCapacityReservationApprovalCountsSettingsReservations/fallback (7.53s)
+        --- PASS: TestCapacityReservationApprovalCountsSettingsReservations/fallback/global_envelope (1.73s)
+        --- PASS: TestCapacityReservationApprovalCountsSettingsReservations/fallback/pool_envelope (1.96s)
+        --- PASS: TestCapacityReservationApprovalCountsSettingsReservations/fallback/unrelated_pool_is_isolated (3.84s)
+=== RUN   TestCapacityReservationApprovalRejectsKnownEmptyPool
+=== RUN   TestCapacityReservationApprovalRejectsKnownEmptyPool/fenced
+2026/10/03 23:44:38 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:38 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=4 remote=192.0.2.1:1234
+2026/10/03 23:44:38 INFO http request method=POST path=/api/v1/capacity/timeslots/9c8581c0-b18b-4d07-a2ac-f2f12c4ebeff/approve status=409 duration_ms=15 remote=192.0.2.1:1234
+=== RUN   TestCapacityReservationApprovalRejectsKnownEmptyPool/fallback
+2026/10/03 23:44:40 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:40 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=9 remote=192.0.2.1:1234
+2026/10/03 23:44:40 INFO http request method=POST path=/api/v1/capacity/timeslots/b863ab69-4bc0-4551-8504-cbf7759b469c/approve status=409 duration_ms=7 remote=192.0.2.1:1234
+--- PASS: TestCapacityReservationApprovalRejectsKnownEmptyPool (4.79s)
+    --- PASS: TestCapacityReservationApprovalRejectsKnownEmptyPool/fenced (2.67s)
+    --- PASS: TestCapacityReservationApprovalRejectsKnownEmptyPool/fallback (2.13s)
+=== RUN   TestCapacityReservationListAndAvailability
+2026/10/03 23:44:42 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:42 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=3 remote=192.0.2.1:1234
+2026/10/03 23:44:42 INFO http request method=GET path=/api/v1/capacity/timeslots status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/03 23:44:42 INFO http request method=POST path=/api/v1/capacity/timeslots/availability status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/03 23:44:42 INFO http request method=POST path=/api/v1/capacity/timeslots/availability status=200 duration_ms=0 remote=192.0.2.1:1234
+--- PASS: TestCapacityReservationListAndAvailability (2.10s)
+=== RUN   TestCapacityReservationGetNotFound
+2026/10/03 23:44:44 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:44 INFO http request method=GET path=/api/v1/capacity/timeslots/missing status=404 duration_ms=0 remote=192.0.2.1:1234
+--- PASS: TestCapacityReservationGetNotFound (2.12s)
+=== RUN   TestCapacityReservationBindLifecycle
+2026/10/03 23:44:46 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:46 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=5 remote=192.0.2.1:1234
+2026/10/03 23:44:46 INFO http request method=POST path=/api/v1/capacity/timeslots/3b429f7e-b680-4f9a-b831-9fd4393d0a65/bind status=409 duration_ms=11 remote=192.0.2.1:1234
+2026/10/03 23:44:46 INFO http request method=POST path=/api/v1/capacity/timeslots/3b429f7e-b680-4f9a-b831-9fd4393d0a65/approve status=200 duration_ms=11 remote=192.0.2.1:1234
+2026/10/03 23:44:46 INFO http request method=POST path=/api/v1/capacity/timeslots/3b429f7e-b680-4f9a-b831-9fd4393d0a65/bind status=400 duration_ms=8 remote=192.0.2.1:1234
+2026/10/03 23:44:46 ERROR failed to restore timeslot-bound test runtime test_id=test-1 error="stored test has no groups"
+2026/10/03 23:44:46 INFO http request method=POST path=/api/v1/capacity/timeslots/3b429f7e-b680-4f9a-b831-9fd4393d0a65/bind status=200 duration_ms=14 remote=192.0.2.1:1234
+2026/10/03 23:44:46 ERROR failed to restore timeslot-bound test runtime test_id=test-1 error="stored test has no groups"
+2026/10/03 23:44:46 INFO http request method=POST path=/api/v1/capacity/timeslots/3b429f7e-b680-4f9a-b831-9fd4393d0a65/bind status=200 duration_ms=9 remote=192.0.2.1:1234
+2026/10/03 23:44:46 INFO http request method=POST path=/api/v1/capacity/timeslots/3b429f7e-b680-4f9a-b831-9fd4393d0a65/bind status=409 duration_ms=8 remote=192.0.2.1:1234
+--- PASS: TestCapacityReservationBindLifecycle (2.29s)
+=== RUN   TestCapacityReservationUpdateCannotSelfApprove
+2026/10/03 23:44:48 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:48 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=4 remote=192.0.2.1:1234
+2026/10/03 23:44:48 INFO http request method=PUT path=/api/v1/capacity/timeslots/81ea49de-2039-41f8-81c8-b85d4086099c status=200 duration_ms=4 remote=192.0.2.1:1234
+--- PASS: TestCapacityReservationUpdateCannotSelfApprove (2.10s)
+=== RUN   TestCapacityReservationEnlargingApprovedRequiresReapproval
+2026/10/03 23:44:50 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:50 INFO http request method=PUT path=/api/v1/capacity/timeslots/ts-grow status=200 duration_ms=9 remote=192.0.2.1:1234
+2026/10/03 23:44:50 INFO http request method=PUT path=/api/v1/capacity/timeslots/ts-keep status=200 duration_ms=6 remote=192.0.2.1:1234
+--- PASS: TestCapacityReservationEnlargingApprovedRequiresReapproval (1.89s)
+=== RUN   TestCapacityReservationInvalidationRejectsActiveBoundTest
+2026/10/03 23:44:52 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:52 INFO http request method=PUT path=/api/v1/capacity/timeslots/ts-active status=409 duration_ms=4 remote=192.0.2.1:1234
+2026/10/03 23:44:52 INFO http request method=POST path=/api/v1/capacity/timeslots/ts-active/reject status=409 duration_ms=3 remote=192.0.2.1:1234
+--- PASS: TestCapacityReservationInvalidationRejectsActiveBoundTest (1.90s)
+=== RUN   TestCapacityReservationUpdateDoesNotResurrectConcurrentReject
+2026/10/03 23:44:54 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:54 INFO http request method=PUT path=/api/v1/capacity/timeslots/ts-race status=200 duration_ms=8 remote=192.0.2.1:1234
+--- PASS: TestCapacityReservationUpdateDoesNotResurrectConcurrentReject (2.11s)
+=== RUN   TestTerminalStatusReleasesCapacityReservationBinding
+2026/10/03 23:44:56 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+--- PASS: TestTerminalStatusReleasesCapacityReservationBinding (2.17s)
+=== RUN   TestCapacityReservationRouteAccessRequirements
+=== RUN   TestCapacityReservationRouteAccessRequirements/POST_/api/v1/capacity/timeslots
+=== RUN   TestCapacityReservationRouteAccessRequirements/GET_/api/v1/capacity/timeslots
+=== RUN   TestCapacityReservationRouteAccessRequirements/POST_/api/v1/capacity/timeslots/availability
+=== RUN   TestCapacityReservationRouteAccessRequirements/GET_/api/v1/capacity/timeslots/ts-1
+=== RUN   TestCapacityReservationRouteAccessRequirements/PUT_/api/v1/capacity/timeslots/ts-1
+=== RUN   TestCapacityReservationRouteAccessRequirements/DELETE_/api/v1/capacity/timeslots/ts-1
+=== RUN   TestCapacityReservationRouteAccessRequirements/POST_/api/v1/capacity/timeslots/ts-1/approve
+=== RUN   TestCapacityReservationRouteAccessRequirements/POST_/api/v1/capacity/timeslots/ts-1/reject
+=== RUN   TestCapacityReservationRouteAccessRequirements/POST_/api/v1/capacity/timeslots/ts-1/bind
+--- PASS: TestCapacityReservationRouteAccessRequirements (0.00s)
+    --- PASS: TestCapacityReservationRouteAccessRequirements/POST_/api/v1/capacity/timeslots (0.00s)
+    --- PASS: TestCapacityReservationRouteAccessRequirements/GET_/api/v1/capacity/timeslots (0.00s)
+    --- PASS: TestCapacityReservationRouteAccessRequirements/POST_/api/v1/capacity/timeslots/availability (0.00s)
+    --- PASS: TestCapacityReservationRouteAccessRequirements/GET_/api/v1/capacity/timeslots/ts-1 (0.00s)
+    --- PASS: TestCapacityReservationRouteAccessRequirements/PUT_/api/v1/capacity/timeslots/ts-1 (0.00s)
+    --- PASS: TestCapacityReservationRouteAccessRequirements/DELETE_/api/v1/capacity/timeslots/ts-1 (0.00s)
+    --- PASS: TestCapacityReservationRouteAccessRequirements/POST_/api/v1/capacity/timeslots/ts-1/approve (0.00s)
+    --- PASS: TestCapacityReservationRouteAccessRequirements/POST_/api/v1/capacity/timeslots/ts-1/reject (0.00s)
+    --- PASS: TestCapacityReservationRouteAccessRequirements/POST_/api/v1/capacity/timeslots/ts-1/bind (0.00s)
+=== RUN   TestCapacityReservationTotalsSaturateInsteadOfWrapping
+--- PASS: TestCapacityReservationTotalsSaturateInsteadOfWrapping (0.00s)
+=== RUN   TestCreateCapacityReservationRejectsUnknownPool
+2026/10/03 23:44:59 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:44:59 INFO http request method=POST path=/api/v1/capacity/timeslots status=400 duration_ms=1 remote=192.0.2.1:1234
+2026/10/03 23:44:59 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=16 remote=192.0.2.1:1234
+--- PASS: TestCreateCapacityReservationRejectsUnknownPool (2.14s)
+=== RUN   TestUpdateCapacityReservationRejectsUnknownPoolAndRepointsApproval
+2026/10/03 23:45:02 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/03 23:45:02 INFO http request method=POST path=/api/v1/capacity/timeslots status=201 duration_ms=5 remote=192.0.2.1:1234
+2026/10/03 23:45:02 INFO http request method=POST path=/api/v1/capacity/timeslots/a1ce75a4-b1b2-4b63-9db8-44c3a0113100/approve status=200 duration_ms=17 remote=192.0.2.1:1234
+2026/10/03 23:45:02 INFO http request method=PUT path=/api/v1/capacity/timeslots/a1ce75a4-b1b2-4b63-9db8-44c3a0113100 status=400 duration_ms=3 remote=192.0.2.1:1234
+2026/10/03 23:45:02 INFO http request method=PUT path=/api/v1/capacity/timeslots/a1ce75a4-b1b2-4b63-9db8-44c3a0113100 status=200 duration_ms=13 remote=192.0.2.1:1234
+--- PASS: TestUpdateCapacityReservationRejectsUnknownPoolAndRepointsApproval (2.69s)
+=== RUN   TestStartupSchedulesRuntimeCredentialRecoveryForLeaseExpiry
+--- PASS: TestStartupSchedulesRuntimeCredentialRecoveryForLeaseExpiry (2.57s)
+=== RUN   TestRuntimeCredentialRecoveryTimerStopsWithRunnerShutdown
+--- PASS: TestRuntimeCredentialRecoveryTimerStopsWithRunnerShutdown (0.00s)
+=== RUN   TestRuntimeCredentialRecoveryDoesNotRaceActiveProvisioning
+--- PASS: TestRuntimeCredentialRecoveryDoesNotRaceActiveProvisioning (2.23s)
+=== RUN   TestRuntimeCredentialRecoveryRejectsSameIDWithoutMatchingOwnership
+--- PASS: TestRuntimeCredentialRecoveryRejectsSameIDWithoutMatchingOwnership (2.34s)
+=== RUN   TestServerShutdownJoinsRuntimeCredentialRecoveryInFlight
+--- PASS: TestServerShutdownJoinsRuntimeCredentialRecoveryInFlight (2.74s)
+=== RUN   TestServerShutdownDeadlineRetainsRuntimeCredentialRecoveryOwnership
+--- PASS: TestServerShutdownDeadlineRetainsRuntimeCredentialRecoveryOwnership (2.86s)
+PASS
+ok      github.com/jasonczech/apexload/pkg/api  75.671s

@@ -1,3 +1,4 @@
+import RuntimeResourceReservations from './RuntimeResourceReservations'
 import { useEffect, useRef, useState } from 'react'
 import { request } from '../hooks/apiClient'
 import type { AnalysisCapabilities, Preparation, PreparationCapacityPolicy } from '../types/analysis'
@@ -52,6 +53,8 @@ export default function PreparationControls({ testId, projectId, status, canEdit
         <p>Requires a supported capacity pool. Required policies fail when unsupported; no region or cloud fallback.</p>
       </>}
     </fieldset>}
+    <RuntimeResourceReservations shards={Array.isArray(preparation?.allocation) ? preparation.allocation : undefined} />
+    {preparation?.failure && <p role="alert">{preparation.failure}</p>}
     {error && <p role="alert">{error}</p>}
     {canEdit && ['QUEUED', 'PENDING'].includes(status) && !['preparing', 'ready', 'consumed'].includes(preparation?.state ?? '') && <button type="button" disabled={busy} onClick={() => void act('prepare')}>Prepare</button>}
     {canEdit && preparation?.state === 'ready' && <button type="button" disabled={busy} onClick={() => void act('start')}>Start prepared run</button>}

@@ -1,0 +1,54 @@
+Desktop toolchain OK (host: darwin/arm64).
+Note: this builds the host platform's desktop app only; Wails cannot cross-compile.
+Building desktop app 0.1.0-dev.20261004+2d7bf8f (2d7bf8f9bbe46e831fa0fa8982fbf6bc40dc4634) for darwin/arm64...
+
+> apexload-dashboard@0.1.0 check:node
+> node ./scripts/check-node-version.mjs
+
+
+added 428 packages, and audited 429 packages in 6s
+
+149 packages are looking for funding
+  run `npm fund` for details
+
+9 vulnerabilities (4 moderate, 5 high)
+
+To address all issues, run:
+  npm audit fix
+
+Run `npm audit` for details.
+[0;92mWails CLI[0m [0;31mv2.16.0[0m
+
+
+# Build Options
+
+Platform(s)        | darwin/arm64                                                                                                                                                                                                                                                           
+Compiler           | /opt/homebrew/bin/go                                                                                                                                                                                                                                                   
+Skip Bindings      | false                                                                                                                                                                                                                                                                  
+Build Mode         | production                                                                                                                                                                                                                                                             
+Devtools           | false                                                                                                                                                                                                                                                                  
+Frontend Directory | /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/dashboard                                                                                                                                                                                   
+Obfuscated         | false                                                                                                                                                                                                                                                                  
+Install Scope      | machine                                                                                                                                                                                                                                                                
+Skip Frontend      | false                                                                                                                                                                                                                                                                  
+Compress           | false                                                                                                                                                                                                                                                                  
+Package            | true                                                                                                                                                                                                                                                                   
+Clean Bin Dir      | true                                                                                                                                                                                                                                                                   
+LDFlags            | -s -w -X github.com/jasonczech/apexload/pkg/buildinfo.Version=0.1.0-dev.20261004+2d7bf8f -X github.com/jasonczech/apexload/pkg/buildinfo.Commit=2d7bf8f9bbe46e831fa0fa8982fbf6bc40dc4634 -X github.com/jasonczech/apexload/pkg/buildinfo.BuildTime=2026-10-04T14:01:48Z
+Tags               | [analytics_duckdb]                                                                                                                                                                                                                                                     
+Race Detector      | false                                                                                                                                                                                                                                                                  
+
+
+# Building target: darwin/arm64
+
+  • Generating bindings: Done.
+  • Installing frontend dependencies: Done.
+  • Compiling frontend: Done.
+  • Compiling application: Done.
+  • Packaging application: Done.
+  • Self-signing application: Done.
+Built '/Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/desktop/build/bin/apexload.app/Contents/MacOS/apexload' in 3m32.641s.
+
+ ♥   If Wails is useful to you or your company, please consider sponsoring the project:
+https://github.com/sponsors/leaanthony
+Desktop app built in desktop/build/bin/.

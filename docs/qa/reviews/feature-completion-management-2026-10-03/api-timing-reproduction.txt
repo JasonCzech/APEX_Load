@@ -1,0 +1,34 @@
+=== RUN   TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion
+--- PASS: TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion (5.70s)
+=== RUN   TestDeleteProjectSnapshotsSecretMetadataAfterAdmittedMutationsDrain
+2026/10/03 13:12:59 INFO http request method=DELETE path=/api/v1/projects/delete-secret-mutation-race status=200 duration_ms=13 remote=192.0.2.1:1234
+--- PASS: TestDeleteProjectSnapshotsSecretMetadataAfterAdmittedMutationsDrain (0.09s)
+=== RUN   TestStartRefreshesDurableReadinessSettingsBeforeFirstResponse
+2026/10/03 13:12:59 WARN auth is in a bypass mode — all API endpoints are unauthenticated; do not use this configuration in production auth_mode=dev
+2026/10/03 13:12:59 WARN Bruno source retention is using a locally provisioned envelope key key_file=/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-import-assets/.bruno-artifact-key remedy="set APEXLOAD_WRAPPING_MASTER_KEY or APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID for operator-managed key custody"
+2026/10/03 13:12:59 INFO recording proxy starting addr=127.0.0.1:8081
+2026/10/03 13:12:59 INFO apexload API server starting addr=127.0.0.1:0 bound_addr=127.0.0.1:58878
+2026/10/03 13:12:59 INFO http request method=GET path=/api/v1/system/readiness status=200 duration_ms=0 remote=127.0.0.1:58879
+--- PASS: TestStartRefreshesDurableReadinessSettingsBeforeFirstResponse (0.11s)
+=== RUN   TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit
+=== RUN   TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit/OpenAPI
+2026/10/03 13:12:59 INFO http request method=POST path=/api/v1/scripts/import/openapi status=200 duration_ms=53 remote=192.0.2.1:1234
+2026/10/03 13:12:59 WARN failed to persist audit event action=script.import.openapi.create resource_type=script resource_id=a30428fa-34a8-5e4b-b7ba-26533f69dd42 error="audit persistence is unavailable"
+2026/10/03 13:12:59 INFO http request method=POST path=/api/v1/scripts/import/openapi/commit status=201 duration_ms=138 remote=192.0.2.1:1234
+2026/10/03 13:12:59 INFO http request method=GET path=/api/v1/scripts/a30428fa-34a8-5e4b-b7ba-26533f69dd42 status=200 duration_ms=0 remote=192.0.2.1:1234
+=== RUN   TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit/Postman
+2026/10/03 13:12:59 INFO http request method=POST path=/api/v1/scripts/import/postman status=200 duration_ms=47 remote=192.0.2.1:1234
+2026/10/03 13:12:59 WARN failed to persist audit event action=script.import.postman.create resource_type=script resource_id=615df0c6-265d-5807-ad4c-092a52fa6a1e error="audit persistence is unavailable"
+2026/10/03 13:12:59 INFO http request method=POST path=/api/v1/scripts/import/postman/save status=201 duration_ms=31 remote=192.0.2.1:1234
+2026/10/03 13:12:59 INFO http request method=GET path=/api/v1/scripts/615df0c6-265d-5807-ad4c-092a52fa6a1e status=200 duration_ms=0 remote=192.0.2.1:1234
+=== RUN   TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit/Postman_static_variable
+2026/10/03 13:12:59 INFO http request method=POST path=/api/v1/scripts/import/postman status=200 duration_ms=62 remote=192.0.2.1:1234
+2026/10/03 13:12:59 WARN failed to persist audit event action=script.import.postman.create resource_type=script resource_id=a92baba4-739b-5ef7-87e6-93654b515c16 error="audit persistence is unavailable"
+2026/10/03 13:12:59 INFO http request method=POST path=/api/v1/scripts/import/postman/save status=201 duration_ms=37 remote=192.0.2.1:1234
+2026/10/03 13:12:59 INFO http request method=GET path=/api/v1/scripts/a92baba4-739b-5ef7-87e6-93654b515c16 status=200 duration_ms=0 remote=192.0.2.1:1234
+--- PASS: TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit (0.50s)
+    --- PASS: TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit/OpenAPI (0.24s)
+    --- PASS: TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit/Postman (0.12s)
+    --- PASS: TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit/Postman_static_variable (0.14s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/api	8.488s

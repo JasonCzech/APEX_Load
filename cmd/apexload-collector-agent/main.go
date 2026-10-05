@@ -41,7 +41,7 @@ func main() {
 	packs := fs.String("packs", envOr("APEXLOAD_COLLECTOR_PACKS", defaultPacks), "Comma-separated metric pack names (must be in the collector's allow-list)")
 	prometheusURL := fs.String("prometheus-url", os.Getenv("APEXLOAD_COLLECTOR_PROMETHEUS_URL"), "Prometheus text-exposition endpoint for the prometheus pack")
 	monitorKey := fs.String("monitor-public-key", os.Getenv("APEXLOAD_MONITOR_PUBLIC_KEY"), "Base64 Ed25519 controller key; enables signed run jobs and traffic-free availability heartbeats")
-	adapterFile := fs.String("adapter-targets", os.Getenv("APEXLOAD_COLLECTOR_ADAPTER_TARGETS"), "JSON file containing locally approved SSH/JMX/JDBC/OTLP/cloud/AppDynamics destinations")
+	adapterFile := fs.String("adapter-targets", os.Getenv("APEXLOAD_COLLECTOR_ADAPTER_TARGETS"), "JSON file containing locally approved SSH/JMX/JDBC/OTLP/cloud/AppDynamics/Prometheus-query and Kafka/Service Bus/Solace management destinations")
 	credentialKeyFile := fs.String("credential-key-file", os.Getenv("APEXLOAD_COLLECTOR_CREDENTIAL_KEY_FILE"), "Protected file containing base64 X25519 private key")
 	otlpListen := fs.String("otlp-listen", "", "Loopback OTLP HTTP JSON listen address; place behind authenticated TLS proxy for remote emitters")
 	otlpTokenFile := fs.String("otlp-token-file", "", "Protected file containing OTLP bearer token (at least 32 bytes)")

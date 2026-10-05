@@ -115,9 +115,20 @@ acknowledged chunks against the selected original. Multi-file imports preserve
 validated relative paths and byte-for-byte original files. Metadata publication
 is atomic after all normalized artifacts are durable. Cancel invalidates the
 worker's revision; an expired worker can be retried idempotently with fresh output
-ownership. Dataset deletion removes originals, upload chunks and normalized
-objects; a durable cleanup queue also handles project/test deletion and late
-cancelled writers.
+ownership. Dataset cancellation immediately hides the dataset and queues
+originals, upload chunks and normalized objects for cleanup. Physical deletion
+requires durable proof that every writer has stopped. New uploads record an
+immutable writer intent before opening storage; accepted chunk metadata and the
+physical completion seal commit together. Cancellation, timeout, panic, Goexit
+or an uncertain Close retain ownership and cannot advance the cursor. Exact
+retry state can be reconciled across a same-process Server replacement without
+redirecting its SQL or artifact namespace. After all writers are proven closed,
+delete joins the complete owned dataset namespace, including accepted opaque
+chunk keys and closed abandoned object/temporary siblings, before returning
+success. Uploads from the legacy writer path lack this proof: DELETE returns
+pending status 503, retains their bytes and keeps the cleanup job. Qualified
+process-restart, HA and remote-backend recovery remain open. See the
+[upload and deletion review](qa/reviews/feature-completion-native-upload-2026-10-04/README.md).
 
 Rejected measurements fail publication by default. Explicitly accepting them retains a complete rejected-row Parquet artifact with file/measure identity and zero-based source row ordinals, plus bounded metadata summaries. Rejected source values are never copied into error reports. The dashboard caps artifact downloads at 64 MiB; larger artifacts remain accessible through the authenticated API.
 
@@ -160,12 +171,27 @@ apexctl analysis comparisons --project PROJECT_ID
 
 ## Resource and acceptance limits
 
-One heavy analytical pipeline runs per controller process, including staging
-and publication. DuckDB defaults to two threads, a 2 GiB memory setting and an
-8 GiB spill quota. Queries/imports have deadlines; disk headroom and total process
-RSS and container memory usage are monitored because native allocations are not bounded by Go's heap limit
-or DuckDB's configured memory setting. Concurrent requests receive explicit busy,
-resource, cancellation or size-limit errors.
+One heavy analytical pipeline runs per controller process, including staging,
+query execution, publication and physical cleanup. Native operations execute in
+a supervised child of the same executable through bounded typed messages;
+worker startup precedes controller or desktop initialization. Only approved
+operations and private staged files cross that boundary. DuckDB defaults to two
+threads, a 2 GiB engine setting and an 8 GiB spill quota. Smaller profiles use
+`APEXLOAD_ANALYSIS_MEMORY_LIMIT` and `APEXLOAD_ANALYSIS_SPILL_LIMIT`, with integer
+`B`, `KiB`, `MiB` or `GiB` units and the same maximum settings. Invalid profiles
+are reported as unavailable configuration before analytical filesystem work.
+
+Admission includes API staging, worker input/output, executable copy and spill
+reserves. Controller and worker RSS, container usage and disk headroom remain
+separate safeguards; the engine setting is not a total native-memory bound.
+Cancellation deadlines do not release an unresolved process, descriptor or
+publication owner. The watchdog retains uncertainty until actual closure and
+SQL acknowledgement; platform hard containment and restart qualification remain
+separate gates. Concurrent requests receive explicit busy, resource,
+cancellation or size-limit errors. SQLite/PostgreSQL schema 29 records exact
+attempt ownership, sealed publication and cleanup. Process-local retry records
+bind the immutable SQL and artifact namespaces and retain ambiguous outcomes;
+they are not proof of cross-process or cross-host writer termination.
 
 The requested **10 GB compressed-input benchmark was skipped at the user's
 direction**. No 10 GB duration, peak RSS, spill-volume or telemetry-lag result is
@@ -348,3 +374,148 @@ SVG files resolve theme paints while the chart is attached, retain local gradien
 ### Retained observation rates
 
 Native action and business-transaction panels support `observation_rate`, `error_observation_rate` and `success_observation_rate`, each with `aggregation: rate` and unit `observations/s`. Counts come from the selected retained evidence. Archive buckets use their actual elapsed span, including shortened last buckets; source live intervals use their publication window. Merged live rates require complete coverage from each contributing source, with nonoverlapping publication windows wholly contained in the bucket. Coverage uses the union of each source's clipped time windows; whole-window counts are never prorated across bucket boundaries. Empty or incomplete buckets remain unavailable; an observed population with no failures has a measured zero failure rate. These rates describe retained observations, not guaranteed total execution throughput. Existing capture/coverage warnings and filters apply.
+
+
+## Shared metric and operation catalog
+
+The analysis capabilities response includes `metric_catalog` even when native imports are disabled for the project. `apexctl analysis capabilities` exposes the same contract. Catalog presence describes supported semantics; project enablement and the selected run's captured evidence still determine availability.
+
+The retained action/transaction catalog describes response time in milliseconds, error rate in percent, observation count, and observation/error/success rates in counts per elapsed second. Each metric also identifies its existing native wire unit: `ms`, `%`, `observations` or `observations/s`. Those response units remain unchanged; shared normalization maps them to the canonical catalog units without treating message or byte populations as transaction observations. Query profiles enumerate currently executable population, archive/live mode, grouping, filters, property selection, bounds and required evidence. They do not claim protocol/group intersections that have not been captured. Existing saved definitions retain their behavior.
+
+Shared typed operations implement eligible count ratios, epoch-aware counter deltas/rates, comparable absolute/percentage baseline changes, and bounded moving mean/standard deviation. Existing raw counter bucket rates retain their reset-only display behavior and explicitly unknown epoch lineage. They cannot qualify the new baseline or moving operations simply because a metric version/population is supplied; qualified counter operations require the explicit epoch-aware input. A complete observed window with zero events has a measured count/rate of zero. Missing windows, incompatible semantics, unknown/reset epochs and empty denominators remain unscored. Derived points retain bounded operation, algorithm and elapsed-bucket lineage, so a P95 series cannot be compared as an average series. Legacy derived points with unknown parent statistics remain readable but unqualified for these new operations. Histogram and precomputed-summary reaggregation remain unavailable pending explicit typed import executors.
+
+## Event Hubs processor progress analysis
+
+The live and completed-run diagnostics retain a standalone processor progress snapshot even when an interval has no actions or business transactions. SQLite/PostgreSQL history reload now preserves both messaging action summaries and processor snapshots; old nullable rows remain missing. JSONL/Parquet archives and reports retain the same bounded evidence. The live read can recover the last processor snapshot after unrelated intervals while it remains in bounded resident history; archives retain final evidence.
+
+Use `apexctl analysis progress --id RUN_ID --mode live`, or `--mode archive` for a completed archive. Optional `--group` and `--source-id` select exact retained identities. The equivalent authorized read is `GET /api/v1/tests/{id}/messaging-progress`; see the generated [API contract](swagger.yaml). This operation admits fixed live/archive modes and bounded identity filters, with shared analysis admission and a 30-second deadline. It does not accept SQL or formulas. Snapshots are limited to 64 rows and 128 KiB; overflow marks coverage incomplete, and aggregate omitted-row counts are lower bounds.
+
+Positions and lag retain exact int64 decimal strings. Opaque provider offsets are displayed separately and never subtracted. Delivered-position and durable-checkpoint backlog are different measures; neither is enqueue age. Tail observation is opt-in and adds bounded management traffic only after Start: `config.eventhubs.observe_partition_tail: true`, with `tail_poll_interval_ms` from 10000 to 300000 (zero/omitted uses 10000). See [processor configuration](EVENT_HUBS_HOWTO.md#processor-progress-and-checkpoint-evidence) for identity approval and capability requirements.
+
+The API returns nullable delivered/checkpoint lag. Complete inventory, owned generation and source-monotonic ages for ownership and both cursors must qualify within 30 seconds of each row's capture. A stale/missing/disabled/fenced/unconfirmed cursor, in-flight checkpoint or incomplete scope stays unscored; an observed zero remains distinct. Per-row capture timestamps preserve provenance, while transit time and cross-host clock alignment remain unqualified. Results describe backlog as of source capture and association, not current-live freshness or causation.
+
+Counters and checkpoint timing distributions are cumulative by authenticated source, execution group, session, partition and ownership generation. Latest evidence/capture revisions replace prior rows instead of summing repeated windows. Checkpoint outcome, explicit retry, redelivery and ownership verification evidence remain visible. Current owned/unverified rows take precedence when retained history reaches its bound. Progress queries do not turn these cumulative values into transaction counts or percentile averages, and they do not add CI or live-stop verdicts. Strict processor pause confirms actual receive/tail/checkpoint quiescence; recovery and live Azure qualification remain open; local/tagged checks do not certify provider readiness.
+
+## Exact messaging management evidence
+
+The management foundation is separate from data-plane action diagnostics and from native DuckDB queries. Enable new poll admission explicitly with both `APEXLOAD_RUN_MONITOR_PROJECTS` and `APEXLOAD_MESSAGING_MANAGEMENT_PROJECTS`. The capabilities response distinguishes the v1 evidence contract, project enablement and genuinely registered executable packs. The foundation and provider adapters are distinct releases. The collector registers the genuine `kafka-offsets`, pinned shared-key `servicebus-runtime` and pinned Basic `solace-semp` readers. Provider qualification is recorded separately from reader availability; the Service Bus workflow below describes its finite supported scope.
+
+An administrator-approved source carries a versioned entity inventory, provider identity, principal/policy metadata and an exact `management://alias` destination. The alias selects an operator-owned collector target containing finite approved endpoints; a job cannot replace those endpoints. Kafka scopes state `read_committed` or `read_uncommitted` explicitly. Source revisions are immutable for already-started runs. Collector readiness publishes startup instance and scope/identity hashes; required sources remain unavailable without a matching genuine observer.
+
+Credential names for management are separate from send/receive credentials. SASL/basic usernames and shared-key key names must equal the approved principal. The controller seals a purpose-specific short-lived credential bundle to the enrolled collector key. An opaque keyed credential version pins each source revision; rotation blocks observed publication until an administrator saves a new revision. Secret values and their raw hashes are never returned.
+
+One admitted poll captures a bounded cohort of eligible overlapping runs. The collector performs one source observation and the controller durably writes private run-owned envelopes before atomically publishing their receipts. Exact retries retain source capture times, generation, poll identity and core digest. Controller receive timestamps use UTC microsecond precision consistently in immutable artifacts and database receipts; source timestamps retain their original precision. Even a denied poll with no numeric points and no rows is a durable snapshot with explicit missing inventory; it does not become an observed zero.
+
+Offsets and populations are decimal strings, including observed `"0"`, through API, archive, CLI and dashboard. Kafka committed positions and read boundaries are next offsets. High watermark and last stable positions stay distinct; the physical replica log end is unavailable in the foundation. [Apache Kafka protocol semantics](https://kafka.apache.org/22/design/protocol/) describe these boundaries. Service Bus active counts can include deferred messages, so the foundation never invents a separate deferred count; see [Service Bus message counters](https://learn.microsoft.com/en-us/azure/service-bus-messaging/message-counters). Solace depth refers to the instantaneous queue collection count, as described in [SEMP collection counts](https://docs.solace.com/Admin/SEMP/SEMP-Features.htm).
+
+Use `apexctl monitor management --id RUN_ID --source-id SOURCE_ID --limit 20` to read bounded receipt pages. Add `--from`/`--to` for an inclusive/exclusive capture window and `--cursor` for the returned opaque continuation. An entity filter selects complete snapshots containing that entity; it preserves their original approved inventory coverage. The dashboard's **Messaging management evidence** table displays exact values, unavailable reasons, source capture/receipt clocks and cadence gaps. Reads of accepted evidence remain authorized after feature disable.
+
+Run archives keep the historical point artifact and optionally add `monitor_management.v1.jsonl` with snapshot/row counts, schema version, coverage and integrity metadata. Older archives omit the sidecar and gain no guessed management evidence. Scalar queries ignore typed-only observations rather than rounding large integers.
+
+Poll expiry is not proof that provider calls stopped. A source with unresolved physical ownership remains unavailable to a new collector instance. The **Management collection ownership** controls show its exact owner/generation. Administrators may attest a verified process stop, with a durable audit trail, to release that exact fence. `apexctl monitor collection --project PROJECT_ID --id SOURCE_ID` reads the state; `monitor release-collection` accepts an explicit JSON attestation using `--file`. A stale owner/generation cannot release a newer collector. Collector-confirmed completion remains a distinct workflow.
+
+[Review and verification status](qa/reviews/feature-completion-management-2026-10-03/README.md) records foundation acceptance separately from subsequent real provider qualification.
+
+Terminal management poll journals remain available for seven days for retry and audit. The leader maintenance sweep scans at most 512 terminal journals and locks at most 50 projects per sweep. A durable cursor advances across protected records so repeated maintenance cannot scan the full retained history. Receipt-referenced polls, unresolved physical ownership, and the active configuration fairness cursor remain retained; run deletion makes obsolete journals eligible after the retry window.
+
+A collector supports at most 32 assigned collecting run jobs, separately from its 32-job pending evidence budget. Required bindings reserve assignment slots before optional bindings; excess required bindings block Prepare/Start, while excess optional bindings record `collector_capacity` incomplete coverage. Stopping a run releases its assignments. Existing databases above the assignment limit report an explicit error until runs are stopped or expired; they cannot claim full monitoring coverage.
+
+
+## Kafka management source configuration
+
+The `kafka-offsets` pack reads only approved topic/partition/group tuples. Select it in **Monitoring sources** when project management collection is enabled and the controller advertises that executable pack. Administrators enter the exact cluster ID, read isolation, finite inventory, collector alias, SASL principal/policy revision, management-secret reference and enrolled collector public key. The saved approval displays its source revision and opaque credential version separately from unsaved edits. Source updates use the expected revision; a conflict retains the draft for review and requires reloading the current approval.
+
+A local collector target pins every permitted TLS broker endpoint to an explicit numeric address at the same port. No hostname resolution or broker-discovered destination expands this map. The cluster ID must equal the scope provider. Supply a protected CA file containing only approved certificates; the collector loads and validates it once during configuration. Changing the file does not alter a running collector's trust. Reconstruct the collector with the revised configuration to approve new trust.
+
+```json
+{
+  "pack": "kafka-offsets",
+  "destination": "management://orders-kafka",
+  "management": {
+    "endpoints": ["tls://broker.example:9093"],
+    "tls_ca_file": "/protected/kafka-ca.pem",
+    "kafka": {
+      "cluster_id": "APPROVED_CLUSTER_ID",
+      "dial_addresses": {"tls://broker.example:9093": "192.0.2.10:9093"}
+    }
+  }
+}
+```
+
+This fragment illustrates routing, not a complete target: copy the saved `management_scope` and `management_identity` into the corresponding local `management.scope` and `management.identity`, including the controller-generated credential version. Keep the sealed management credential separate from script send/receive credentials. Supported authentication is SASL PLAIN over verified TLS and SCRAM SHA-256/SHA-512. Anonymous, OAuth and ambient credentials are unavailable for this reader. Readiness validates only local immutable approval and does not contact the broker.
+
+One source poll admits every TCP dial, TLS handshake and fixed Kafka request under the shared limits. The reader makes no background retries, consumption, production, offset commits or group joins. It verifies cluster identity on authenticated connections before reading positions. Observations preserve committed-next, high-watermark-next and last-stable-next separately; physical replica log-end remains unsupported. The capture time is the oldest successful component of a row, including cleanup in its source-age qualification. Partial permission or budget failures retain explicit field availability rather than converting missing positions to zero. The minimum source cadence is ten seconds.
+
+```sh
+apexctl monitor create-source --project PROJECT_ID --file source.json
+apexctl monitor update-source --project PROJECT_ID --id SOURCE_ID --file revised-source.json
+apexctl monitor delete-source --project PROJECT_ID --id SOURCE_ID --revision SOURCE_REVISION
+```
+
+An update file contains the currently saved `revision`. Deletion also requires that exact revision. Rotate a secret by saving a new administrator-approved source revision before collecting with the new credential. Existing run bindings retain their immutable older approval and fail visibly if its pinned credential no longer matches.
+
+A timeout or failed socket close cannot release physical ownership. The collector keeps that resource charged until closure is proven; an unresolved close can also hold collector shutdown. Verify the process has actually stopped before using the existing audited stopped-process release controls. A lease expiry alone is insufficient.
+
+Provider qualification is recorded separately from these implementation contracts. Controlled protocol fixtures cover framing, missing data, authentication, budgets and cleanup. Real broker results must identify the exact broker version/image, authentication profile and topology. The pinned Apache Kafka 3.9.2 single-broker fixture verifies all three SASL profiles and the distinction between high-watermark and last-stable next positions during an open transaction and after abort. This does not certify full consume-transform-produce atomicity, broker failover, newer releases, Event Hubs Kafka endpoints or protected hosted clusters.
+
+## Service Bus management source configuration
+
+The `servicebus-runtime` pack reads runtime descriptions for an administrator-approved finite inventory of queues or topic/subscription pairs. Select it in **Monitoring sources** when project management collection is enabled and the executable pack is advertised. Enter the canonical lowercase namespace hostname, public collector alias, exact Manage policy principal and policy revision, management-secret reference and enrolled collector public key. The source never accepts a connection string, raw key, external SAS or send/receive credential. A saved approval shows its revision and opaque credential version separately from the unsaved draft; revision conflicts retain the draft until the current approval is reloaded.
+
+The initial management profile uses a pinned shared-key identity. A Manage claim can authorize provider changes; the collector itself exposes only fixed entity-description GET operations. Entra/ambient identity and live Azure interoperability are separate qualification gates. Data-plane Service Bus execution has its own runtime capabilities and is not enabled by selecting this management source.
+
+A collector target approves one HTTPS namespace, one literal numeric address at port 443, and a protected explicit CA bundle. Construction loads trust once and makes no target requests. No DNS lookup, proxy, redirect, automatic retry, AMQP connection or discovered destination expands the approval. Changing a CA file requires reconstructing the collector with a revised operator-approved configuration.
+
+```json
+{
+  "pack": "servicebus-runtime",
+  "destination": "management://orders-servicebus",
+  "management": {
+    "endpoints": ["https://example.servicebus.windows.net"],
+    "tls_ca_file": "/protected/servicebus-ca.pem",
+    "service_bus": {"dial_address": "192.0.2.20:443"}
+  }
+}
+```
+
+This routing fragment is not a complete target. Copy the saved `management_scope` and `management_identity` into local `management.scope` and `management.identity`, including the opaque credential version. The scope provider must equal the approved namespace hostname. The first profile accepts queue/topic hierarchical ASCII paths of at most 256 characters and one-segment subscription names of at most 50; reserved management path segments and case-aliased duplicates are rejected. Authored entity casing remains in evidence.
+
+Collection cadence is 30–3600 seconds, with a 30-second default for local approval. Older stored ten-second definitions remain readable and deletable, but a new revision must meet the current policy. The shared namespace origin gate prevents overlapping sources from bypassing the cadence. Each successful entity consumes separate admitted TCP, TLS and GET operations under the signed authorization deadline, whole-poll deadline, response-byte and shared activity budgets. Approval of 256 entities does not promise that all fit one poll; remaining evidence explicitly reports budget exhaustion.
+
+Observed populations remain exact decimal strings, including zero. Missing or nil fields remain missing. Deferred counts are unsupported because active counts can include deferred messages; this reader does not estimate a separate count. Subscription scheduled/size evidence stays unsupported in this initial profile. Queue total, active, scheduled, dead-letter, transfer, transfer-dead-letter and size observations retain individual availability. A row's capture/age includes its actual read and physical cleanup; partial coverage remains visible in the existing management table, archive sidecar and CLI queries.
+
+A timeout or unexplained socket close retains physical ownership. Verify the actual collector process has stopped before using the audited stopped-process release controls; expiry alone does not prove release. Controlled TLS/HTTP/XML tests qualify local parsing, authentication, budgets and cancellation behavior. They do not certify live Azure counters, service tiers or identity profiles. Provider results must identify the exact approved namespace/profile and independently reconcile populations.
+
+## Solace management source configuration
+
+The `solace-semp` collector pack polls only exact administrator-approved VPN/queue or VPN/topic-endpoint tuples through individual SEMP v2 monitor requests. The dashboard advertises it only with project management collection enabled and an executable collector pack. Enter the canonical lowercase broker hostname, exact Basic principal without a colon, policy revision, separate management-secret reference and enrolled collector public key. Entity case, Unicode and literal punctuation remain part of the identity. Saved approval and its opaque credential version remain separate from the unsaved draft; revision conflicts retain the draft.
+
+The initial decoder profile follows the pinned software-broker 10.26.7.12655 monitor/action schemas. A controlled fixture is not live broker qualification. Collection discovery, pagination, legacy XML and alternate provider versions remain separate acceptance gates. Depth comes only from `collections.msgs.count`, preserving exact decimal strings and observed zero; absent/null counts remain missing. A DMQ relationship is retained only when its exact queue is approved in the same VPN. The legacy empty DMQ field means the relationship is unavailable, and cannot establish that no DMQ exists.
+
+Approve one HTTPS origin, one fixed numeric route with a matching port and a protected explicit CA bundle in the collector. Startup loads trust once without target traffic. The collector requires a protected durable spool directory for session quarantine and explicit permission for the fixed own-session logout action.
+
+```json
+{
+  "pack": "solace-semp",
+  "destination": "management://orders-solace",
+  "management": {
+    "endpoints": ["https://broker.example.test:943"],
+    "tls_ca_file": "/protected/solace-ca.pem",
+    "solace": {
+      "profile": "semp_v2",
+      "dial_address": "192.0.2.30:943",
+      "allow_own_session_logout": true
+    }
+  }
+}
+```
+
+This routing fragment is not a complete target. Copy the saved `management_scope` and `management_identity` into local `management.scope` and `management.identity`, including the controller-generated credential version. Use the existing source CLI create/update/delete commands above; edits and deletion require the saved revision. The management identity is separate from message send/receive credentials.
+
+Each source has a minimum thirty-second interval; aliases at the same normalized origin share the cooldown and a bounded five-HTTP-operation-per-second rate with burst two. Every TCP, TLS, fixed GET and own-session PUT operation consumes signed activity/deadline authority. There is no DNS, proxy, redirect, retry, discovery or arbitrary action. The response capture time precedes physical GET cleanup, and row age includes later transport and logout work. Remaining inventory is visibly incomplete when poll bounds are exhausted.
+
+Before Basic bytes can escape, the collector durably records a bounded credential-free session intent. It reuses only the exact in-memory owned Session cookie and logs out using `PUT /SEMP/v2/action/about/user/logout` with fixed `{}` inside the original signed authority. A successful provider response, validated action metadata, proven raw socket close and durable intent removal are all required to release the session. Cookies and credentials never enter evidence. Cancellation may finish this bounded cleanup only while the original authority remains valid.
+
+A missing/ambiguous cookie, rejected logout, expired authority, failed persistence or unproven close retains quarantine and prevents further authentication at that origin. Restart reloads unresolved intents even if the collector identity, controller URL or enabled pack changes. Process/socket destruction is separate from provider-session destruction; the existing stopped-process attestation cannot clear this remote-session quarantine. No automatic session reset or public provider-audited recovery workflow is advertised by this first slice. Preserve the protected spool and independently audit the provider session before any later recovery procedure.
+
+Controlled TLS fixtures validate request surfaces, session ownership, exact depth, cancellation, physical cleanup and retained restart quarantine. Live software-broker/provider-version acceptance and audited restarted-source recovery remain open. Selecting this monitoring pack does not enable Solace SMF or JMS load execution.

@@ -438,7 +438,7 @@ func TestTerminalCapacityReleaseClearsBothDurableSides(t *testing.T) {
 		t.Fatalf("SaveTest: %v", err)
 	}
 	server.runner.mu.Lock()
-	server.runner.tests[testID] = &ManagedTest{ID: testID, Status: status, TimeslotID: &slotID}
+	server.runner.tests[testID] = &ManagedTest{ID: testID, ProjectID: "proj-a", Status: "COMPLETE", TimeslotID: &slotID}
 	server.runner.mu.Unlock()
 	endedAt := now.Add(5 * time.Minute)
 	if err := server.runner.updateStoredTestStatus(testID, "COMPLETE", &endedAt, ""); err != nil {

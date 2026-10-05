@@ -283,8 +283,9 @@ func (a *serviceBusAdapter) RequestReply(ctx context.Context, requestDestination
 	request.Headers["reply_to"] = serviceBusReplyToDestination(replyDestination)
 	sent, err := a.Publish(ctx, requestDestination, request)
 	if err != nil {
-		return message{}, message{}, err
+		return message{sendAttempted: true}, message{}, err
 	}
+	sent.sent = true
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
@@ -1171,6 +1172,7 @@ func toServiceBusMessage(destination string, msg message) *azservicebus.Message 
 
 func fromServiceBusMessage(destination string, msg *azservicebus.ReceivedMessage) message {
 	out := message{
+		received:    true,
 		ID:          msg.MessageID,
 		Destination: destination,
 		Headers:     make(map[string]string),

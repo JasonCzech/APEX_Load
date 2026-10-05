@@ -6,6 +6,7 @@ import { useSystemApi } from '../hooks/api/useSystemApi'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
+import PrometheusDashboardAdoption from './PrometheusDashboardAdoption'
 import PrometheusPanelCard from './PrometheusPanelCard'
 import { listAllImportedDashboards } from './monitoringCatalogModel'
 
@@ -427,6 +428,7 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
 							{Object.keys(dashboard.bindings ?? {}).length > 0 && <button type="button" className="btn btn-sm btn-secondary" disabled={controlsBusy} onClick={() => handleEditBindings(dashboard)}>Edit bindings</button>}
 							<button type="button" className="btn btn-sm btn-ghost" disabled={controlsBusy} onClick={() => handleDelete(dashboard)} aria-label={`Delete ${dashboard.name}`}>Delete</button>
                   </div>
+                  <PrometheusDashboardAdoption key={`${projectId}:${dashboard.id}`} dashboard={dashboard} projectId={projectId} />
 					{testedDashboardId === dashboard.id && testedResult?.dashboards.flatMap(result => result.panels).map(panel => (
 						<PrometheusPanelCard key={panel.panel_id} title={panel.title} unit={panel.unit} kind={panel.kind} series={panel.series} value={panel.value} error={panel.error} thresholds={panel.thresholds} height={150} />
 					))}

@@ -135,8 +135,13 @@ jobs:
           CGO_ENABLED: '1'
         run: |
           set -euo pipefail
-          go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Parquet|Lagged|BucketSeries)'
-          go build -tags analytics_duckdb -o native-controller ./cmd/controller
+          go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries)'
+          go test -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'
+          python3 -m unittest discover -s scripts -p 'test_native_worker_startup_test.py'
+          controller="native-controller"
+          if [[ "${RUNNER_OS}" == Windows ]]; then controller="${controller}.exe"; fi
+          go build -tags analytics_duckdb -o "${controller}" ./cmd/controller
+          python3 scripts/test_native_worker_startup.py --binary "${controller}" --output native-startup-controller.json
           CGO_ENABLED=0 go test ./pkg/analysis/duckdb
           dependencies=$(go list -tags analytics_duckdb -deps ./cmd/generator ./cmd/apexload-collector-agent)
           if grep -q 'github.com/duckdb/' <<<"${dependencies}"; then
@@ -164,6 +169,17 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${BUILD_VERSION}" COMMIT="${GITHUB_SHA}" ./scripts/build-desktop-local.sh
+
+      - name: Packaged desktop native startup boundary
+        shell: bash
+        run: python3 scripts/test_native_worker_startup.py --desktop-build-dir desktop/build/bin --output native-startup-desktop.json
+
+      - name: Retain native startup boundary evidence
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: native-startup-${{ matrix.artifact }}
+          path: native-startup-*.json
+          if-no-files-found: error
 
       - name: Smoke-test Windows backend
         if: runner.os == 'Windows'
@@ -587,8 +603,13 @@ jobs:
           CGO_ENABLED: '1'
         run: |
           set -euo pipefail
-          go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Parquet|Lagged|BucketSeries)'
-          go build -tags analytics_duckdb -o native-controller ./cmd/controller
+          go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries)'
+          go test -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'
+          python3 -m unittest discover -s scripts -p 'test_native_worker_startup_test.py'
+          controller="native-controller"
+          if [[ "${RUNNER_OS}" == Windows ]]; then controller="${controller}.exe"; fi
+          go build -tags analytics_duckdb -o "${controller}" ./cmd/controller
+          python3 scripts/test_native_worker_startup.py --binary "${controller}" --output native-startup-controller.json
           CGO_ENABLED=0 go test ./pkg/analysis/duckdb
           dependencies=$(go list -tags analytics_duckdb -deps ./cmd/generator ./cmd/apexload-collector-agent)
           if grep -q 'github.com/duckdb/' <<<"${dependencies}"; then

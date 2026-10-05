@@ -59,6 +59,8 @@ const (
 // contention. Call MetricsSnapshot() periodically (e.g., every second) to
 // extract aggregated metrics during or after a run.
 type Engine struct {
+	runtimeResources   *engineRuntimeResources
+	runtimePause       *engineRuntimePause
 	pooledPilot        *javaPooledPilot
 	brokerExecution    *javaBrokerExecution
 	evidenceSchedule   []VUserLifetime
@@ -89,6 +91,8 @@ type Engine struct {
 
 // Config contains configuration for Engine creation.
 type Config struct {
+	RuntimeResourcePeakVUsers  int
+	RuntimeResourceReservation protocol.RuntimeResourceReservation
 	// EvidenceSchedule is trusted benchmark wiring, never DSL/API configuration.
 	EvidenceSchedule []VUserLifetime
 	// EvidenceStarted receives the schedule's clock origin; callbacks must return promptly.
@@ -193,10 +197,16 @@ func New(cfg Config) (*Engine, error) {
 	if scriptSourcedDropped {
 		warnScriptSourcedRedactionDropped("script", cfg.Script.Name)
 	}
+	runtimeResources, resourceErr := newEngineRuntimeResources([]GroupConfig{{Name: "", Script: cfg.Script, VUsers: cfg.VUsers, RuntimeResourcePeakVUsers: cfg.RuntimeResourcePeakVUsers, RuntimeResourceReservation: cfg.RuntimeResourceReservation}})
+	if resourceErr != nil {
+		return nil, resourceErr
+	}
 	metrics := NewMetricsCollector(10000)
 	metrics.timingObserver = cfg.TimingObserver
 	metrics.initializationObserver = cfg.InitializationObserver
 	return &Engine{
+		runtimeResources: runtimeResources,
+		runtimePause:     newEngineRuntimePause(runtimeResources, false),
 		evidenceSchedule: append([]VUserLifetime(nil), cfg.EvidenceSchedule...),
 		evidenceStarted:  cfg.EvidenceStarted, completionObserver: cfg.CompletionObserver,
 		script:              cfg.Script,
@@ -221,6 +231,11 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 	if e.brokerExecution != nil && !e.brokerExecution.used.CompareAndSwap(false, true) {
 		return nil, errors.New("java_broker_already_used")
 	}
+	if err := e.runtimeResources.beginRun(); err != nil {
+		return nil, err
+	}
+	defer e.runtimeResources.release()
+	defer e.runtimePause.close()
 	// Re-check durable import gates at the actual execution boundary. Engine
 	// construction and execution are intentionally separate, and callers retain
 	// the Script pointer, so a draft can acquire a blocker after New returns.
@@ -231,6 +246,13 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 	if err := validateMessageDetailRuntimeSupport(e.script); err != nil {
 		return nil, err
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := e.runtimeResources.adopt(ctx); err != nil {
+		return nil, err
+	}
+	ctx = e.runtimePause.bind(e.runtimeResources.bind(ctx, ""), "")
 
 	var sourceErr error
 	e.sourceParameters, sourceErr = newSourceParameterState([]*dsl.Script{e.script})
@@ -437,15 +459,17 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 			break
 		}
 		bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return e.redaction })
-		if err := callProtocolInit(loopCtx, vuProto, vuserProtoConfig(protoConfig, vuserID), e.redaction); err != nil {
+		initErr := callProtocolInit(loopCtx, vuProto, vuserProtoConfig(protoConfig, vuserID), e.redaction)
+		progress := e.metrics.registerMessagingProgress(vuProto, "", e.runtimeResources)
+		if err := initErr; err != nil {
 			if loopCtx.Err() != nil {
-				runProtocolTeardown(vuProto, func() *RedactionConfig { return e.redaction })
+				runProtocolTeardownWithMessagingProgress(vuProto, progress, func() *RedactionConfig { return e.redaction })
 				wg.Done()
 				break
 			}
 			safeErr := err
 			slog.Error("failed to init protocol for vuser", "vuser", vuserID, "err", safeErr)
-			runProtocolTeardown(vuProto, func() *RedactionConfig { return e.redaction })
+			runProtocolTeardownWithMessagingProgress(vuProto, progress, func() *RedactionConfig { return e.redaction })
 			wg.Done()
 			startupErr = safeErr
 			break
@@ -453,7 +477,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 		// A context-ignoring adapter may return success after a peer has already
 		// satisfied the exact goal. Do not launch this still-unentitled VUser.
 		if loopCtx.Err() != nil {
-			runProtocolTeardown(vuProto, func() *RedactionConfig { return e.redaction })
+			runProtocolTeardownWithMessagingProgress(vuProto, progress, func() *RedactionConfig { return e.redaction })
 			wg.Done()
 			break
 		}
@@ -471,7 +495,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 			defer recoverVUserGoroutine(vuserID, redaction)
 			defer wg.Done()
 			defer func() {
-				err := runProtocolTeardown(vuProto, redaction)
+				err := runProtocolTeardownWithMessagingProgress(vuProto, progress, redaction)
 				if err != nil {
 					teardownErrors.Add(1)
 				}
@@ -621,6 +645,7 @@ func javaVuserActionsUsePhaseLifecycle(actions []dsl.Action) bool {
 }
 
 func (e *Engine) Stop() {
+	e.runtimePause.beginTerminal(true)
 	e.mu.Lock()
 	cancel := e.cancel
 	e.mu.Unlock()
@@ -630,6 +655,7 @@ func (e *Engine) Stop() {
 }
 
 func (e *Engine) GracefulStop() {
+	e.runtimePause.beginTerminal(false)
 	e.mu.Lock()
 	cancel := e.softStop
 	e.mu.Unlock()
@@ -728,22 +754,24 @@ func (e *Engine) runOpenWorkload(
 				return
 			}
 			bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return e.redaction })
-			if err := callProtocolInit(loopCtx, vuProto, vuserProtoConfig(protoConfig, workerID), e.redaction); err != nil {
+			initErr := callProtocolInit(loopCtx, vuProto, vuserProtoConfig(protoConfig, workerID), e.redaction)
+			progress := e.metrics.registerMessagingProgress(vuProto, "", e.runtimeResources)
+			if err := initErr; err != nil {
 				if loopCtx.Err() != nil {
-					runProtocolTeardown(vuProto, redaction)
+					runProtocolTeardownWithMessagingProgress(vuProto, progress, redaction)
 					return
 				}
 				safeErr := err
 				slog.Error("failed to init protocol for arrival worker", "arrival", workerID, "err", safeErr)
 				recordInitError(safeErr)
-				runProtocolTeardown(vuProto, redaction)
+				runProtocolTeardownWithMessagingProgress(vuProto, progress, redaction)
 				return
 			}
 			if loopCtx.Err() != nil {
-				runProtocolTeardown(vuProto, redaction)
+				runProtocolTeardownWithMessagingProgress(vuProto, progress, redaction)
 				return
 			}
-			defer runProtocolTeardown(vuProto, redaction)
+			defer runProtocolTeardownWithMessagingProgress(vuProto, progress, redaction)
 			initializedWorkers.Add(1)
 
 			vu = &VUser{

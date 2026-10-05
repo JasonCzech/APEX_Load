@@ -1,0 +1,48 @@
+{
+  "basis": "Proven own-cache API test archives lack the current unconditional native store ownership regression; all production outputs, archives defining the current regression, other packages, dependencies and deliverables retained. No mutation in inventory step.",
+  "candidates": [
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/9e/9ebb75a49519112509ac394c59215d8002469a618b7ae37012de8395196bb33c-d",
+      "bytes": 476862068,
+      "inode": 234622750,
+      "mtime_ns": 1791110655737176000,
+      "sha256": "9ebb75a49519112509ac394c59215d8002469a618b7ae37012de8395196bb33c",
+      "api_tests_defined": 9665,
+      "current_unconditional_regression_absent": true
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/9d/9dcbab934f2cac2c2a889b2ac7186353aed9ef465d559843e756ea09ef65c728-d",
+      "bytes": 532753882,
+      "inode": 234662088,
+      "mtime_ns": 1791112486004845000,
+      "sha256": "9dcbab934f2cac2c2a889b2ac7186353aed9ef465d559843e756ea09ef65c728",
+      "api_tests_defined": 9662,
+      "current_unconditional_regression_absent": true
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/ee/ee5e91eab58b19db97633cb6ad5a465c51ecdf2dd30ef46ab6da15bad987a765-d",
+      "bytes": 532692934,
+      "inode": 234628118,
+      "mtime_ns": 1791110924848889000,
+      "sha256": "ee5e91eab58b19db97633cb6ad5a465c51ecdf2dd30ef46ab6da15bad987a765",
+      "api_tests_defined": 9658,
+      "current_unconditional_regression_absent": true
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/2a/2adf02ff931603557769e27ed12a332c682b70378417962e7a0635e9f9c7a121-d",
+      "bytes": 476912168,
+      "inode": 234657129,
+      "mtime_ns": 1791112310887111000,
+      "sha256": "2adf02ff931603557769e27ed12a332c682b70378417962e7a0635e9f9c7a121",
+      "api_tests_defined": 9669,
+      "current_unconditional_regression_absent": true
+    }
+  ],
+  "deleted": 4,
+  "reclaimed_bytes": 2019221052,
+  "free_bytes_before": 4341760000,
+  "free_bytes_after": 6389760000,
+  "completed_utc": "2026-10-04T12:20:12Z",
+  "shared_cache_mutated": false,
+  "current_outputs_retained": true
+}

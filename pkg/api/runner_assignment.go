@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -340,6 +341,8 @@ func cloneGeneratorShardSummaries(in []GeneratorShardSummary) []GeneratorShardSu
 	copy(out, in)
 	for i := range out {
 		out[i].JavaHost = cloneJavaHostPlacementSummary(in[i].JavaHost)
+		out[i].RuntimeResourceClaim = generatorrpc.CloneRuntimeResourceClaim(in[i].RuntimeResourceClaim)
+		out[i].RuntimeResourceAdmission = generatorrpc.CloneRuntimeResourceAdmission(in[i].RuntimeResourceAdmission)
 	}
 	return out
 }

@@ -117,6 +117,8 @@ describe('ScriptDefinition runtime contract', () => {
           namespace: 'orders.servicebus.windows.net',
           event_hub: 'orders',
           consumer_group: 'load-tests',
+          consumer_mode: 'processor',
+          processor_max_partitions: 8,
           partition_key: 'customer-1',
           timeout_ms: 1500,
           mock: false,

@@ -154,6 +154,20 @@ describe('TestExecutionManifestCard', () => {
     expect(container.textContent).toContain('Prepared / admitted sessions4 / 2')
   })
 
+  it.each([false, true])('shows processor reservations without treating missing admission as zero (compact: %s)', async compact => {
+    const manifest = makeManifest()
+    const shard = manifest.load_generators.generator_shards![0]
+    shard.runtime_resource_claim = { contract: 'eventhubs_processor_reservations_v1', protocol: 'eventhubs', peak_vusers: 2, requested: { processors: 2, workers: 8, max_partitions_per_processor: 4 } }
+    await renderCard(manifest, { compact })
+    expect(container.textContent).toContain('Requested processors / workers2 / 8')
+    expect(container.textContent).toContain('Admitted processors / workersUnavailable / Unavailable')
+    expect(container.textContent).toContain('Unconfirmed')
+    shard.runtime_resource_admission = { claim: shard.runtime_resource_claim, current: true, admitted: { processors: 2, workers: 8, max_partitions_per_processor: 4 } }
+    await renderCard(manifest, { compact })
+    expect(container.textContent).toContain('Admitted processors / workers2 / 8')
+    expect(container.textContent).toContain('Confirmed at reservation')
+  })
+
   async function renderCard(manifest: TestRunManifest | null, options: { error?: string; loading?: boolean; compact?: boolean } = {}) {
     await act(async () => {
       root.render(

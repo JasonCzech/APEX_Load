@@ -526,6 +526,12 @@ func (s *BrokerService) dispatch(ctx context.Context, p BrokerPrincipal, q Broke
 	case "ready":
 		wave.wave.mu.Lock()
 		out.State = wave.wave.phase
+		// Reserve publishes a preparing response before its asynchronous worker
+		// starts. Keep that public state consistent without advancing the private
+		// reserved phase or weakening the actual ready/commit barriers.
+		if out.State == "reserved" {
+			out.State = "preparing"
+		}
 		wave.wave.mu.Unlock()
 		for _, r := range wave.wave.Records() {
 			out.Hosts = append(out.Hosts, BrokerHost{HostID: r.ID, SessionID: r.SessionID})

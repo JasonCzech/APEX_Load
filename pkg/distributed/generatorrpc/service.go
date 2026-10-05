@@ -72,6 +72,9 @@ type assignedTest struct {
 	groupScripts                    map[string]string
 	groupJavaHosts                  map[string]string
 	groupJavaHostPrepared           map[string]int32
+	groupRuntimeResources           map[string]protocol.RuntimeResourceReservation
+	groupRuntimeResourceClaims      map[string]*pb.RuntimeResourceClaim
+	groupRuntimeResourcePeaks       map[string]int32
 	terminalError                   string
 }
 
@@ -261,20 +264,21 @@ type transactionBuffer struct {
 }
 
 type metricsAggregateSet struct {
-	NativeVersion    uint32
-	Fleet            *MetricAggregate
-	Transactions     []MetricAggregate
-	Dependencies     []MetricAggregate
-	SOAP             []MetricAggregate
-	NetworkProfiles  []MetricAggregate
-	Actions          []MetricAggregate
-	ActionDimensions []MetricAggregate
-	ActionProperties []MetricAggregate
-	Properties       []MetricAggregate
-	Regions          []MetricAggregate
-	Browser          *BrowserMetrics
-	BrowserByDevice  []BrowserDeviceMetrics
-	Groups           []GroupMetric
+	MessagingProgress *protocol.MessagingProgressSnapshot
+	NativeVersion     uint32
+	Fleet             *MetricAggregate
+	Transactions      []MetricAggregate
+	Dependencies      []MetricAggregate
+	SOAP              []MetricAggregate
+	NetworkProfiles   []MetricAggregate
+	Actions           []MetricAggregate
+	ActionDimensions  []MetricAggregate
+	ActionProperties  []MetricAggregate
+	Properties        []MetricAggregate
+	Regions           []MetricAggregate
+	Browser           *BrowserMetrics
+	BrowserByDevice   []BrowserDeviceMetrics
+	Groups            []GroupMetric
 }
 
 type transactionWindowAggregate struct {
@@ -1101,6 +1105,12 @@ func stopGroupExecution(execution *groupExecution) {
 			}()
 			return
 		}
+		// Non-broker runtime reservations release bounded process-local state.
+		// Close it before signalling staged completion so graceful detach remains
+		// synchronous and no unused Event Hubs budget outlives the stopped stage.
+		if execution.engine != nil {
+			_ = execution.engine.ClosePreparedRuntime()
+		}
 		execution.stagedDoneOnce.Do(func() {
 			if execution.done != nil {
 				close(execution.done)
@@ -1181,6 +1191,11 @@ func (s *Service) StreamMetrics(stream pb.GeneratorControl_StreamMetricsServer) 
 			}
 			if testID != "" && pause.GetTestId() != testID {
 				recvErr <- status.Error(codes.FailedPrecondition, "pause control test does not match metrics stream scope")
+				return
+			}
+
+			if pause.GetRequireQuiescence() {
+				recvErr <- status.Error(codes.InvalidArgument, "strict pause requires the acknowledged SetPaused RPC")
 				return
 			}
 
@@ -1508,7 +1523,11 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 				runtimeAvailable = false
 			}
 		}
-		if capabilitySupported {
+		resourceCapacity, resourceSupported, resourceErr := protocol.ReadRuntimeResourceCapacity(instance)
+		if resourceErr != nil {
+			resourceCapacity = protocol.RuntimeResourceCapacity{}
+		}
+		if capabilitySupported || resourceSupported {
 			used := inUse[normalized]
 			if used < 0 {
 				used = 0
@@ -1518,14 +1537,22 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 			if runtimeAvailable && used < maxVUsers {
 				remaining = maxVUsers - used
 			}
-			runtimeCapacities = append(runtimeCapacities, &pb.ProtocolRuntimeCapacity{
+			runtimeEntry := &pb.ProtocolRuntimeCapacity{
 				Protocol:        normalized,
 				Available:       runtimeAvailable,
 				MaxVusers:       maxVUsers,
 				AvailableVusers: remaining,
 				Features:        sortedUniqueRuntimeNames(capabilities.Features),
 				OccupancyMode:   occupancyModes[normalized],
-			})
+			}
+			if resourceSupported && normalized == "eventhubs" {
+				runtimeEntry.ResourceContract = FeatureRuntimeResourceReservationsV1
+				runtimeEntry.Resources = RuntimeResourceCapacityToProto(resourceCapacity)
+				if runtimeAvailable && normalized == "eventhubs" && resourceErr == nil && resourceCapacity.Available {
+					features = append(features, FeatureRuntimeResourceReservationsV1)
+				}
+			}
+			runtimeCapacities = append(runtimeCapacities, runtimeEntry)
 		}
 		if !runtimeAvailable {
 			continue
@@ -1533,7 +1560,15 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 		available = append(available, normalized)
 		features = append(features, normalized)
 		if strings.HasPrefix(normalized, "jms") || normalized == "kafka" || normalized == "eventhubs" {
-			features = append(features, FeatureMessagingRollupV1, FeatureMessagingScopeV1)
+			features = append(features, FeatureMessagingRollupV1, FeatureMessagingScopeV1, FeatureMessagingEvidenceV2)
+			if _, ok := instance.(protocol.MessagingProgressProvider); ok {
+				features = append(features, FeatureMessagingProgressV1)
+			}
+			// This feature describes the acknowledged engine/runtime pause gate,
+			// not ordinary messaging execution. Never infer it from progress alone.
+			if messagingRuntimeQuiescenceAvailable(instance, runtimeAvailable) {
+				features = append(features, FeatureMessagingRuntimeQuiescenceV1)
+			}
 		}
 		if normalized == "websocket" {
 			features = append(features, FeatureWebSocketDiagnosticsV1)
@@ -1885,6 +1920,7 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 	}
 	_ = writer.RecordIntervalSummary(archiveIntervalSummary{
 		Messaging:           archiveMessagingFromBatch(batch),
+		MessagingProgress:   messagingProgressFromJSON(batch.GetMessagingProgressJson(), batch.GetMessagingProgressVersion()),
 		CompletedIterations: batch.GetStats().GetCompletedIterations(),
 		Timestamp:           time.UnixMilli(batch.TimestampUnixMs),
 		ActiveVUsers:        int64(batch.GetStats().GetActiveVusers()),
@@ -2252,41 +2288,43 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		var protoServerTelemetry *pb.ServerTelemetry
 		if tx.ServerTelemetry != nil {
 			protoServerTelemetry = &pb.ServerTelemetry{
-				SubscriptionId:            tx.ServerTelemetry.SubscriptionID,
-				AcknowledgementMs:         cloneMessagingAck(tx.ServerTelemetry.AcknowledgementMs),
-				Grpc:                      grpcDiagnosticsToProto(tx.ServerTelemetry.GRPC),
-				Websocket:                 websocketDiagnosticsToProto(tx.ServerTelemetry.WebSocket),
-				ServerProcessingMs:        tx.ServerTelemetry.ServerProcessingMs,
-				TransferMs:                tx.ServerTelemetry.TransferMs,
-				RequestPayloadKb:          tx.ServerTelemetry.RequestPayloadKB,
-				ResponsePayloadKb:         tx.ServerTelemetry.ResponsePayloadKB,
-				ConnectionReused:          tx.ServerTelemetry.ConnectionReused,
-				RequestSizeClass:          tx.ServerTelemetry.RequestSizeClass,
-				ResponseSizeClass:         tx.ServerTelemetry.ResponseSizeClass,
-				FirstEventMs:              tx.ServerTelemetry.FirstEventMs,
-				EventCount:                tx.ServerTelemetry.EventCount,
-				MessageLatencyMs:          tx.ServerTelemetry.MessageLatencyMs,
-				MessagesSent:              tx.ServerTelemetry.MessagesSent,
-				MessagesReceived:          tx.ServerTelemetry.MessagesReceived,
-				MessagesSentPerSec:        tx.ServerTelemetry.MessagesSentPerSec,
-				MessagesReceivedPerSec:    tx.ServerTelemetry.MessagesReceivedPerSec,
-				ConsumerLagMs:             tx.ServerTelemetry.ConsumerLagMs,
-				ConsumerLagObserved:       tx.ServerTelemetry.ConsumerLagObserved,
-				ConsumerOffsetLagObserved: tx.ServerTelemetry.ConsumerOffsetLagObserved,
-				SendFailureCount:          tx.ServerTelemetry.SendFailureCount,
-				RedeliveryCount:           tx.ServerTelemetry.RedeliveryCount,
-				DeadLetteredCount:         tx.ServerTelemetry.DeadLetteredCount,
-				DuplicateCount:            tx.ServerTelemetry.DuplicateCount,
-				OutOfOrderCount:           tx.ServerTelemetry.OutOfOrderCount,
-				CommitCount:               tx.ServerTelemetry.CommitCount,
-				AbortCount:                tx.ServerTelemetry.AbortCount,
-				ConsumerOffsetLag:         tx.ServerTelemetry.ConsumerOffsetLag,
-				ThrottledRequests:         tx.ServerTelemetry.ThrottledRequests,
-				ServerBusyCount:           tx.ServerTelemetry.ServerBusyCount,
-				QuotaExceededCount:        tx.ServerTelemetry.QuotaExceededCount,
-				EventTooLargeCount:        tx.ServerTelemetry.EventTooLargeCount,
-				EndToEndLatencyMs:         tx.ServerTelemetry.EndToEndLatencyMs,
-				PartitionId:               tx.ServerTelemetry.PartitionID,
+				SubscriptionId:              tx.ServerTelemetry.SubscriptionID,
+				AcknowledgementMs:           cloneMessagingAck(tx.ServerTelemetry.AcknowledgementMs),
+				MessagingDiagnosticsJson:    messagingDiagnosticsJSON(tx.ServerTelemetry.Messaging),
+				MessagingDiagnosticsVersion: messagingDiagnosticsVersion(tx.ServerTelemetry.Messaging),
+				Grpc:                        grpcDiagnosticsToProto(tx.ServerTelemetry.GRPC),
+				Websocket:                   websocketDiagnosticsToProto(tx.ServerTelemetry.WebSocket),
+				ServerProcessingMs:          tx.ServerTelemetry.ServerProcessingMs,
+				TransferMs:                  tx.ServerTelemetry.TransferMs,
+				RequestPayloadKb:            tx.ServerTelemetry.RequestPayloadKB,
+				ResponsePayloadKb:           tx.ServerTelemetry.ResponsePayloadKB,
+				ConnectionReused:            tx.ServerTelemetry.ConnectionReused,
+				RequestSizeClass:            tx.ServerTelemetry.RequestSizeClass,
+				ResponseSizeClass:           tx.ServerTelemetry.ResponseSizeClass,
+				FirstEventMs:                tx.ServerTelemetry.FirstEventMs,
+				EventCount:                  tx.ServerTelemetry.EventCount,
+				MessageLatencyMs:            tx.ServerTelemetry.MessageLatencyMs,
+				MessagesSent:                tx.ServerTelemetry.MessagesSent,
+				MessagesReceived:            tx.ServerTelemetry.MessagesReceived,
+				MessagesSentPerSec:          tx.ServerTelemetry.MessagesSentPerSec,
+				MessagesReceivedPerSec:      tx.ServerTelemetry.MessagesReceivedPerSec,
+				ConsumerLagMs:               tx.ServerTelemetry.ConsumerLagMs,
+				ConsumerLagObserved:         tx.ServerTelemetry.ConsumerLagObserved,
+				ConsumerOffsetLagObserved:   tx.ServerTelemetry.ConsumerOffsetLagObserved,
+				SendFailureCount:            tx.ServerTelemetry.SendFailureCount,
+				RedeliveryCount:             tx.ServerTelemetry.RedeliveryCount,
+				DeadLetteredCount:           tx.ServerTelemetry.DeadLetteredCount,
+				DuplicateCount:              tx.ServerTelemetry.DuplicateCount,
+				OutOfOrderCount:             tx.ServerTelemetry.OutOfOrderCount,
+				CommitCount:                 tx.ServerTelemetry.CommitCount,
+				AbortCount:                  tx.ServerTelemetry.AbortCount,
+				ConsumerOffsetLag:           tx.ServerTelemetry.ConsumerOffsetLag,
+				ThrottledRequests:           tx.ServerTelemetry.ThrottledRequests,
+				ServerBusyCount:             tx.ServerTelemetry.ServerBusyCount,
+				QuotaExceededCount:          tx.ServerTelemetry.QuotaExceededCount,
+				EventTooLargeCount:          tx.ServerTelemetry.EventTooLargeCount,
+				EndToEndLatencyMs:           tx.ServerTelemetry.EndToEndLatencyMs,
+				PartitionId:                 tx.ServerTelemetry.PartitionID,
 			}
 		}
 		protoTransactions = append(protoTransactions, &pb.TransactionMetric{
@@ -2333,30 +2371,32 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		}
 	}
 	return &pb.MetricsBatch{
-		TestId:                 testID,
-		ExecutionGeneration:    executionGeneration,
-		GeneratorId:            s.generatorID,
-		TimestampUnixMs:        time.Now().UnixMilli(),
-		WindowMs:               windowMs,
-		Transactions:           protoTransactions,
-		Stats:                  toProtoStats(stats),
-		Groups:                 groups,
-		LifecycleState:         lifecycleState,
-		LifecycleError:         lifecycleError,
-		Telemetry:              protoTelemetry,
-		TransactionMetrics:     metricAggregatesToProto(aggregates.Transactions),
-		DependencyMetrics:      metricAggregatesToProto(aggregates.Dependencies),
-		SoapMetrics:            metricAggregatesToProto(aggregates.SOAP),
-		NetworkProfileMetrics:  metricAggregatesToProto(aggregates.NetworkProfiles),
-		ActionMetrics:          metricAggregatesToProto(aggregates.Actions),
-		ActionDimensionMetrics: metricAggregatesToProto(aggregates.ActionDimensions),
-		ActionPropertyMetrics:  metricAggregatesToProto(aggregates.ActionProperties),
-		ActionMetricsVersion:   aggregates.NativeVersion,
-		PropertyMetrics:        metricAggregatesToProto(aggregates.Properties),
-		RegionMetrics:          metricAggregatesToProto(aggregates.Regions),
-		FleetMetrics:           metricAggregateToProto(aggregates.Fleet),
-		BrowserMetrics:         browserMetricsToProto(aggregates.Browser),
-		BrowserDeviceMetrics:   browserDeviceMetricsToProto(aggregates.BrowserByDevice),
+		MessagingProgressJson:    messagingProgressJSON(aggregates.MessagingProgress),
+		MessagingProgressVersion: messagingProgressVersion(aggregates.MessagingProgress),
+		TestId:                   testID,
+		ExecutionGeneration:      executionGeneration,
+		GeneratorId:              s.generatorID,
+		TimestampUnixMs:          time.Now().UnixMilli(),
+		WindowMs:                 windowMs,
+		Transactions:             protoTransactions,
+		Stats:                    toProtoStats(stats),
+		Groups:                   groups,
+		LifecycleState:           lifecycleState,
+		LifecycleError:           lifecycleError,
+		Telemetry:                protoTelemetry,
+		TransactionMetrics:       metricAggregatesToProto(aggregates.Transactions),
+		DependencyMetrics:        metricAggregatesToProto(aggregates.Dependencies),
+		SoapMetrics:              metricAggregatesToProto(aggregates.SOAP),
+		NetworkProfileMetrics:    metricAggregatesToProto(aggregates.NetworkProfiles),
+		ActionMetrics:            metricAggregatesToProto(aggregates.Actions),
+		ActionDimensionMetrics:   metricAggregatesToProto(aggregates.ActionDimensions),
+		ActionPropertyMetrics:    metricAggregatesToProto(aggregates.ActionProperties),
+		ActionMetricsVersion:     aggregates.NativeVersion,
+		PropertyMetrics:          metricAggregatesToProto(aggregates.Properties),
+		RegionMetrics:            metricAggregatesToProto(aggregates.Regions),
+		FleetMetrics:             metricAggregateToProto(aggregates.Fleet),
+		BrowserMetrics:           browserMetricsToProto(aggregates.Browser),
+		BrowserDeviceMetrics:     browserDeviceMetricsToProto(aggregates.BrowserByDevice),
 	}
 }
 
@@ -2416,6 +2456,7 @@ func (s *Service) completeAssignmentMatchingTimer(testID string, token uint64, r
 		s.markStoppingLocked(testID, assignment.executionGeneration)
 		s.clearTestExecutionLeaseLocked(testID)
 		s.clearRunSupervisionLocked(testID)
+		releaseAssignmentRuntimeResources(assignment)
 		delete(s.assignments, testID)
 	}
 	delete(s.executions, testID)
@@ -2612,7 +2653,7 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 		idle := *previous
 		idle.stats = stats
 		idle.transactions = nil
-		idle.aggregates = metricsAggregateSet{}
+		idle.aggregates = metricsAggregateSet{MessagingProgress: previous.aggregates.MessagingProgress.Clone()}
 		idle.telemetry.WindowMs = s.publishInterval.Milliseconds()
 		now := time.Now()
 		idle.telemetry.PublishedAtUnixMs = now.UnixMilli()
@@ -2646,6 +2687,11 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 		telemetry.CollectedAtUnixMs = previous.telemetry.CollectedAtUnixMs
 	}
 	aggregates := aggregateWindow.finalize(windowMs)
+	if snapshotOK {
+		aggregates.MessagingProgress = snapshot.MessagingProgress.Clone()
+	} else if previous != nil {
+		aggregates.MessagingProgress = previous.aggregates.MessagingProgress.Clone()
+	}
 	if snapshotOK {
 		telemetry.CollectedAtUnixMs = snapshot.Timestamp.UnixMilli()
 		now := time.Now()
@@ -2731,6 +2777,7 @@ func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapsho
 	}
 	exec.metricsMu.Lock()
 	stored := metrics
+	stored.aggregates.MessagingProgress = metrics.aggregates.MessagingProgress.Clone()
 	stored.transactions = append([]TransactionMetric(nil), metrics.transactions...)
 	stored.transactionResponseTimeSLA = append([]engine.TransactionResponseTimeSLACompliance(nil), metrics.transactionResponseTimeSLA...)
 	exec.lastMetrics = &stored
@@ -2738,7 +2785,7 @@ func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapsho
 }
 
 func metricsAggregateSetHasEvidence(aggregates metricsAggregateSet) bool {
-	return aggregates.Fleet != nil || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Actions) > 0 || len(aggregates.ActionDimensions) > 0 || len(aggregates.ActionProperties) > 0 || len(aggregates.Properties) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
+	return aggregates.MessagingProgress != nil || aggregates.Fleet != nil || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Actions) > 0 || len(aggregates.ActionDimensions) > 0 || len(aggregates.ActionProperties) > 0 || len(aggregates.Properties) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
 }
 
 func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName string, metrics executionMetricsSnapshot) {
@@ -2870,6 +2917,7 @@ func (s *Service) finishExecutionMatching(testID string, groupName string, expec
 	s.markStoppingLocked(testID, assignment.executionGeneration)
 	s.clearTestExecutionLeaseLocked(testID)
 	s.clearRunSupervisionLocked(testID)
+	releaseAssignmentRuntimeResources(assignment)
 	delete(s.assignments, testID)
 	s.stopCompletionTimerLocked(testID)
 	s.stopStageTimerLocked(testID)
@@ -2967,6 +3015,7 @@ func mergeSnapshotSideChannelAggregates(out *metricsAggregateSet, snapshot engin
 	if out == nil {
 		return
 	}
+	out.MessagingProgress = snapshot.MessagingProgress.Clone()
 	out.NetworkProfiles = engineActionMetricsToAggregates(snapshot.ByNetworkProfile)
 	if snapshot.ByAction != nil {
 		out.NativeVersion = 1
@@ -3004,7 +3053,7 @@ func engineActionMetricsToAggregates(values map[string]*engine.ActionMetrics) []
 		out = append(out, MetricAggregate{
 			DurationDigest:   engine.CloneTDigestSnapshot(metrics.DurationDigest),
 			Messaging:        engineMessagingSummary(metrics.ServerTelemetry),
-			MessagingVersion: 1,
+			MessagingVersion: messagingSummaryVersion(metrics.ServerTelemetry),
 			Name:             firstNonEmptyString(metrics.Name, name),
 			DependencyType:   metrics.DependencyType,
 			DependencyTarget: metrics.DependencyTarget,
@@ -3102,6 +3151,9 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 	browsers := make([]*BrowserMetrics, 0)
 	browserDevices := make([]BrowserDeviceMetrics, 0)
 	for _, value := range values {
+		if value.MessagingProgress != nil {
+			protocol.MergeMessagingProgress(&out.MessagingProgress, value.MessagingProgress)
+		}
 		if value.Fleet != nil {
 			fleet = append(fleet, *value.Fleet)
 		}
@@ -3259,7 +3311,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	}
 	out.MessagingVersion = 1
 	for _, v := range values {
-		if v.Count > 0 && v.MessagingVersion != 1 {
+		if v.Count > 0 && !supportedMessagingSummaryVersion(v.MessagingVersion) {
 			out.MessagingVersion = 0
 			if out.Messaging != nil {
 				out.Messaging.Incomplete = true
@@ -3267,7 +3319,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 		}
 	}
 	if out.Messaging != nil {
-		out.MessagingVersion = 1
+		out.MessagingVersion = out.Messaging.EvidenceVersion()
 	}
 	divisor := float64(out.Count)
 	out.AvgMs = weightedAvgMs / divisor

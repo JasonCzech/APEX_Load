@@ -140,7 +140,7 @@ func validateAppDynamicsProviderBatchCursor(job storage.RunMonitorJob, payload *
 		m.AggregationEligible = m.AggregationEligible && eligible && !m.BucketStart.Before(from) && !m.BucketEnd.After(to)
 		// A provisional observation remains provisional on an identical retry.
 		// Only a fresh provider observation can advance its settled state.
-		if m.Settled && m.BucketEnd.After(now.Add(-time.Duration(settle)*time.Second)) {
+		if providerSettledClaimPremature(m.Settled, m.BucketEnd, settle, now) {
 			return errors.New("AppDynamics bucket marked settled before its settling allowance")
 		}
 		payload.Points[i] = p

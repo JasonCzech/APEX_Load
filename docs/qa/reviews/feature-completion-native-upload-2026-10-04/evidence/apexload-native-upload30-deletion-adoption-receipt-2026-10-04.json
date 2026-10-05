@@ -1,0 +1,6 @@
+{
+  "carrier": "/private/tmp/apexload-native-upload-delete-key-frozen-2026-10-04",
+  "manifest_sha256": "5c1c459ef7db232a84734cfdbd2685d23efd53c8ce73b1637f8111b2196418b9",
+  "target_count": 2,
+  "status": "all-frozen-hashes-and-current-live-preimages-verified-adopted"
+}

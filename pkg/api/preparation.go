@@ -81,6 +81,15 @@ func (tr *TestRunner) preparationRevision(id string) (string, error) {
 							snapshot.Connections = append(snapshot.Connections, c.Revision)
 						}
 					}
+					if source.Pack == "prometheus-query" {
+						if connections, ok := tr.testStore.(storage.PrometheusConnectionStore); ok {
+							c, e := connections.GetPrometheusConnection(source.ConnectionID)
+							if e != nil {
+								return "", e
+							}
+							snapshot.Connections = append(snapshot.Connections, c.Revision)
+						}
+					}
 					break
 				}
 			}
@@ -489,7 +498,10 @@ func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
 	if err != nil {
 		return err
 	}
-	if err := validateSelectedMonitorRules(bindings, sources, goals); err != nil {
+	if err := tr.validateSelectedMonitorRules(bindings, sources, goals); err != nil {
+		return err
+	}
+	if err := tr.validatePrometheusCollectionBudgets(bindings, sources, goals); err != nil {
 		return err
 	}
 	if err := tr.validateAppDynamicsCollectionBudgets(bindings, sources); err != nil {
@@ -538,6 +550,10 @@ func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
 					if err != nil {
 						return err
 					}
+				}
+			} else if source.Pack == "prometheus-query" {
+				if err := tr.validatePreparedPrometheus(readinessContext, source, record.ProjectID, goals); err != nil {
+					return err
 				}
 			} else if source.CredentialRef != "" {
 				single := &fixedMonitorBindingsStore{RunMonitorStore: monitorStore, bindings: &storage.MonitorBindings{Sources: []storage.MonitorBinding{binding}}}

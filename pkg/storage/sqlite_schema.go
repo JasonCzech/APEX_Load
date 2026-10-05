@@ -20,6 +20,11 @@ import (
 func schemaCreateTableStatements() []string {
 	return []string{
 		schemaMigrationLedgerDDL,
+		`CREATE TABLE IF NOT EXISTS prometheus_connections (
+ id TEXT PRIMARY KEY,
+ project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+ name TEXT NOT NULL,revision BIGINT NOT NULL,verified_revision BIGINT NOT NULL DEFAULT 0,
+ payload_json TEXT NOT NULL,created_at DATETIME NOT NULL,updated_at DATETIME NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS appdynamics_quota_pools (resource_key TEXT PRIMARY KEY,updated_at DATETIME NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS appdynamics_quota_leases (
  resource_key TEXT NOT NULL REFERENCES appdynamics_quota_pools(resource_key) ON DELETE CASCADE,
@@ -32,7 +37,7 @@ func schemaCreateTableStatements() []string {
 		`CREATE TABLE IF NOT EXISTS appdynamics_inspections (
  id TEXT PRIMARY KEY,
  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
- connection_id TEXT NOT NULL,connection_revision BIGINT NOT NULL,collector_id TEXT NOT NULL DEFAULT '',kind TEXT NOT NULL,state TEXT NOT NULL,payload_json TEXT NOT NULL,result_json TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '',owner_token TEXT NOT NULL DEFAULT '',lease_expires_at DATETIME,created_at DATETIME NOT NULL,expires_at DATETIME NOT NULL)`,
+ connection_id TEXT NOT NULL,connection_revision BIGINT NOT NULL,collector_id TEXT NOT NULL DEFAULT '',provider TEXT NOT NULL DEFAULT 'appdynamics',kind TEXT NOT NULL,state TEXT NOT NULL,payload_json TEXT NOT NULL,result_json TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '',owner_token TEXT NOT NULL DEFAULT '',lease_expires_at DATETIME,created_at DATETIME NOT NULL,expires_at DATETIME NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS run_monitor_observation_heads (
  job_id TEXT NOT NULL REFERENCES run_monitor_jobs(id) ON DELETE CASCADE,
  record_key TEXT NOT NULL,
@@ -54,6 +59,14 @@ func schemaCreateTableStatements() []string {
 		`CREATE TABLE IF NOT EXISTS analysis_cleanup_jobs (
             kind TEXT NOT NULL, project_id TEXT NOT NULL, resource_id TEXT NOT NULL,
             not_before DATETIME NOT NULL, PRIMARY KEY(kind,resource_id)
+        )`,
+		`CREATE TABLE IF NOT EXISTS analysis_upload_writers (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL, import_id TEXT NOT NULL,
+            file_id TEXT NOT NULL, chunk_offset BIGINT NOT NULL, payload TEXT NOT NULL
+        )`,
+		`CREATE TABLE IF NOT EXISTS analysis_attempt_journal (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+            import_id TEXT NOT NULL, payload TEXT NOT NULL
         )`,
 		`CREATE TABLE IF NOT EXISTS analysis_definitions (
             id TEXT NOT NULL,
@@ -82,6 +95,22 @@ func schemaCreateTableStatements() []string {
             revision BIGINT NOT NULL, state TEXT NOT NULL, payload TEXT NOT NULL,
             owner TEXT NOT NULL, lease_expires_at DATETIME NOT NULL
         )`,
+		`CREATE TABLE IF NOT EXISTS monitor_collection_leases (
+ project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, source_id TEXT NOT NULL,
+ collector_id TEXT NOT NULL, instance_id TEXT NOT NULL, generation BIGINT NOT NULL,
+ poll_sequence BIGINT NOT NULL, source_revision BIGINT NOT NULL, scope_hash TEXT NOT NULL, identity_hash TEXT NOT NULL,
+ state TEXT NOT NULL, poll_id TEXT NOT NULL, expires_at DATETIME NOT NULL,
+ PRIMARY KEY(project_id,source_id)
+ )`,
+		`CREATE TABLE IF NOT EXISTS monitor_management_polls (
+ id TEXT PRIMARY KEY,
+ project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, source_id TEXT NOT NULL,
+ collector_id TEXT NOT NULL, instance_id TEXT NOT NULL, nonce TEXT NOT NULL,
+ generation BIGINT NOT NULL, poll_sequence BIGINT NOT NULL, source_revision BIGINT NOT NULL,
+ scope_hash TEXT NOT NULL, identity_hash TEXT NOT NULL, state TEXT NOT NULL,
+ created_at DATETIME NOT NULL, deadline DATETIME NOT NULL, core_digest TEXT, payload TEXT NOT NULL,
+ UNIQUE(project_id,collector_id,instance_id,nonce)
+ )`,
 		`CREATE TABLE IF NOT EXISTS monitor_sources (
             id TEXT PRIMARY KEY,
             project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -680,6 +709,8 @@ func schemaCreateTableStatements() []string {
 			p95_ms REAL,
 			p99_ms REAL,
 			native_evidence_json TEXT,
+			messaging_json TEXT,
+			messaging_progress_json TEXT,
 			transactions_json TEXT,
 			by_region_json TEXT,
 			browser_json TEXT,
@@ -1704,6 +1735,18 @@ func schemaCreateTableStatements() []string {
 // columns added here (e.g. boolean flags added to existing tables).
 func schemaColumnMigrations() []optionalSchemaMigration {
 	return []optionalSchemaMigration{
+		{name: "run_monitor_collector_readiness.instance_id", query: `ALTER TABLE run_monitor_collector_readiness ADD COLUMN instance_id TEXT`},
+		{name: "run_monitor_collector_readiness.capabilities_json", query: `ALTER TABLE run_monitor_collector_readiness ADD COLUMN capabilities_json TEXT`},
+		{name: "run_monitor_collector_readiness.management_scopes_json", query: `ALTER TABLE run_monitor_collector_readiness ADD COLUMN management_scopes_json TEXT`},
+		{name: "run_monitor_jobs.source_id", query: `ALTER TABLE run_monitor_jobs ADD COLUMN source_id TEXT`},
+		{name: "run_monitor_jobs.management_config_key", query: `ALTER TABLE run_monitor_jobs ADD COLUMN management_config_key TEXT`},
+		{name: "run_monitor_batches.evidence_version", query: `ALTER TABLE run_monitor_batches ADD COLUMN evidence_version BIGINT`},
+		{name: "run_monitor_batches.management_snapshot_count", query: `ALTER TABLE run_monitor_batches ADD COLUMN management_snapshot_count BIGINT`},
+		{name: "run_monitor_batches.management_row_count", query: `ALTER TABLE run_monitor_batches ADD COLUMN management_row_count BIGINT`},
+		{name: "run_monitor_batches.collection_generation", query: `ALTER TABLE run_monitor_batches ADD COLUMN collection_generation BIGINT`},
+		{name: "run_monitor_batches.management_poll_id", query: `ALTER TABLE run_monitor_batches ADD COLUMN management_poll_id TEXT`},
+
+		{name: "appdynamics_inspections.provider", query: `ALTER TABLE appdynamics_inspections ADD COLUMN provider TEXT NOT NULL DEFAULT 'appdynamics'`},
 		{name: "object_activity_events.status", query: `ALTER TABLE object_activity_events ADD COLUMN status TEXT NOT NULL DEFAULT 'success'`},
 		{name: "object_archive_states.restored_at", query: `ALTER TABLE object_archive_states ADD COLUMN restored_at DATETIME`},
 		{name: "run_archive_collection_intents.cache_limit_bytes", query: `ALTER TABLE run_archive_collection_intents ADD COLUMN cache_limit_bytes BIGINT NOT NULL DEFAULT 0`},
@@ -1800,6 +1843,8 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "test_interval_summaries.generator_processing_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN generator_processing_lag_ms REAL`},
 		{name: "test_interval_summaries.transport_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN transport_lag_ms REAL`},
 		{name: "test_interval_summaries.controller_fanout_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN controller_fanout_lag_ms REAL`},
+		{name: "test_interval_summaries.messaging_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN messaging_json TEXT`},
+		{name: "test_interval_summaries.messaging_progress_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN messaging_progress_json TEXT`},
 		{name: "test_interval_summaries.native_evidence_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN native_evidence_json TEXT`},
 		{name: "test_interval_summaries.transactions_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN transactions_json TEXT`},
 		{name: "test_interval_summaries.by_region_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN by_region_json TEXT`},
@@ -1963,11 +2008,20 @@ var dataPoolRowsPageIndex = schemaIndex{
 // migrations. Unique indexes guard against duplicate reference keys; partial
 // indexes skip NULL/empty values so legacy rows awaiting backfill do not collide.
 var schemaIndexes = []schemaIndex{
+	{`CREATE INDEX IF NOT EXISTS idx_prometheus_connections_project ON prometheus_connections(project_id,name,id)`, "idx_prometheus_connections_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_appdynamics_quota_expiry ON appdynamics_quota_leases(resource_key,expires_at)`, "idx_appdynamics_quota_expiry"},
 	{`CREATE INDEX IF NOT EXISTS idx_object_activity_scope_time ON object_activity_events(project_id,created_at,id)`, "idx_object_activity_scope_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_object_activity_resource_time ON object_activity_events(project_id,resource_type,resource_id,created_at)`, "idx_object_activity_resource_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_preparations_test ON preparations(test_id, expires_at)`, "idx_preparations_test"},
+	{`CREATE INDEX IF NOT EXISTS idx_analysis_upload_cursor ON analysis_upload_writers(project_id,import_id,file_id,chunk_offset)`, "idx_analysis_upload_cursor"},
+	{`CREATE INDEX IF NOT EXISTS idx_analysis_attempt_project_import ON analysis_attempt_journal(project_id,import_id)`, "idx_analysis_attempt_project_import"},
 	{`CREATE INDEX IF NOT EXISTS idx_analysis_imports_project ON analysis_imports(project_id, state)`, "idx_analysis_imports_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_monitor_jobs_source ON run_monitor_jobs(project_id,source_id,state)`, "idx_monitor_jobs_source"},
+	{`CREATE INDEX IF NOT EXISTS idx_monitor_jobs_management ON run_monitor_jobs(project_id,source_id,management_config_key,state,expires_at)`, "idx_monitor_jobs_management"},
+	{`CREATE INDEX IF NOT EXISTS idx_monitor_polls_source ON monitor_management_polls(project_id,source_id,poll_sequence)`, "idx_monitor_polls_source"},
+	{`CREATE INDEX IF NOT EXISTS idx_monitor_polls_retention ON monitor_management_polls(created_at,id,project_id) WHERE state IN ('accepted','abandoned')`, "idx_monitor_polls_retention"},
+	{`CREATE INDEX IF NOT EXISTS idx_monitor_polls_configuration ON monitor_management_polls(project_id,source_id,collector_id,source_revision,scope_hash,identity_hash,poll_sequence)`, "idx_monitor_polls_configuration"},
+	{`CREATE INDEX IF NOT EXISTS idx_monitor_batches_poll ON run_monitor_batches(management_poll_id)`, "idx_monitor_batches_poll"},
 	{`CREATE INDEX IF NOT EXISTS idx_monitor_sources_project ON monitor_sources(project_id)`, "idx_monitor_sources_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_run_monitor_jobs_poll ON run_monitor_jobs(collector_id, state, expires_at)`, "idx_run_monitor_jobs_poll"},
 	{`CREATE INDEX IF NOT EXISTS idx_run_monitor_jobs_test ON run_monitor_jobs(test_id)`, "idx_run_monitor_jobs_test"},

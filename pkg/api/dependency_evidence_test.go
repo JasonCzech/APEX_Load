@@ -12,12 +12,12 @@ import (
 func TestDependencyEvidenceWindowAndCapability(t *testing.T) {
 	server, store := newTimeslotServer(t)
 	now := time.Now().UTC().Add(-time.Second)
-	if err := store.SaveTest(&storage.TestRecord{ID: "dependency-run", Name: "run", ProjectID: "proj-a", Status: "RUNNING", StartTime: now}); err != nil {
+	if err := store.SaveTest(&storage.TestRecord{ID: "dependency-run", Name: "run", ProjectID: "proj-a", Status: "COMPLETE", StartTime: now}); err != nil {
 		t.Fatal(err)
 	}
 	point := &LiveMetrics{Timestamp: now, SampleWindowSeconds: 1, DependencyMap: buildLiveDependencyMap(map[string]*TxMetrics{"service": {Count: 5, DependencyType: "grpc", P95Ms: 25}})}
 	server.runner.mu.Lock()
-	server.runner.tests["dependency-run"] = &ManagedTest{ID: "dependency-run", ProjectID: "proj-a", Status: "RUNNING", LiveMetrics: point, History: []*LiveMetrics{point}}
+	server.runner.tests["dependency-run"] = &ManagedTest{ID: "dependency-run", ProjectID: "proj-a", Status: "COMPLETE", LiveMetrics: point, History: []*LiveMetrics{point}}
 	server.runner.mu.Unlock()
 	path := "/api/v1/tests/dependency-run/dependency-evidence"
 	if reply := timeslotRequest(t, server, http.MethodGet, path, nil); reply.Code != 409 {

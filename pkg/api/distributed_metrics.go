@@ -66,6 +66,12 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	sort.Strings(targets)
 	for _, target := range targets {
 		batch := batches[target]
+		// Transport identity, rather than a producer-controlled label, separates
+		// cumulative partition rows emitted by different generator executions.
+		if batch.MessagingProgress != nil {
+			protocol.MergeMessagingProgress(&combined.MessagingProgress, batch.MessagingProgress, target)
+			combined.MessagingProgressVersion = protocol.MessagingProgressVersion
+		}
 		if batch.Telemetry == nil || batch.Telemetry.DroppedResultsUnavailable || batch.Telemetry.DroppedResults < 0 {
 			dropCounterUnavailable = true
 		}
@@ -558,6 +564,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 
 	live := &LiveMetrics{
+		MessagingProgress:          batch.MessagingProgress.Clone(),
 		TransactionResponseTimeSLA: remoteTransactionResponseTimeSLAResults(test),
 		Timestamp:                  timestamp,
 		SampleWindowSeconds:        batchWindowSeconds(batch.WindowMs),
@@ -843,9 +850,6 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 }
 
 func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batch generatorrpc.MetricsBatch, fleetTPS float64, groupTPS map[string]float64) bool {
-	if batch.FleetMetrics == nil || batch.FleetMetrics.Count == 0 {
-		return false
-	}
 	live.Messaging = map[string]*protocol.MessagingSummary{}
 	for _, a := range batch.ActionMetrics {
 		if a.Messaging != nil {
@@ -854,6 +858,11 @@ func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batc
 	}
 
 	live.Messaging = protocol.CloneMessagingSummaries(live.Messaging)
+	// Protocol actions may have no business-transaction wrapper. Their evidence
+	// remains useful without manufacturing a fleet transaction population.
+	if batch.FleetMetrics == nil || batch.FleetMetrics.Count == 0 {
+		return false
+	}
 	fleet := batch.FleetMetrics
 	live.TotalErrors = boundedMetricErrors(fleet.Count, fleet.Errors)
 	live.TotalTx = successfulMetricCount(fleet.Count, fleet.Errors)
@@ -1037,7 +1046,7 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 	}
 	return &TxMetrics{
 		DurationDigest:     engine.CloneTDigestSnapshot(aggregate.DurationDigest),
-		messagingAggregate: aggregate.MessagingVersion == 1 || aggregate.Messaging != nil,
+		messagingAggregate: aggregate.MessagingVersion == 1 || aggregate.MessagingVersion == 2 || aggregate.Messaging != nil,
 		ServerTelemetry:    apiMessagingSummary(aggregate.Messaging),
 		Name:               aggregate.Name,
 		TPS:                aggregate.TPS,
@@ -1544,7 +1553,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	}
 	out.MessagingVersion = 1
 	for _, v := range values {
-		if v.Count > 0 && v.MessagingVersion != 1 {
+		if v.Count > 0 && (v.MessagingVersion != 1 && v.MessagingVersion != 2) {
 			out.MessagingVersion = 0
 			if out.Messaging != nil {
 				out.Messaging.Incomplete = true
@@ -1552,7 +1561,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		}
 	}
 	if out.Messaging != nil {
-		out.MessagingVersion = 1
+		out.MessagingVersion = out.Messaging.EvidenceVersion()
 	}
 	divisor := float64(out.Count)
 	out.AvgMs = avgMsSum / divisor

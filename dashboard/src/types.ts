@@ -964,6 +964,7 @@ export interface TestNote {
 }
 
 export interface RunArchiveManifest {
+  frozen_monitor_rules?: import('./types/appdynamics').MonitorRule[]
   monitoring_status?: string
   monitor_coverage?: import('./types/appdynamics').RunMonitorCoverage[]
   monitor_evidence_file?: string
@@ -1687,6 +1688,7 @@ export interface IntegrationOutcome {
 }
 
 export interface RunArchiveReport {
+  messaging_progress?: MessagingProgressSnapshot
   monitor_diagnostics?: import('./types/appdynamics').RunMonitorDiagnostic[]
   monitor_rule_results?: import('./types/appdynamics').MonitorRuleResult[]
   outcome?: IntegrationOutcome
@@ -2079,6 +2081,7 @@ export type TestStatus =
   | 'PAUSED'
 
 export interface LiveMetrics {
+  messaging_progress?: MessagingProgressSnapshot
   messaging?: Record<string, MessagingSummary>
   observation_state?: 'historical' | 'stale'
   observation_valid_until?: string
@@ -2925,6 +2928,7 @@ export interface ImportedDashboardTarget {
 }
 
 export interface ImportedDashboardPanelDef {
+  unsupported_transformations?: boolean
   panel_id: number
   title: string
   kind: ImportedDashboardPanelKind
@@ -3059,3 +3063,72 @@ export type { DiagnosticDistribution } from './types/protocolDiagnostics'
 export interface MessagingMoments { count: number; sum: number; max: number }
 export interface MessagingDimension { protocol?: string; group?: string; source: string; partition?: string; subscription?: string; operations: number; sent: number; received: number; throttled: number; redelivered: number; age_ms: MessagingMoments; offset_lag: MessagingMoments; ack_ms: MessagingMoments }
 export interface MessagingSummary { dimensions: MessagingDimension[]; incomplete?: boolean }
+
+export interface MessagingProgressPosition {
+  sequence?: string
+  provider_offset?: string
+  state: 'observed' | 'missing' | 'disabled' | 'empty' | 'fenced' | 'pending' | 'unconfirmed'
+  observed_at: string
+  received_at: string
+  observation_age_ms?: number
+}
+export interface MessagingDurationSummary {
+  metric: string
+  population: string
+  eligible: number
+  distribution_ms: DiagnosticDistribution
+  unavailable?: Record<string, number>
+}
+export interface MessagingCheckpointProgress {
+  attempts: number
+  committed: number
+  failed: number
+  fenced: number
+  cancelled_before_write: number
+  unconfirmed: number
+  retry_attempts: number
+  in_flight: number
+  duration: MessagingDurationSummary
+  last_outcome?: string
+  last_completed_at: string
+}
+export interface MessagingProgressRow {
+  origin?: string
+  group?: string
+  protocol: 'eventhubs'
+  mode: 'processor'
+  source_id: string
+  source: string
+  subscription: string
+  session_id: string
+  partition: string
+  generation: string
+  revision: string
+  capture_revision: string
+  captured_at: string
+  updated_at: string
+  expected_partitions: number
+  inventory_complete: boolean
+  ownership: 'owned' | 'lost' | 'unverified' | 'released'
+  ownership_verified_at: string
+  ownership_verified_age_ms?: number
+  acquired: number
+  lost: number
+  delivered: number
+  rejected: number
+  redelivered: number
+  delivered_position: MessagingProgressPosition
+  checkpoint_position: MessagingProgressPosition
+  tail_position: MessagingProgressPosition
+  checkpoint: MessagingCheckpointProgress
+  incomplete?: boolean
+}
+export interface MessagingProgressSnapshot {
+  version: 1
+  lifecycle?: 'pending' | 'running' | 'draining' | 'released' | 'quarantined'
+  captured_at: string
+  rows: MessagingProgressRow[]
+  incomplete?: boolean
+  dropped_rows?: number
+  unavailable_reason?: string
+}

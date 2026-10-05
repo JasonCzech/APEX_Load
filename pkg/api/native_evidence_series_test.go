@@ -88,19 +88,13 @@ func TestNativeEvidenceReadAuthorizationAndHTTP(t *testing.T) {
 func TestNativeEvidenceDatasetAssociationCheckedBeforeRead(t *testing.T) {
 	server, project := newGrafanaDashboardAPIServer(t)
 	imports := server.store.(storage.AnalysisImportStore)
-	dataset, err := imports.SaveAnalysisImport(storage.AnalysisImport{ID: "dataset", ProjectID: project, Name: "external", State: "uploading", Files: []storage.AnalysisImportFile{{ID: "f", RelativePath: "source.parquet", Size: 1}}}, 0)
+	dataset, err := imports.SaveAnalysisImport(storage.AnalysisImport{ID: "00000000-0000-0000-0000-000000000022", ProjectID: project, Name: "external", State: "uploading", Files: []storage.AnalysisImportFile{{ID: "f", RelativePath: "source.parquet", Size: 16, Uploaded: 16}}}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, state := range []string{"mapped", "normalizing", "ready"} {
-		dataset.State = state
-		dataset, err = imports.SaveAnalysisImport(*dataset, dataset.Revision)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
+	dataset = publishAnalysisAPIFixture(t, imports, dataset, nil)
 	q := nativeEvidenceQuery("archive")
-	q.OverlaySelection = &storage.NativeOverlaySelection{DatasetID: "dataset", Metric: "latency", Aggregation: "avg"}
+	q.OverlaySelection = &storage.NativeOverlaySelection{DatasetID: dataset.ID, Metric: "latency", Aggregation: "avg"}
 	out := nativeEvidenceEnvelope(time.Now().UTC(), q)
 	if err := server.attachNativeOverlay(context.Background(), project, "run", q, &out); err == nil || !strings.Contains(err.Error(), "associate") {
 		t.Fatalf("association guard: %v", err)

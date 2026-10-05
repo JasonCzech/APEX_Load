@@ -1,0 +1,511 @@
+2026/10/04 07:15:02 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:02 ERROR internal server error ref=1c059e343d7c1dce status=503 detail="analytical storage configuration changed; restore its recorded backend or complete an offline evidence migration"
+2026/10/04 07:15:02 INFO http request method=DELETE path=/api/v1/analysis/imports/00000000-0000-0000-0000-000000000002 status=503 duration_ms=2 remote=192.0.2.1:1234
+2026/10/04 07:15:03 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:03 INFO http request method=GET path=/api/v1/analysis/imports status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:15:03 INFO http request method=GET path=/api/v1/analysis/imports/00000000-0000-0000-0000-000000000001 status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 07:15:03 ERROR internal server error ref=94e5e1f04e2922fa status=503 detail="dataset cleanup pending physical writer completion"
+2026/10/04 07:15:03 INFO http request method=DELETE path=/api/v1/analysis/imports/00000000-0000-0000-0000-000000000001 status=503 duration_ms=5 remote=192.0.2.1:1234
+2026/10/04 07:15:04 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:04 INFO http request method=GET path=/api/v1/analysis/capabilities status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:15:06 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:07 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:08 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:09 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:10 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:10 INFO http request method=POST path=/api/v1/analysis/mappings status=200 duration_ms=2 remote=192.0.2.1:1234
+2026/10/04 07:15:10 INFO http request method=GET path=/api/v1/analysis/mappings/61c5b94b-f7eb-4298-bb09-63fedb60bd8c status=404 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 07:15:10 INFO http request method=DELETE path=/api/v1/analysis/mappings/61c5b94b-f7eb-4298-bb09-63fedb60bd8c status=409 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:15:10 INFO http request method=DELETE path=/api/v1/analysis/mappings/61c5b94b-f7eb-4298-bb09-63fedb60bd8c status=200 duration_ms=2 remote=192.0.2.1:1234
+2026/10/04 07:15:10 INFO http request method=GET path=/api/v1/analysis/mappings/61c5b94b-f7eb-4298-bb09-63fedb60bd8c status=404 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 07:15:10 INFO http request method=GET path=/api/v1/analysis/mappings/61c5b94b-f7eb-4298-bb09-63fedb60bd8c status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 07:15:12 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:12 INFO http request method=POST path=/api/v1/analysis/compare status=422 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 07:15:12 INFO http request method=POST path=/api/v1/analysis/compare status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 07:15:13 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:14 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:15 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:16 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:17 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:18 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:19 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:20 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:44 WARN archive trend point could not be generated test_id=interrupted-adjunct err="name is empty"
+2026/10/04 07:15:44 WARN archive trend point could not be generated test_id=interrupted-adjunct err="name is empty"
+2026/10/04 07:15:45 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:46 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=128 remote=192.0.2.1:1234
+2026/10/04 07:15:46 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=86 remote=192.0.2.1:1234
+2026/10/04 07:15:47 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=124 remote=192.0.2.1:1234
+2026/10/04 07:15:47 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=115 remote=192.0.2.1:1234
+2026/10/04 07:15:48 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=200 duration_ms=51 remote=192.0.2.1:1234
+2026/10/04 07:15:49 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=109 remote=192.0.2.1:1234
+2026/10/04 07:15:49 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=84 remote=192.0.2.1:1234
+2026/10/04 07:15:50 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=122 remote=192.0.2.1:1234
+2026/10/04 07:15:50 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=409 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:15:51 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:53 INFO recording session started id=native-project-b-recording name="Project B"
+2026/10/04 07:15:53 WARN failed to persist audit event action=recording.export_har_raw resource_type=recording resource_id=native-project-b-recording error="audit persistence is unavailable"
+2026/10/04 07:15:53 INFO http request method=GET path=/api/v1/recorder/native-project-b-recording/export status=403 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:15:53 WARN failed to persist audit event action=recording.export_har_raw resource_type=recording resource_id=native-project-b-recording error="audit persistence is unavailable"
+2026/10/04 07:15:53 INFO http request method=GET path=/api/v1/recorder/native-project-b-recording/export status=403 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 07:15:53 WARN failed to persist audit event action=recording.export_har resource_type=recording resource_id=native-project-b-recording error="audit persistence is unavailable"
+2026/10/04 07:15:53 INFO http request method=GET path=/api/v1/recorder/native-project-b-recording/export status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 07:15:53 WARN failed to persist audit event action=recording.export_har resource_type=recording resource_id=native-project-b-recording error="audit persistence is unavailable"
+2026/10/04 07:15:53 INFO http request method=GET path=/api/v1/recorder/native-project-b-recording/export status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 07:15:56 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:56 INFO http request method=POST path=/api/v1/browser-recorder/sessions status=201 duration_ms=2 remote=192.0.2.1:1234
+2026/10/04 07:15:56 INFO http request method=POST path=/api/v1/browser-recorder/sessions/883a507c-e920-486c-b9d7-5dba35be413d/stop status=200 duration_ms=2 remote=192.0.2.1:1234
+2026/10/04 07:15:56 ERROR internal server error ref=88543ccf0d6509d6 status=500 detail="failed to finalize browser recording publication: injected browser receipt completion failure"
+2026/10/04 07:15:56 INFO http request method=POST path=/api/v1/browser-recorder/sessions/883a507c-e920-486c-b9d7-5dba35be413d/convert status=500 duration_ms=23 remote=192.0.2.1:1234
+2026/10/04 07:15:56 INFO http request method=POST path=/api/v1/browser-recorder/sessions/883a507c-e920-486c-b9d7-5dba35be413d/convert status=201 duration_ms=59 remote=192.0.2.1:1234
+2026/10/04 07:15:57 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:57 INFO http request method=POST path=/api/v1/browser-recorder/sessions status=201 duration_ms=2 remote=192.0.2.1:1234
+2026/10/04 07:15:57 INFO http request method=POST path=/api/v1/browser-recorder/sessions/ef2fd97b-0da2-433b-8247-0a048a6ed381/stop status=200 duration_ms=2 remote=192.0.2.1:1234
+2026/10/04 07:15:57 ERROR internal server error ref=bc53f4e7d6bc3149 status=500 detail="failed to finalize browser recording publication: injected browser locator publication failure"
+2026/10/04 07:15:57 INFO http request method=POST path=/api/v1/browser-recorder/sessions/ef2fd97b-0da2-433b-8247-0a048a6ed381/convert status=500 duration_ms=24 remote=192.0.2.1:1234
+2026/10/04 07:15:57 INFO http request method=POST path=/api/v1/browser-recorder/sessions/ef2fd97b-0da2-433b-8247-0a048a6ed381/convert status=201 duration_ms=56 remote=192.0.2.1:1234
+2026/10/04 07:15:58 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:15:58 INFO http request method=POST path=/api/v1/browser-recorder/sessions status=201 duration_ms=2 remote=192.0.2.1:1234
+2026/10/04 07:15:58 INFO http request method=POST path=/api/v1/browser-recorder/sessions/6567d0f9-7cfc-4d2f-83bf-3f112b225a79/stop status=200 duration_ms=2 remote=192.0.2.1:1234
+2026/10/04 07:15:58 WARN committed library import claims remain for cleanup owner_id=f98a4020-e710-468d-89b6-a006a192d402 error="injected browser claim cleanup failure"
+2026/10/04 07:15:58 ERROR internal server error ref=4df3e19bef573d2c status=500 detail="failed to finalize browser recording publication: injected browser claim cleanup failure"
+2026/10/04 07:15:58 INFO http request method=POST path=/api/v1/browser-recorder/sessions/6567d0f9-7cfc-4d2f-83bf-3f112b225a79/convert status=500 duration_ms=25 remote=192.0.2.1:1234
+2026/10/04 07:15:58 INFO http request method=POST path=/api/v1/browser-recorder/sessions/6567d0f9-7cfc-4d2f-83bf-3f112b225a79/convert status=201 duration_ms=53 remote=192.0.2.1:1234
+2026/10/04 07:15:59 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=78 remote=192.0.2.1:1234
+2026/10/04 07:16:01 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=84 remote=192.0.2.1:1234
+2026/10/04 07:16:02 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=94 remote=192.0.2.1:1234
+2026/10/04 07:16:02 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=400 duration_ms=1 remote=192.0.2.1:1234
+==================
+WARNING: DATA RACE
+Write at 0x00c0008d2a90 by goroutine 2484:
+  github.com/jasonczech/apexload/pkg/api.TestExpiredBrunoPublicationJournalFailsClosedWithoutReferenceChecker()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_import_test.go:2455 +0x4cc
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x34
+
+Previous read at 0x00c0008d2a90 by goroutine 2508:
+  github.com/jasonczech/apexload/pkg/api.(*Server).reconcileNativeAnalysisOnce()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:270 +0x38
+  github.com/jasonczech/apexload/pkg/api.NewServer.(*Server).startNativeAnalysisReconciliation.func19()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:302 +0xb0
+  github.com/jasonczech/apexload/pkg/api.(*Server).launchBackground.func1()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:2418 +0x90
+
+Goroutine 2484 (running) created at:
+  testing.(*T).Run()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x7bc
+  testing.runTests.func1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2585 +0x74
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.runTests()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2583 +0x7a0
+  testing.(*M).Run()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2443 +0xb38
+  github.com/jasonczech/apexload/pkg/api.runArchiveSandboxedTests()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/main_test.go:55 +0x300
+  github.com/jasonczech/apexload/pkg/api.TestMain()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/main_test.go:27 +0x88
+  main.main()
+      _testmain.go:9960 +0x104
+
+Goroutine 2508 (running) created at:
+  github.com/jasonczech/apexload/pkg/api.(*Server).launchBackground()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:2411 +0x104
+  github.com/jasonczech/apexload/pkg/api.(*Server).startNativeAnalysisReconciliation()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:298 +0x4a14
+  github.com/jasonczech/apexload/pkg/api.NewServer()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:779 +0x49b4
+  github.com/jasonczech/apexload/pkg/api.newBrunoImportAPITestServer()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_import_test.go:2696 +0x590
+  github.com/jasonczech/apexload/pkg/api.TestExpiredBrunoPublicationJournalFailsClosedWithoutReferenceChecker()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_import_test.go:2432 +0x30
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x34
+==================
+--- FAIL: TestExpiredBrunoPublicationJournalFailsClosedWithoutReferenceChecker (1.12s)
+    testing.go:1712: race detected during execution of test
+2026/10/04 07:16:06 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=121 remote=192.0.2.1:1234
+2026/10/04 07:16:06 INFO http request method=GET path=/api/v1/scripts/import/bruno/sessions/51dd23f0-1b4c-4f5e-adb2-a4a37c820cde/source status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:16:06 INFO http request method=GET path=/api/v1/scripts/import/bruno/sessions/51dd23f0-1b4c-4f5e-adb2-a4a37c820cde/source status=404 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:16:08 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=122 remote=192.0.2.1:1234
+2026/10/04 07:16:08 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=400 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:16:08 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=118 remote=192.0.2.1:1234
+2026/10/04 07:16:08 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=200 duration_ms=48 remote=192.0.2.1:1234
+2026/10/04 07:16:08 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=409 duration_ms=4 remote=192.0.2.1:1234
+2026/10/04 07:16:08 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=403 duration_ms=4 remote=192.0.2.1:1234
+2026/10/04 07:16:09 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=120 remote=192.0.2.1:1234
+2026/10/04 07:16:09 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=400 duration_ms=2 remote=192.0.2.1:1234
+2026/10/04 07:16:09 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=119 remote=192.0.2.1:1234
+2026/10/04 07:16:10 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=123 remote=192.0.2.1:1234
+2026/10/04 07:16:10 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=73 remote=192.0.2.1:1234
+2026/10/04 07:16:10 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=409 duration_ms=3 remote=192.0.2.1:1234
+2026/10/04 07:16:12 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=120 remote=192.0.2.1:1234
+2026/10/04 07:16:12 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=117 remote=192.0.2.1:1234
+2026/10/04 07:16:13 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=92 remote=192.0.2.1:1234
+2026/10/04 07:16:13 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=74 remote=192.0.2.1:1234
+2026/10/04 07:16:14 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=100 remote=192.0.2.1:1234
+2026/10/04 07:16:15 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=93 remote=192.0.2.1:1234
+2026/10/04 07:16:17 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=96 remote=192.0.2.1:1234
+2026/10/04 07:16:18 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=98 remote=192.0.2.1:1234
+2026/10/04 07:16:19 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=92 remote=192.0.2.1:1234
+2026/10/04 07:16:20 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=93 remote=192.0.2.1:1234
+2026/10/04 07:16:21 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=93 remote=192.0.2.1:1234
+2026/10/04 07:16:22 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=98 remote=192.0.2.1:1234
+2026/10/04 07:16:24 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=96 remote=192.0.2.1:1234
+2026/10/04 07:16:24 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=77 remote=192.0.2.1:1234
+2026/10/04 07:16:25 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=123 remote=192.0.2.1:1234
+2026/10/04 07:16:26 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=235 remote=192.0.2.1:1234
+2026/10/04 07:16:27 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=130 remote=192.0.2.1:1234
+==================
+WARNING: DATA RACE
+Write at 0x00c000bbea90 by goroutine 3057:
+  github.com/jasonczech/apexload/pkg/api.TestBrunoNativeBatchKeepsSourceArtifactsWithoutReferenceChecker()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_native_import_test.go:973 +0x4ec
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x34
+
+Previous read at 0x00c000bbea90 by goroutine 3081:
+  github.com/jasonczech/apexload/pkg/api.(*Server).reconcileNativeAnalysisOnce()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:270 +0x38
+  github.com/jasonczech/apexload/pkg/api.NewServer.(*Server).startNativeAnalysisReconciliation.func19()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:302 +0xb0
+  github.com/jasonczech/apexload/pkg/api.(*Server).launchBackground.func1()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:2418 +0x90
+
+Goroutine 3057 (running) created at:
+  testing.(*T).Run()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x7bc
+  testing.runTests.func1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2585 +0x74
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.runTests()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2583 +0x7a0
+  testing.(*M).Run()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2443 +0xb38
+  github.com/jasonczech/apexload/pkg/api.runArchiveSandboxedTests()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/main_test.go:55 +0x300
+  github.com/jasonczech/apexload/pkg/api.TestMain()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/main_test.go:27 +0x88
+  main.main()
+      _testmain.go:9960 +0x104
+
+Goroutine 3081 (running) created at:
+  github.com/jasonczech/apexload/pkg/api.(*Server).launchBackground()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:2411 +0x104
+  github.com/jasonczech/apexload/pkg/api.(*Server).startNativeAnalysisReconciliation()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:298 +0x4a14
+  github.com/jasonczech/apexload/pkg/api.NewServer()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:779 +0x49b4
+  github.com/jasonczech/apexload/pkg/api.newBrunoImportAPITestServer()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_import_test.go:2696 +0x590
+  github.com/jasonczech/apexload/pkg/api.TestBrunoNativeBatchKeepsSourceArtifactsWithoutReferenceChecker()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_native_import_test.go:961 +0x30
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x34
+==================
+2026/10/04 07:16:28 WARN clean Bruno import session artifacts session_id=a2aa1b95-9512-4e25-bc7d-4261ed2c9fa7 error="Bruno artifact reference checking is unavailable"
+2026/10/04 07:16:28 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=116 remote=192.0.2.1:1234
+--- FAIL: TestBrunoNativeBatchKeepsSourceArtifactsWithoutReferenceChecker (1.35s)
+    testing.go:1712: race detected during execution of test
+2026/10/04 07:16:29 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=120 remote=192.0.2.1:1234
+2026/10/04 07:16:30 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=123 remote=192.0.2.1:1234
+==================
+WARNING: DATA RACE
+Write at 0x00c000cc4e90 by goroutine 3131:
+  github.com/jasonczech/apexload/pkg/api.TestBrunoNativeReceiptRetryCleansClaimAfterPostCommitInterruption()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_native_import_test.go:1061 +0x728
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x34
+
+Previous read at 0x00c000cc4e90 by goroutine 3155:
+  github.com/jasonczech/apexload/pkg/api.(*Server).reconcileNativeAnalysisOnce()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:270 +0x38
+  github.com/jasonczech/apexload/pkg/api.NewServer.(*Server).startNativeAnalysisReconciliation.func19()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:302 +0xb0
+  github.com/jasonczech/apexload/pkg/api.(*Server).launchBackground.func1()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:2418 +0x90
+
+Goroutine 3131 (running) created at:
+  testing.(*T).Run()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x7bc
+  testing.runTests.func1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2585 +0x74
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.runTests()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2583 +0x7a0
+  testing.(*M).Run()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2443 +0xb38
+  github.com/jasonczech/apexload/pkg/api.runArchiveSandboxedTests()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/main_test.go:55 +0x300
+  github.com/jasonczech/apexload/pkg/api.TestMain()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/main_test.go:27 +0x88
+  main.main()
+      _testmain.go:9960 +0x104
+
+Goroutine 3155 (running) created at:
+  github.com/jasonczech/apexload/pkg/api.(*Server).launchBackground()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:2411 +0x104
+  github.com/jasonczech/apexload/pkg/api.(*Server).startNativeAnalysisReconciliation()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:298 +0x4a14
+  github.com/jasonczech/apexload/pkg/api.NewServer()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:779 +0x49b4
+  github.com/jasonczech/apexload/pkg/api.newBrunoImportAPITestServer()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_import_test.go:2696 +0x590
+  github.com/jasonczech/apexload/pkg/api.TestBrunoNativeReceiptRetryCleansClaimAfterPostCommitInterruption()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_native_import_test.go:1033 +0x30
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x34
+==================
+2026/10/04 07:16:30 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=200 duration_ms=63 remote=192.0.2.1:1234
+2026/10/04 07:16:30 WARN clean Bruno import session artifacts session_id=c88ccf43-fcff-4377-8e02-15ac4168602c error="Bruno artifact reference checking is unavailable"
+2026/10/04 07:16:30 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=171 remote=192.0.2.1:1234
+--- FAIL: TestBrunoNativeReceiptRetryCleansClaimAfterPostCommitInterruption (1.38s)
+    testing.go:1712: race detected during execution of test
+2026/10/04 07:16:31 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=120 remote=192.0.2.1:1234
+2026/10/04 07:16:31 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=403 duration_ms=3 remote=192.0.2.1:1234
+2026/10/04 07:16:31 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=409 duration_ms=3 remote=192.0.2.1:1234
+2026/10/04 07:16:33 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=404 duration_ms=12 remote=192.0.2.1:1234
+2026/10/04 07:16:33 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=404 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:16:34 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=102 remote=192.0.2.1:1234
+2026/10/04 07:16:35 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=110 remote=192.0.2.1:1234
+2026/10/04 07:16:35 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=403 duration_ms=3 remote=192.0.2.1:1234
+2026/10/04 07:16:35 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=85 remote=192.0.2.1:1234
+2026/10/04 07:16:36 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=119 remote=192.0.2.1:1234
+2026/10/04 07:16:36 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=400 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:16:36 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=400 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:16:36 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=400 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:16:36 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=400 duration_ms=3 remote=192.0.2.1:1234
+2026/10/04 07:16:36 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=400 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:16:36 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=409 duration_ms=3 remote=192.0.2.1:1234
+2026/10/04 07:16:36 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=116 remote=192.0.2.1:1234
+2026/10/04 07:16:36 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=200 duration_ms=53 remote=192.0.2.1:1234
+2026/10/04 07:16:38 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=133 remote=192.0.2.1:1234
+2026/10/04 07:16:38 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=404 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:16:39 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=125 remote=192.0.2.1:1234
+2026/10/04 07:16:39 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=409 duration_ms=5 remote=192.0.2.1:1234
+2026/10/04 07:16:40 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=93 remote=192.0.2.1:1234
+2026/10/04 07:16:40 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=75 remote=192.0.2.1:1234
+2026/10/04 07:16:41 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=92 remote=192.0.2.1:1234
+2026/10/04 07:16:41 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=503 duration_ms=40 remote=192.0.2.1:1234
+2026/10/04 07:16:41 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=84 remote=192.0.2.1:1234
+2026/10/04 07:16:43 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=92 remote=192.0.2.1:1234
+==================
+WARNING: DATA RACE
+Write at 0x00c003980e90 by goroutine 3498:
+  github.com/jasonczech/apexload/pkg/api.TestBrunoNativeBatchRollsBackSecretsWhenDatabaseCommitDefinitelyFails()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_native_import_test.go:1664 +0x72c
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x34
+
+Previous read at 0x00c003980e90 by goroutine 3522:
+  github.com/jasonczech/apexload/pkg/api.(*Server).reconcileNativeAnalysisOnce()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:270 +0x38
+  github.com/jasonczech/apexload/pkg/api.NewServer.(*Server).startNativeAnalysisReconciliation.func19()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:302 +0xb0
+  github.com/jasonczech/apexload/pkg/api.(*Server).launchBackground.func1()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:2418 +0x90
+
+Goroutine 3498 (running) created at:
+  testing.(*T).Run()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x7bc
+  testing.runTests.func1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2585 +0x74
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.runTests()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2583 +0x7a0
+  testing.(*M).Run()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2443 +0xb38
+  github.com/jasonczech/apexload/pkg/api.runArchiveSandboxedTests()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/main_test.go:55 +0x300
+  github.com/jasonczech/apexload/pkg/api.TestMain()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/main_test.go:27 +0x88
+  main.main()
+      _testmain.go:9960 +0x104
+
+Goroutine 3522 (running) created at:
+  github.com/jasonczech/apexload/pkg/api.(*Server).launchBackground()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:2411 +0x104
+  github.com/jasonczech/apexload/pkg/api.(*Server).startNativeAnalysisReconciliation()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:298 +0x4a14
+  github.com/jasonczech/apexload/pkg/api.NewServer()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:779 +0x49b4
+  github.com/jasonczech/apexload/pkg/api.newBrunoImportAPITestServer()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_import_test.go:2696 +0x590
+  github.com/jasonczech/apexload/pkg/api.TestBrunoNativeBatchRollsBackSecretsWhenDatabaseCommitDefinitelyFails()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_native_import_test.go:1627 +0x30
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x34
+==================
+2026/10/04 07:16:43 WARN native Bruno batch commit failed session_id=b39ece7b-fc15-4aff-a8b7-c111b681ffdd project_id=project-bruno-api code=bruno_native_commit_failed_after_secret_migration reason=storage_error error="simulated native database failure"
+2026/10/04 07:16:43 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=500 duration_ms=43 remote=192.0.2.1:1234
+2026/10/04 07:16:43 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=78 remote=192.0.2.1:1234
+--- FAIL: TestBrunoNativeBatchRollsBackSecretsWhenDatabaseCommitDefinitelyFails (1.30s)
+    testing.go:1712: race detected during execution of test
+2026/10/04 07:16:44 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=133 remote=192.0.2.1:1234
+==================
+WARNING: DATA RACE
+Write at 0x00c003981a90 by goroutine 3548:
+  github.com/jasonczech/apexload/pkg/api.TestBrunoNativeBatchDoesNotAdvertiseExpiredSessionAsRetryable()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_native_import_test.go:1740 +0x7b4
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x34
+
+Previous read at 0x00c003981a90 by goroutine 3572:
+  github.com/jasonczech/apexload/pkg/api.(*Server).reconcileNativeAnalysisOnce()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:270 +0x38
+  github.com/jasonczech/apexload/pkg/api.NewServer.(*Server).startNativeAnalysisReconciliation.func19()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:302 +0xb0
+  github.com/jasonczech/apexload/pkg/api.(*Server).launchBackground.func1()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:2418 +0x90
+
+Goroutine 3548 (running) created at:
+  testing.(*T).Run()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x7bc
+  testing.runTests.func1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2585 +0x74
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.runTests()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2583 +0x7a0
+  testing.(*M).Run()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2443 +0xb38
+  github.com/jasonczech/apexload/pkg/api.runArchiveSandboxedTests()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/main_test.go:55 +0x300
+  github.com/jasonczech/apexload/pkg/api.TestMain()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/main_test.go:27 +0x88
+  main.main()
+      _testmain.go:9960 +0x104
+
+Goroutine 3572 (running) created at:
+  github.com/jasonczech/apexload/pkg/api.(*Server).launchBackground()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:2411 +0x104
+  github.com/jasonczech/apexload/pkg/api.(*Server).startNativeAnalysisReconciliation()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:298 +0x4a14
+  github.com/jasonczech/apexload/pkg/api.NewServer()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:779 +0x49b4
+  github.com/jasonczech/apexload/pkg/api.newBrunoImportAPITestServer()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_import_test.go:2696 +0x590
+  github.com/jasonczech/apexload/pkg/api.TestBrunoNativeBatchDoesNotAdvertiseExpiredSessionAsRetryable()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_native_import_test.go:1723 +0x30
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x34
+==================
+2026/10/04 07:16:46 WARN clean Bruno import session artifacts session_id=4c878fd0-b136-43cc-9bf0-551fac243560 error="Bruno artifact reference checking is unavailable"
+2026/10/04 07:16:46 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=503 duration_ms=1996 remote=192.0.2.1:1234
+2026/10/04 07:16:46 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=404 duration_ms=4 remote=192.0.2.1:1234
+--- FAIL: TestBrunoNativeBatchDoesNotAdvertiseExpiredSessionAsRetryable (3.28s)
+    testing.go:1712: race detected during execution of test
+2026/10/04 07:16:47 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=118 remote=192.0.2.1:1234
+==================
+WARNING: DATA RACE
+Write at 0x00c003982690 by goroutine 3584:
+  github.com/jasonczech/apexload/pkg/api.TestBrunoNativeBatchReconcilesAmbiguousCommitFromDurableReceipt()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_native_import_test.go:1804 +0x540
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x34
+
+Previous read at 0x00c003982690 by goroutine 3608:
+  github.com/jasonczech/apexload/pkg/api.(*Server).reconcileNativeAnalysisOnce()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:270 +0x38
+  github.com/jasonczech/apexload/pkg/api.NewServer.(*Server).startNativeAnalysisReconciliation.func19()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:302 +0xb0
+  github.com/jasonczech/apexload/pkg/api.(*Server).launchBackground.func1()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:2418 +0x90
+
+Goroutine 3584 (running) created at:
+  testing.(*T).Run()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x7bc
+  testing.runTests.func1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2585 +0x74
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.runTests()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2583 +0x7a0
+  testing.(*M).Run()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2443 +0xb38
+  github.com/jasonczech/apexload/pkg/api.runArchiveSandboxedTests()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/main_test.go:55 +0x300
+  github.com/jasonczech/apexload/pkg/api.TestMain()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/main_test.go:27 +0x88
+  main.main()
+      _testmain.go:9960 +0x104
+
+Goroutine 3608 (running) created at:
+  github.com/jasonczech/apexload/pkg/api.(*Server).launchBackground()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:2411 +0x104
+  github.com/jasonczech/apexload/pkg/api.(*Server).startNativeAnalysisReconciliation()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/analysis_reconciliation.go:298 +0x4a14
+  github.com/jasonczech/apexload/pkg/api.NewServer()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/server.go:779 +0x49b4
+  github.com/jasonczech/apexload/pkg/api.newBrunoImportAPITestServer()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_import_test.go:2696 +0x590
+  github.com/jasonczech/apexload/pkg/api.TestBrunoNativeBatchReconcilesAmbiguousCommitFromDurableReceipt()
+      /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/pkg/api/handlers_bruno_native_import_test.go:1797 +0x30
+  testing.tRunner()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/src/testing/testing.go:2101 +0x34
+==================
+2026/10/04 07:16:47 WARN clean Bruno import session artifacts session_id=b7f1fe9b-aa11-46d0-8465-cb323ed147a2 error="Bruno artifact reference checking is unavailable"
+2026/10/04 07:16:47 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=200 duration_ms=120 remote=192.0.2.1:1234
+--- FAIL: TestBrunoNativeBatchReconcilesAmbiguousCommitFromDurableReceipt (1.28s)
+    testing.go:1712: race detected during execution of test
+2026/10/04 07:16:48 INFO http request method=POST path=/api/v1/scripts/import/bruno/inspect status=200 duration_ms=95 remote=192.0.2.1:1234
+2026/10/04 07:16:48 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=409 duration_ms=2 remote=192.0.2.1:1234
+2026/10/04 07:16:49 INFO http request method=POST path=/api/v1/scripts/import/bruno/commit status=201 duration_ms=77 remote=192.0.2.1:1234
+2026/10/04 07:16:49 INFO http request method=POST path=/api/v1/scripts/1f00d7ce-eb07-47a4-9d48-849e1cad36f3/validate status=200 duration_ms=6 remote=192.0.2.1:1234
+2026/10/04 07:16:49 INFO http request method=POST path=/api/v1/scripts/import/har status=200 duration_ms=281 remote=192.0.2.1:1234
+2026/10/04 07:16:49 INFO http request method=POST path=/api/v1/scripts/import/enterprise-script-archive/validate status=200 duration_ms=259 remote=192.0.2.1:1234
+2026/10/04 07:16:49 INFO http request method=POST path=/api/v1/scripts/16c70065-13ff-4919-88b9-7512c8b78980/validate status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:16:52 WARN substituting placeholder for unconfigured project secret secret=token project_id="" env=APEXLOAD_DEV_FAKE_SECRETS
+2026/10/04 07:16:52 WARN substituting placeholder for unconfigured project secret secret=token project_id="" env=APEXLOAD_DEV_FAKE_SECRETS
+2026/10/04 07:16:53 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:16:53 INFO http request method=POST path=/api/v1/tests/run/archive/native-series status=404 duration_ms=10 remote=192.0.2.1:1234
+2026/10/04 07:16:53 INFO http request method=POST path=/api/v1/tests/run/archive/native-series status=200 duration_ms=4 remote=192.0.2.1:1234
+2026/10/04 07:16:53 INFO http request method=POST path=/api/v1/tests/run/archive/native-series status=200 duration_ms=8 remote=192.0.2.1:1234
+2026/10/04 07:16:53 INFO http request method=GET path=/api/v1/tests/run/archive/transactions status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 07:17:06 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:17:06 INFO http request method=GET path=/api/v1/monitoring/dashboard-definitions/shared status=200 duration_ms=2 remote=192.0.2.1:1234
+2026/10/04 07:17:06 INFO http request method=POST path=/api/v1/tests/run/archive/native-series status=200 duration_ms=8 remote=192.0.2.1:1234
+2026/10/04 07:17:06 INFO http request method=POST path=/api/v1/tests/run/native-series status=200 duration_ms=4 remote=192.0.2.1:1234
+2026/10/04 07:17:06 INFO http request method=GET path=/api/v1/tests/run/analysis/annotations status=200 duration_ms=3 remote=192.0.2.1:1234
+2026/10/04 07:17:06 INFO http request method=POST path=/api/v1/tests/run/analysis/annotations status=403 duration_ms=3 remote=192.0.2.1:1234
+2026/10/04 07:17:06 INFO http request method=GET path=/api/v1/tests/run/analysis/annotations status=403 duration_ms=3 remote=192.0.2.1:1234
+2026/10/04 07:17:06 INFO http request method=POST path=/api/v1/monitoring/dashboard-definitions status=403 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:17:06 INFO http request method=POST path=/api/v1/tests/run/archive/native-series status=403 duration_ms=3 remote=192.0.2.1:1234
+2026/10/04 07:17:06 INFO http request method=POST path=/api/v1/tests/run/native-series status=403 duration_ms=3 remote=192.0.2.1:1234
+2026/10/04 07:17:07 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:17:07 INFO http request method=POST path=/api/v1/tests/run/native-series status=200 duration_ms=7 remote=192.0.2.1:1234
+2026/10/04 07:17:08 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 07:17:08 INFO http request method=GET path=/api/v1/protocols/native-support-matrix status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 07:17:08 INFO http request method=GET path=/api/v1/protocols/native-support-matrix status=401 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 07:17:08 INFO http request method=GET path=/api/v1/protocols/native-support-matrix status=200 duration_ms=1 remote=192.0.2.1:1234
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/api	273.917s
+FAIL

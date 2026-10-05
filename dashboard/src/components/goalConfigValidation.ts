@@ -74,6 +74,7 @@ export function validateGoalConfig(goalConfig: GoalConfig): string | null {
 	}
   if ((goalConfig.monitor_rules?.length || 0) > 32) return 'Monitoring criteria cannot contain more than 32 entries'
   for (const [index, rule] of (goalConfig.monitor_rules || []).entries()) {
+    if ((rule.query_id && rule.query_id.length > 128) || (rule.evaluation_mode && !['series_points', 'exact_window'].includes(rule.evaluation_mode))) return `Monitoring criterion ${index + 1} requires a valid query identity and evaluation mode`
     if (rule.dimensions && (Object.keys(rule.dimensions).length > 16 || Object.entries(rule.dimensions).some(([key, value]) => !key || key.length > 128 || typeof value !== 'string' || value.length > 128))) return `Monitoring criterion ${index + 1} requires at most 16 string entity dimensions`
     if (!rule.source_id || !rule.metric || !rule.unit || !Number.isFinite(rule.threshold) || !Number.isFinite(rule.min_coverage_pct) || rule.min_coverage_pct < 0 || rule.min_coverage_pct > 100 || rule.start_offset_seconds < 0 || (rule.end_offset_seconds !== undefined && rule.end_offset_seconds <= rule.start_offset_seconds) || !['avg', 'min', 'max', 'sum'].includes(rule.statistic) || !['lt', 'lte', 'gt', 'gte', 'eq', 'neq'].includes(rule.comparator)) return `Monitoring criterion ${index + 1} requires a source, metric, unit, finite threshold, valid coverage and elapsed window`
   }

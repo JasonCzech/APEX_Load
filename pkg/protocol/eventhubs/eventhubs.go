@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/identitypolicy"
@@ -50,52 +51,125 @@ func init() {
 }
 
 type config struct {
-	OwnerLevel             *int64
-	ConsumerMode           string
-	CheckpointContainerURL string
-	Lifetime               context.Context
-	ProducerLifecycle      string
-	SampleTiming           string
-	Namespace              string
-	EventHub               string
-	ConnectionString       string
-	ConsumerGroup          string
-	PartitionKey           string
-	PartitionID            string
-	StartPosition          string // observer-probe start: "latest" (default) | "earliest"
-	AuthType               string // connection_string | aad
-	Timeout                time.Duration
-	Mock                   bool
-	AllowedTargetHosts     []string
+	pauseGate                 protocol.RuntimePauseGate
+	ObservePartitionTail      bool
+	TailPollInterval          time.Duration
+	progress                  *processorProgress
+	OwnerLevel                *int64
+	ConsumerMode              string
+	ProcessorMaxPartitions    int64
+	processorReservation      *ProcessorReservation
+	processorReservationBound bool
+	CheckpointContainerURL    string
+	Lifetime                  context.Context
+	ProducerLifecycle         string
+	SampleTiming              string
+	Namespace                 string
+	EventHub                  string
+	ConnectionString          string
+	ConsumerGroup             string
+	PartitionKey              string
+	PartitionID               string
+	StartPosition             string // observer-probe start: "latest" (default) | "earliest"
+	AuthType                  string // connection_string | aad
+	Timeout                   time.Duration
+	Mock                      bool
+	AllowedTargetHosts        []string
 }
 
 // EventHubs is a per-VUser Azure Event Hubs client.
 type EventHubs struct {
-	name          string
-	cfg           config
-	client        eventHubsClient
-	initialized   bool
-	clientFactory func() eventHubsClient
+	name             string
+	progressSnapshot atomic.Pointer[processorProgress]
+	cfg              config
+	client           eventHubsClient
+	initialized      bool
+	clientFactory    func() eventHubsClient
 	// observer detects duplicate / out-of-order events by sequence number on the
 	// consume probe. Event Hubs has no ack/rollback model, so the session is used
 	// only for its bounded sequence observer (lazily created on first consume).
 	observer *messaging.Session[struct{}]
 }
 
-func (e *EventHubs) Name() string { return e.name }
+func (e *EventHubs) Name() string              { return e.name }
+func (*EventHubs) RuntimePauseSupported() bool { return realEventHubsAvailable }
+
+func (e *EventHubs) MessagingProgressSnapshot() *protocol.MessagingProgressSnapshot {
+	return e.progressSnapshot.Load().snapshot()
+}
 
 func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
+	ready := false
+	// Iteration reset first releases the old client. Keep its immutable local
+	// evidence visible while constructing a replacement, so an ordinary tick
+	// cannot turn an intermediate nil into sticky missing-source coverage.
+	defer func() {
+		if !ready {
+			e.progressSnapshot.Store(nil)
+		}
+	}()
+
 	timeoutMS, err := boundedInteger(cfg["eventhubs_timeout_ms"], int(defaultTimeout/time.Millisecond), 0, int(MaxConfiguredTimeout/time.Millisecond))
 	if err != nil {
 		return fmt.Errorf("eventhubs timeout_ms: %w", err)
+	}
+	if value, present := cfg["eventhubs_consumer_mode"]; present && value != nil {
+		if _, ok := value.(string); !ok {
+			return fmt.Errorf("eventhubs consumer_mode must be a string")
+		}
+	}
+	partitionCeiling := MaxProcessorPartitions
+	if value, present := cfg["eventhubs_processor_max_partitions"]; present {
+		if value == nil {
+			return fmt.Errorf("eventhubs processor_max_partitions must be an integer")
+		}
+		partitionCeiling, err = boundedInteger(value, MaxProcessorPartitions, 0, MaxProcessorPartitions)
+		if err != nil {
+			return fmt.Errorf("eventhubs processor_max_partitions: %w", err)
+		}
+		if partitionCeiling != 0 && stringValue(cfg, "eventhubs_consumer_mode") != "processor" {
+			return fmt.Errorf("processor_max_partitions requires processor mode")
+		}
+		if partitionCeiling == 0 {
+			partitionCeiling = MaxProcessorPartitions
+		}
+	}
+	tailEnabled := false
+	if value, present := cfg["eventhubs_observe_partition_tail"]; present {
+		var ok bool
+		tailEnabled, ok = value.(bool)
+		if !ok {
+			return fmt.Errorf("eventhubs observe_partition_tail must be a boolean")
+		}
+		if stringValue(cfg, "eventhubs_consumer_mode") != "processor" {
+			return fmt.Errorf("observe_partition_tail requires processor mode")
+		}
+	}
+	tailInterval := 10000
+	if value, present := cfg["eventhubs_tail_poll_interval_ms"]; present {
+		if value == nil {
+			return fmt.Errorf("eventhubs tail_poll_interval_ms must be an integer")
+		}
+		if stringValue(cfg, "eventhubs_consumer_mode") != "processor" {
+			return fmt.Errorf("tail_poll_interval_ms requires processor mode")
+		}
+		tailInterval, err = boundedInteger(value, 10000, 0, 300000)
+		if err != nil || tailInterval > 0 && tailInterval < 10000 {
+			return fmt.Errorf("eventhubs tail_poll_interval_ms must be zero or between 10000 and 300000")
+		}
+		if tailInterval == 0 {
+			tailInterval = 10000
+		}
 	}
 	ownerLevel, err := parseOwnerLevel(cfg["eventhubs_owner_level"])
 	if err != nil {
 		return err
 	}
 	e.cfg = config{
-		OwnerLevel: ownerLevel,
-		Lifetime:   ctx, ConsumerMode: stringValue(cfg, "eventhubs_consumer_mode"), CheckpointContainerURL: stringValue(cfg, "eventhubs_checkpoint_container_url"),
+		ObservePartitionTail: tailEnabled, TailPollInterval: time.Duration(tailInterval) * time.Millisecond,
+		OwnerLevel:             ownerLevel,
+		ProcessorMaxPartitions: int64(partitionCeiling),
+		Lifetime:               ctx, ConsumerMode: stringValue(cfg, "eventhubs_consumer_mode"), CheckpointContainerURL: stringValue(cfg, "eventhubs_checkpoint_container_url"),
 		ProducerLifecycle:  stringValue(cfg, "eventhubs_producer_lifecycle"),
 		SampleTiming:       stringValue(cfg, "eventhubs_sample_timing"),
 		Namespace:          stringValue(cfg, "eventhubs_namespace"),
@@ -128,6 +202,30 @@ func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 	if (e.cfg.ConsumerMode == "processor" || e.cfg.ConsumerMode == "exclusive") && !realEventHubsAvailable {
 		return fmt.Errorf("Event Hubs %s consumer requires an eventhubs_real build", e.cfg.ConsumerMode)
 	}
+	if gate, bound := protocol.RuntimePauseGateFromContext(ctx, eventHubsProtocolName); bound {
+		if gate == nil || e.cfg.ConsumerMode != "processor" {
+			return protocol.ErrRuntimePauseAdmissionInvalid
+		}
+		e.cfg.pauseGate = gate
+	}
+	if e.cfg.ConsumerMode == "processor" {
+		pool, err := defaultProcessorPool()
+		if err != nil {
+			return err
+		}
+		if e.cfg.ProcessorMaxPartitions > pool.limits.partitions {
+			return fmt.Errorf("processor_max_partitions exceeds the configured process limit")
+		}
+		reservation, bound := protocol.RuntimeResourceReservationFromContext(ctx, eventHubsProtocolName)
+		e.cfg.processorReservationBound = bound
+		if bound {
+			parent, ok := reservation.(*ProcessorReservation)
+			if !ok || parent == nil || parent.pool != pool || !parent.Current() || parent.Demand().MaxPartitionsPerProcessor != e.cfg.ProcessorMaxPartitions {
+				return fmt.Errorf("bound Event Hubs processor reservation is unavailable or mismatched")
+			}
+			e.cfg.processorReservation = parent
+		}
+	}
 	if e.cfg.ConsumerMode == "processor" {
 		if _, err := identitypolicy.ValidateEventHubsCheckpointContainer(e.cfg.CheckpointContainerURL); err != nil {
 			return err
@@ -152,6 +250,9 @@ func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 			}
 		}
 	}
+	if e.cfg.ConsumerMode == "processor" {
+		e.cfg.progress = newProcessorProgress(e.cfg)
+	}
 	if e.cfg.Mock {
 		namespace := stringValue(cfg, "runtime_mock_namespace")
 		sharedBroker.acquire(namespace)
@@ -169,14 +270,24 @@ func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 		return newRealClient(e.cfg)
 	}
 	e.initialized = true
+	e.progressSnapshot.Store(e.cfg.progress)
+	ready = true
 	return nil
 }
 
 func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
-	start := time.Now()
 	if action == nil {
 		return nil, fmt.Errorf("eventhubs action is required")
 	}
+	if e.cfg.pauseGate != nil {
+		lease, err := protocol.AdmitRuntimePause(ctx, e.cfg.pauseGate, protocol.RuntimePauseAction)
+		if err != nil {
+			return nil, err
+		}
+		defer lease.Release()
+		ctx = lease.Context()
+	}
+	start := time.Now()
 	if e.client == nil {
 		// Execute should never run before Init in the normal engine flow, but if
 		// it does we fail closed rather than silently substituting a working mock
@@ -232,20 +343,18 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 	}
 	var err error
 	var sent, received event
-	var hasSent, hasReceived bool
+	var hasSent, hasReceived, sendAttempted bool
 	switch strings.ToLower(action.Type) {
 	case "eventhubs_produce":
-		sent, err = e.produce(ctx, action, result)
-		hasSent = err == nil
+		sent, err = e.produce(ctx, action, result, &hasSent, &sendAttempted)
 	case "eventhubs_consume":
-		received, err = e.consume(ctx, action, result)
-		hasReceived = err == nil
+		received, err = e.consume(ctx, action, result, &hasReceived)
 	default:
 		err = fmt.Errorf("unsupported eventhubs action type %q", action.Type)
 	}
 
 	result.Duration = time.Since(start)
-	if err != nil && e.cfg.SampleTiming == "pnop_create_send_excludes_close" {
+	if err != nil && !hasSent && e.cfg.SampleTiming == "pnop_create_send_excludes_close" {
 		result.Duration = 0
 	}
 	// An empty observer probe (no event within the timeout) is an expected
@@ -257,7 +366,11 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 	if errors.Is(err, errNoEvent) {
 		err = nil
 	}
-	result.ServerTelemetry = finalizeTelemetry(result, sent, hasSent, received, hasReceived, err)
+	transportErr := err
+	if hasSent || hasReceived || !sendAttempted && strings.EqualFold(action.Type, "eventhubs_produce") {
+		transportErr = nil
+	}
+	result.ServerTelemetry = finalizeTelemetry(result, sent, hasSent, received, hasReceived, transportErr)
 	if result.ServerTelemetry != nil && hasReceived {
 		result.ServerTelemetry.SubscriptionID = paramString(action.Params, "consumer_group", e.cfg.ConsumerGroup)
 	}
@@ -267,7 +380,7 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 			result.StatusCode = 500
 		}
 		result.ErrorMessage = err.Error()
-		if strings.EqualFold(action.Type, "eventhubs_produce") {
+		if strings.EqualFold(action.Type, "eventhubs_produce") && !hasSent {
 			// Count a failed produce attempt so the messaging reliability telemetry
 			// reflects send failures instead of always reading zero.
 			if result.ServerTelemetry == nil {
@@ -275,6 +388,12 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 			}
 			result.ServerTelemetry.SendFailureCount++
 		}
+	}
+	if strings.EqualFold(action.Type, "eventhubs_produce") {
+		if result.ServerTelemetry == nil {
+			result.ServerTelemetry = &protocol.ServerTelemetry{}
+		}
+		protocol.AnnotateMessagingSendOutcome(result.ServerTelemetry, sendAttempted, hasSent, false)
 	}
 	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 	return result, nil
@@ -297,13 +416,20 @@ func (e *EventHubs) HealthCheck(ctx context.Context) error {
 	return e.client.HealthCheck(ctx)
 }
 
-func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result *protocol.Result) (event, error) {
+func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result *protocol.Result, accepted, attempted *bool) (observed event, operationErr error) {
+	var sent event
+	defer func() {
+		if *accepted {
+			observed = sent
+		}
+	}()
 	if value, present := action.Params["messages"]; present {
 		bodies, err := MessageBodies(value)
 		if err != nil {
 			return event{}, err
 		}
-		return e.produceBatch(ctx, action, result, bodies)
+		sent, operationErr = e.produceBatch(ctx, action, result, bodies, accepted, attempted)
+		return sent, operationErr
 	}
 	hub := e.hub(action)
 	if hub == "" {
@@ -313,6 +439,7 @@ func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result
 	if size := eventSize(ev); size > MaxEventHubsEventBytes {
 		return event{}, fmt.Errorf("event payload and properties exceed %d bytes", MaxEventHubsEventBytes)
 	}
+	*attempted = true
 	meta, err := e.client.Send(ctx, hub, ev)
 	if err != nil {
 		return event{}, err
@@ -322,6 +449,7 @@ func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result
 	if meta.PartitionID != "" {
 		ev.PartitionID = meta.PartitionID
 	}
+	sent, *accepted = ev, true
 	result.BytesSent = int64(len(ev.Body))
 	if err := addEventExtractions(result, ev); err != nil {
 		return event{}, err
@@ -398,7 +526,13 @@ func (e *EventHubs) validateActionBounds(action *protocol.Action) error {
 	return nil
 }
 
-func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result *protocol.Result) (event, error) {
+func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result *protocol.Result, received *bool) (observed event, operationErr error) {
+	var delivery event
+	defer func() {
+		if *received {
+			observed = delivery
+		}
+	}()
 	hub := e.hub(action)
 	if hub == "" {
 		return event{}, fmt.Errorf("event hub name is required")
@@ -424,6 +558,7 @@ func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result
 		result.StatusCode = 502
 		return event{}, err
 	}
+	delivery, *received = ev, true
 	accepted := false
 	defer func() {
 		if !accepted && ev.receipt != nil {

@@ -1,0 +1,93 @@
+2026/10/04 08:01:52 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:01:52 ERROR internal server error ref=e1e2b3aa7ce5dad9 status=503 detail="analytical storage configuration changed; restore its recorded backend or complete an offline evidence migration"
+2026/10/04 08:01:52 INFO http request method=DELETE path=/api/v1/analysis/imports/00000000-0000-0000-0000-000000000002 status=503 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:01:52 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:01:52 INFO http request method=GET path=/api/v1/analysis/imports status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:01:52 INFO http request method=GET path=/api/v1/analysis/imports/00000000-0000-0000-0000-000000000001 status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:01:52 ERROR internal server error ref=ffa3aa3c1442ecb7 status=503 detail="dataset cleanup pending physical writer completion"
+2026/10/04 08:01:52 INFO http request method=DELETE path=/api/v1/analysis/imports/00000000-0000-0000-0000-000000000001 status=503 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:01:52 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:01:52 INFO http request method=GET path=/api/v1/analysis/capabilities status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:01:53 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:01:53 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:01:54 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:01:54 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:01:54 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:01:54 INFO http request method=POST path=/api/v1/analysis/imports status=201 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:01:54 INFO http request method=GET path=/api/v1/analysis/datasets/bb87a77f-349a-46a5-85b9-03cf4f5e37a4 status=404 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:01:54 INFO http request method=PUT path=/api/v1/analysis/imports/bb87a77f-349a-46a5-85b9-03cf4f5e37a4/files/3bb9ab9b-1965-403e-9d98-1f04fd8accfc status=200 duration_ms=15 remote=192.0.2.1:1234
+2026/10/04 08:01:54 INFO http request method=PUT path=/api/v1/analysis/imports/bb87a77f-349a-46a5-85b9-03cf4f5e37a4/files/3bb9ab9b-1965-403e-9d98-1f04fd8accfc status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:01:54 INFO http request method=PUT path=/api/v1/analysis/imports/bb87a77f-349a-46a5-85b9-03cf4f5e37a4/files/3bb9ab9b-1965-403e-9d98-1f04fd8accfc status=409 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:01:56 INFO http request method=GET path=/api/v1/analysis/imports/bb87a77f-349a-46a5-85b9-03cf4f5e37a4/files/3bb9ab9b-1965-403e-9d98-1f04fd8accfc/preview status=200 duration_ms=2069 remote=192.0.2.1:1234
+2026/10/04 08:01:56 INFO http request method=PUT path=/api/v1/analysis/imports/bb87a77f-349a-46a5-85b9-03cf4f5e37a4/mapping status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:01:56 INFO http request method=POST path=/api/v1/analysis/imports/bb87a77f-349a-46a5-85b9-03cf4f5e37a4/commit status=202 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:00 INFO http request method=POST path=/api/v1/analysis/datasets/bb87a77f-349a-46a5-85b9-03cf4f5e37a4/series status=200 duration_ms=2243 remote=192.0.2.1:1234
+2026/10/04 08:02:04 INFO http request method=POST path=/api/v1/analysis/compare status=200 duration_ms=4348 remote=192.0.2.1:1234
+2026/10/04 08:02:04 INFO http request method=PUT path=/api/v1/analysis/datasets/bb87a77f-349a-46a5-85b9-03cf4f5e37a4/association status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:07 INFO http request method=PUT path=/api/v1/analysis/datasets/bb87a77f-349a-46a5-85b9-03cf4f5e37a4/association status=404 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:07 ERROR internal server error ref=d7d75990ef71ef62 status=503 detail="dataset cleanup pending physical writer completion"
+2026/10/04 08:02:07 INFO http request method=DELETE path=/api/v1/analysis/imports/bb87a77f-349a-46a5-85b9-03cf4f5e37a4 status=503 duration_ms=0 remote=192.0.2.1:1234
+--- FAIL: TestAnalysisNativeImportLifecycle (13.08s)
+    analysis_imports_native_test.go:167: delete: 503 {"error":"internal server error","ref":"d7d75990ef71ef62"}
+2026/10/04 08:02:07 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:07 INFO http request method=GET path=/api/v1/analysis/datasets/00000000-0000-0000-0000-000000000001/rejections/0 status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:07 INFO http request method=GET path=/api/v1/analysis/datasets/00000000-0000-0000-0000-000000000001/rejections/0bad status=404 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:07 ERROR internal server error ref=5f05c4ad6ea2067a status=503 detail="rejection artifact unavailable or corrupt"
+2026/10/04 08:02:07 INFO http request method=GET path=/api/v1/analysis/datasets/00000000-0000-0000-0000-000000000001/rejections/0 status=503 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:07 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:07 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:07 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:07 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:07 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:07 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:07 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:07 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:07 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:07 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:08 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:08 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:08 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:08 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:09 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:10 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:10 INFO http request method=POST path=/api/v1/analysis/mappings status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:10 INFO http request method=GET path=/api/v1/analysis/mappings/cdc8eb28-6737-4d67-a380-d979a90bdf60 status=404 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:10 INFO http request method=DELETE path=/api/v1/analysis/mappings/cdc8eb28-6737-4d67-a380-d979a90bdf60 status=409 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:10 INFO http request method=DELETE path=/api/v1/analysis/mappings/cdc8eb28-6737-4d67-a380-d979a90bdf60 status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:10 INFO http request method=GET path=/api/v1/analysis/mappings/cdc8eb28-6737-4d67-a380-d979a90bdf60 status=404 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:10 INFO http request method=GET path=/api/v1/analysis/mappings/cdc8eb28-6737-4d67-a380-d979a90bdf60 status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:10 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:10 INFO http request method=POST path=/api/v1/analysis/compare status=422 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:10 INFO http request method=POST path=/api/v1/analysis/compare status=400 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:10 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:10 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:10 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:10 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:10 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:10 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:10 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:10 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:14 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:15 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:15 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:15 INFO http request method=POST path=/api/v1/tests/run/archive/native-series status=404 duration_ms=1 remote=192.0.2.1:1234
+2026/10/04 08:02:15 INFO http request method=POST path=/api/v1/tests/run/archive/native-series status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:15 INFO http request method=POST path=/api/v1/tests/run/archive/native-series status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:15 INFO http request method=GET path=/api/v1/tests/run/archive/transactions status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:16 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:16 INFO http request method=GET path=/api/v1/monitoring/dashboard-definitions/shared status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:16 INFO http request method=POST path=/api/v1/tests/run/archive/native-series status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:16 INFO http request method=POST path=/api/v1/tests/run/native-series status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:16 INFO http request method=GET path=/api/v1/tests/run/analysis/annotations status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:16 INFO http request method=POST path=/api/v1/tests/run/analysis/annotations status=403 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:16 INFO http request method=GET path=/api/v1/tests/run/analysis/annotations status=403 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:16 INFO http request method=POST path=/api/v1/monitoring/dashboard-definitions status=403 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:16 INFO http request method=POST path=/api/v1/tests/run/archive/native-series status=403 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:16 INFO http request method=POST path=/api/v1/tests/run/native-series status=403 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:16 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:16 INFO http request method=POST path=/api/v1/tests/run/native-series status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/04 08:02:16 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/04 08:02:16 INFO http request method=GET path=/api/v1/protocols/native-support-matrix status=200 duration_ms=0 remote=192.0.2.1:1234
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/api	26.180s
+FAIL

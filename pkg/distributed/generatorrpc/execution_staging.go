@@ -71,6 +71,7 @@ func (e *assignmentRuntimePreflightError) Error() string {
 // group per test is prepared concurrently, which keeps late-group duration,
 // archive-writer creation, and duplicate retry semantics deterministic.
 type pendingAssignmentStage struct {
+	runtimeResources        assignmentRuntimeResources
 	token                   uint64
 	testID                  string
 	groupName               string
@@ -88,6 +89,7 @@ type pendingAssignmentStage struct {
 // request is synchronously RPC-owned and read-only; scriptContent is copied out
 // of the mutable cache before the compatibility lock is released.
 type assignmentStagePlan struct {
+	runtimeResources        assignmentRuntimeResources
 	token                   uint64
 	validated               validatedWorkAssignment
 	hadCurrent              bool
@@ -120,6 +122,25 @@ type preparedAssignmentStage struct {
 // preparation, and an atomic coordinator commit or rollback.
 func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment) (ack *pb.AssignmentAck, callErr error) {
 	defer func() {
+		if assignment != nil && (callErr != nil || !ack.GetAccepted()) {
+			service.abortSourcePlanStage(assignment.TestId, assignment.ExecutionGeneration, assignment.RunSupervisionToken)
+		}
+	}()
+	defer func() {
+		if ack != nil && !ack.Accepted && assignment.GetRuntimeResourceClaim() != nil {
+			ack.RuntimeResourceAdmission = runtimeResourceAdmission(assignment.RuntimeResourceClaim, nil)
+		}
+		if callErr == nil && ack.GetAccepted() && assignment.GetRuntimeResourceClaim() != nil {
+			service.mu.RLock()
+			current := service.assignments[assignment.GetTestId()]
+			ack.RuntimeResourceAdmission = runtimeResourceAdmission(current.groupRuntimeResourceClaims[assignment.GetGroupName()], current.groupRuntimeResources[assignment.GetGroupName()])
+			service.mu.RUnlock()
+			if !ValidRuntimeResourceAdmission(assignment.RuntimeResourceClaim, ack.RuntimeResourceAdmission) {
+				ack = nil
+				callErr = status.Error(codes.Aborted, "runtime_resource_reservation_unavailable")
+				return
+			}
+		}
 		if callErr == nil && ack.GetAccepted() && assignment.GetJavaHost() != nil {
 			service.mu.RLock()
 			execution := service.executions[assignment.GetTestId()][assignment.GetGroupName()]
@@ -139,11 +160,7 @@ func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssig
 			ack.JavaHost = &pb.JavaHostPlacement{Selection: proto.Clone(assignment.GetJavaHost()).(*pb.JavaHostSelection), ReservationId: placements[0].ReservationID, Mode: caps.Mode, Containment: caps.Containment, MaxHosts: caps.MaxHosts, MaxVusers: caps.MaxVusers}
 		}
 	}()
-	defer func() {
-		if assignment != nil && (callErr != nil || !ack.GetAccepted()) {
-			service.abortSourcePlanStage(assignment.TestId, assignment.ExecutionGeneration, assignment.RunSupervisionToken)
-		}
-	}()
+
 	validated, err := validateWorkAssignment(assignment, service.scriptCache.maxBytes(), TransportSecurityFromEnv().AllowsSecretDelivery())
 	if err != nil {
 		return nil, err
@@ -478,13 +495,21 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 		return rejectedAssignmentStage("all groups in a test must use the same target duration", available)
 	}
 
+	var runtimeResources assignmentRuntimeResources
+	if cached.protocol == "eventhubs" || request.RuntimeResourceClaim != nil {
+		var resourceErr error
+		runtimeResources, resourceErr = reserveAssignmentRuntimeResourcesLocked(cached.content, validated.initStrategy, request)
+		if resourceErr != nil {
+			return rejectedAssignmentStage(resourceErr.Error(), available)
+		}
+	}
 	coordinator.nextStagePlanToken++
 	if coordinator.nextStagePlanToken == 0 {
 		coordinator.nextStagePlanToken++
 	}
 	token := coordinator.nextStagePlanToken
 	pending := &pendingAssignmentStage{
-		token:                   token,
+		runtimeResources: runtimeResources, token: token,
 		testID:                  request.GetTestId(),
 		groupName:               request.GetGroupName(),
 		executionGeneration:     request.GetExecutionGeneration(),
@@ -500,7 +525,7 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 	return assignmentStageDecision{
 		kind: assignmentStagePrepare,
 		plan: &assignmentStagePlan{
-			token:                   token,
+			runtimeResources: runtimeResources, token: token,
 			validated:               validated,
 			hadCurrent:              currentExists,
 			currentGuard:            assignmentControlFingerprint(current, currentExists),
@@ -608,6 +633,9 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	if err := service.validatePodCapacityAssignmentLocked(request.GetTestId(), request.GetGroupName(), javaHostPreparedVUsers(request)); err != nil {
 		return nil, service.availableCapacityLocked(), status.Error(codes.ResourceExhausted, err.Error())
 	}
+	if request.RuntimeResourceClaim != nil && !ValidRuntimeResourceAdmission(request.RuntimeResourceClaim, runtimeResourceAdmission(request.RuntimeResourceClaim, plan.runtimeResources.reservation)) {
+		return nil, service.availableCapacityLocked(), status.Error(codes.FailedPrecondition, "runtime resource reservation changed")
+	}
 	current, currentExists := service.assignments[request.GetTestId()]
 	if currentExists && SourcePlanDigest(current.sourcePlan) != SourcePlanDigest(request.SourcePlan) {
 		return nil, service.availableCapacityLocked(), status.Error(codes.Aborted, "source-plan manifest changed")
@@ -702,6 +730,15 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	} else {
 		next.prepareOnly = next.prepareOnly && request.GetPrepareOnly()
 	}
+	if plan.runtimeResources.managed {
+		next.groupRuntimeResourcePeaks[request.GroupName] = plan.runtimeResources.peak
+		if request.RuntimeResourceClaim != nil {
+			next.groupRuntimeResourceClaims[request.GroupName] = CloneRuntimeResourceClaim(request.RuntimeResourceClaim)
+		}
+		if plan.runtimeResources.reservation != nil {
+			next.groupRuntimeResources[request.GroupName] = plan.runtimeResources.reservation
+		}
+	}
 	next.groupAssignments[request.GetGroupName()] = plan.validated.fingerprint
 	next.groupSecretBundleIDs[request.GetGroupName()] = request.GetSecretBundleId()
 	next.groupScripts[request.GetGroupName()] = request.GetScriptId()
@@ -721,6 +758,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 		service.executions[request.GetTestId()][request.GetGroupName()] = prepared.execution
 	}
 	service.assignments[request.GetTestId()] = next
+	pending.runtimeResources.reservation = nil
 	coordinator.finishPendingStageLocked(request.GetTestId(), plan.token)
 	if prepared != nil && prepared.writer != nil {
 		prepared.writer.bindExecution(request.GetExecutionGeneration(), request.GetGroupName(), ArchiveSourceIdentity(request.GetTestId(), request.GetRunSupervisionToken(), request.GetArchiveSourceTarget()))
@@ -737,6 +775,10 @@ func (coordinator *assignmentLifecycleCoordinator) finishPendingStageLocked(test
 	pending := coordinator.pendingStages[testID]
 	if pending == nil || pending.token != token {
 		return false
+	}
+	if pending.runtimeResources.reservation != nil {
+		pending.runtimeResources.reservation.Release()
+		pending.runtimeResources.reservation = nil
 	}
 	delete(coordinator.pendingStages, testID)
 	close(pending.done)
@@ -799,6 +841,18 @@ func (coordinator *assignmentLifecycleCoordinator) claimStageExpiryLocked(servic
 
 func cloneAssignmentForStage(current assignedTest) assignedTest {
 	next := current
+	next.groupRuntimeResourceClaims = CloneRuntimeResourceClaims(current.groupRuntimeResourceClaims)
+	if next.groupRuntimeResourceClaims == nil {
+		next.groupRuntimeResourceClaims = map[string]*pb.RuntimeResourceClaim{}
+	}
+	next.groupRuntimeResourcePeaks = cloneStringInt32Map(current.groupRuntimeResourcePeaks)
+	if next.groupRuntimeResourcePeaks == nil {
+		next.groupRuntimeResourcePeaks = map[string]int32{}
+	}
+	next.groupRuntimeResources = make(map[string]protocol.RuntimeResourceReservation, len(current.groupRuntimeResources))
+	for name, reservation := range current.groupRuntimeResources {
+		next.groupRuntimeResources[name] = reservation
+	}
 	next.groups = cloneStringInt32Map(current.groups)
 	next.activeGroups = cloneStringInt32Map(current.activeGroups)
 	next.groupAssignments = cloneStringFingerprintMap(current.groupAssignments)
@@ -890,6 +944,9 @@ func assignmentControlFingerprint(assignment assignedTest, exists bool) [sha256.
 		fingerprintWriteBytes(h, assignmentFingerprint[:])
 		fingerprintWriteString(h, assignment.groupSecretBundleIDs[name])
 		fingerprintWriteString(h, assignment.groupScripts[name])
+		peak, managed := assignment.groupRuntimeResourcePeaks[name]
+		fingerprintWriteBool(h, managed)
+		fingerprintWriteUint64(h, uint64(peak))
 		fingerprintWriteString(h, assignment.groupJavaHosts[name])
 		fingerprintWriteUint64(h, uint64(assignment.groupJavaHostPrepared[name]))
 	}
@@ -1145,6 +1202,9 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	groupConfig := engine.MultiGroupConfig{
 		TerminationMode: request.GetTerminationMode(),
 		Groups: []engine.GroupConfig{{
+			RuntimeResourcePeakFrozen:    plan.runtimeResources.managed,
+			RuntimeResourcePeakVUsers:    int(plan.runtimeResources.peak),
+			RuntimeResourceReservation:   plan.runtimeResources.reservation,
 			JavaBroker:                   javaHost,
 			Name:                         request.GetGroupName(),
 			StartOffset:                  plan.validated.startOffset,
@@ -1374,7 +1434,7 @@ func normalizedRuntimeWarningCode(value string) string {
 }
 
 func (service *Service) cleanupPreparedAssignmentStage(plan *assignmentStagePlan, prepared *preparedAssignmentStage) {
-	if prepared != nil && prepared.execution != nil && prepared.execution.javaHost {
+	if prepared != nil && prepared.execution != nil {
 		_ = prepared.execution.engine.ClosePreparedRuntime()
 	}
 	if service == nil || plan == nil || prepared == nil || !prepared.createdWriter || prepared.writer == nil {

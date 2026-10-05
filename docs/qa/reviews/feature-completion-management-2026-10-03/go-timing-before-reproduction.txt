@@ -1,0 +1,9 @@
+Broad-repeat gate failed three existing bounded timing waits, then timed out globally.
+Unchanged-source focused reproduction passed all four cases; no passing full-Go result is implied.
+
+--- FAIL: TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion (9.42s)
+--- FAIL: TestDeleteProjectSnapshotsSecretMetadataAfterAdmittedMutationsDrain (11.06s)
+--- FAIL: TestStartRefreshesDurableReadinessSettingsBeforeFirstResponse (6.06s)
+panic: test timed out after 30m0s
+		TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit (1m46s)
+FAIL	github.com/jasonczech/apexload/pkg/api	1835.578s

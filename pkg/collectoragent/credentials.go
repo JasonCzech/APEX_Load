@@ -15,12 +15,14 @@ import (
 // Credentials are sealed for one signed job lease and never written in plaintext
 // to the collector spool. Destination identity is authenticated as associated data.
 type Credentials struct {
+	Prometheus  *PrometheusCredentials  `json:"prometheus,omitempty"`
 	AppDynamics *AppDynamicsCredentials `json:"appdynamics,omitempty"`
 	Username    string                  `json:"username,omitempty"`
 	Password    string                  `json:"password,omitempty"`
 	PrivateKey  string                  `json:"private_key,omitempty"`
 }
 type SealedCredentials struct {
+	Version      uint32 `json:"version,omitempty"`
 	EphemeralKey string `json:"ephemeral_key"`
 	Nonce        string `json:"nonce"`
 	Ciphertext   string `json:"ciphertext"`
@@ -57,11 +59,11 @@ func SealCredentials(job RunJob, publicKey []byte, credentials Credentials) (*Se
 		return nil, errors.New("credential bundle too large")
 	}
 	encode := base64.StdEncoding.EncodeToString
-	return &SealedCredentials{encode(ephemeral.PublicKey().Bytes()), encode(nonce), encode(aead.Seal(nil, nonce, body, credentialContext(job)))}, nil
+	return &SealedCredentials{EphemeralKey: encode(ephemeral.PublicKey().Bytes()), Nonce: encode(nonce), Ciphertext: encode(aead.Seal(nil, nonce, body, credentialContext(job)))}, nil
 }
 func OpenCredentials(job RunJob, privateKey []byte, now time.Time) (Credentials, error) {
 	var out Credentials
-	if !job.LeaseExpiresAt.After(now) || job.Credentials == nil {
+	if !job.LeaseExpiresAt.After(now) || job.Credentials == nil || job.Credentials.Version > 1 {
 		return out, errors.New("credential lease unavailable")
 	}
 	local, err := ecdh.X25519().NewPrivateKey(privateKey)

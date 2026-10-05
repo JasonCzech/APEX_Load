@@ -31,8 +31,9 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
-	PrepareOnly bool
-	JavaHost    *pb.JavaHostSelection
+	RuntimeResourceClaim *pb.RuntimeResourceClaim
+	PrepareOnly          bool
+	JavaHost             *pb.JavaHostSelection
 	// AdoptionGrace > 0 opts the run into HA continuity (WorkAssignment.adoption_grace).
 	AdoptionGrace                time.Duration
 	ArchiveSourceTarget          string
@@ -78,10 +79,11 @@ type Assignment struct {
 }
 
 type AssignmentResult struct {
-	JavaHost          *pb.JavaHostPlacement
-	Accepted          bool
-	ErrorMessage      string
-	AvailableCapacity int32
+	RuntimeResourceAdmission *pb.RuntimeResourceAdmission
+	JavaHost                 *pb.JavaHostPlacement
+	Accepted                 bool
+	ErrorMessage             string
+	AvailableCapacity        int32
 }
 
 type WorkCommitResult struct {
@@ -139,6 +141,8 @@ type DurationResult struct {
 }
 
 type PauseControl struct {
+	// RequireQuiescence requests the strict acknowledged runtime pause boundary.
+	RequireQuiescence   bool
 	TestID              string
 	ExecutionGeneration uint64
 	Pause               bool
@@ -148,6 +152,8 @@ type PauseControl struct {
 }
 
 type PauseResult struct {
+	// Nil means the peer did not provide the optional quiescence contract.
+	QuiescenceConfirmed      *bool
 	Accepted                 bool
 	CurrentPaused            bool
 	AppliedOperationID       string
@@ -156,6 +162,8 @@ type PauseResult struct {
 }
 
 type MetricsBatch struct {
+	MessagingProgress          *protocol.MessagingProgressSnapshot
+	MessagingProgressVersion   uint32
 	TestID                     string
 	ExecutionGeneration        uint64
 	BatchSequence              uint64
@@ -270,6 +278,7 @@ type BrowserDeviceMetrics struct {
 }
 
 type ServerTelemetry struct {
+	Messaging                 *protocol.MessagingDiagnostics
 	SubscriptionID            string
 	AcknowledgementMs         *float64
 	ConsumerLagObserved       bool
@@ -415,12 +424,14 @@ const (
 // external runtime. It is independent from the generator's general MaxVUsers:
 // a JVM sidecar may have substantially fewer process slots than the Go engine.
 type ProtocolRuntimeCapacity struct {
-	Protocol        string   `json:"protocol"`
-	Available       bool     `json:"available"`
-	MaxVUsers       int64    `json:"max_vusers"`
-	AvailableVUsers int64    `json:"available_vusers"`
-	Features        []string `json:"features,omitempty"`
-	OccupancyMode   string   `json:"occupancy_mode,omitempty"`
+	ResourceContract string                            `json:"resource_contract,omitempty"`
+	Resources        *protocol.RuntimeResourceCapacity `json:"resources,omitempty"`
+	Protocol         string                            `json:"protocol"`
+	Available        bool                              `json:"available"`
+	MaxVUsers        int64                             `json:"max_vusers"`
+	AvailableVUsers  int64                             `json:"available_vusers"`
+	Features         []string                          `json:"features,omitempty"`
+	OccupancyMode    string                            `json:"occupancy_mode,omitempty"`
 }
 
 type HeartbeatResponse struct {
@@ -544,11 +555,13 @@ type Client struct {
 }
 
 type sharedClientConnection struct {
-	javaHostCaps     *pb.JavaHostCapabilities
-	javaHostObserved time.Time
-	javaHostPrepared bool
-	mu               sync.Mutex
-	refs             int
+	runtimeResources         bool
+	runtimeResourcesObserved time.Time
+	javaHostCaps             *pb.JavaHostCapabilities
+	javaHostObserved         time.Time
+	javaHostPrepared         bool
+	mu                       sync.Mutex
+	refs                     int
 }
 
 type HeartbeatStream struct {
@@ -792,7 +805,16 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 	if request.GetJavaHost() != nil && !c.javaHostSelectionNegotiated(request) {
 		return AssignmentResult{}, fmt.Errorf("java_host_capability_not_negotiated")
 	}
+	if err := validateRuntimeResourceClaim(request.RuntimeResourceClaim, request.VuserCount); err != nil {
+		return AssignmentResult{}, err
+	}
+	if request.RuntimeResourceClaim != nil && !c.runtimeResourcesNegotiated() {
+		return AssignmentResult{}, fmt.Errorf("runtime_resource_capability_not_negotiated")
+	}
 	ack, err := c.rpc.AssignWork(ctx, request)
+	if err == nil && ack.GetAccepted() && request.RuntimeResourceClaim != nil && !ValidRuntimeResourceAdmission(request.RuntimeResourceClaim, ack.GetRuntimeResourceAdmission()) {
+		return AssignmentResult{}, fmt.Errorf("runtime_resource_negotiation_failed")
+	}
 	if err == nil && ack.GetAccepted() && request.GetJavaHost() != nil {
 		placement := ack.GetJavaHost()
 		if placement == nil || !proto.Equal(placement.GetSelection(), request.GetJavaHost()) || placement.ReservationId == "" || len(placement.ReservationId) > 128 || placement.Mode != "dedicated" || placement.Containment != "execution_pod" || placement.MaxHosts < javaHostPreparedVUsers(request) || placement.MaxVusers < javaHostPreparedVUsers(request) {
@@ -807,10 +829,11 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 	}
 
 	return AssignmentResult{
-		JavaHost:          cloneJavaHostPlacement(ack.GetJavaHost()),
-		Accepted:          ack.GetAccepted(),
-		ErrorMessage:      ack.GetErrorMessage(),
-		AvailableCapacity: ack.GetAvailableCapacity(),
+		RuntimeResourceAdmission: CloneRuntimeResourceAdmission(ack.GetRuntimeResourceAdmission()),
+		JavaHost:                 cloneJavaHostPlacement(ack.GetJavaHost()),
+		Accepted:                 ack.GetAccepted(),
+		ErrorMessage:             ack.GetErrorMessage(),
+		AvailableCapacity:        ack.GetAvailableCapacity(),
 	}, nil
 }
 
@@ -981,10 +1004,15 @@ func (c *Client) AdjustDuration(ctx context.Context, adjustment DurationAdjustme
 }
 
 // SetPaused is the acknowledged control path. Unlike the legacy metrics-stream
-// signal, a successful return proves the generator applied the engine state.
+// signal, its result identifies the applied engine state and operation. Explicit
+// strict requests additionally require committed runtime quiescence proof.
 // OperationID makes retries after a lost response idempotent.
 func (c *Client) SetPaused(ctx context.Context, control PauseControl) (PauseResult, error) {
+	if err := validateStrictPauseRequest(control); err != nil {
+		return PauseResult{}, err
+	}
 	ack, err := c.rpc.SetPaused(ctx, &pb.PauseRequest{
+		RequireQuiescence:   control.RequireQuiescence,
 		TestId:              control.TestID,
 		ExecutionGeneration: control.ExecutionGeneration,
 		Pause:               control.Pause,
@@ -995,13 +1023,8 @@ func (c *Client) SetPaused(ctx context.Context, control PauseControl) (PauseResu
 	if err != nil {
 		return PauseResult{}, err
 	}
-	return PauseResult{
-		Accepted:                 ack.GetAccepted(),
-		CurrentPaused:            ack.GetCurrentPaused(),
-		AppliedOperationID:       ack.GetAppliedOperationId(),
-		AppliedOperationSequence: ack.GetAppliedOperationSequence(),
-		ErrorMessage:             ack.GetErrorMessage(),
-	}, nil
+	result := pauseResultFromProto(ack)
+	return result, ValidatePauseAcknowledgement(control, result)
 }
 
 func (c *Client) OpenMetricsStream(ctx context.Context) (*MetricsStream, error) {
@@ -1251,11 +1274,13 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 	if err != nil {
 		if s.owner != nil {
 			s.owner.observeJavaHosts(nil)
+			s.owner.observeRuntimeResources(nil)
 		}
 		return HeartbeatResponse{}, err
 	}
 	if s.owner != nil {
 		s.owner.observeJavaHosts(pong)
+		s.owner.observeRuntimeResources(pong)
 	}
 	s.clockMu.Lock()
 	sentAt := s.clockSentAt
@@ -1359,7 +1384,8 @@ func protocolRuntimeCapacitiesFromProto(values []*pb.ProtocolRuntimeCapacity) []
 			continue
 		}
 		out = append(out, ProtocolRuntimeCapacity{
-			Protocol:        value.GetProtocol(),
+			ResourceContract: value.GetResourceContract(),
+			Resources:        RuntimeResourceCapacityFromProto(value.GetResources()), Protocol: value.GetProtocol(),
 			Available:       value.GetAvailable(),
 			MaxVUsers:       value.GetMaxVusers(),
 			AvailableVUsers: value.GetAvailableVusers(),
@@ -1378,6 +1404,9 @@ func (s *HeartbeatStream) CloseSend() error {
 }
 
 func (s *MetricsStream) SendPause(control PauseControl) error {
+	if control.RequireQuiescence {
+		return fmt.Errorf("strict pause requires the acknowledged SetPaused RPC")
+	}
 	return s.stream.Send(&pb.ControlSignal{
 		Signal: &pb.ControlSignal_Pause{
 			Pause: &pb.PauseRequest{
@@ -1420,6 +1449,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 			serverTelemetry = &ServerTelemetry{
 				SubscriptionID:            tx.GetServerTelemetry().GetSubscriptionId(),
 				AcknowledgementMs:         cloneMessagingAck(tx.GetServerTelemetry().AcknowledgementMs),
+				Messaging:                 messagingDiagnosticsFromJSON(tx.GetServerTelemetry().GetMessagingDiagnosticsJson(), tx.GetServerTelemetry().GetMessagingDiagnosticsVersion()),
 				GRPC:                      grpcDiagnosticsFromProto(tx.GetServerTelemetry().GetGrpc()),
 				WebSocket:                 websocketDiagnosticsFromProto(tx.GetServerTelemetry().GetWebsocket()),
 				ServerProcessingMs:        tx.GetServerTelemetry().GetServerProcessingMs(),
@@ -1516,6 +1546,8 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 	}
 
 	return MetricsBatch{
+		MessagingProgress:          messagingProgressFromJSON(batch.GetMessagingProgressJson(), batch.GetMessagingProgressVersion()),
+		MessagingProgressVersion:   batch.GetMessagingProgressVersion(),
 		TestID:                     batch.GetTestId(),
 		ExecutionGeneration:        batch.GetExecutionGeneration(),
 		BatchSequence:              batch.GetBatchSequence(),
@@ -1570,6 +1602,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	targetDuration := resolvedPreciseDuration(assignment.TargetDuration, assignment.TargetDurationSeconds)
 	rampUp := resolvedPreciseDuration(assignment.RampUp, int64(assignment.RampUpSeconds))
 	return &pb.WorkAssignment{PrepareOnly: assignment.PrepareOnly,
+		RuntimeResourceClaim:      CloneRuntimeResourceClaim(assignment.RuntimeResourceClaim),
 		SourcePlan:                assignment.SourcePlan,
 		JavaHost:                  cloneJavaHostSelection(assignment.JavaHost),
 		TestId:                    assignment.TestID,

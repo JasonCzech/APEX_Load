@@ -866,8 +866,10 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 	}
 	meta, err := c.Produce(ctx, reqTopic, req)
 	if err != nil {
-		return recordMeta{}, kafkaRecord{}, err
+		return recordMeta{sendAttempted: true}, kafkaRecord{}, err
 	}
+
+	meta.sent = true
 
 	for time.Now().Before(deadline) {
 		c.pendingMu.Lock()
@@ -878,7 +880,7 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 				rewindKafkaRecord(cl, pending.record)
 				c.removeReplyPendingLocked(i)
 				c.pendingMu.Unlock()
-				return recordMeta{}, kafkaRecord{}, fmt.Errorf("expired buffered kafka reply was rewound before reuse")
+				return meta, kafkaRecord{}, fmt.Errorf("expired buffered kafka reply was rewound before reuse")
 			}
 			if pending.record.Topic == replyTopic && (req.CorrelationID == "" || pending.record.CorrelationID == req.CorrelationID || pending.record.Headers["kafka_correlation_id"] == req.CorrelationID) {
 				c.removeReplyPendingLocked(i)
@@ -904,17 +906,17 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 			c.pendingMu.Unlock()
 			if pendingErr != nil {
 				rewindKafkaRecord(cl, converted)
-				return recordMeta{}, kafkaRecord{}, pendingErr
+				return meta, kafkaRecord{}, pendingErr
 			}
 		}
 		if matched != nil {
 			return meta, *matched, nil
 		}
 		if errs := fetches.Errors(); len(errs) > 0 {
-			return recordMeta{}, kafkaRecord{}, errs[0].Err
+			return meta, kafkaRecord{}, errs[0].Err
 		}
 	}
-	return recordMeta{}, kafkaRecord{}, fmt.Errorf("no correlated kafka reply received from %q within %s", replyTopic, timeout)
+	return meta, kafkaRecord{}, fmt.Errorf("no correlated kafka reply received from %q within %s", replyTopic, timeout)
 }
 
 func (c *franzClient) addReplyTopic(cl *kgo.Client, topic string) error {

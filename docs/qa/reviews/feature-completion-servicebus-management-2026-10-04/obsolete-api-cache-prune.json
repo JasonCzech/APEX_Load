@@ -1,0 +1,71 @@
+{
+  "at": 1791097382.790947,
+  "reason": "old API DWARF action archives incompatible with current package flags; no current task-cache consumer or open owner",
+  "removed": [
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/ba/ba462590910dc0b22c92ee714a576cb155c76f42a3cd143766e0d9af1c869710-d",
+      "bytes": 129639624,
+      "inode": 231392641,
+      "mtime_ns": 1791074514050586000,
+      "build_id": "EI3MwN9xz-qT55ZJJbki/RvZ1tRYa4ZY5cnuXjDdY"
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/48/48c4bf26bc8e49561e3640d6d842f730dce6adf80e20ac82cc9ab3f2cf375853-d",
+      "bytes": 129639624,
+      "inode": 231355423,
+      "mtime_ns": 1791073724887405000,
+      "build_id": "7mFntK8d9v09P9vCnZcT/A0qOhXLCv1AOgQjPxpol"
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/0d/0dfb0c6c287c096d5ddac61af3dab0e1f644806f5537732862cc13c551df0c48-d",
+      "bytes": 129639408,
+      "inode": 231154887,
+      "mtime_ns": 1791071807413660000,
+      "build_id": "Fn018vOTyNCsrGAvJV9B/E5anY-Jg8Sz-pFZ8BAV9"
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/3a/3adbf49a6cc051bb5abefa7c5a788debd91520e518b37714fa6aa1dd6e8502b8-d",
+      "bytes": 129630572,
+      "inode": 229619509,
+      "mtime_ns": 1791059753964533000,
+      "build_id": "IjILLuCm4GAKMpQ4lBU5/OYP-dLU3FQ4mDULlklNo"
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/e0/e0e21fd5e3f1c3d7ca1cb1ba00bd3a6940cb10da8cc44021cec23c9e4b98beb2-d",
+      "bytes": 129630468,
+      "inode": 229809788,
+      "mtime_ns": 1791065157360458000,
+      "build_id": "pTBNfk9rzbL1LZQE97oh/8XWvOjXkOs4djDibKn3j"
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/5f/5f788d7b39c6afc0bde3670f4094825f4a6871ed7c4735ea589ede463684e9e6-d",
+      "bytes": 129629680,
+      "inode": 229481170,
+      "mtime_ns": 1791057792269911000,
+      "build_id": "wCuz2kePTSci275s-YIN/eH63XF1QZSD607UQPgyM"
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/3d/3d0df90877c0eb3e4ef96a41bfddf30ba4fae926815127976b929b17200f182d-d",
+      "bytes": 129147864,
+      "inode": 228622192,
+      "mtime_ns": 1791030396515247000,
+      "build_id": "bXed4HOJIw-rjkJI9_Z2/iM3RVavuGa75T82kIqYC"
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/b8/b83c9c49c1263732ea5b60d6fe621724a54d71f7a83894bfe513ad2961cf028f-d",
+      "bytes": 129147850,
+      "inode": 228373558,
+      "mtime_ns": 1791028052548404000,
+      "build_id": "BVRsoY7usTjHBXXI3RYB/mtxVcMuDAQ2JJZe7xEtQ"
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/dd/dd8c41a92d479b77dd5c8cba71c056e5dd035431406050e8edd87fe05c3c12bf-d",
+      "bytes": 129147850,
+      "inode": 228396377,
+      "mtime_ns": 1791028426600782000,
+      "build_id": "ekkCD7fhzh08wNSDx3bJ/mtxVcMuDAQ2JJZe7xEtQ"
+    }
+  ],
+  "reclaimed_bytes": 1165252940,
+  "preserved": "current API no-DWARF object, dependencies, unrelated caches and active browser/test artifacts"
+}

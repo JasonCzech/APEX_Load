@@ -1516,6 +1516,7 @@ func mapToLiveMetrics(m map[string]any) *LiveMetrics {
 
 func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *LiveMetrics {
 	live := &LiveMetrics{
+		MessagingProgress:   record.MessagingProgress.Clone(),
 		Messaging:           protocol.CloneMessagingSummaries(record.Messaging),
 		NativeEvidence:      storage.CloneNativeIntervalEvidence(record.NativeEvidence),
 		CompletedIterations: record.CompletedIterations,

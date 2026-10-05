@@ -27,6 +27,17 @@ func workAssignmentFingerprint(assignment *pb.WorkAssignment) [sha256.Size]byte 
 	}
 	fingerprintWriteBool(h, true)
 	fingerprintWriteBool(h, assignment.GetPrepareOnly())
+	claim := assignment.GetRuntimeResourceClaim()
+	fingerprintWriteBool(h, claim != nil)
+	if claim != nil {
+		fingerprintWriteString(h, claim.GetContract())
+		fingerprintWriteString(h, claim.GetProtocol())
+		fingerprintWriteUint64(h, uint64(claim.GetPeakVusers()))
+		fingerprintWriteBool(h, claim.GetRequested() != nil)
+		fingerprintWriteUint64(h, uint64(claim.GetRequested().GetProcessors()))
+		fingerprintWriteUint64(h, uint64(claim.GetRequested().GetWorkers()))
+		fingerprintWriteUint64(h, uint64(claim.GetRequested().GetMaxPartitionsPerProcessor()))
+	}
 	placement := assignment.GetJavaHost()
 	fingerprintWriteBool(h, placement != nil)
 	if placement != nil {

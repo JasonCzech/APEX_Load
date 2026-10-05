@@ -1733,6 +1733,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 	aggregated, fleetTPS, groupTPS := aggregateDistributedMetricsBatches(test.ID, batches)
 	tr.mu.Lock()
 	live := buildLiveMetricsFromDistributedBatch(test, aggregated, fleetTPS, groupTPS)
+	qualifyExpectedMessagingProgress(test, live, batches)
 	if live.Telemetry != nil {
 		// A cold assigned peer is absent from the resident batch map. Its missing
 		// counter must not qualify the observed subset as whole-fleet zero loss.

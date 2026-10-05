@@ -10,14 +10,17 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-func validateSelectedMonitorRules(bindings *storage.MonitorBindings, sources []storage.MonitorSource, goals *GoalConfig) error {
+func (tr *TestRunner) validateSelectedMonitorRules(bindings *storage.MonitorBindings, sources []storage.MonitorSource, goals *GoalConfig) error {
 	if goals == nil || len(goals.MonitorRules) == 0 {
 		return nil
+	}
+	if bindings == nil {
+		return errors.New("monitoring rules require selected sources")
 	}
 	selected := map[string]storage.MonitorSource{}
 	for _, b := range bindings.Sources {
 		for _, s := range sources {
-			if s.ID == b.SourceID && s.Enabled && s.Pack == "appdynamics" && s.AppDynamics != nil {
+			if s.ID == b.SourceID && s.Enabled && s.CanonicalProvider() {
 				selected[s.ID] = s
 			}
 		}
@@ -28,7 +31,22 @@ func validateSelectedMonitorRules(bindings *storage.MonitorBindings, sources []s
 		}
 		source, ok := selected[rule.SourceID]
 		if !ok {
-			return errors.New("monitoring rule must select an enabled AppDynamics source attached to this test")
+			return errors.New("monitoring rule must select an enabled approved source attached to this test")
+		}
+		if source.Pack == "prometheus-query" {
+			connections, available := tr.testStore.(storage.PrometheusConnectionStore)
+			if !available {
+				return errors.New("Prometheus connection storage unavailable")
+			}
+			connection, err := connections.GetPrometheusConnection(source.ConnectionID)
+			if err != nil || connection.ProjectID != source.ProjectID {
+				return errors.New("monitoring rule Prometheus connection unavailable")
+			}
+			profile := connection.Config.Defaults().BackendProfile
+			if err := validatePrometheusRuleSelection(rule, source, profile); err != nil {
+				return err
+			}
+			continue
 		}
 		found := false
 		for _, metric := range source.AppDynamics.Metrics {
@@ -118,8 +136,8 @@ func (tr *TestRunner) validateAppDynamicsSharedArtifacts(sources []storage.Monit
 	}
 	for _, binding := range bindings.Sources {
 		for _, source := range sources {
-			if source.ID == binding.SourceID && source.Enabled && source.Pack == "appdynamics" && !strings.EqualFold(os.Getenv("APEXLOAD_MONITOR_SHARED_FILESYSTEM"), "true") {
-				return errors.New("AppDynamics in HA requires shared monitoring artifacts; configure object storage or attest the shared filesystem with APEXLOAD_MONITOR_SHARED_FILESYSTEM=true")
+			if source.ID == binding.SourceID && source.Enabled && source.CanonicalProvider() && !strings.EqualFold(os.Getenv("APEXLOAD_MONITOR_SHARED_FILESYSTEM"), "true") {
+				return errors.New("Provider monitoring in HA requires shared monitoring artifacts; configure object storage or attest the shared filesystem with APEXLOAD_MONITOR_SHARED_FILESYSTEM=true")
 			}
 		}
 	}

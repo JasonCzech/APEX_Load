@@ -24,6 +24,8 @@ export interface RunIdentity {
 export interface MeasurementWindow { start_seconds: number; end_seconds: number }
 export interface LoadWindow extends MeasurementWindow { load: number; total_load: number; group: string; direction: string; mix: Record<string, number> }
 export interface Measurement {
+  mean_statistic?: 'evaluation_grid_mean'
+  available_statistics?: string[]
   messaging?: MessagingSummary
   samples: number; successes: number; errors: number; mean: number; min: number; max: number
   p50: number; p90: number; p95: number; p99: number; throughput: number; successful_throughput: number
@@ -33,6 +35,7 @@ export interface Measurement {
 }
 export interface ComparisonCell { measurement?: Measurement; window?: LoadWindow; qualification: string[]; approximate: boolean; delta?: number; delta_pct?: number }
 export interface ComparisonRow {
+  provider?: { name: 'prometheus'; backend_profile: string; query_id: string; definition_hash: string; statistic: string; evaluation_step_seconds: number; dimensions: Record<string, string>; entity_ids: Record<string, string>; display_labels?: Record<string, string> }
   id: string; name: string; group: string; protocol?: string; source: string; unit: string
   current?: Measurement; window?: LoadWindow; baselines: Record<string, ComparisonCell>
 }
@@ -84,8 +87,20 @@ export const comparisonColors = ['var(--chart-1)', 'var(--chart-2)', 'var(--char
 
 export function measurementValue(measurement: Measurement | undefined, key: keyof Measurement, resource = false): number | undefined {
   if (!measurement || (!resource && measurement.successes === 0 && ['mean', 'min', 'max', 'p50', 'p90', 'p95', 'p99'].includes(key))) return undefined
+  if (measurement.available_statistics && !measurement.available_statistics.includes(key)) return undefined
   const value = measurement[key]
   return typeof value === 'number' ? value : undefined
+}
+
+export function resourceMeanLabel(row: ComparisonRow): string {
+  return row.provider?.name === 'prometheus' ? row.provider.statistic === 'quantile' ? 'Mean of grid quantile estimates' : 'Mean of evaluation grid' : 'Time-weighted mean'
+}
+
+export function resourceProviderLabel(row: ComparisonRow): string {
+  const provider = row.provider
+  if (!provider) return ''
+  const labels = Object.entries(provider.display_labels || provider.dimensions).map(([key, value]) => `${key}: ${value}`).join(', ')
+  return `Prometheus · ${provider.query_id} · ${provider.evaluation_step_seconds}s grid${labels ? ` · ${labels}` : ''}`
 }
 
 // JSON objects returned by Go may have different key ordering from browser drafts.

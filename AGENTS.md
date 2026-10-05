@@ -66,6 +66,8 @@ pkg/
   runtimetuning/ — GOMAXPROCS/GOMEMLIMIT resolution from cgroup limits
   perfevidence/  — Controlled local performance probes + component evidence reports
   analysis/      — Shared validated metric-point model and time-series correlation primitives
+  prometheus/    — Governed PromQL target monitoring and Azure managed Prometheus query adapter
+  monitorprovider/ — Provider-neutral monitoring topology, diagnostics, coverage and cursors
   appdynamics/   — Classic AppDynamics Controller and Events Service client, governed discovery and typed test monitoring
   Java execution stack:
   javarunner/    — Shared policy-enforcing Java Vuser primitives (classpath, command, containment);

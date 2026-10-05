@@ -32,13 +32,13 @@ func TestAppDynamicsRulesRequireSelectedApprovedNumericSource(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := rule
 			tc.change(&r)
-			err := validateSelectedMonitorRules(bindings, []storage.MonitorSource{source}, &GoalConfig{MonitorRules: []analysis.MonitorRule{r}})
+			err := (&TestRunner{}).validateSelectedMonitorRules(bindings, []storage.MonitorSource{source}, &GoalConfig{MonitorRules: []analysis.MonitorRule{r}})
 			if (err != nil) != tc.wantError {
 				t.Fatalf("validation: %v", err)
 			}
 		})
 	}
-	if err := validateSelectedMonitorRules(&storage.MonitorBindings{}, []storage.MonitorSource{source}, &GoalConfig{MonitorRules: []analysis.MonitorRule{rule}}); err == nil {
+	if err := (&TestRunner{}).validateSelectedMonitorRules(&storage.MonitorBindings{}, []storage.MonitorSource{source}, &GoalConfig{MonitorRules: []analysis.MonitorRule{rule}}); err == nil {
 		t.Fatal("disabled test capture accepted a rule")
 	}
 }

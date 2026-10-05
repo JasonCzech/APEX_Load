@@ -11,11 +11,11 @@ func TestMessagingEventHubsPartitionAndAcknowledgementAvailability(t *testing.T)
 	ack := 2.0
 	r := &protocol.Result{StartTime: time.Now(), Duration: time.Millisecond, Extractions: map[string]string{}}
 	got := finalizeTelemetry(r, event{PartitionID: "3", AcknowledgementMs: &ack}, true, event{}, false, nil)
-	if got.PartitionID != "3" || got.AcknowledgementMs == nil {
+	if got.PartitionID != "3" || got.AcknowledgementMs == nil || !got.Messaging.Valid() || got.Messaging.Durations[0].Metric != "producer_ack" || got.Messaging.Durations[0].ValueMs == nil {
 		t.Fatal("ack lost", got)
 	}
 	got = finalizeTelemetry(r, event{}, false, event{PartitionID: "0"}, true, nil)
-	if got.PartitionID != "0" || got.ConsumerLagObserved || got.AcknowledgementMs != nil {
+	if got.PartitionID != "0" || got.ConsumerLagObserved || got.AcknowledgementMs != nil || !got.Messaging.Valid() || got.Messaging.Durations[0].UnavailableReason != "not_observed" {
 		t.Fatal("received partition or unavailable values wrong", got)
 	}
 }
@@ -74,5 +74,14 @@ func TestMessagingEventHubsUnpinnedBatchDoesNotAttributeVolumeToLastPartition(t 
 	protocol.MergeMessagingTelemetry(&summary, tel, result.DependencyTarget, result.DependencyType)
 	if _, ok := summary.ObservedPartitionSkew(); ok {
 		t.Fatal("unresolved batch partition skew scored")
+	}
+}
+
+func TestMessagingEventHubsDoesNotQualifyUncalibratedEnqueueClock(t *testing.T) {
+	observed := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
+	result := &protocol.Result{StartTime: observed, Duration: time.Millisecond, Extractions: map[string]string{}}
+	telemetry := finalizeTelemetry(result, event{}, false, event{PartitionID: "0", EnqueuedAt: observed}, true, nil)
+	if !telemetry.ConsumerLagObserved || telemetry.ConsumerLagMs != 1 || !telemetry.Messaging.Valid() || telemetry.Messaging.Durations[0].ValueMs != nil || telemetry.Messaging.Durations[0].UnavailableReason != "clock_unqualified" {
+		t.Fatalf("uncalibrated source clock promoted: %+v", telemetry)
 	}
 }

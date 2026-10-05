@@ -118,6 +118,7 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		return
 	}
 
+	defer mge.ClosePreparedRuntime()
 	ctx, metricsDone, metricsStopped, started, startErr := tr.startManagedTestRun(test, mge, artifacts)
 	if startErr != nil {
 		tr.finalizeLocalBuildFailure(test, artifacts, startErr)

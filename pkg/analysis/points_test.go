@@ -72,6 +72,10 @@ func TestMetricPointValidate(t *testing.T) {
 		{"valid zero", func(p *MetricPoint) { zero := 0.0; p.Value = &zero }, true},
 		{"missing is not zero", func(p *MetricPoint) { p.Value = nil; p.Quality = QualityMissing }, true},
 		{"missing with value", func(p *MetricPoint) { p.Quality = QualityMissing }, false},
+		{"declared population", func(p *MetricPoint) { p.Population = PopulationAction; p.MetricVersion = "v1" }, true},
+		{"blank population", func(p *MetricPoint) { p.Population = " " }, false},
+		{"NUL metric version", func(p *MetricPoint) { p.MetricVersion = "v\x00x" }, false},
+		{"oversized population", func(p *MetricPoint) { p.Population = strings.Repeat("x", maxMetricIdentityBytes+1) }, false},
 		{"nonfinite", func(p *MetricPoint) { v := math.Inf(1); p.Value = &v }, false},
 		{"unserializable timestamp", func(p *MetricPoint) { p.TimestampUTC = time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC) }, false},
 		{"unknown kind", func(p *MetricPoint) { p.Kind = "percentile" }, false},
@@ -152,6 +156,8 @@ func TestStatisticalInputsMustBeSingleQualifiedSeries(t *testing.T) {
 		{"host", func(p []MetricPoint) { p[1].Host = "other" }},
 		{"dimension", func(p []MetricPoint) { p[1].Dimensions = map[string]string{"instance": "other"} }},
 		{"metric", func(p []MetricPoint) { p[1].MetricName = "memory" }},
+		{"population", func(p []MetricPoint) { p[1].Population = PopulationMessage }},
+		{"metric version", func(p []MetricPoint) { p[1].MetricVersion = "v2" }},
 		{"unit", func(p []MetricPoint) { p[1].Unit = "bytes" }},
 		{"dataset", func(p []MetricPoint) { p[1].DatasetID = "external" }},
 		{"duplicate time", func(p []MetricPoint) { p[1].TimestampUTC = p[0].TimestampUTC }},
@@ -230,5 +236,47 @@ func TestNormalizeRunClockRejectsDurationOverflow(t *testing.T) {
 	start := time.Date(2, 1, 1, 0, 0, 0, 0, time.UTC)
 	if _, err := NormalizeRunClock(point(start.AddDate(500, 0, 0), 1), start); err == nil {
 		t.Fatal("saturated run clock accepted")
+	}
+}
+
+func TestSameMetricCombinesNativeLineageAndProviderProvenance(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	base := point(start, 1)
+	base.Unit = "ms"
+	base.Population = PopulationAction
+	base.MetricVersion = "v1"
+	base.InputKind = KindGauge
+	base.Derivation = []DerivationStep{{Operation: "avg", Algorithm: "scalar_bucket.v1", BucketSeconds: 60}}
+	base.Provider = &ProviderMeasurement{Name: "prometheus", QueryID: "latency", DefinitionHash: strings.Repeat("a", 64), BackendProfile: "prometheus", Mode: "analysis_bucket", AnalysisStatistic: "avg", EvaluationStepSeconds: 15, ResolutionSeconds: 60}
+	for _, tc := range []struct {
+		name string
+		edit func(*MetricPoint)
+	}{
+		{"population", func(p *MetricPoint) { p.Population = PopulationMessage }},
+		{"metric version", func(p *MetricPoint) { p.MetricVersion = "v2" }},
+		{"derivation", func(p *MetricPoint) {
+			p.Derivation = []DerivationStep{{Operation: "p95", Algorithm: "linear_quantile.v1", BucketSeconds: 60}}
+		}},
+		{"provider query", func(p *MetricPoint) { metadata := *p.Provider; metadata.QueryID = "another"; p.Provider = &metadata }},
+		{"provider definition", func(p *MetricPoint) {
+			metadata := *p.Provider
+			metadata.DefinitionHash = strings.Repeat("b", 64)
+			p.Provider = &metadata
+		}},
+		{"provider absent", func(p *MetricPoint) { p.Provider = nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := base
+			tc.edit(&candidate)
+			if sameMetric(base, candidate) || sameMetric(candidate, base) {
+				t.Fatal("native lineage or provider provenance became interchangeable")
+			}
+		})
+	}
+	baseline := base
+	baseline.RunID = "baseline"
+	baseline.DatasetID = "baseline-dataset"
+	if !sameMetric(base, baseline) || sameSeries(base, baseline) {
+		t.Fatal("compatible baseline identity lost run and dataset ownership distinctions")
 	}
 }

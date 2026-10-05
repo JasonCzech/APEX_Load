@@ -33,7 +33,7 @@ func TestEventHubsProcessorRequiresVersionedRuntime(t *testing.T) {
 	}
 	s.Config.EventHubs.ConsumerMode = "processor"
 	features := RequiredMessagingRuntimeFeatures(s)
-	if len(features) != 1 || features[0] != "eventhubs_processor_checkpoints_v1" {
+	if len(features) != 2 || features[0] != "eventhubs_processor_checkpoints_v1" || features[1] != "eventhubs_processor_reservations_v1" {
 		t.Fatal(features)
 	}
 }

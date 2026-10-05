@@ -13,7 +13,7 @@ type RunMonitorJobPageStore interface {
 	PollRunMonitorJobPage(project, collector, after string, limit int, now time.Time) ([]RunMonitorJob, bool, error)
 }
 
-const pollMonitorJobsScope = ` FROM run_monitor_jobs j JOIN tests t ON t.id=j.test_id WHERE j.project_id=? AND j.collector_id=? AND j.state IN ('collecting','reconciling') AND j.expires_at>? AND (t.status IN ('RUNNING','PAUSED') OR j.state='reconciling')`
+const pollMonitorJobsScope = ` FROM run_monitor_jobs j JOIN tests t ON t.id=j.test_id WHERE j.project_id=? AND j.collector_id=? AND j.state IN ('collecting','reconciling','flushing') AND j.expires_at>? AND (t.status IN ('RUNNING','PAUSED') OR j.state IN ('reconciling','flushing'))`
 
 // A durable job key joins two independently bounded 256-byte identities.
 const MaxRunMonitorJobIDBytes = 513

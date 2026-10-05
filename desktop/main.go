@@ -3,7 +3,9 @@ package main
 import (
 	"io/fs"
 	"log"
+	"os"
 
+	"github.com/jasonczech/apexload/pkg/analysis/duckdb"
 	"github.com/jasonczech/apexload/pkg/api"
 	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/wailsapp/wails/v2"
@@ -14,6 +16,9 @@ import (
 )
 
 func main() {
+	if handled, code := duckdb.DispatchNativeWorker(); handled {
+		os.Exit(code)
+	}
 	// Create an instance of the app structure
 	app := NewApp()
 

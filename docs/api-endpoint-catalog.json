@@ -2601,9 +2601,19 @@
       "operationId": "handlePollRunMonitorJobs",
       "summary": "Poll Run Monitor Jobs",
       "category": "Operations \u0026 Observability",
-      "public": true,
-      "authenticated": false,
-      "access": "Public (no authentication required)"
+      "public": false,
+      "authenticated": true,
+      "access": "Collector token via Bearer or X-APEXLoad-API-Key"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/management-polls",
+      "operationId": "handleManagementPoll",
+      "summary": "Management Poll",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Collector token via Bearer or X-APEXLoad-API-Key"
     },
     {
       "method": "POST",
@@ -2611,9 +2621,9 @@
       "operationId": "handleRunMonitorSamples",
       "summary": "Run Monitor Samples",
       "category": "Operations \u0026 Observability",
-      "public": true,
-      "authenticated": false,
-      "access": "Public (no authentication required)"
+      "public": false,
+      "authenticated": true,
+      "access": "Collector token via Bearer or X-APEXLoad-API-Key"
     },
     {
       "method": "GET",
@@ -3087,6 +3097,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/projects/{id}/monitor-sources/{source_id}/management-state",
+      "operationId": "handleManagementCollectionState",
+      "summary": "Management Collection State",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitor-sources/{source_id}/management-state",
+      "operationId": "handleManagementCollectionState_2",
+      "summary": "Management Collection State",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/projects/{id}/monitoring/appdynamics-connections",
       "operationId": "handleListAppDynamicsConnections",
       "summary": "List App Dynamics Connections",
@@ -3330,6 +3360,106 @@
       "path": "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/test",
       "operationId": "handleTestELKConnection",
       "summary": "Test ELK Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections",
+      "operationId": "handleListPrometheusConnections",
+      "summary": "List Prometheus Connections",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections",
+      "operationId": "handleCreatePrometheusConnection",
+      "summary": "Create Prometheus Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}",
+      "operationId": "handleDeletePrometheusConnection",
+      "summary": "Delete Prometheus Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}",
+      "operationId": "handleGetPrometheusConnection",
+      "summary": "Get Prometheus Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}",
+      "operationId": "handleUpdatePrometheusConnection",
+      "summary": "Update Prometheus Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/adopt-dashboard",
+      "operationId": "handlePrometheusAdoptDashboard",
+      "summary": "Prometheus Adopt Dashboard",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/discover",
+      "operationId": "handleDiscoverPrometheusConnection",
+      "summary": "Discover Prometheus Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/operations/{operation_id}",
+      "operationId": "handleGetPrometheusOperation",
+      "summary": "Get Prometheus Operation",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/preview",
+      "operationId": "handlePreviewPrometheusConnection",
+      "summary": "Preview Prometheus Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/test",
+      "operationId": "handleTestPrometheusConnection",
+      "summary": "Test Prometheus Connection",
       "category": "Workspace \u0026 Assets",
       "public": false,
       "authenticated": true,
@@ -6377,6 +6507,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/tests/{id}/messaging-progress",
+      "operationId": "handleMessagingProgress",
+      "summary": "Messaging Progress",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/tests/{id}/metrics",
       "operationId": "handleGetMetrics",
       "summary": "Get Metrics",
@@ -6390,6 +6530,16 @@
       "path": "/api/v1/tests/{id}/monitor-evidence",
       "operationId": "handleRunMonitorEvidence",
       "summary": "Run Monitor Evidence",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/monitor-management",
+      "operationId": "handleMonitorManagement",
+      "summary": "Monitor Management",
       "category": "Test Execution",
       "public": false,
       "authenticated": true,

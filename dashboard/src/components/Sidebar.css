@@ -726,8 +726,8 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
     flex: 0 0 auto;
     align-items: center;
   }
-  /* Responsive rails also compact the signed-in card when the user has
-   * not manually toggled the sidebar's collapsed state. */
+  /* Responsive rails compact the identity card before the explicit collapse
+     preference changes, retaining readable sign-out and session controls. */
   .sidebar .sidebar-identity {
     box-sizing: border-box;
     width: 100%;
@@ -739,10 +739,18 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   .sidebar .sidebar-identity-copy {
     width: 100%;
     max-width: 100%;
+    align-items: center;
     text-align: center;
   }
+  .sidebar .sidebar-identity-name,
+  .sidebar .sidebar-identity-meta,
   .sidebar .sidebar-identity-session {
     max-width: 100%;
+  }
+  .sidebar .sidebar-identity-session,
+  .sidebar .sidebar-identity-meta[role="alert"],
+  .sidebar .sidebar-identity-action {
+    white-space: normal;
     overflow-wrap: anywhere;
   }
   .sidebar .sidebar-identity-action {
@@ -751,8 +759,6 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
     justify-content: center;
     min-height: 32px;
     max-width: 100%;
-    white-space: normal;
-    overflow-wrap: anywhere;
     text-align: center;
   }
   .sidebar .dev-view-control {

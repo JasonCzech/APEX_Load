@@ -1,0 +1,130 @@
+?       github.com/jasonczech/apexload/api/proto    [no test files]
+ok      github.com/jasonczech/apexload/cmd/apexbench    0.504s
+ok      github.com/jasonczech/apexload/cmd/apexctl  14.512s
+ok      github.com/jasonczech/apexload/cmd/apexfault-target 0.584s
+ok      github.com/jasonczech/apexload/cmd/apexload-collector-agent 0.115s
+ok      github.com/jasonczech/apexload/cmd/apexload-java-host-broker    0.214s
+ok      github.com/jasonczech/apexload/cmd/apexload-java-host-facade    0.189s
+ok      github.com/jasonczech/apexload/cmd/apexload-java-host-supervisor    0.226s
+ok      github.com/jasonczech/apexload/cmd/apexload-java-vuser-runner   0.144s
+?       github.com/jasonczech/apexload/cmd/apexload-record-agent    [no test files]
+ok      github.com/jasonczech/apexload/cmd/controller   1.206s
+?       github.com/jasonczech/apexload/cmd/dslschema    [no test files]
+ok      github.com/jasonczech/apexload/cmd/generator    1.597s
+ok      github.com/jasonczech/apexload/cmd/openapits    22.791s
+?       github.com/jasonczech/apexload/cmd/swaggergen   [no test files]
+ok      github.com/jasonczech/apexload/cmd/webcoverage  0.536s
+ok      github.com/jasonczech/apexload/deployments/k8s  10.364s
+ok      github.com/jasonczech/apexload/desktop  2.599s
+ok      github.com/jasonczech/apexload/docs/qa  6.160s
+ok      github.com/jasonczech/apexload/pkg/analysis 0.262s
+ok      github.com/jasonczech/apexload/pkg/analysis/duckdb  0.112s
+# github.com/jasonczech/apexload/pkg/api.test
+/Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/pkg/tool/darwin_arm64/link: running clang failed: exit status 1
+/usr/bin/clang -arch arm64 -Wl,-S -Wl,-x -o $WORK/b1353/api.test -Qunused-arguments /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/go.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000000.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000001.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000002.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000003.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000004.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000005.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000006.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000007.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000008.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000009.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000010.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000011.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000012.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000013.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000014.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000015.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000016.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000017.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000018.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000019.o /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-link-334414088/000020.o -lresolv -O2 -g -O2 -g -framework CoreFoundation -framework IOKit -O2 -g -O2 -g -framework CoreFoundation -framework Security -O2 -g -framework CoreFoundation -framework IOKit -O2 -g -framework CoreFoundation
+ld: write() failed, errno=28 (No space left on device) for '/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/go-build1478061930/b1353/api.test'
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+FAIL    github.com/jasonczech/apexload/pkg/api [build failed]
+ok      github.com/jasonczech/apexload/pkg/api/testexec 0.456s
+ok      github.com/jasonczech/apexload/pkg/buildinfo    0.076s
+ok      github.com/jasonczech/apexload/pkg/collectoragent   10.508s
+ok      github.com/jasonczech/apexload/pkg/compute  0.069s
+ok      github.com/jasonczech/apexload/pkg/compute/aws  0.435s
+ok      github.com/jasonczech/apexload/pkg/compute/azure    0.433s
+ok      github.com/jasonczech/apexload/pkg/config   0.094s
+ok      github.com/jasonczech/apexload/pkg/controller   0.460s
+ok      github.com/jasonczech/apexload/pkg/convert/agentforce   0.361s
+ok      github.com/jasonczech/apexload/pkg/convert/asyncapi 0.542s
+ok      github.com/jasonczech/apexload/pkg/convert/brokerconfig 0.521s
+ok      github.com/jasonczech/apexload/pkg/convert/bruno    2.215s
+ok      github.com/jasonczech/apexload/pkg/convert/cloudtest    0.467s
+?       github.com/jasonczech/apexload/pkg/convert/convertresult    [no test files]
+ok      github.com/jasonczech/apexload/pkg/convert/convertutil  0.084s
+ok      github.com/jasonczech/apexload/pkg/convert/correlate    7.422s
+ok      github.com/jasonczech/apexload/pkg/convert/credentialpolicy 0.122s
+ok      github.com/jasonczech/apexload/pkg/convert/devweb   0.861s
+?       github.com/jasonczech/apexload/pkg/convert/diag [no test files]
+ok      github.com/jasonczech/apexload/pkg/convert/enterprisearchive    22.106s
+ok      github.com/jasonczech/apexload/pkg/convert/eventhubscapture 0.506s
+ok      github.com/jasonczech/apexload/pkg/convert/grafana  0.131s
+ok      github.com/jasonczech/apexload/pkg/convert/har  0.407s
+ok      github.com/jasonczech/apexload/pkg/convert/importcontract   1.055s
+ok      github.com/jasonczech/apexload/pkg/convert/importreview 0.428s
+ok      github.com/jasonczech/apexload/pkg/convert/jmeter   1.016s
+ok      github.com/jasonczech/apexload/pkg/convert/k6   0.415s
+ok      github.com/jasonczech/apexload/pkg/convert/mulesoft 0.307s
+ok      github.com/jasonczech/apexload/pkg/convert/openapi  0.593s
+ok      github.com/jasonczech/apexload/pkg/convert/paramize 2.287s
+ok      github.com/jasonczech/apexload/pkg/convert/postman  0.541s
+ok      github.com/jasonczech/apexload/pkg/convert/raml 0.378s
+ok      github.com/jasonczech/apexload/pkg/convert/recorderjson 0.371s
+ok      github.com/jasonczech/apexload/pkg/convert/requestimport    0.537s
+ok      github.com/jasonczech/apexload/pkg/convert/salesforce   0.447s
+ok      github.com/jasonczech/apexload/pkg/convert/sample   0.782s
+ok      github.com/jasonczech/apexload/pkg/convert/sharedvalue  0.328s
+ok      github.com/jasonczech/apexload/pkg/convert/sourceview   0.128s
+ok      github.com/jasonczech/apexload/pkg/convert/srcparse 0.091s
+ok      github.com/jasonczech/apexload/pkg/convert/tmpl 0.076s
+ok      github.com/jasonczech/apexload/pkg/convert/trueclient   0.657s
+ok      github.com/jasonczech/apexload/pkg/convert/uniquify 0.296s
+ok      github.com/jasonczech/apexload/pkg/convert/wsdl 0.372s
+ok      github.com/jasonczech/apexload/pkg/credential   0.084s
+ok      github.com/jasonczech/apexload/pkg/debugserver  0.126s
+ok      github.com/jasonczech/apexload/pkg/distributed/generatorrpc 92.516s
+ok      github.com/jasonczech/apexload/pkg/dsl  0.845s
+ok      github.com/jasonczech/apexload/pkg/dsl/schemagen    1.395s
+ok      github.com/jasonczech/apexload/pkg/dslwalk  0.417s
+ok      github.com/jasonczech/apexload/pkg/engine   42.164s
+ok      github.com/jasonczech/apexload/pkg/fileasset    0.082s
+ok      github.com/jasonczech/apexload/pkg/identitypolicy   0.071s
+ok      github.com/jasonczech/apexload/pkg/importartifact   6.196s
+ok      github.com/jasonczech/apexload/pkg/importsession    0.176s
+ok      github.com/jasonczech/apexload/pkg/internal/archiveingest   0.086s
+ok      github.com/jasonczech/apexload/pkg/internal/archivequota    22.931s
+ok      github.com/jasonczech/apexload/pkg/internal/boundedcache    0.107s
+ok      github.com/jasonczech/apexload/pkg/internal/boundedtext 0.072s
+ok      github.com/jasonczech/apexload/pkg/internal/diskspace   0.067s
+ok      github.com/jasonczech/apexload/pkg/internal/filelock    0.246s
+ok      github.com/jasonczech/apexload/pkg/internal/subprocessguard 0.077s
+ok      github.com/jasonczech/apexload/pkg/internal/zipbounds   0.080s
+ok      github.com/jasonczech/apexload/pkg/javarunner   8.994s
+ok      github.com/jasonczech/apexload/pkg/javarunner/broker    4.041s
+ok      github.com/jasonczech/apexload/pkg/javasidecar  33.162s
+ok      github.com/jasonczech/apexload/pkg/keywrap  0.200s
+ok      github.com/jasonczech/apexload/pkg/kubeops  0.533s
+ok      github.com/jasonczech/apexload/pkg/netpolicy    0.063s
+ok      github.com/jasonczech/apexload/pkg/perfevidence 3.266s
+ok      github.com/jasonczech/apexload/pkg/protocol 0.227s
+ok      github.com/jasonczech/apexload/pkg/protocol/browser 21.421s
+ok      github.com/jasonczech/apexload/pkg/protocol/bruno   1.478s
+ok      github.com/jasonczech/apexload/pkg/protocol/builtin 0.384s
+ok      github.com/jasonczech/apexload/pkg/protocol/database    0.411s
+ok      github.com/jasonczech/apexload/pkg/protocol/eventhubs   0.345s
+ok      github.com/jasonczech/apexload/pkg/protocol/grpc    0.919s
+ok      github.com/jasonczech/apexload/pkg/protocol/http    3.247s
+ok      github.com/jasonczech/apexload/pkg/protocol/java_http   0.219s
+ok      github.com/jasonczech/apexload/pkg/protocol/java_vuser  6.436s
+ok      github.com/jasonczech/apexload/pkg/protocol/jms 5.498s
+ok      github.com/jasonczech/apexload/pkg/protocol/jsonextract 0.074s
+ok      github.com/jasonczech/apexload/pkg/protocol/kafka   15.499s
+ok      github.com/jasonczech/apexload/pkg/protocol/messaging   0.064s
+ok      github.com/jasonczech/apexload/pkg/protocol/network 0.282s
+ok      github.com/jasonczech/apexload/pkg/protocol/soap    0.233s
+ok      github.com/jasonczech/apexload/pkg/protocol/websocket   0.412s
+ok      github.com/jasonczech/apexload/pkg/recordagent  1.237s
+ok      github.com/jasonczech/apexload/pkg/recorder 4.898s
+ok      github.com/jasonczech/apexload/pkg/recorder/browser 23.491s
+ok      github.com/jasonczech/apexload/pkg/refkey   0.061s
+ok      github.com/jasonczech/apexload/pkg/runtimetuning    0.062s
+ok      github.com/jasonczech/apexload/pkg/scriptdisclosure 4.097s
+ok      github.com/jasonczech/apexload/pkg/scrub    0.382s
+ok      github.com/jasonczech/apexload/pkg/secretstore  1.672s
+ok      github.com/jasonczech/apexload/pkg/selector 0.071s
+ok      github.com/jasonczech/apexload/pkg/storage  97.580s
+ok      github.com/jasonczech/apexload/pkg/telemetry    0.510s
+ok      github.com/jasonczech/apexload/pkg/trafficprofile   0.403s
+ok      github.com/jasonczech/apexload/runners/java_vuser   73.487s
+ok      github.com/jasonczech/apexload/scripts  36.296s
+ok      github.com/jasonczech/apexload/scripts/fault_s3_probe   0.192s
+FAIL

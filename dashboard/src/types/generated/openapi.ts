@@ -782,10 +782,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -1521,6 +1524,7 @@ export interface operations {
                 "id"?: string;
                 "name"?: string;
                 "protocol"?: string;
+                "provider"?: (Record<string, unknown>) | null;
                 "source"?: string;
                 "unit"?: string;
                 "window"?: (Record<string, unknown>) | null;
@@ -1552,6 +1556,7 @@ export interface operations {
                 "id"?: string;
                 "name"?: string;
                 "protocol"?: string;
+                "provider"?: (Record<string, unknown>) | null;
                 "source"?: string;
                 "unit"?: string;
                 "window"?: (Record<string, unknown>) | null;
@@ -3044,6 +3049,22 @@ export interface operations {
               "elk_evidence_count"?: number;
               "elk_evidence_file"?: string;
               "error"?: string;
+              "frozen_monitor_rules"?: Array<{
+                "comparator"?: string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
+                "metric"?: string;
+                "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
+                "severity"?: string;
+                "source_id"?: string;
+                "start_offset_seconds"?: number;
+                "statistic"?: string;
+                "threshold"?: number;
+                "unit"?: string;
+              }>;
               "initial_provenance"?: ({
                 "application_id"?: string;
                 "assignment"?: (Record<string, unknown>) | null;
@@ -3101,6 +3122,9 @@ export interface operations {
                 "connection_revision"?: number;
                 "executor_mode"?: string;
                 "job_id"?: string;
+                "management_incomplete_snapshots"?: number;
+                "management_snapshots"?: number;
+                "prometheus"?: (Record<string, unknown>) | null;
                 "provider_coverage"?: Record<string, Record<string, unknown>>;
                 "reason"?: string;
                 "required"?: boolean;
@@ -3113,6 +3137,10 @@ export interface operations {
               "monitor_diagnostics_file"?: string;
               "monitor_evidence_count"?: number;
               "monitor_evidence_file"?: string;
+              "monitor_management_file"?: string;
+              "monitor_management_row_count"?: number;
+              "monitor_management_snapshot_count"?: number;
+              "monitor_management_version"?: number;
               "monitor_rule_results"?: Array<{
                 "coverage_pct"?: number;
                 "eligible_buckets"?: number;
@@ -3121,6 +3149,7 @@ export interface operations {
                 "rule"?: Record<string, unknown>;
                 "status"?: string;
               }>;
+              "monitor_rules_frozen"?: boolean;
               "monitoring_status"?: string;
               "provenance"?: {
                 "application_id"?: string;
@@ -3202,6 +3231,45 @@ export interface operations {
               }>;
               "transactions_file"?: string;
               "transactions_parquet_file"?: string;
+            }) | null;
+            "messaging_progress"?: ({
+              "captured_at"?: string;
+              "dropped_rows"?: number;
+              "incomplete"?: boolean;
+              "lifecycle"?: string;
+              "rows"?: Array<{
+                "acquired"?: number;
+                "capture_revision"?: string;
+                "captured_at"?: string;
+                "checkpoint"?: Record<string, unknown>;
+                "checkpoint_position"?: Record<string, unknown>;
+                "delivered"?: number;
+                "delivered_position"?: Record<string, unknown>;
+                "expected_partitions"?: number;
+                "generation"?: string;
+                "group"?: string;
+                "incomplete"?: boolean;
+                "inventory_complete"?: boolean;
+                "lost"?: number;
+                "mode"?: string;
+                "origin"?: string;
+                "ownership"?: string;
+                "ownership_verified_age_ms"?: (number) | null;
+                "ownership_verified_at"?: string;
+                "partition"?: string;
+                "protocol"?: string;
+                "redelivered"?: number;
+                "rejected"?: number;
+                "revision"?: string;
+                "session_id"?: string;
+                "source"?: string;
+                "source_id"?: string;
+                "subscription"?: string;
+                "tail_position"?: Record<string, unknown>;
+                "updated_at"?: string;
+              }>;
+              "unavailable_reason"?: string;
+              "version"?: number;
             }) | null;
             "metric_populations"?: Record<string, {
               "average_rate_per_second"?: (number) | null;
@@ -3339,18 +3407,7 @@ export interface operations {
               }) | null;
             }>;
             "monitor_diagnostics"?: Array<{
-              "diagnostic"?: {
-                "application_id"?: string;
-                "deep_link"?: string;
-                "entity_ids"?: Record<string, string>;
-                "id"?: string;
-                "kind"?: string;
-                "properties"?: Record<string, string>;
-                "severity"?: string;
-                "status"?: string;
-                "summary"?: string;
-                "timestamp_utc"?: string;
-              };
+              "diagnostic"?: Record<string, unknown>;
               "source_id"?: string;
             }>;
             "monitor_rule_results"?: Array<{
@@ -3362,8 +3419,11 @@ export interface operations {
                 "comparator"?: string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric"?: string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id"?: string;
                 "start_offset_seconds"?: number;
@@ -4038,8 +4098,11 @@ export interface operations {
                 "comparator"?: string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric"?: string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id"?: string;
                 "start_offset_seconds"?: number;
@@ -4540,10 +4603,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -5344,10 +5410,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -6050,10 +6119,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -6753,8 +6825,11 @@ export interface operations {
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric": string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id": string;
                 "start_offset_seconds"?: number;
@@ -7213,7 +7288,78 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "chunk_bytes": number;
+            "diagnostics_enabled": boolean;
+            "enabled": boolean;
+            "heavy_jobs": number;
+            "max_import_bytes": number;
+            "memory_limit": string;
+            "messaging_management_enabled": boolean;
+            "messaging_management_packs": Array<string>;
+            "messaging_management_version": number;
+            "metric_catalog": {
+              "bounds": {
+                "buckets": number;
+                "filters": number;
+                "grouping_dimensions": number;
+                "moving_buckets": number;
+                "series": number;
+              };
+              "metrics": Array<{
+                "aggregations": Array<string>;
+                "baseline": boolean;
+                "correlation": boolean;
+                "derivations": Array<string>;
+                "input_kinds": Array<string>;
+                "missing_rule": string;
+                "name": string;
+                "native_wire_unit": string;
+                "populations": Array<string>;
+                "query_profiles": Array<string>;
+                "required_evidence": Array<string>;
+                "reset_rule": string;
+                "sla": boolean;
+                "unit": string;
+                "version": string;
+              }>;
+              "operations": Array<{
+                "input_kinds": Array<string>;
+                "missing_rule": string;
+                "name": string;
+                "populations"?: Array<string>;
+                "raw_scalar": boolean;
+                "raw_scalar_kinds"?: Array<string>;
+                "raw_scalar_qualification"?: string;
+                "required_evidence": Array<string>;
+                "reset_rule": string;
+                "unit_rule": string;
+              }>;
+              "query_profiles": Array<{
+                "allowed_aggregations": Array<string>;
+                "allowed_filters": Array<string>;
+                "evidence_mode": string;
+                "grouping"?: string;
+                "id": string;
+                "live_bucket_mode"?: string;
+                "max_bucket_seconds": number;
+                "max_buckets": number;
+                "max_series": number;
+                "max_window_seconds": number;
+                "population": string;
+                "property_mode": string;
+                "required_evidence": Array<string>;
+                "required_filters"?: Array<string>;
+              }>;
+              "version": string;
+            };
+            "monitoring_enabled": boolean;
+            "native_parquet": boolean;
+            "preparation_enabled": boolean;
+            "resource_configuration_accepted": boolean;
+            "spill_limit": string;
+            "threads": number;
+          };
         };
       };
       "401": {
@@ -7248,6 +7394,7 @@ export interface operations {
             "error"?: string;
             "files": Array<{
               "chunks"?: Array<{
+                "object_key"?: string;
                 "offset": number;
                 "sha256": string;
                 "size": number;
@@ -7292,6 +7439,7 @@ export interface operations {
             "run_id"?: string;
             "state": string;
             "updated_at": string;
+            "upload_writer_version"?: number;
           }) | null;
         };
       };
@@ -7304,6 +7452,7 @@ export interface operations {
             "error"?: string;
             "files": Array<{
               "chunks"?: Array<{
+                "object_key"?: string;
                 "offset": number;
                 "sha256": string;
                 "size": number;
@@ -7348,6 +7497,7 @@ export interface operations {
             "run_id"?: string;
             "state": string;
             "updated_at": string;
+            "upload_writer_version"?: number;
           }) | null;
         };
       };
@@ -8336,6 +8486,7 @@ export interface operations {
             "error"?: string;
             "files": Array<{
               "chunks"?: Array<{
+                "object_key"?: string;
                 "offset": number;
                 "sha256": string;
                 "size": number;
@@ -8380,6 +8531,7 @@ export interface operations {
             "run_id"?: string;
             "state": string;
             "updated_at": string;
+            "upload_writer_version"?: number;
           }) | null;
         };
       };
@@ -8433,6 +8585,7 @@ export interface operations {
             "error"?: string;
             "files": Array<{
               "chunks"?: Array<{
+                "object_key"?: string;
                 "offset": number;
                 "sha256": string;
                 "size": number;
@@ -8477,6 +8630,7 @@ export interface operations {
             "run_id"?: string;
             "state": string;
             "updated_at": string;
+            "upload_writer_version"?: number;
           }) | null;
         };
       };
@@ -8530,6 +8684,7 @@ export interface operations {
             "error"?: string;
             "files": Array<{
               "chunks"?: Array<{
+                "object_key"?: string;
                 "offset": number;
                 "sha256": string;
                 "size": number;
@@ -8574,6 +8729,7 @@ export interface operations {
             "run_id"?: string;
             "state": string;
             "updated_at": string;
+            "upload_writer_version"?: number;
           }) | null;
         };
       };
@@ -8935,6 +9091,16 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -9268,6 +9434,23 @@ export interface operations {
             "status"?: Record<string, string>;
             "violations"?: boolean;
           };
+          "coverage"?: Record<string, {
+            "cache_age_seconds"?: number;
+            "cached"?: boolean;
+            "evidence"?: number;
+            "expected_points"?: number;
+            "freshness"?: string;
+            "from"?: string;
+            "infos"?: Array<string>;
+            "message"?: string;
+            "missing_points"?: number;
+            "observed_at"?: (string) | null;
+            "points"?: number;
+            "status"?: string;
+            "to"?: string;
+            "truncated"?: boolean;
+            "warnings"?: Array<string>;
+          }>;
           "entities"?: Array<{
             "entity_ids"?: Record<string, string>;
             "id"?: string;
@@ -9281,6 +9464,70 @@ export interface operations {
             "signature"?: string;
           };
           "message"?: string;
+          "points"?: Array<{
+            "active_runtime_ms"?: (number) | null;
+            "dataset_id"?: string;
+            "derivation"?: Array<{
+              "algorithm"?: string;
+              "bucket_seconds"?: number;
+              "operation"?: string;
+            }>;
+            "dimensions"?: Record<string, string>;
+            "host"?: string;
+            "input_kind"?: string;
+            "kind"?: string;
+            "metric_name"?: string;
+            "metric_version"?: string;
+            "population"?: string;
+            "project_id"?: string;
+            "provider"?: ({
+              "aggregation_eligible"?: boolean;
+              "analysis_statistic"?: string;
+              "backend_profile"?: string;
+              "bucket_end"?: string;
+              "bucket_start"?: string;
+              "catalog_path"?: string;
+              "count"?: (number) | null;
+              "definition_hash"?: string;
+              "display_labels"?: Record<string, string>;
+              "entity_ids"?: Record<string, string>;
+              "evaluation_step_seconds"?: number;
+              "freshness_known"?: boolean;
+              "max"?: (number) | null;
+              "metric_id"?: string;
+              "min"?: (number) | null;
+              "mode"?: string;
+              "name"?: string;
+              "query_id"?: string;
+              "query_window"?: boolean;
+              "resolution_seconds"?: number;
+              "settled"?: boolean;
+              "statistic"?: string;
+              "sum"?: (number) | null;
+              "underlying_sample_time"?: (string) | null;
+            }) | null;
+            "quality"?: string;
+            "received_at"?: string;
+            "relative_time_ms"?: (number) | null;
+            "run_id"?: string;
+            "scenario_id"?: string;
+            "schema_version"?: string;
+            "service"?: string;
+            "source"?: string;
+            "timestamp_utc"?: string;
+            "unit"?: string;
+            "value"?: (number) | null;
+          }>;
+          "prometheus_capabilities"?: ({
+            "alerts"?: boolean;
+            "backend_profile"?: string;
+            "discovery"?: boolean;
+            "exemplars"?: boolean;
+            "metrics"?: boolean;
+            "status"?: Record<string, string>;
+            "targets"?: boolean;
+            "version"?: string;
+          }) | null;
           "truncated"?: boolean;
         };
       };
@@ -9739,10 +9986,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -10597,10 +10847,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -11280,10 +11533,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -11932,10 +12188,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -12474,10 +12733,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -13089,10 +13351,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -13716,10 +13981,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -14385,8 +14653,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -15009,10 +15280,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -16339,8 +16613,11 @@ export interface operations {
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric": string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id": string;
                 "start_offset_seconds"?: number;
@@ -17264,8 +17541,11 @@ export interface operations {
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric": string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id": string;
                 "start_offset_seconds"?: number;
@@ -18348,10 +18628,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -19183,10 +19466,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -19982,10 +20268,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -21642,10 +21931,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -22310,10 +22602,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -23227,10 +23522,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -24258,10 +24556,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -24953,10 +25254,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -25652,6 +25956,7 @@ export interface operations {
                 "window"?: (Record<string, unknown>) | null;
               }>;
               "current"?: ({
+                "available_statistics"?: Array<string>;
                 "coverage_pct": number;
                 "error_pct": number;
                 "errors": number;
@@ -25708,6 +26013,7 @@ export interface operations {
                 "instances": number;
                 "max": number;
                 "mean": number;
+                "mean_statistic"?: string;
                 "messaging"?: ({
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
@@ -25797,6 +26103,17 @@ export interface operations {
               "id": string;
               "name": string;
               "protocol"?: string;
+              "provider"?: ({
+                "backend_profile": string;
+                "definition_hash": string;
+                "dimensions": Record<string, string>;
+                "display_labels"?: Record<string, string>;
+                "entity_ids": Record<string, string>;
+                "evaluation_step_seconds": number;
+                "name": string;
+                "query_id": string;
+                "statistic": string;
+              }) | null;
               "source": string;
               "unit": string;
               "window"?: ({
@@ -25857,6 +26174,7 @@ export interface operations {
                 "window"?: (Record<string, unknown>) | null;
               }>;
               "current"?: ({
+                "available_statistics"?: Array<string>;
                 "coverage_pct": number;
                 "error_pct": number;
                 "errors": number;
@@ -25913,6 +26231,7 @@ export interface operations {
                 "instances": number;
                 "max": number;
                 "mean": number;
+                "mean_statistic"?: string;
                 "messaging"?: ({
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
@@ -26002,6 +26321,17 @@ export interface operations {
               "id": string;
               "name": string;
               "protocol"?: string;
+              "provider"?: ({
+                "backend_profile": string;
+                "definition_hash": string;
+                "dimensions": Record<string, string>;
+                "display_labels"?: Record<string, string>;
+                "entity_ids": Record<string, string>;
+                "evaluation_step_seconds": number;
+                "name": string;
+                "query_id": string;
+                "statistic": string;
+              }) | null;
               "source": string;
               "unit": string;
               "window"?: ({
@@ -26103,8 +26433,11 @@ export interface operations {
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "evaluation_mode"?: string;
               "metric"?: string;
               "min_coverage_pct"?: number;
+              "query_id"?: string;
+              "require_freshness"?: boolean;
               "severity"?: string;
               "source_id"?: string;
               "start_offset_seconds"?: number;
@@ -26169,8 +26502,11 @@ export interface operations {
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric": string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id": string;
                 "start_offset_seconds"?: number;
@@ -28252,6 +28588,144 @@ export interface operations {
       };
     };
   };
+  "handleCreatePrometheusConnection": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "client_certificate_secret"?: (string) | null;
+          "client_key_secret"?: (string) | null;
+          "client_secret_secret"?: (string) | null;
+          "collection_mode"?: string;
+          "collector_agent_id"?: string;
+          "config"?: {
+            "allow_private_http"?: boolean;
+            "approved_cidrs"?: Array<string>;
+            "auth_type"?: string;
+            "azure_credential_mode"?: string;
+            "azure_tenant_id"?: string;
+            "backend_profile"?: string;
+            "ca_pem"?: string;
+            "client_id"?: string;
+            "context_path"?: string;
+            "endpoint"?: string;
+            "max_points"?: number;
+            "max_poll_seconds"?: number;
+            "max_requests_per_poll"?: number;
+            "max_response_bytes"?: number;
+            "max_series"?: number;
+            "mtls"?: boolean;
+            "requests_per_minute"?: number;
+            "timeout_seconds"?: number;
+          };
+          "description"?: string;
+          "enabled"?: boolean;
+          "name": string;
+          "password_secret"?: (string) | null;
+          "revision"?: number;
+          "token_secret"?: (string) | null;
+          "username_secret"?: (string) | null;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": {
+            "capabilities": {
+              "alerts": boolean;
+              "backend_profile": string;
+              "discovery": boolean;
+              "exemplars": boolean;
+              "metrics": boolean;
+              "status"?: Record<string, string>;
+              "targets": boolean;
+              "version"?: string;
+            };
+            "collection_mode": string;
+            "collector_agent_id"?: string;
+            "config": {
+              "allow_private_http"?: boolean;
+              "approved_cidrs"?: Array<string>;
+              "auth_type"?: string;
+              "azure_credential_mode"?: string;
+              "azure_tenant_id"?: string;
+              "backend_profile"?: string;
+              "ca_pem"?: string;
+              "client_id"?: string;
+              "context_path"?: string;
+              "endpoint": string;
+              "max_points"?: number;
+              "max_poll_seconds"?: number;
+              "max_requests_per_poll"?: number;
+              "max_response_bytes"?: number;
+              "max_series"?: number;
+              "mtls"?: boolean;
+              "requests_per_minute"?: number;
+              "timeout_seconds"?: number;
+            };
+            "created_at": string;
+            "description"?: string;
+            "enabled": boolean;
+            "has_client_certificate": boolean;
+            "has_client_key": boolean;
+            "has_client_secret": boolean;
+            "has_custom_ca": boolean;
+            "has_password": boolean;
+            "has_token": boolean;
+            "has_username": boolean;
+            "id": string;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+            "status": string;
+            "updated_at": string;
+            "verified_revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleCreateProvisioningRequest": {
     parameters?: never;
     requestBody: {
@@ -28535,8 +29009,11 @@ export interface operations {
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "evaluation_mode"?: string;
               "metric"?: string;
               "min_coverage_pct"?: number;
+              "query_id"?: string;
+              "require_freshness"?: boolean;
               "severity"?: string;
               "source_id"?: string;
               "start_offset_seconds"?: number;
@@ -28894,8 +29371,11 @@ export interface operations {
                 "comparator"?: string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric"?: string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id"?: string;
                 "start_offset_seconds"?: number;
@@ -29634,6 +30114,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -29665,8 +30147,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -29878,6 +30363,15 @@ export interface operations {
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -30199,6 +30693,15 @@ export interface operations {
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
                 }) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -31335,8 +31838,11 @@ export interface operations {
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "evaluation_mode"?: string;
               "metric"?: string;
               "min_coverage_pct"?: number;
+              "query_id"?: string;
+              "require_freshness"?: boolean;
               "severity"?: string;
               "source_id"?: string;
               "start_offset_seconds"?: number;
@@ -32102,8 +32608,11 @@ export interface operations {
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric": string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id": string;
                 "start_offset_seconds"?: number;
@@ -33279,10 +33788,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -34172,10 +34684,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -34871,8 +35386,11 @@ export interface operations {
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "evaluation_mode"?: string;
               "metric"?: string;
               "min_coverage_pct"?: number;
+              "query_id"?: string;
+              "require_freshness"?: boolean;
               "severity"?: string;
               "source_id"?: string;
               "start_offset_seconds"?: number;
@@ -36177,6 +36695,8 @@ export interface operations {
                 "reservation_id"?: string;
                 "run_lifetime_ms": number;
               }) | null;
+              "runtime_resource_admission"?: (Record<string, unknown>) | null;
+              "runtime_resource_claim"?: (Record<string, unknown>) | null;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
@@ -36208,8 +36728,11 @@ export interface operations {
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric": string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id": string;
                 "start_offset_seconds"?: number;
@@ -36713,6 +37236,15 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<Record<string, unknown>>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -37613,6 +38145,45 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<{
+                  "acquired": number;
+                  "capture_revision": string;
+                  "captured_at": string;
+                  "checkpoint": Record<string, unknown>;
+                  "checkpoint_position": Record<string, unknown>;
+                  "delivered": number;
+                  "delivered_position": Record<string, unknown>;
+                  "expected_partitions": number;
+                  "generation": string;
+                  "group"?: string;
+                  "incomplete"?: boolean;
+                  "inventory_complete": boolean;
+                  "lost": number;
+                  "mode": string;
+                  "origin"?: string;
+                  "ownership": string;
+                  "ownership_verified_age_ms"?: (number) | null;
+                  "ownership_verified_at": string;
+                  "partition": string;
+                  "protocol": string;
+                  "redelivered": number;
+                  "rejected": number;
+                  "revision": string;
+                  "session_id": string;
+                  "source": string;
+                  "source_id": string;
+                  "subscription": string;
+                  "tail_position": Record<string, unknown>;
+                  "updated_at": string;
+                }>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -40404,6 +40975,51 @@ export interface operations {
       };
     };
   };
+  "handleDeletePrometheusConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+      "query"?: {
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "204": {
+        content?: never;
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleDeleteRecording": {
     parameters: {
       "path": {
@@ -41193,8 +41809,11 @@ export interface operations {
                 "comparator"?: string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric"?: string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id"?: string;
                 "start_offset_seconds"?: number;
@@ -41843,8 +42462,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -42415,8 +43037,11 @@ export interface operations {
                 "comparator"?: string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric"?: string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id"?: string;
                 "start_offset_seconds"?: number;
@@ -43065,8 +43690,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -44284,6 +44912,80 @@ export interface operations {
       };
     };
   };
+  "handleDiscoverPrometheusConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "from_utc"?: string;
+          "kind"?: string;
+          "label"?: string;
+          "selection"?: ({
+            "alerts"?: boolean;
+            "collection_id"?: string;
+            "evidence_selector"?: string;
+            "grid_anchor"?: (string) | null;
+            "project_id"?: string;
+            "queries"?: Array<{
+              "allowed_labels"?: Array<string>;
+              "expression"?: string;
+              "freshness_expression"?: string;
+              "id"?: string;
+              "max_sample_age_seconds"?: number;
+              "min_series"?: number;
+              "name"?: string;
+              "parameters"?: Record<string, Record<string, unknown>>;
+              "semantics"?: string;
+              "terminal_expression"?: string;
+              "unit"?: string;
+            }>;
+            "query_offset"?: number;
+            "query_time"?: (string) | null;
+            "settle_seconds"?: number;
+            "step_seconds"?: number;
+            "targets"?: boolean;
+          }) | null;
+          "selector"?: string;
+          "to_utc"?: string;
+        };
+      };
+    };
+    responses: {
+      "2XX": {
+        content: {
+          "application/json": {
+            "connection_id": string;
+            "connection_revision": number;
+            "created_at": string;
+            "expires_at": string;
+            "id": string;
+            "kind": string;
+            "message"?: string;
+            "result"?: unknown;
+            "status": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleDownloadDesktopApp": {
     parameters?: never;
     requestBody?: never;
@@ -44819,8 +45521,11 @@ export interface operations {
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "evaluation_mode"?: string;
               "metric"?: string;
               "min_coverage_pct"?: number;
+              "query_id"?: string;
+              "require_freshness"?: boolean;
               "severity"?: string;
               "source_id"?: string;
               "start_offset_seconds"?: number;
@@ -46013,6 +46718,8 @@ export interface operations {
               "to_shards"?: Array<{
                 "group": string;
                 "java_host"?: (Record<string, unknown>) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -46502,10 +47209,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -48364,10 +49074,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -49013,6 +49726,7 @@ export interface operations {
                 "window"?: (Record<string, unknown>) | null;
               }>;
               "current"?: ({
+                "available_statistics"?: Array<string>;
                 "coverage_pct": number;
                 "error_pct": number;
                 "errors": number;
@@ -49069,6 +49783,7 @@ export interface operations {
                 "instances": number;
                 "max": number;
                 "mean": number;
+                "mean_statistic"?: string;
                 "messaging"?: ({
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
@@ -49158,6 +49873,17 @@ export interface operations {
               "id": string;
               "name": string;
               "protocol"?: string;
+              "provider"?: ({
+                "backend_profile": string;
+                "definition_hash": string;
+                "dimensions": Record<string, string>;
+                "display_labels"?: Record<string, string>;
+                "entity_ids": Record<string, string>;
+                "evaluation_step_seconds": number;
+                "name": string;
+                "query_id": string;
+                "statistic": string;
+              }) | null;
               "source": string;
               "unit": string;
               "window"?: ({
@@ -49218,6 +49944,7 @@ export interface operations {
                 "window"?: (Record<string, unknown>) | null;
               }>;
               "current"?: ({
+                "available_statistics"?: Array<string>;
                 "coverage_pct": number;
                 "error_pct": number;
                 "errors": number;
@@ -49274,6 +50001,7 @@ export interface operations {
                 "instances": number;
                 "max": number;
                 "mean": number;
+                "mean_statistic"?: string;
                 "messaging"?: ({
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
@@ -49363,6 +50091,17 @@ export interface operations {
               "id": string;
               "name": string;
               "protocol"?: string;
+              "provider"?: ({
+                "backend_profile": string;
+                "definition_hash": string;
+                "dimensions": Record<string, string>;
+                "display_labels"?: Record<string, string>;
+                "entity_ids": Record<string, string>;
+                "evaluation_step_seconds": number;
+                "name": string;
+                "query_id": string;
+                "statistic": string;
+              }) | null;
               "source": string;
               "unit": string;
               "window"?: ({
@@ -50074,8 +50813,11 @@ export interface operations {
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric": string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id": string;
                 "start_offset_seconds"?: number;
@@ -52277,6 +53019,133 @@ export interface operations {
       };
     };
   };
+  "handleGetPrometheusConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "capabilities": {
+              "alerts": boolean;
+              "backend_profile": string;
+              "discovery": boolean;
+              "exemplars": boolean;
+              "metrics": boolean;
+              "status"?: Record<string, string>;
+              "targets": boolean;
+              "version"?: string;
+            };
+            "collection_mode": string;
+            "collector_agent_id"?: string;
+            "config": {
+              "allow_private_http"?: boolean;
+              "approved_cidrs"?: Array<string>;
+              "auth_type"?: string;
+              "azure_credential_mode"?: string;
+              "azure_tenant_id"?: string;
+              "backend_profile"?: string;
+              "ca_pem"?: string;
+              "client_id"?: string;
+              "context_path"?: string;
+              "endpoint": string;
+              "max_points"?: number;
+              "max_poll_seconds"?: number;
+              "max_requests_per_poll"?: number;
+              "max_response_bytes"?: number;
+              "max_series"?: number;
+              "mtls"?: boolean;
+              "requests_per_minute"?: number;
+              "timeout_seconds"?: number;
+            };
+            "created_at": string;
+            "description"?: string;
+            "enabled": boolean;
+            "has_client_certificate": boolean;
+            "has_client_key": boolean;
+            "has_client_secret": boolean;
+            "has_custom_ca": boolean;
+            "has_password": boolean;
+            "has_token": boolean;
+            "has_username": boolean;
+            "id": string;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+            "status": string;
+            "updated_at": string;
+            "verified_revision": number;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetPrometheusOperation": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+        "operation_id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "connection_id": string;
+            "connection_revision": number;
+            "created_at": string;
+            "expires_at": string;
+            "id": string;
+            "kind": string;
+            "message"?: string;
+            "result"?: unknown;
+            "status": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetProvisioningRequest": {
     parameters: {
       "path": {
@@ -53011,6 +53880,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -53042,8 +53913,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -53255,6 +54129,15 @@ export interface operations {
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -53576,6 +54459,15 @@ export interface operations {
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
                 }) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -54575,6 +55467,22 @@ export interface operations {
             "elk_evidence_count"?: number;
             "elk_evidence_file"?: string;
             "error"?: string;
+            "frozen_monitor_rules"?: Array<{
+              "comparator": string;
+              "dimensions"?: Record<string, string>;
+              "end_offset_seconds"?: (number) | null;
+              "evaluation_mode"?: string;
+              "metric": string;
+              "min_coverage_pct"?: number;
+              "query_id"?: string;
+              "require_freshness"?: boolean;
+              "severity"?: string;
+              "source_id": string;
+              "start_offset_seconds"?: number;
+              "statistic": string;
+              "threshold": number;
+              "unit": string;
+            }>;
             "initial_provenance"?: ({
               "application_id"?: string;
               "assignment"?: ({
@@ -54777,6 +55685,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -54808,8 +55718,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -55269,14 +56182,37 @@ export interface operations {
               "connection_revision"?: number;
               "executor_mode"?: string;
               "job_id": string;
+              "management_incomplete_snapshots"?: number;
+              "management_snapshots"?: number;
+              "prometheus"?: ({
+                "alerts"?: boolean;
+                "collection_id"?: string;
+                "evidence_selector"?: string;
+                "grid_anchor"?: (string) | null;
+                "project_id": string;
+                "queries": Array<Record<string, unknown>>;
+                "query_offset"?: number;
+                "query_time"?: (string) | null;
+                "settle_seconds"?: number;
+                "step_seconds"?: number;
+                "targets"?: boolean;
+              }) | null;
               "provider_coverage"?: Record<string, {
+                "cache_age_seconds"?: number;
+                "cached"?: boolean;
                 "evidence": number;
+                "expected_points"?: number;
+                "freshness"?: string;
                 "from": string;
+                "infos"?: Array<string>;
                 "message"?: string;
+                "missing_points"?: number;
+                "observed_at"?: (string) | null;
                 "points": number;
                 "status": string;
                 "to": string;
                 "truncated": boolean;
+                "warnings"?: Array<string>;
               }>;
               "reason"?: string;
               "required": boolean;
@@ -55296,6 +56232,10 @@ export interface operations {
             "monitor_diagnostics_file"?: string;
             "monitor_evidence_count"?: number;
             "monitor_evidence_file"?: string;
+            "monitor_management_file"?: string;
+            "monitor_management_row_count"?: number;
+            "monitor_management_snapshot_count"?: number;
+            "monitor_management_version"?: number;
             "monitor_rule_results"?: Array<{
               "coverage_pct": number;
               "eligible_buckets": number;
@@ -55305,8 +56245,11 @@ export interface operations {
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric": string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id": string;
                 "start_offset_seconds"?: number;
@@ -55316,6 +56259,7 @@ export interface operations {
               };
               "status": string;
             }>;
+            "monitor_rules_frozen"?: boolean;
             "monitoring_status"?: string;
             "provenance"?: {
               "application_id"?: string;
@@ -55519,6 +56463,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -55550,8 +56496,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -56174,6 +57123,7 @@ export interface operations {
               "resources": Array<{
                 "baselines": Record<string, Record<string, unknown>>;
                 "current"?: ({
+                  "available_statistics"?: Array<string>;
                   "coverage_pct": number;
                   "error_pct": number;
                   "errors": number;
@@ -56230,6 +57180,7 @@ export interface operations {
                   "instances": number;
                   "max": number;
                   "mean": number;
+                  "mean_statistic"?: string;
                   "messaging"?: (Record<string, unknown>) | null;
                   "min": number;
                   "p50": number;
@@ -56316,6 +57267,17 @@ export interface operations {
                 "id": string;
                 "name": string;
                 "protocol"?: string;
+                "provider"?: ({
+                  "backend_profile": string;
+                  "definition_hash": string;
+                  "dimensions": Record<string, string>;
+                  "display_labels"?: Record<string, string>;
+                  "entity_ids": Record<string, string>;
+                  "evaluation_step_seconds": number;
+                  "name": string;
+                  "query_id": string;
+                  "statistic": string;
+                }) | null;
                 "source": string;
                 "unit": string;
                 "window"?: ({
@@ -56367,6 +57329,7 @@ export interface operations {
               "transactions": Array<{
                 "baselines": Record<string, Record<string, unknown>>;
                 "current"?: ({
+                  "available_statistics"?: Array<string>;
                   "coverage_pct": number;
                   "error_pct": number;
                   "errors": number;
@@ -56423,6 +57386,7 @@ export interface operations {
                   "instances": number;
                   "max": number;
                   "mean": number;
+                  "mean_statistic"?: string;
                   "messaging"?: (Record<string, unknown>) | null;
                   "min": number;
                   "p50": number;
@@ -56509,6 +57473,17 @@ export interface operations {
                 "id": string;
                 "name": string;
                 "protocol"?: string;
+                "provider"?: ({
+                  "backend_profile": string;
+                  "definition_hash": string;
+                  "dimensions": Record<string, string>;
+                  "display_labels"?: Record<string, string>;
+                  "entity_ids": Record<string, string>;
+                  "evaluation_step_seconds": number;
+                  "name": string;
+                  "query_id": string;
+                  "statistic": string;
+                }) | null;
                 "source": string;
                 "unit": string;
                 "window"?: ({
@@ -58099,6 +59074,22 @@ export interface operations {
               "elk_evidence_count"?: number;
               "elk_evidence_file"?: string;
               "error"?: string;
+              "frozen_monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
               "initial_provenance"?: ({
                 "application_id"?: string;
                 "assignment"?: ({
@@ -58219,6 +59210,8 @@ export interface operations {
                 "generator_shards"?: Array<{
                   "group": string;
                   "java_host"?: (Record<string, unknown>) | null;
+                  "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                  "runtime_resource_claim"?: (Record<string, unknown>) | null;
                   "shard_count"?: number;
                   "shard_ordinal"?: number;
                   "shard_strategy"?: string;
@@ -58379,6 +59372,21 @@ export interface operations {
                 "connection_revision"?: number;
                 "executor_mode"?: string;
                 "job_id": string;
+                "management_incomplete_snapshots"?: number;
+                "management_snapshots"?: number;
+                "prometheus"?: ({
+                  "alerts"?: boolean;
+                  "collection_id"?: string;
+                  "evidence_selector"?: string;
+                  "grid_anchor"?: (string) | null;
+                  "project_id": string;
+                  "queries": Array<Record<string, unknown>>;
+                  "query_offset"?: number;
+                  "query_time"?: (string) | null;
+                  "settle_seconds"?: number;
+                  "step_seconds"?: number;
+                  "targets"?: boolean;
+                }) | null;
                 "provider_coverage"?: Record<string, Record<string, unknown>>;
                 "reason"?: string;
                 "required": boolean;
@@ -58391,6 +59399,10 @@ export interface operations {
               "monitor_diagnostics_file"?: string;
               "monitor_evidence_count"?: number;
               "monitor_evidence_file"?: string;
+              "monitor_management_file"?: string;
+              "monitor_management_row_count"?: number;
+              "monitor_management_snapshot_count"?: number;
+              "monitor_management_version"?: number;
               "monitor_rule_results"?: Array<{
                 "coverage_pct": number;
                 "eligible_buckets": number;
@@ -58400,8 +59412,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -58411,6 +59426,7 @@ export interface operations {
                 };
                 "status": string;
               }>;
+              "monitor_rules_frozen"?: boolean;
               "monitoring_status"?: string;
               "provenance"?: {
                 "application_id"?: string;
@@ -58532,6 +59548,8 @@ export interface operations {
                 "generator_shards"?: Array<{
                   "group": string;
                   "java_host"?: (Record<string, unknown>) | null;
+                  "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                  "runtime_resource_claim"?: (Record<string, unknown>) | null;
                   "shard_count"?: number;
                   "shard_ordinal"?: number;
                   "shard_strategy"?: string;
@@ -58713,6 +59731,78 @@ export interface operations {
               "transactions_file": string;
               "transactions_parquet_file"?: string;
             }) | null;
+            "messaging_progress"?: ({
+              "captured_at": string;
+              "dropped_rows"?: number;
+              "incomplete"?: boolean;
+              "lifecycle"?: string;
+              "rows": Array<{
+                "acquired": number;
+                "capture_revision": string;
+                "captured_at": string;
+                "checkpoint": {
+                  "attempts": number;
+                  "cancelled_before_write": number;
+                  "committed": number;
+                  "duration": Record<string, unknown>;
+                  "failed": number;
+                  "fenced": number;
+                  "in_flight": number;
+                  "last_completed_at": string;
+                  "last_outcome"?: string;
+                  "retry_attempts": number;
+                  "unconfirmed": number;
+                };
+                "checkpoint_position": {
+                  "observation_age_ms"?: (number) | null;
+                  "observed_at": string;
+                  "provider_offset"?: string;
+                  "received_at": string;
+                  "sequence"?: string;
+                  "state": string;
+                };
+                "delivered": number;
+                "delivered_position": {
+                  "observation_age_ms"?: (number) | null;
+                  "observed_at": string;
+                  "provider_offset"?: string;
+                  "received_at": string;
+                  "sequence"?: string;
+                  "state": string;
+                };
+                "expected_partitions": number;
+                "generation": string;
+                "group"?: string;
+                "incomplete"?: boolean;
+                "inventory_complete": boolean;
+                "lost": number;
+                "mode": string;
+                "origin"?: string;
+                "ownership": string;
+                "ownership_verified_age_ms"?: (number) | null;
+                "ownership_verified_at": string;
+                "partition": string;
+                "protocol": string;
+                "redelivered": number;
+                "rejected": number;
+                "revision": string;
+                "session_id": string;
+                "source": string;
+                "source_id": string;
+                "subscription": string;
+                "tail_position": {
+                  "observation_age_ms"?: (number) | null;
+                  "observed_at": string;
+                  "provider_offset"?: string;
+                  "received_at": string;
+                  "sequence"?: string;
+                  "state": string;
+                };
+                "updated_at": string;
+              }>;
+              "unavailable_reason"?: string;
+              "version": number;
+            }) | null;
             "metric_populations"?: Record<string, {
               "average_rate_per_second"?: (number) | null;
               "avg_response_ms": number;
@@ -58875,8 +59965,11 @@ export interface operations {
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric": string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id": string;
                 "start_offset_seconds"?: number;
@@ -59774,8 +60867,11 @@ export interface operations {
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric": string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id": string;
                 "start_offset_seconds"?: number;
@@ -60879,10 +61975,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -63622,6 +64721,8 @@ export interface operations {
                 "reservation_id"?: string;
                 "run_lifetime_ms": number;
               }) | null;
+              "runtime_resource_admission"?: (Record<string, unknown>) | null;
+              "runtime_resource_claim"?: (Record<string, unknown>) | null;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
@@ -63653,8 +64754,11 @@ export interface operations {
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric": string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id": string;
                 "start_offset_seconds"?: number;
@@ -64158,6 +65262,15 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<Record<string, unknown>>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -65058,6 +66171,45 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<{
+                  "acquired": number;
+                  "capture_revision": string;
+                  "captured_at": string;
+                  "checkpoint": Record<string, unknown>;
+                  "checkpoint_position": Record<string, unknown>;
+                  "delivered": number;
+                  "delivered_position": Record<string, unknown>;
+                  "expected_partitions": number;
+                  "generation": string;
+                  "group"?: string;
+                  "incomplete"?: boolean;
+                  "inventory_complete": boolean;
+                  "lost": number;
+                  "mode": string;
+                  "origin"?: string;
+                  "ownership": string;
+                  "ownership_verified_age_ms"?: (number) | null;
+                  "ownership_verified_at": string;
+                  "partition": string;
+                  "protocol": string;
+                  "redelivered": number;
+                  "rejected": number;
+                  "revision": string;
+                  "session_id": string;
+                  "source": string;
+                  "source_id": string;
+                  "subscription": string;
+                  "tail_position": Record<string, unknown>;
+                  "updated_at": string;
+                }>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -67882,6 +69034,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -67913,8 +69067,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -68375,6 +69532,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -68406,8 +69565,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -68977,6 +70139,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -71428,10 +72592,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -72115,10 +73282,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -75921,6 +77091,39 @@ export interface operations {
       };
     };
   };
+  "handleListPrometheusConnections": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleListProvisioningRequestInstances": {
     parameters: {
       "path": {
@@ -76860,6 +78063,215 @@ export interface operations {
       };
     };
   };
+  "handleManagementCollectionState": {
+    parameters: {
+      "path": {
+        "id": string;
+        "source_id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "collector_id"?: string;
+            "collector_instance_id"?: string;
+            "deadline"?: (string) | null;
+            "generation"?: string;
+            "grant_issued": boolean;
+            "poll_id"?: string;
+            "poll_sequence"?: string;
+            "source_revision"?: number;
+            "state": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleManagementCollectionState_2": {
+    parameters: {
+      "path": {
+        "id": string;
+        "source_id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "collector_id"?: string;
+          "collector_instance_id"?: string;
+          "generation"?: string;
+          "poll_id"?: string;
+          "process_stopped"?: boolean;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "collector_id"?: string;
+            "collector_instance_id"?: string;
+            "deadline"?: (string) | null;
+            "generation"?: string;
+            "grant_issued": boolean;
+            "poll_id"?: string;
+            "poll_sequence"?: string;
+            "source_revision"?: number;
+            "state": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleManagementPoll": {
+    parameters: {
+      "path": {
+        "id": string;
+        "job_id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "completion_confirmed"?: boolean;
+          "generation"?: string;
+          "instance_id"?: string;
+          "nonce"?: string;
+          "operation"?: string;
+          "poll_id"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "grant"?: ({
+              "payload": string;
+              "signature": string;
+            }) | null;
+            "state": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleMaterializeAndRunExecutionPlan": {
     parameters: {
       "path": {
@@ -76894,6 +78306,147 @@ export interface operations {
         };
       };
       "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleMessagingProgress": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "group"?: string;
+        "mode"?: string;
+        "source_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "catalog_version": string;
+            "interpretation": string;
+            "lag": Array<{
+              "captured_at": string;
+              "checkpoint": (string) | null;
+              "delivered": (string) | null;
+              "generation": string;
+              "group"?: string;
+              "origin"?: string;
+              "partition": string;
+              "session_id": string;
+              "source_id": string;
+            }>;
+            "mode": string;
+            "snapshot"?: ({
+              "captured_at": string;
+              "dropped_rows"?: number;
+              "incomplete"?: boolean;
+              "lifecycle"?: string;
+              "rows": Array<{
+                "acquired": number;
+                "capture_revision": string;
+                "captured_at": string;
+                "checkpoint": {
+                  "attempts": number;
+                  "cancelled_before_write": number;
+                  "committed": number;
+                  "duration": Record<string, unknown>;
+                  "failed": number;
+                  "fenced": number;
+                  "in_flight": number;
+                  "last_completed_at": string;
+                  "last_outcome"?: string;
+                  "retry_attempts": number;
+                  "unconfirmed": number;
+                };
+                "checkpoint_position": {
+                  "observation_age_ms"?: (number) | null;
+                  "observed_at": string;
+                  "provider_offset"?: string;
+                  "received_at": string;
+                  "sequence"?: string;
+                  "state": string;
+                };
+                "delivered": number;
+                "delivered_position": {
+                  "observation_age_ms"?: (number) | null;
+                  "observed_at": string;
+                  "provider_offset"?: string;
+                  "received_at": string;
+                  "sequence"?: string;
+                  "state": string;
+                };
+                "expected_partitions": number;
+                "generation": string;
+                "group"?: string;
+                "incomplete"?: boolean;
+                "inventory_complete": boolean;
+                "lost": number;
+                "mode": string;
+                "origin"?: string;
+                "ownership": string;
+                "ownership_verified_age_ms"?: (number) | null;
+                "ownership_verified_at": string;
+                "partition": string;
+                "protocol": string;
+                "redelivered": number;
+                "rejected": number;
+                "revision": string;
+                "session_id": string;
+                "source": string;
+                "source_id": string;
+                "subscription": string;
+                "tail_position": {
+                  "observation_age_ms"?: (number) | null;
+                  "observed_at": string;
+                  "provider_offset"?: string;
+                  "received_at": string;
+                  "sequence"?: string;
+                  "state": string;
+                };
+                "updated_at": string;
+              }>;
+              "unavailable_reason"?: string;
+              "version": number;
+            }) | null;
+            "unavailable_reason"?: string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -77062,6 +78615,266 @@ export interface operations {
       };
     };
   };
+  "handleMonitorManagement": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "cursor"?: string;
+        "entity_id"?: string;
+        "from"?: string;
+        "limit"?: number;
+        "source_id"?: string;
+        "to"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "cursor"?: string;
+            "entity_id"?: string;
+            "has_more": boolean;
+            "records": Array<{
+              "evidence": {
+                "attribution"?: ({
+                  "collector_id": string;
+                  "job_id": string;
+                  "project_id": string;
+                  "received_at": string;
+                  "run_id": string;
+                  "scenario_id"?: string;
+                  "source_id": string;
+                  "source_revision": number;
+                }) | null;
+                "messaging_management"?: ({
+                  "captured_at": string;
+                  "collector_id": string;
+                  "collector_instance_id": string;
+                  "completed_at": string;
+                  "elapsed_ms"?: (number) | null;
+                  "expected_entities": number;
+                  "generation": string;
+                  "identity_hash": string;
+                  "incomplete": boolean;
+                  "interval_seconds": number;
+                  "inventory_complete": boolean;
+                  "kind": string;
+                  "missed_ticks": string;
+                  "page_count": number;
+                  "poll_id": string;
+                  "poll_sequence": string;
+                  "provider": string;
+                  "request_count": number;
+                  "rows": Array<{
+                    "entity": {
+                      "kafka"?: ({
+                        "group": string;
+                        "partition": number;
+                        "topic": string;
+                      }) | null;
+                      "service_bus"?: ({
+                        "queue"?: string;
+                        "subscription"?: string;
+                        "topic"?: string;
+                      }) | null;
+                      "solace"?: ({
+                        "queue"?: string;
+                        "topic_endpoint"?: string;
+                        "vpn": string;
+                      }) | null;
+                    };
+                    "kafka_offsets"?: ({
+                      "committed_leader_epoch": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "committed_next": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "high_watermark_next": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "last_stable_next": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "leader_epoch": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "log_end_next": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "topic_id"?: string;
+                    }) | null;
+                    "observation_age_ms"?: (number) | null;
+                    "observed_at"?: (string) | null;
+                    "reason"?: string;
+                    "service_bus_runtime"?: ({
+                      "active": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "dead_letter": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "deferred": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "scheduled": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "size_bytes": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "total": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "transfer": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                      "transfer_dead_letter": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                    }) | null;
+                    "solace_semp"?: ({
+                      "dead_message_queue"?: string;
+                      "depth": {
+                        "reason"?: string;
+                        "state": string;
+                        "value"?: (string) | null;
+                      };
+                    }) | null;
+                    "state": string;
+                  }>;
+                  "scope_hash": string;
+                  "source_id": string;
+                  "source_revision": number;
+                  "started_at": string;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
+                "points": Array<{
+                  "active_runtime_ms"?: (number) | null;
+                  "dataset_id"?: string;
+                  "derivation"?: Array<{
+                    "algorithm": string;
+                    "bucket_seconds"?: number;
+                    "operation": string;
+                  }>;
+                  "dimensions"?: Record<string, string>;
+                  "host"?: string;
+                  "input_kind"?: string;
+                  "kind": string;
+                  "metric_name": string;
+                  "metric_version"?: string;
+                  "population"?: string;
+                  "project_id": string;
+                  "provider"?: ({
+                    "aggregation_eligible": boolean;
+                    "analysis_statistic"?: string;
+                    "backend_profile"?: string;
+                    "bucket_end": string;
+                    "bucket_start": string;
+                    "catalog_path"?: string;
+                    "count"?: (number) | null;
+                    "definition_hash"?: string;
+                    "display_labels"?: Record<string, string>;
+                    "entity_ids"?: Record<string, string>;
+                    "evaluation_step_seconds"?: number;
+                    "freshness_known"?: boolean;
+                    "max"?: (number) | null;
+                    "metric_id": string;
+                    "min"?: (number) | null;
+                    "mode"?: string;
+                    "name": string;
+                    "query_id"?: string;
+                    "query_window"?: boolean;
+                    "resolution_seconds": number;
+                    "settled": boolean;
+                    "statistic": string;
+                    "sum"?: (number) | null;
+                    "underlying_sample_time"?: (string) | null;
+                  }) | null;
+                  "quality": string;
+                  "received_at"?: string;
+                  "relative_time_ms"?: (number) | null;
+                  "run_id"?: string;
+                  "scenario_id"?: string;
+                  "schema_version": string;
+                  "service"?: string;
+                  "source": string;
+                  "timestamp_utc": string;
+                  "unit"?: string;
+                  "value"?: (number) | null;
+                }>;
+                "version": number;
+              };
+              "job_id": string;
+              "received_at": string;
+              "sequence": string;
+            }>;
+            "version": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleMonitorSources": {
     parameters: {
       "path": {
@@ -77075,7 +78888,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": {
+          "application/json": Array<{
             "appdynamics"?: ({
               "analytics"?: Array<{
                 "application_id": string;
@@ -77119,12 +78932,67 @@ export interface operations {
             "executor_mode"?: string;
             "id": string;
             "interval_seconds": number;
+            "management_identity"?: ({
+              "credential_ref"?: string;
+              "credential_version"?: string;
+              "mode": string;
+              "policy_revision": string;
+              "principal": string;
+            }) | null;
+            "management_scope"?: ({
+              "entities": Array<{
+                "kafka"?: ({
+                  "group": string;
+                  "partition": number;
+                  "topic": string;
+                }) | null;
+                "service_bus"?: ({
+                  "queue"?: string;
+                  "subscription"?: string;
+                  "topic"?: string;
+                }) | null;
+                "solace"?: ({
+                  "queue"?: string;
+                  "topic_endpoint"?: string;
+                  "vpn": string;
+                }) | null;
+              }>;
+              "isolation"?: string;
+              "kind": string;
+              "provider": string;
+              "version": number;
+            }) | null;
             "name": string;
             "pack": string;
             "project_id": string;
+            "prometheus"?: ({
+              "alerts"?: boolean;
+              "collection_id"?: string;
+              "evidence_selector"?: string;
+              "grid_anchor"?: (string) | null;
+              "project_id": string;
+              "queries": Array<{
+                "allowed_labels"?: Array<string>;
+                "expression": string;
+                "freshness_expression"?: string;
+                "id": string;
+                "max_sample_age_seconds"?: number;
+                "min_series"?: number;
+                "name": string;
+                "parameters"?: Record<string, Record<string, unknown>>;
+                "semantics"?: string;
+                "terminal_expression"?: string;
+                "unit"?: string;
+              }>;
+              "query_offset"?: number;
+              "query_time"?: (string) | null;
+              "settle_seconds"?: number;
+              "step_seconds"?: number;
+              "targets"?: boolean;
+            }) | null;
             "revision": number;
             "service"?: string;
-          };
+          }>;
         };
       };
       "204": {
@@ -77156,6 +79024,11 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -77220,9 +79093,64 @@ export interface operations {
           "executor_mode"?: string;
           "id"?: string;
           "interval_seconds"?: number;
+          "management_identity"?: ({
+            "credential_ref"?: string;
+            "credential_version"?: string;
+            "mode"?: string;
+            "policy_revision"?: string;
+            "principal"?: string;
+          }) | null;
+          "management_scope"?: ({
+            "entities"?: Array<{
+              "kafka"?: ({
+                "group"?: string;
+                "partition"?: number;
+                "topic"?: string;
+              }) | null;
+              "service_bus"?: ({
+                "queue"?: string;
+                "subscription"?: string;
+                "topic"?: string;
+              }) | null;
+              "solace"?: ({
+                "queue"?: string;
+                "topic_endpoint"?: string;
+                "vpn"?: string;
+              }) | null;
+            }>;
+            "isolation"?: string;
+            "kind"?: string;
+            "provider"?: string;
+            "version"?: number;
+          }) | null;
           "name"?: string;
           "pack"?: string;
           "project_id"?: string;
+          "prometheus"?: ({
+            "alerts"?: boolean;
+            "collection_id"?: string;
+            "evidence_selector"?: string;
+            "grid_anchor"?: (string) | null;
+            "project_id"?: string;
+            "queries"?: Array<{
+              "allowed_labels"?: Array<string>;
+              "expression"?: string;
+              "freshness_expression"?: string;
+              "id"?: string;
+              "max_sample_age_seconds"?: number;
+              "min_series"?: number;
+              "name"?: string;
+              "parameters"?: Record<string, Record<string, unknown>>;
+              "semantics"?: string;
+              "terminal_expression"?: string;
+              "unit"?: string;
+            }>;
+            "query_offset"?: number;
+            "query_time"?: (string) | null;
+            "settle_seconds"?: number;
+            "step_seconds"?: number;
+            "targets"?: boolean;
+          }) | null;
           "revision"?: number;
           "service"?: string;
         };
@@ -77275,9 +79203,64 @@ export interface operations {
             "executor_mode"?: string;
             "id": string;
             "interval_seconds": number;
+            "management_identity"?: ({
+              "credential_ref"?: string;
+              "credential_version"?: string;
+              "mode": string;
+              "policy_revision": string;
+              "principal": string;
+            }) | null;
+            "management_scope"?: ({
+              "entities": Array<{
+                "kafka"?: ({
+                  "group": string;
+                  "partition": number;
+                  "topic": string;
+                }) | null;
+                "service_bus"?: ({
+                  "queue"?: string;
+                  "subscription"?: string;
+                  "topic"?: string;
+                }) | null;
+                "solace"?: ({
+                  "queue"?: string;
+                  "topic_endpoint"?: string;
+                  "vpn": string;
+                }) | null;
+              }>;
+              "isolation"?: string;
+              "kind": string;
+              "provider": string;
+              "version": number;
+            }) | null;
             "name": string;
             "pack": string;
             "project_id": string;
+            "prometheus"?: ({
+              "alerts"?: boolean;
+              "collection_id"?: string;
+              "evidence_selector"?: string;
+              "grid_anchor"?: (string) | null;
+              "project_id": string;
+              "queries": Array<{
+                "allowed_labels"?: Array<string>;
+                "expression": string;
+                "freshness_expression"?: string;
+                "id": string;
+                "max_sample_age_seconds"?: number;
+                "min_series"?: number;
+                "name": string;
+                "parameters"?: Record<string, Record<string, unknown>>;
+                "semantics"?: string;
+                "terminal_expression"?: string;
+                "unit"?: string;
+              }>;
+              "query_offset"?: number;
+              "query_time"?: (string) | null;
+              "settle_seconds"?: number;
+              "step_seconds"?: number;
+              "targets"?: boolean;
+            }) | null;
             "revision": number;
             "service"?: string;
           };
@@ -77312,6 +79295,11 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -77377,9 +79365,64 @@ export interface operations {
           "executor_mode"?: string;
           "id"?: string;
           "interval_seconds"?: number;
+          "management_identity"?: ({
+            "credential_ref"?: string;
+            "credential_version"?: string;
+            "mode"?: string;
+            "policy_revision"?: string;
+            "principal"?: string;
+          }) | null;
+          "management_scope"?: ({
+            "entities"?: Array<{
+              "kafka"?: ({
+                "group"?: string;
+                "partition"?: number;
+                "topic"?: string;
+              }) | null;
+              "service_bus"?: ({
+                "queue"?: string;
+                "subscription"?: string;
+                "topic"?: string;
+              }) | null;
+              "solace"?: ({
+                "queue"?: string;
+                "topic_endpoint"?: string;
+                "vpn"?: string;
+              }) | null;
+            }>;
+            "isolation"?: string;
+            "kind"?: string;
+            "provider"?: string;
+            "version"?: number;
+          }) | null;
           "name"?: string;
           "pack"?: string;
           "project_id"?: string;
+          "prometheus"?: ({
+            "alerts"?: boolean;
+            "collection_id"?: string;
+            "evidence_selector"?: string;
+            "grid_anchor"?: (string) | null;
+            "project_id"?: string;
+            "queries"?: Array<{
+              "allowed_labels"?: Array<string>;
+              "expression"?: string;
+              "freshness_expression"?: string;
+              "id"?: string;
+              "max_sample_age_seconds"?: number;
+              "min_series"?: number;
+              "name"?: string;
+              "parameters"?: Record<string, Record<string, unknown>>;
+              "semantics"?: string;
+              "terminal_expression"?: string;
+              "unit"?: string;
+            }>;
+            "query_offset"?: number;
+            "query_time"?: (string) | null;
+            "settle_seconds"?: number;
+            "step_seconds"?: number;
+            "targets"?: boolean;
+          }) | null;
           "revision"?: number;
           "service"?: string;
         };
@@ -77432,9 +79475,64 @@ export interface operations {
             "executor_mode"?: string;
             "id": string;
             "interval_seconds": number;
+            "management_identity"?: ({
+              "credential_ref"?: string;
+              "credential_version"?: string;
+              "mode": string;
+              "policy_revision": string;
+              "principal": string;
+            }) | null;
+            "management_scope"?: ({
+              "entities": Array<{
+                "kafka"?: ({
+                  "group": string;
+                  "partition": number;
+                  "topic": string;
+                }) | null;
+                "service_bus"?: ({
+                  "queue"?: string;
+                  "subscription"?: string;
+                  "topic"?: string;
+                }) | null;
+                "solace"?: ({
+                  "queue"?: string;
+                  "topic_endpoint"?: string;
+                  "vpn": string;
+                }) | null;
+              }>;
+              "isolation"?: string;
+              "kind": string;
+              "provider": string;
+              "version": number;
+            }) | null;
             "name": string;
             "pack": string;
             "project_id": string;
+            "prometheus"?: ({
+              "alerts"?: boolean;
+              "collection_id"?: string;
+              "evidence_selector"?: string;
+              "grid_anchor"?: (string) | null;
+              "project_id": string;
+              "queries": Array<{
+                "allowed_labels"?: Array<string>;
+                "expression": string;
+                "freshness_expression"?: string;
+                "id": string;
+                "max_sample_age_seconds"?: number;
+                "min_series"?: number;
+                "name": string;
+                "parameters"?: Record<string, Record<string, unknown>>;
+                "semantics"?: string;
+                "terminal_expression"?: string;
+                "unit"?: string;
+              }>;
+              "query_offset"?: number;
+              "query_time"?: (string) | null;
+              "settle_seconds"?: number;
+              "step_seconds"?: number;
+              "targets"?: boolean;
+            }) | null;
             "revision": number;
             "service"?: string;
           };
@@ -77469,6 +79567,11 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -77534,9 +79637,64 @@ export interface operations {
           "executor_mode"?: string;
           "id"?: string;
           "interval_seconds"?: number;
+          "management_identity"?: ({
+            "credential_ref"?: string;
+            "credential_version"?: string;
+            "mode"?: string;
+            "policy_revision"?: string;
+            "principal"?: string;
+          }) | null;
+          "management_scope"?: ({
+            "entities"?: Array<{
+              "kafka"?: ({
+                "group"?: string;
+                "partition"?: number;
+                "topic"?: string;
+              }) | null;
+              "service_bus"?: ({
+                "queue"?: string;
+                "subscription"?: string;
+                "topic"?: string;
+              }) | null;
+              "solace"?: ({
+                "queue"?: string;
+                "topic_endpoint"?: string;
+                "vpn"?: string;
+              }) | null;
+            }>;
+            "isolation"?: string;
+            "kind"?: string;
+            "provider"?: string;
+            "version"?: number;
+          }) | null;
           "name"?: string;
           "pack"?: string;
           "project_id"?: string;
+          "prometheus"?: ({
+            "alerts"?: boolean;
+            "collection_id"?: string;
+            "evidence_selector"?: string;
+            "grid_anchor"?: (string) | null;
+            "project_id"?: string;
+            "queries"?: Array<{
+              "allowed_labels"?: Array<string>;
+              "expression"?: string;
+              "freshness_expression"?: string;
+              "id"?: string;
+              "max_sample_age_seconds"?: number;
+              "min_series"?: number;
+              "name"?: string;
+              "parameters"?: Record<string, Record<string, unknown>>;
+              "semantics"?: string;
+              "terminal_expression"?: string;
+              "unit"?: string;
+            }>;
+            "query_offset"?: number;
+            "query_time"?: (string) | null;
+            "settle_seconds"?: number;
+            "step_seconds"?: number;
+            "targets"?: boolean;
+          }) | null;
           "revision"?: number;
           "service"?: string;
         };
@@ -77589,9 +79747,64 @@ export interface operations {
             "executor_mode"?: string;
             "id": string;
             "interval_seconds": number;
+            "management_identity"?: ({
+              "credential_ref"?: string;
+              "credential_version"?: string;
+              "mode": string;
+              "policy_revision": string;
+              "principal": string;
+            }) | null;
+            "management_scope"?: ({
+              "entities": Array<{
+                "kafka"?: ({
+                  "group": string;
+                  "partition": number;
+                  "topic": string;
+                }) | null;
+                "service_bus"?: ({
+                  "queue"?: string;
+                  "subscription"?: string;
+                  "topic"?: string;
+                }) | null;
+                "solace"?: ({
+                  "queue"?: string;
+                  "topic_endpoint"?: string;
+                  "vpn": string;
+                }) | null;
+              }>;
+              "isolation"?: string;
+              "kind": string;
+              "provider": string;
+              "version": number;
+            }) | null;
             "name": string;
             "pack": string;
             "project_id": string;
+            "prometheus"?: ({
+              "alerts"?: boolean;
+              "collection_id"?: string;
+              "evidence_selector"?: string;
+              "grid_anchor"?: (string) | null;
+              "project_id": string;
+              "queries": Array<{
+                "allowed_labels"?: Array<string>;
+                "expression": string;
+                "freshness_expression"?: string;
+                "id": string;
+                "max_sample_age_seconds"?: number;
+                "min_series"?: number;
+                "name": string;
+                "parameters"?: Record<string, Record<string, unknown>>;
+                "semantics"?: string;
+                "terminal_expression"?: string;
+                "unit"?: string;
+              }>;
+              "query_offset"?: number;
+              "query_time"?: (string) | null;
+              "settle_seconds"?: number;
+              "step_seconds"?: number;
+              "targets"?: boolean;
+            }) | null;
             "revision": number;
             "service"?: string;
           };
@@ -77626,6 +79839,11 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -77917,28 +80135,44 @@ export interface operations {
             "overlay"?: Array<{
               "active_runtime_ms"?: (number) | null;
               "dataset_id"?: string;
+              "derivation"?: Array<{
+                "algorithm": string;
+                "bucket_seconds"?: number;
+                "operation": string;
+              }>;
               "dimensions"?: Record<string, string>;
               "host"?: string;
               "input_kind"?: string;
               "kind": string;
               "metric_name": string;
+              "metric_version"?: string;
+              "population"?: string;
               "project_id": string;
               "provider"?: ({
                 "aggregation_eligible": boolean;
+                "analysis_statistic"?: string;
+                "backend_profile"?: string;
                 "bucket_end": string;
                 "bucket_start": string;
                 "catalog_path"?: string;
                 "count"?: (number) | null;
+                "definition_hash"?: string;
+                "display_labels"?: Record<string, string>;
                 "entity_ids"?: Record<string, string>;
+                "evaluation_step_seconds"?: number;
+                "freshness_known"?: boolean;
                 "max"?: (number) | null;
                 "metric_id": string;
                 "min"?: (number) | null;
+                "mode"?: string;
                 "name": string;
+                "query_id"?: string;
                 "query_window"?: boolean;
                 "resolution_seconds": number;
                 "settled": boolean;
                 "statistic": string;
                 "sum"?: (number) | null;
+                "underlying_sample_time"?: (string) | null;
               }) | null;
               "quality": string;
               "received_at"?: string;
@@ -81319,6 +83553,8 @@ export interface operations {
                 "reservation_id"?: string;
                 "run_lifetime_ms": number;
               }) | null;
+              "runtime_resource_admission"?: (Record<string, unknown>) | null;
+              "runtime_resource_claim"?: (Record<string, unknown>) | null;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
@@ -81350,8 +83586,11 @@ export interface operations {
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric": string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id": string;
                 "start_offset_seconds"?: number;
@@ -81855,6 +84094,15 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<Record<string, unknown>>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -82755,6 +85003,45 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<{
+                  "acquired": number;
+                  "capture_revision": string;
+                  "captured_at": string;
+                  "checkpoint": Record<string, unknown>;
+                  "checkpoint_position": Record<string, unknown>;
+                  "delivered": number;
+                  "delivered_position": Record<string, unknown>;
+                  "expected_partitions": number;
+                  "generation": string;
+                  "group"?: string;
+                  "incomplete"?: boolean;
+                  "inventory_complete": boolean;
+                  "lost": number;
+                  "mode": string;
+                  "origin"?: string;
+                  "ownership": string;
+                  "ownership_verified_age_ms"?: (number) | null;
+                  "ownership_verified_at": string;
+                  "partition": string;
+                  "protocol": string;
+                  "redelivered": number;
+                  "rejected": number;
+                  "revision": string;
+                  "session_id": string;
+                  "source": string;
+                  "source_id": string;
+                  "subscription": string;
+                  "tail_position": Record<string, unknown>;
+                  "updated_at": string;
+                }>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -84313,6 +86600,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "403": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -84432,8 +86724,11 @@ export interface operations {
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "evaluation_mode"?: string;
               "metric"?: string;
               "min_coverage_pct"?: number;
+              "query_id"?: string;
+              "require_freshness"?: boolean;
               "severity"?: string;
               "source_id"?: string;
               "start_offset_seconds"?: number;
@@ -85034,6 +87329,23 @@ export interface operations {
                   "source_id": string;
                 }>;
               };
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "rules_frozen"?: boolean;
               "scenario_id"?: string;
               "sources": Record<string, {
                 "appdynamics"?: ({
@@ -85061,9 +87373,52 @@ export interface operations {
                 "executor_mode"?: string;
                 "id": string;
                 "interval_seconds": number;
+                "management_identity"?: ({
+                  "credential_ref"?: string;
+                  "credential_version"?: string;
+                  "mode": string;
+                  "policy_revision": string;
+                  "principal": string;
+                }) | null;
+                "management_scope"?: ({
+                  "entities": Array<{
+                    "kafka"?: ({
+                      "group": string;
+                      "partition": number;
+                      "topic": string;
+                    }) | null;
+                    "service_bus"?: ({
+                      "queue"?: string;
+                      "subscription"?: string;
+                      "topic"?: string;
+                    }) | null;
+                    "solace"?: ({
+                      "queue"?: string;
+                      "topic_endpoint"?: string;
+                      "vpn": string;
+                    }) | null;
+                  }>;
+                  "isolation"?: string;
+                  "kind": string;
+                  "provider": string;
+                  "version": number;
+                }) | null;
                 "name": string;
                 "pack": string;
                 "project_id": string;
+                "prometheus"?: ({
+                  "alerts"?: boolean;
+                  "collection_id"?: string;
+                  "evidence_selector"?: string;
+                  "grid_anchor"?: (string) | null;
+                  "project_id": string;
+                  "queries": Array<Record<string, unknown>>;
+                  "query_offset"?: number;
+                  "query_time"?: (string) | null;
+                  "settle_seconds"?: number;
+                  "step_seconds"?: number;
+                  "targets"?: boolean;
+                }) | null;
                 "revision": number;
                 "service"?: string;
               }>;
@@ -85098,6 +87453,23 @@ export interface operations {
                   "source_id": string;
                 }>;
               };
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "rules_frozen"?: boolean;
               "scenario_id"?: string;
               "sources": Record<string, {
                 "appdynamics"?: ({
@@ -85125,9 +87497,52 @@ export interface operations {
                 "executor_mode"?: string;
                 "id": string;
                 "interval_seconds": number;
+                "management_identity"?: ({
+                  "credential_ref"?: string;
+                  "credential_version"?: string;
+                  "mode": string;
+                  "policy_revision": string;
+                  "principal": string;
+                }) | null;
+                "management_scope"?: ({
+                  "entities": Array<{
+                    "kafka"?: ({
+                      "group": string;
+                      "partition": number;
+                      "topic": string;
+                    }) | null;
+                    "service_bus"?: ({
+                      "queue"?: string;
+                      "subscription"?: string;
+                      "topic"?: string;
+                    }) | null;
+                    "solace"?: ({
+                      "queue"?: string;
+                      "topic_endpoint"?: string;
+                      "vpn": string;
+                    }) | null;
+                  }>;
+                  "isolation"?: string;
+                  "kind": string;
+                  "provider": string;
+                  "version": number;
+                }) | null;
                 "name": string;
                 "pack": string;
                 "project_id": string;
+                "prometheus"?: ({
+                  "alerts"?: boolean;
+                  "collection_id"?: string;
+                  "evidence_selector"?: string;
+                  "grid_anchor"?: (string) | null;
+                  "project_id": string;
+                  "queries": Array<Record<string, unknown>>;
+                  "query_offset"?: number;
+                  "query_time"?: (string) | null;
+                  "settle_seconds"?: number;
+                  "step_seconds"?: number;
+                  "targets"?: boolean;
+                }) | null;
                 "revision": number;
                 "service"?: string;
               }>;
@@ -85223,6 +87638,23 @@ export interface operations {
                   "source_id": string;
                 }>;
               };
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "rules_frozen"?: boolean;
               "scenario_id"?: string;
               "sources": Record<string, {
                 "appdynamics"?: ({
@@ -85250,9 +87682,52 @@ export interface operations {
                 "executor_mode"?: string;
                 "id": string;
                 "interval_seconds": number;
+                "management_identity"?: ({
+                  "credential_ref"?: string;
+                  "credential_version"?: string;
+                  "mode": string;
+                  "policy_revision": string;
+                  "principal": string;
+                }) | null;
+                "management_scope"?: ({
+                  "entities": Array<{
+                    "kafka"?: ({
+                      "group": string;
+                      "partition": number;
+                      "topic": string;
+                    }) | null;
+                    "service_bus"?: ({
+                      "queue"?: string;
+                      "subscription"?: string;
+                      "topic"?: string;
+                    }) | null;
+                    "solace"?: ({
+                      "queue"?: string;
+                      "topic_endpoint"?: string;
+                      "vpn": string;
+                    }) | null;
+                  }>;
+                  "isolation"?: string;
+                  "kind": string;
+                  "provider": string;
+                  "version": number;
+                }) | null;
                 "name": string;
                 "pack": string;
                 "project_id": string;
+                "prometheus"?: ({
+                  "alerts"?: boolean;
+                  "collection_id"?: string;
+                  "evidence_selector"?: string;
+                  "grid_anchor"?: (string) | null;
+                  "project_id": string;
+                  "queries": Array<Record<string, unknown>>;
+                  "query_offset"?: number;
+                  "query_time"?: (string) | null;
+                  "settle_seconds"?: number;
+                  "step_seconds"?: number;
+                  "targets"?: boolean;
+                }) | null;
                 "revision": number;
                 "service"?: string;
               }>;
@@ -85287,6 +87762,23 @@ export interface operations {
                   "source_id": string;
                 }>;
               };
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "rules_frozen"?: boolean;
               "scenario_id"?: string;
               "sources": Record<string, {
                 "appdynamics"?: ({
@@ -85314,9 +87806,52 @@ export interface operations {
                 "executor_mode"?: string;
                 "id": string;
                 "interval_seconds": number;
+                "management_identity"?: ({
+                  "credential_ref"?: string;
+                  "credential_version"?: string;
+                  "mode": string;
+                  "policy_revision": string;
+                  "principal": string;
+                }) | null;
+                "management_scope"?: ({
+                  "entities": Array<{
+                    "kafka"?: ({
+                      "group": string;
+                      "partition": number;
+                      "topic": string;
+                    }) | null;
+                    "service_bus"?: ({
+                      "queue"?: string;
+                      "subscription"?: string;
+                      "topic"?: string;
+                    }) | null;
+                    "solace"?: ({
+                      "queue"?: string;
+                      "topic_endpoint"?: string;
+                      "vpn": string;
+                    }) | null;
+                  }>;
+                  "isolation"?: string;
+                  "kind": string;
+                  "provider": string;
+                  "version": number;
+                }) | null;
                 "name": string;
                 "pack": string;
                 "project_id": string;
+                "prometheus"?: ({
+                  "alerts"?: boolean;
+                  "collection_id"?: string;
+                  "evidence_selector"?: string;
+                  "grid_anchor"?: (string) | null;
+                  "project_id": string;
+                  "queries": Array<Record<string, unknown>>;
+                  "query_offset"?: number;
+                  "query_time"?: (string) | null;
+                  "settle_seconds"?: number;
+                  "step_seconds"?: number;
+                  "targets"?: boolean;
+                }) | null;
                 "revision": number;
                 "service"?: string;
               }>;
@@ -85422,6 +87957,23 @@ export interface operations {
                   "source_id": string;
                 }>;
               };
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "rules_frozen"?: boolean;
               "scenario_id"?: string;
               "sources": Record<string, {
                 "appdynamics"?: ({
@@ -85449,9 +88001,52 @@ export interface operations {
                 "executor_mode"?: string;
                 "id": string;
                 "interval_seconds": number;
+                "management_identity"?: ({
+                  "credential_ref"?: string;
+                  "credential_version"?: string;
+                  "mode": string;
+                  "policy_revision": string;
+                  "principal": string;
+                }) | null;
+                "management_scope"?: ({
+                  "entities": Array<{
+                    "kafka"?: ({
+                      "group": string;
+                      "partition": number;
+                      "topic": string;
+                    }) | null;
+                    "service_bus"?: ({
+                      "queue"?: string;
+                      "subscription"?: string;
+                      "topic"?: string;
+                    }) | null;
+                    "solace"?: ({
+                      "queue"?: string;
+                      "topic_endpoint"?: string;
+                      "vpn": string;
+                    }) | null;
+                  }>;
+                  "isolation"?: string;
+                  "kind": string;
+                  "provider": string;
+                  "version": number;
+                }) | null;
                 "name": string;
                 "pack": string;
                 "project_id": string;
+                "prometheus"?: ({
+                  "alerts"?: boolean;
+                  "collection_id"?: string;
+                  "evidence_selector"?: string;
+                  "grid_anchor"?: (string) | null;
+                  "project_id": string;
+                  "queries": Array<Record<string, unknown>>;
+                  "query_offset"?: number;
+                  "query_time"?: (string) | null;
+                  "settle_seconds"?: number;
+                  "step_seconds"?: number;
+                  "targets"?: boolean;
+                }) | null;
                 "revision": number;
                 "service"?: string;
               }>;
@@ -85486,6 +88081,23 @@ export interface operations {
                   "source_id": string;
                 }>;
               };
+              "monitor_rules"?: Array<{
+                "comparator": string;
+                "dimensions"?: Record<string, string>;
+                "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
+                "metric": string;
+                "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
+                "severity"?: string;
+                "source_id": string;
+                "start_offset_seconds"?: number;
+                "statistic": string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "rules_frozen"?: boolean;
               "scenario_id"?: string;
               "sources": Record<string, {
                 "appdynamics"?: ({
@@ -85513,9 +88125,52 @@ export interface operations {
                 "executor_mode"?: string;
                 "id": string;
                 "interval_seconds": number;
+                "management_identity"?: ({
+                  "credential_ref"?: string;
+                  "credential_version"?: string;
+                  "mode": string;
+                  "policy_revision": string;
+                  "principal": string;
+                }) | null;
+                "management_scope"?: ({
+                  "entities": Array<{
+                    "kafka"?: ({
+                      "group": string;
+                      "partition": number;
+                      "topic": string;
+                    }) | null;
+                    "service_bus"?: ({
+                      "queue"?: string;
+                      "subscription"?: string;
+                      "topic"?: string;
+                    }) | null;
+                    "solace"?: ({
+                      "queue"?: string;
+                      "topic_endpoint"?: string;
+                      "vpn": string;
+                    }) | null;
+                  }>;
+                  "isolation"?: string;
+                  "kind": string;
+                  "provider": string;
+                  "version": number;
+                }) | null;
                 "name": string;
                 "pack": string;
                 "project_id": string;
+                "prometheus"?: ({
+                  "alerts"?: boolean;
+                  "collection_id"?: string;
+                  "evidence_selector"?: string;
+                  "grid_anchor"?: (string) | null;
+                  "project_id": string;
+                  "queries": Array<Record<string, unknown>>;
+                  "query_offset"?: number;
+                  "query_time"?: (string) | null;
+                  "settle_seconds"?: number;
+                  "step_seconds"?: number;
+                  "targets"?: boolean;
+                }) | null;
                 "revision": number;
                 "service"?: string;
               }>;
@@ -85803,10 +88458,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -86656,10 +89314,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -87352,10 +90013,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -88117,10 +90781,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -89091,10 +91758,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -89774,10 +92444,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -90426,10 +93099,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -90968,10 +93644,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -91499,6 +94178,80 @@ export interface operations {
       };
     };
   };
+  "handlePreviewPrometheusConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "from_utc"?: string;
+          "kind"?: string;
+          "label"?: string;
+          "selection"?: ({
+            "alerts"?: boolean;
+            "collection_id"?: string;
+            "evidence_selector"?: string;
+            "grid_anchor"?: (string) | null;
+            "project_id"?: string;
+            "queries"?: Array<{
+              "allowed_labels"?: Array<string>;
+              "expression"?: string;
+              "freshness_expression"?: string;
+              "id"?: string;
+              "max_sample_age_seconds"?: number;
+              "min_series"?: number;
+              "name"?: string;
+              "parameters"?: Record<string, Record<string, unknown>>;
+              "semantics"?: string;
+              "terminal_expression"?: string;
+              "unit"?: string;
+            }>;
+            "query_offset"?: number;
+            "query_time"?: (string) | null;
+            "settle_seconds"?: number;
+            "step_seconds"?: number;
+            "targets"?: boolean;
+          }) | null;
+          "selector"?: string;
+          "to_utc"?: string;
+        };
+      };
+    };
+    responses: {
+      "2XX": {
+        content: {
+          "application/json": {
+            "connection_id": string;
+            "connection_revision": number;
+            "created_at": string;
+            "expires_at": string;
+            "id": string;
+            "kind": string;
+            "message"?: string;
+            "result"?: unknown;
+            "status": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handlePreviewRecordingConversion": {
     parameters: {
       "path": {
@@ -91852,6 +94605,103 @@ export interface operations {
         };
       };
       "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handlePrometheusAdoptDashboard": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "dashboard_id"?: string;
+          "range_seconds"?: number;
+          "step_seconds"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "connection_id": string;
+            "connection_revision": number;
+            "dashboard_id": string;
+            "dashboard_sha256": string;
+            "datasource_uids": Array<string>;
+            "range_seconds": number;
+            "resolved_bindings"?: Record<string, string>;
+            "selection": {
+              "alerts"?: boolean;
+              "collection_id"?: string;
+              "evidence_selector"?: string;
+              "grid_anchor"?: (string) | null;
+              "project_id": string;
+              "queries": Array<{
+                "allowed_labels"?: Array<string>;
+                "expression": string;
+                "freshness_expression"?: string;
+                "id": string;
+                "max_sample_age_seconds"?: number;
+                "min_series"?: number;
+                "name": string;
+                "parameters"?: Record<string, Record<string, unknown>>;
+                "semantics"?: string;
+                "terminal_expression"?: string;
+                "unit"?: string;
+              }>;
+              "query_offset"?: number;
+              "query_time"?: (string) | null;
+              "settle_seconds"?: number;
+              "step_seconds"?: number;
+              "targets"?: boolean;
+            };
+            "truncated": boolean;
+            "warnings": Array<string>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -92619,10 +95469,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -93839,6 +96692,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -93870,8 +96725,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -94083,6 +96941,15 @@ export interface operations {
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -94404,6 +97271,15 @@ export interface operations {
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
                 }) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -95366,6 +98242,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -95397,8 +98275,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -95610,6 +98491,15 @@ export interface operations {
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -95931,6 +98821,15 @@ export interface operations {
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
                 }) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -96893,6 +99792,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -96924,8 +99825,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -97137,6 +100041,15 @@ export interface operations {
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -97458,6 +100371,15 @@ export interface operations {
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
                 }) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -98420,6 +101342,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -98451,8 +101375,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -98664,6 +101591,15 @@ export interface operations {
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -98985,6 +101921,15 @@ export interface operations {
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
                 }) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -99947,6 +102892,8 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "runtime_resource_admission"?: (Record<string, unknown>) | null;
+                "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -99978,8 +102925,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -100191,6 +103141,15 @@ export interface operations {
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -100512,6 +103471,15 @@ export interface operations {
                   "dimensions": Array<Record<string, unknown>>;
                   "incomplete"?: boolean;
                 }) | null>;
+                "messaging_progress"?: ({
+                  "captured_at": string;
+                  "dropped_rows"?: number;
+                  "incomplete"?: boolean;
+                  "lifecycle"?: string;
+                  "rows": Array<Record<string, unknown>>;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "native_evidence"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
@@ -101378,10 +104346,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -102159,10 +105130,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -104701,10 +107675,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -105828,13 +108805,21 @@ export interface operations {
             "violations"?: boolean;
           };
           "coverage"?: Record<string, {
+            "cache_age_seconds"?: number;
+            "cached"?: boolean;
             "evidence"?: number;
+            "expected_points"?: number;
+            "freshness"?: string;
             "from"?: string;
+            "infos"?: Array<string>;
             "message"?: string;
+            "missing_points"?: number;
+            "observed_at"?: (string) | null;
             "points"?: number;
             "status"?: string;
             "to"?: string;
             "truncated"?: boolean;
+            "warnings"?: Array<string>;
           }>;
           "evidence"?: Array<{
             "application_id"?: string;
@@ -105848,36 +108833,189 @@ export interface operations {
             "summary"?: string;
             "timestamp_utc"?: string;
           }>;
+          "evidence_version"?: number;
           "final"?: boolean;
           "job"?: {
             "payload"?: string;
             "signature"?: string;
           };
+          "management_grant"?: ({
+            "payload"?: string;
+            "signature"?: string;
+          }) | null;
+          "messaging_management"?: ({
+            "captured_at"?: string;
+            "collector_id"?: string;
+            "collector_instance_id"?: string;
+            "completed_at"?: string;
+            "elapsed_ms"?: (number) | null;
+            "expected_entities"?: number;
+            "generation"?: string;
+            "identity_hash"?: string;
+            "incomplete"?: boolean;
+            "interval_seconds"?: number;
+            "inventory_complete"?: boolean;
+            "kind"?: string;
+            "missed_ticks"?: string;
+            "page_count"?: number;
+            "poll_id"?: string;
+            "poll_sequence"?: string;
+            "provider"?: string;
+            "request_count"?: number;
+            "rows"?: Array<{
+              "entity"?: {
+                "kafka"?: ({
+                  "group"?: string;
+                  "partition"?: number;
+                  "topic"?: string;
+                }) | null;
+                "service_bus"?: ({
+                  "queue"?: string;
+                  "subscription"?: string;
+                  "topic"?: string;
+                }) | null;
+                "solace"?: ({
+                  "queue"?: string;
+                  "topic_endpoint"?: string;
+                  "vpn"?: string;
+                }) | null;
+              };
+              "kafka_offsets"?: ({
+                "committed_leader_epoch"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "committed_next"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "high_watermark_next"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "last_stable_next"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "leader_epoch"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "log_end_next"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "topic_id"?: string;
+              }) | null;
+              "observation_age_ms"?: (number) | null;
+              "observed_at"?: (string) | null;
+              "reason"?: string;
+              "service_bus_runtime"?: ({
+                "active"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "dead_letter"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "deferred"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "scheduled"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "size_bytes"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "total"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "transfer"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+                "transfer_dead_letter"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+              }) | null;
+              "solace_semp"?: ({
+                "dead_message_queue"?: string;
+                "depth"?: {
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: (string) | null;
+                };
+              }) | null;
+              "state"?: string;
+            }>;
+            "scope_hash"?: string;
+            "source_id"?: string;
+            "source_revision"?: number;
+            "started_at"?: string;
+            "unavailable_reason"?: string;
+            "version"?: number;
+          }) | null;
           "points"?: Array<{
             "active_runtime_ms"?: (number) | null;
             "dataset_id"?: string;
+            "derivation"?: Array<{
+              "algorithm"?: string;
+              "bucket_seconds"?: number;
+              "operation"?: string;
+            }>;
             "dimensions"?: Record<string, string>;
             "host"?: string;
             "input_kind"?: string;
             "kind"?: string;
             "metric_name"?: string;
+            "metric_version"?: string;
+            "population"?: string;
             "project_id"?: string;
             "provider"?: ({
               "aggregation_eligible"?: boolean;
+              "analysis_statistic"?: string;
+              "backend_profile"?: string;
               "bucket_end"?: string;
               "bucket_start"?: string;
               "catalog_path"?: string;
               "count"?: (number) | null;
+              "definition_hash"?: string;
+              "display_labels"?: Record<string, string>;
               "entity_ids"?: Record<string, string>;
+              "evaluation_step_seconds"?: number;
+              "freshness_known"?: boolean;
               "max"?: (number) | null;
               "metric_id"?: string;
               "min"?: (number) | null;
+              "mode"?: string;
               "name"?: string;
+              "query_id"?: string;
               "query_window"?: boolean;
               "resolution_seconds"?: number;
               "settled"?: boolean;
               "statistic"?: string;
               "sum"?: (number) | null;
+              "underlying_sample_time"?: (string) | null;
             }) | null;
             "quality"?: string;
             "received_at"?: string;
@@ -105894,7 +109032,18 @@ export interface operations {
           "progress"?: ({
             "complete"?: boolean;
             "next_query"?: number;
+            "next_time"?: (string) | null;
             "total_queries"?: number;
+          }) | null;
+          "prometheus_capabilities"?: ({
+            "alerts"?: boolean;
+            "backend_profile"?: string;
+            "discovery"?: boolean;
+            "exemplars"?: boolean;
+            "metrics"?: boolean;
+            "status"?: Record<string, string>;
+            "targets"?: boolean;
+            "version"?: string;
           }) | null;
           "query_from_utc"?: string;
           "query_until_utc"?: string;
@@ -105922,6 +109071,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "403": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -105938,6 +109092,11 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -106426,10 +109585,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -107045,10 +110207,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -108744,8 +111909,11 @@ export interface operations {
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "evaluation_mode"?: string;
                   "metric": string;
                   "min_coverage_pct"?: number;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
                   "severity"?: string;
                   "source_id": string;
                   "start_offset_seconds"?: number;
@@ -109483,10 +112651,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -110724,10 +113895,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -112042,10 +115216,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -113383,10 +116560,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -114725,10 +117905,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -116066,10 +119249,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -120429,6 +123615,80 @@ export interface operations {
       };
     };
   };
+  "handleTestPrometheusConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "from_utc"?: string;
+          "kind"?: string;
+          "label"?: string;
+          "selection"?: ({
+            "alerts"?: boolean;
+            "collection_id"?: string;
+            "evidence_selector"?: string;
+            "grid_anchor"?: (string) | null;
+            "project_id"?: string;
+            "queries"?: Array<{
+              "allowed_labels"?: Array<string>;
+              "expression"?: string;
+              "freshness_expression"?: string;
+              "id"?: string;
+              "max_sample_age_seconds"?: number;
+              "min_series"?: number;
+              "name"?: string;
+              "parameters"?: Record<string, Record<string, unknown>>;
+              "semantics"?: string;
+              "terminal_expression"?: string;
+              "unit"?: string;
+            }>;
+            "query_offset"?: number;
+            "query_time"?: (string) | null;
+            "settle_seconds"?: number;
+            "step_seconds"?: number;
+            "targets"?: boolean;
+          }) | null;
+          "selector"?: string;
+          "to_utc"?: string;
+        };
+      };
+    };
+    responses: {
+      "2XX": {
+        content: {
+          "application/json": {
+            "connection_id": string;
+            "connection_revision": number;
+            "created_at": string;
+            "expires_at": string;
+            "id": string;
+            "kind": string;
+            "message"?: string;
+            "result"?: unknown;
+            "status": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleTestStream": {
     parameters: {
       "path": {
@@ -121185,6 +124445,8 @@ export interface operations {
                 "reservation_id"?: string;
                 "run_lifetime_ms": number;
               }) | null;
+              "runtime_resource_admission"?: (Record<string, unknown>) | null;
+              "runtime_resource_claim"?: (Record<string, unknown>) | null;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
@@ -121216,8 +124478,11 @@ export interface operations {
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric": string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id": string;
                 "start_offset_seconds"?: number;
@@ -121721,6 +124986,15 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<Record<string, unknown>>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -122621,6 +125895,45 @@ export interface operations {
                 "dimensions": Array<Record<string, unknown>>;
                 "incomplete"?: boolean;
               }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<{
+                  "acquired": number;
+                  "capture_revision": string;
+                  "captured_at": string;
+                  "checkpoint": Record<string, unknown>;
+                  "checkpoint_position": Record<string, unknown>;
+                  "delivered": number;
+                  "delivered_position": Record<string, unknown>;
+                  "expected_partitions": number;
+                  "generation": string;
+                  "group"?: string;
+                  "incomplete"?: boolean;
+                  "inventory_complete": boolean;
+                  "lost": number;
+                  "mode": string;
+                  "origin"?: string;
+                  "ownership": string;
+                  "ownership_verified_age_ms"?: (number) | null;
+                  "ownership_verified_at": string;
+                  "partition": string;
+                  "protocol": string;
+                  "redelivered": number;
+                  "rejected": number;
+                  "revision": string;
+                  "session_id": string;
+                  "source": string;
+                  "source_id": string;
+                  "subscription": string;
+                  "tail_position": Record<string, unknown>;
+                  "updated_at": string;
+                }>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "native_evidence"?: ({
                 "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                 "incomplete"?: boolean;
@@ -124487,10 +127800,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -125181,10 +128497,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -127951,6 +131270,145 @@ export interface operations {
       };
     };
   };
+  "handleUpdatePrometheusConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "client_certificate_secret"?: (string) | null;
+          "client_key_secret"?: (string) | null;
+          "client_secret_secret"?: (string) | null;
+          "collection_mode"?: string;
+          "collector_agent_id"?: string;
+          "config"?: {
+            "allow_private_http"?: boolean;
+            "approved_cidrs"?: Array<string>;
+            "auth_type"?: string;
+            "azure_credential_mode"?: string;
+            "azure_tenant_id"?: string;
+            "backend_profile"?: string;
+            "ca_pem"?: string;
+            "client_id"?: string;
+            "context_path"?: string;
+            "endpoint"?: string;
+            "max_points"?: number;
+            "max_poll_seconds"?: number;
+            "max_requests_per_poll"?: number;
+            "max_response_bytes"?: number;
+            "max_series"?: number;
+            "mtls"?: boolean;
+            "requests_per_minute"?: number;
+            "timeout_seconds"?: number;
+          };
+          "description"?: string;
+          "enabled"?: boolean;
+          "name": string;
+          "password_secret"?: (string) | null;
+          "revision": number;
+          "token_secret"?: (string) | null;
+          "username_secret"?: (string) | null;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "capabilities": {
+              "alerts": boolean;
+              "backend_profile": string;
+              "discovery": boolean;
+              "exemplars": boolean;
+              "metrics": boolean;
+              "status"?: Record<string, string>;
+              "targets": boolean;
+              "version"?: string;
+            };
+            "collection_mode": string;
+            "collector_agent_id"?: string;
+            "config": {
+              "allow_private_http"?: boolean;
+              "approved_cidrs"?: Array<string>;
+              "auth_type"?: string;
+              "azure_credential_mode"?: string;
+              "azure_tenant_id"?: string;
+              "backend_profile"?: string;
+              "ca_pem"?: string;
+              "client_id"?: string;
+              "context_path"?: string;
+              "endpoint": string;
+              "max_points"?: number;
+              "max_poll_seconds"?: number;
+              "max_requests_per_poll"?: number;
+              "max_response_bytes"?: number;
+              "max_series"?: number;
+              "mtls"?: boolean;
+              "requests_per_minute"?: number;
+              "timeout_seconds"?: number;
+            };
+            "created_at": string;
+            "description"?: string;
+            "enabled": boolean;
+            "has_client_certificate": boolean;
+            "has_client_key": boolean;
+            "has_client_secret": boolean;
+            "has_custom_ca": boolean;
+            "has_password": boolean;
+            "has_token": boolean;
+            "has_username": boolean;
+            "id": string;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+            "status": string;
+            "updated_at": string;
+            "verified_revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleUpdateRecordedRequest": {
     parameters: {
       "path": {
@@ -128239,8 +131697,11 @@ export interface operations {
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "evaluation_mode"?: string;
               "metric"?: string;
               "min_coverage_pct"?: number;
+              "query_id"?: string;
+              "require_freshness"?: boolean;
               "severity"?: string;
               "source_id"?: string;
               "start_offset_seconds"?: number;
@@ -129006,8 +132467,11 @@ export interface operations {
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "evaluation_mode"?: string;
                 "metric": string;
                 "min_coverage_pct"?: number;
+                "query_id"?: string;
+                "require_freshness"?: boolean;
                 "severity"?: string;
                 "source_id": string;
                 "start_offset_seconds"?: number;
@@ -130283,10 +133747,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -131175,10 +134642,13 @@ export interface operations {
                   "event_hub"?: string;
                   "mock"?: boolean;
                   "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
                   "owner_level"?: (number) | null;
                   "partition_id"?: string;
                   "partition_key"?: string;
+                  "processor_max_partitions"?: number;
                   "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
                   "timeout_ms"?: number;
                 };
                 "grpc"?: {
@@ -135626,10 +139096,13 @@ export interface operations {
                 "event_hub"?: string;
                 "mock"?: boolean;
                 "namespace"?: string;
+                "observe_partition_tail"?: boolean;
                 "owner_level"?: (number) | null;
                 "partition_id"?: string;
                 "partition_key"?: string;
+                "processor_max_partitions"?: number;
                 "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
                 "timeout_ms"?: number;
               };
               "grpc"?: {
@@ -136612,8 +140085,11 @@ export interface operations {
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "evaluation_mode"?: string;
               "metric"?: string;
               "min_coverage_pct"?: number;
+              "query_id"?: string;
+              "require_freshness"?: boolean;
               "severity"?: string;
               "source_id"?: string;
               "start_offset_seconds"?: number;
@@ -138791,6 +142267,9 @@ export interface paths {
   "/api/v1/monitoring/collectors/{id}/jobs": {
     "get": operations["handlePollRunMonitorJobs"];
   };
+  "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/management-polls": {
+    "post": operations["handleManagementPoll"];
+  };
   "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/samples": {
     "post": operations["handleRunMonitorSamples"];
   };
@@ -138903,6 +142382,10 @@ export interface paths {
     "put": operations["handleMonitorSources_4"];
     "delete": operations["handleMonitorSources_3"];
   };
+  "/api/v1/projects/{id}/monitor-sources/{source_id}/management-state": {
+    "get": operations["handleManagementCollectionState"];
+    "post": operations["handleManagementCollectionState_2"];
+  };
   "/api/v1/projects/{id}/monitoring/appdynamics-connections": {
     "get": operations["handleListAppDynamicsConnections"];
     "post": operations["handleCreateAppDynamicsConnection"];
@@ -138959,6 +142442,30 @@ export interface paths {
   };
   "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/test": {
     "post": operations["handleTestELKConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/prometheus-connections": {
+    "get": operations["handleListPrometheusConnections"];
+    "post": operations["handleCreatePrometheusConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}": {
+    "get": operations["handleGetPrometheusConnection"];
+    "put": operations["handleUpdatePrometheusConnection"];
+    "delete": operations["handleDeletePrometheusConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/adopt-dashboard": {
+    "post": operations["handlePrometheusAdoptDashboard"];
+  };
+  "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/discover": {
+    "post": operations["handleDiscoverPrometheusConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/operations/{operation_id}": {
+    "get": operations["handleGetPrometheusOperation"];
+  };
+  "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/preview": {
+    "post": operations["handlePreviewPrometheusConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/test": {
+    "post": operations["handleTestPrometheusConnection"];
   };
   "/api/v1/projects/{id}/releases": {
     "get": operations["handleListProjectReleases"];
@@ -139792,11 +143299,17 @@ export interface paths {
   "/api/v1/tests/{id}/manifest": {
     "get": operations["handleGetTestManifest"];
   };
+  "/api/v1/tests/{id}/messaging-progress": {
+    "get": operations["handleMessagingProgress"];
+  };
   "/api/v1/tests/{id}/metrics": {
     "get": operations["handleGetMetrics"];
   };
   "/api/v1/tests/{id}/monitor-evidence": {
     "get": operations["handleRunMonitorEvidence"];
+  };
+  "/api/v1/tests/{id}/monitor-management": {
+    "get": operations["handleMonitorManagement"];
   };
   "/api/v1/tests/{id}/monitor-series": {
     "get": operations["handleRunMonitorSeries"];

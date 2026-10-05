@@ -5,12 +5,41 @@ import (
 	"html/template"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func protocolReportLines(report *RunArchiveReport) []string {
 	lines := []string{"Client-observed measurements; unavailable phases are not inferred. Histogram percentiles are approximate. Findings are advisory."}
+	if progress := report.MessagingProgress; progress != nil {
+		lines = append(lines, "Event Hubs processor progress: cumulative counters per ownership generation; lag is as of source capture, with unqualified transit time.")
+		if progress.Incomplete {
+			lines = append(lines, "Processor coverage incomplete; lag is unscored ("+progress.UnavailableReason+").")
+		}
+		for _, row := range progress.Rows {
+			lines = append(lines, fmt.Sprintf("Group %s / source %s / subscription %s / partition %s / generation %s: ownership %s; delivered %d, rejected %d, redelivered %d; checkpoint attempts %d, committed %d, failed %d, fenced %d, unconfirmed %d, cancelled before write %d, retries %d, in flight %d", row.Group, row.Source, row.Subscription, row.Partition, row.Generation, row.Ownership, row.Delivered, row.Rejected, row.Redelivered, row.Checkpoint.Attempts, row.Checkpoint.Committed, row.Checkpoint.Failed, row.Checkpoint.Fenced, row.Checkpoint.Unconfirmed, row.Checkpoint.CancelledBeforeWrite, row.Checkpoint.RetryAttempts, row.Checkpoint.InFlight))
+			for _, position := range []struct {
+				name  string
+				value protocol.MessagingProgressPosition
+			}{{"delivered", row.DeliveredPosition}, {"checkpoint", row.CheckpointPosition}, {"tail", row.TailPosition}} {
+				lines = append(lines, fmt.Sprintf("%s position: %s; sequence %s; opaque provider offset %s", position.name, position.value.State, firstNonEmpty(position.value.Sequence, "unavailable"), firstNonEmpty(position.value.ProviderOffset, "unavailable")))
+			}
+			timing := row.Checkpoint.Duration
+			if p95, ok := timing.Distribution.Quantile(.95); ok {
+				lines = append(lines, fmt.Sprintf("Checkpoint timing: %d/%d operations observed; mean %.3f ms; approximate P95 %.3f ms", timing.Distribution.Count, timing.Eligible, timing.Distribution.Sum/float64(timing.Distribution.Count), p95))
+			} else {
+				lines = append(lines, fmt.Sprintf("Checkpoint timing: unavailable (%d eligible operations; 0 observed)", timing.Eligible))
+			}
+			for _, cursor := range []string{"delivered", "checkpoint"} {
+				lag, ok := row.QualifiedLag(cursor, 30000)
+				if progress.Incomplete || !ok {
+					lag = "unavailable"
+				}
+				lines = append(lines, cursor+" sequence backlog as of source capture: "+lag+" ("+row.CapturedAt.Format(time.RFC3339Nano)+")")
+			}
+		}
+	}
 	for _, finding := range report.StatisticalFindings {
 		lines = append(lines, fmt.Sprintf("%s at %s: %.2f standard deviations from %d comparable buckets (mean %.3f, standard deviation %.3f). Advisory association.", finding.MetricName, finding.Timestamp.Format("15:04:05Z07:00"), finding.ZScore, finding.BaselineBuckets, finding.BaselineMean, finding.BaselineStdDev))
 	}

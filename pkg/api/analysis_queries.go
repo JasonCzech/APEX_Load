@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
@@ -48,6 +47,9 @@ func (q AnalysisComparisonRequest) validate() error {
 		return errors.New("choose overlay or correlation")
 	}
 	for _, s := range []AnalysisSeriesSelection{q.Left, q.Right} {
+		if s.DatasetID != "" && (s.SourceID != "" || s.Transaction != "" || s.Protocol != "" || s.Group != "" || s.Host != "" || len(s.Dimensions) != 0) {
+			return errors.New("imported dataset identity filters are not available in this native schema")
+		}
 		if len(s.Protocol) > 64 || len(s.Group) > 256 || len(s.Host) > 256 || len(s.Dimensions) > 16 {
 			return errors.New("protocol or group identity exceeds limit")
 		}
@@ -126,6 +128,12 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 	defer func() { <-analysisPipelineJobs }()
 	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
 	defer cancel()
+	ctx, pipeline, dir, err := s.prepareNativeAnalysisComparison(ctx, project, q)
+	if err != nil {
+		writeError(w, 422, err.Error())
+		return
+	}
+	defer closeNativeAnalysisPipeline(pipeline, dir)
 	left, leftRun, err := s.loadAnalysisSelection(ctx, project, q.Left, q)
 	if err != nil {
 		writeError(w, 422, err.Error())
@@ -144,7 +152,7 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 	}
 	response := map[string]any{"left": left, "right": right, "request": q, "advisory": true, "interpretation": "Correlation is association, not proof of causation."}
 	if q.Mode == "overlay" {
-		if q.Left.Aggregation != q.Right.Aggregation || len(left) > 0 && len(right) > 0 && (left[0].Unit == "" || right[0].Unit == "" || left[0].Unit != right[0].Unit || left[0].Kind != right[0].Kind || left[0].InputKind != right[0].InputKind) {
+		if q.Left.Aggregation != q.Right.Aggregation || len(left) > 0 && len(right) > 0 && !analysis.CompatibleOverlay(left[0], right[0]) {
 			writeError(w, 422, "incompatible units or measurement semantics prevent overlay")
 			return
 		}
@@ -167,6 +175,17 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 		}
 		response["correlation"] = scores
 	}
+	if err := s.verifyNativeAnalysisComparison(ctx, project); err != nil {
+		writeError(w, 409, err.Error())
+		return
+	}
+	if !requireAuthorizedProjectMatch(w, r, project) {
+		return
+	}
+	if !analysisQueryContextLive(ctx) {
+		writeError(w, 409, "comparison deadline or cancellation reached")
+		return
+	}
 	writeJSON(w, 200, response)
 }
 
@@ -175,6 +194,14 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 		return nil, "", err
 	}
 	if selection.DatasetID != "" {
+		if shared, _ := ctx.Value(analysisComparisonPipelineKey{}).(*analysisComparisonPipeline); shared != nil {
+			plan, exists := shared.plans[analysisDatasetQueryIdentity{selection.DatasetID, selection.Metric}]
+			if !exists || plan.dataset.ProjectID != project {
+				return nil, "", errors.New("dataset selection is outside comparison plan")
+			}
+			points, err := queryAnalysisDataset(ctx, plan.dataset, analytics.SeriesQuery{ProjectID: project, DatasetID: plan.dataset.ID, Metric: selection.Metric, From: q.From, To: q.To, BucketSeconds: q.BucketSeconds, Aggregation: selection.Aggregation})
+			return points, plan.dataset.RunID, err
+		}
 		store, ok := s.store.(storage.AnalysisImportStore)
 		if !ok {
 			return nil, "", errors.New("dataset storage unavailable")
@@ -194,7 +221,12 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 		return nil, "", errors.New("run not found in project")
 	}
 	points := []analysis.MetricPoint{}
+	exactPrometheusWindow := false
 	appendPoint := func(p analysis.MetricPoint) error {
+		if p.Provider != nil && p.Provider.Name == "prometheus" && p.Provider.Mode == "query_window" {
+			exactPrometheusWindow = true
+			return nil
+		}
 		if p.TimestampUTC.Before(q.From) || !p.TimestampUTC.Before(q.To) {
 			return nil
 		}
@@ -210,7 +242,7 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 			return nil, "", errors.New("monitor storage unavailable")
 		}
 		job, jobErr := store.GetRunMonitorJob(project, selection.RunID+":"+selection.SourceID)
-		if jobErr == nil && job.Source.Pack == "appdynamics" {
+		if jobErr == nil && job.Source.CanonicalProvider() {
 			after := ""
 			for n := 0; n < 100; n++ {
 				page, err := loadCanonicalMonitorData(ctx, store, project, selection.RunID, selection.SourceID, "point", after, 999)
@@ -226,6 +258,9 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 					}
 				}
 				if !page.HasMore {
+					if len(points) == 0 && exactPrometheusWindow {
+						return nil, "", errors.New("exact-window Prometheus results cannot be rebucketed into intervals; select evaluation timeline evidence")
+					}
 					result, err := analysis.BucketSeries(points, q.From, q.To, q.BucketSeconds, selection.Aggregation)
 					return result, selection.RunID, err
 				}
@@ -249,15 +284,11 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 				break
 			}
 			for _, receipt := range receipts {
-				body, err := readMonitorArtifact(ctx, receipt.ArtifactKey, receipt.Digest)
+				evidence, err := readMonitorEvidence(ctx, project, selection.RunID, receipt)
 				if err != nil {
-					return nil, "", errors.New("monitor artifact unavailable")
+					return nil, "", errors.New("monitor evidence unavailable or corrupt")
 				}
-				decoded, decodeErr := decodeMonitorArtifact(body)
-				if decodeErr != nil {
-					return nil, "", errors.New("invalid monitor evidence")
-				}
-				for _, p := range decoded.Points {
+				for _, p := range evidence.Points {
 					if p.Source == selection.SourceID && p.MetricName == selection.Metric && matchesAnalysisDimensions(p, selection) {
 						p.ReceivedAt = receipt.ReceivedAt
 						p.Quality = monitorPointQuality(p, receipt.ReceivedAt)
@@ -342,41 +373,74 @@ func queryAnalysisDataset(ctx context.Context, in *storage.AnalysisImport, query
 	if err := query.Validate(); err != nil {
 		return nil, err
 	}
-	dir, err := analysisScratch()
-	if err != nil {
-		return nil, errors.New("analysis staging unavailable")
+	if in == nil || query.ProjectID != in.ProjectID || query.DatasetID != in.ID {
+		return nil, errors.New("dataset query scope mismatch")
 	}
-	defer os.RemoveAll(dir)
+	var pipeline *analytics.NativePipeline
+	var dir string
+	var selected []analysisDatasetQueryPart
+	var total int64
+	if shared, _ := ctx.Value(analysisComparisonPipelineKey{}).(*analysisComparisonPipeline); shared != nil {
+		plan, exists := shared.plans[analysisDatasetQueryIdentity{in.ID, query.Metric}]
+		if !exists || plan.dataset.ProjectID != in.ProjectID || plan.dataset.Revision != in.Revision {
+			return nil, errors.New("dataset query is outside reserved comparison")
+		}
+		in, selected, total, pipeline = plan.dataset, plan.parts, plan.bytes, shared.pipeline
+		if len(selected) == 0 {
+			return []analysis.MetricPoint{}, nil
+		}
+		var err error
+		dir, err = pipeline.CreateStagingDirectory(shared.root)
+		if err != nil {
+			return nil, errors.New("comparison staging ownership unavailable")
+		}
+		// The enclosing comparison owns this directory, all entered IO, both
+		// sequential children and final cleanup. No per-side Release is permitted.
+	} else {
+		var err error
+		in, err = snapshotAnalysisQueryDataset(in)
+		if err != nil {
+			return nil, err
+		}
+		ctx, pipeline, dir, err = beginNativeAnalysisPipeline(ctx, 12, 12)
+		if err != nil {
+			return nil, errors.New("analytical admission unavailable")
+		}
+		defer closeNativeAnalysisPipeline(pipeline, dir)
+		selected, total, err = selectAnalysisDatasetParts(ctx, in, query.Metric)
+		if err != nil {
+			return nil, err
+		}
+		if len(selected) == 0 {
+			return []analysis.MetricPoint{}, nil
+		}
+		if err = pipeline.AdmitGeometry(filepath.Dir(dir), total, 12, total); err != nil {
+			return nil, errors.New("analytical geometry admission unavailable")
+		}
+	}
 	files := []string{}
-	remaining := analysisImportMaxBytes
-	for i, key := range in.Normalized {
-		// Normalization creates one partition per input file and measure. Wide
-		// mappings permit physical projection before remote materialization.
-		if in.Mapping != nil && len(in.Mapping.Measures) > 0 {
-			m := in.Mapping.Measures[i%len(in.Mapping.Measures)]
-			if m.Name != "" && m.Name != query.Metric {
-				continue
-			}
+	remaining := total
+	for _, part := range selected {
+		ioLease, err := pipeline.AcquireIO()
+		if err != nil {
+			return nil, err
 		}
-		if !strings.HasPrefix(key, analysisObjectKey(in.ProjectID, in.ID, "")) {
-			return nil, errors.New("dataset artifact ownership mismatch")
-		}
-		file := filepath.Join(dir, fmt.Sprintf("part-%d.parquet", i))
+		file := filepath.Join(dir, fmt.Sprintf("part-%d.parquet", part.index))
 		out, err := os.OpenFile(file, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if err != nil {
+			ioLease.Joined()
 			return nil, errors.New("cannot stage dataset")
 		}
-		digest, readErr := analysisObjectRead(ctx, key, &analysisStagingWriter{out: out, dir: dir, remaining: &remaining}, remaining)
-		closeErr := out.Close()
-		if errors.Join(readErr, closeErr) != nil || in.NormalizedSHA256[key] == "" || digest != in.NormalizedSHA256[key] {
+		ioLease.TrackOwner(out)
+		digest, readErr := analysisObjectRead(ctx, part.key, &analysisStagingWriter{out: out, dir: dir, remaining: &remaining}, part.size)
+		syncErr, closeErr := out.Sync(), ioLease.CloseOwner(out)
+		ioLease.Joined()
+		if errors.Join(readErr, syncErr, closeErr) != nil || in.NormalizedSHA256[part.key] == "" || digest != in.NormalizedSHA256[part.key] {
 			return nil, errors.New("dataset artifact unavailable, corrupt, or exceeds staging quota")
 		}
 		files = append(files, file)
 	}
-	if len(files) == 0 {
-		return []analysis.MetricPoint{}, nil
-	}
-	engine, err := analytics.New(dir)
+	engine, err := analytics.NewForNativePipeline(ctx, dir)
 	if err != nil {
 		return nil, err
 	}

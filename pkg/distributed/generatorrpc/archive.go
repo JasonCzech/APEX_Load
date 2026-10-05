@@ -158,6 +158,7 @@ type archiveResourceSample struct {
 }
 
 type archiveIntervalSummary struct {
+	MessagingProgress   *protocol.MessagingProgressSnapshot           `json:"messaging_progress,omitempty"`
 	Messaging           map[string]*protocol.MessagingSummary         `json:"messaging,omitempty"`
 	CompletedIterations int64                                         `json:"completed_iterations,omitempty"`
 	Timestamp           time.Time                                     `json:"timestamp"`
@@ -657,28 +658,29 @@ type parquetResourceSample struct {
 }
 
 type parquetIntervalSummary struct {
-	TimestampUnixMs    int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
-	TimestampRFC3339   string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestID             string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestName           string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	ActiveVUsers       int64   `parquet:"name=active_vusers, type=INT64"`
-	TPS                float64 `parquet:"name=tps, type=DOUBLE"`
-	AvgResponseMs      float64 `parquet:"name=avg_response_ms, type=DOUBLE"`
-	ErrorPct           float64 `parquet:"name=error_pct, type=DOUBLE"`
-	TotalTx            int64   `parquet:"name=total_transactions, type=INT64"`
-	TotalErrors        int64   `parquet:"name=total_errors, type=INT64"`
-	P50Ms              float64 `parquet:"name=p50_ms, type=DOUBLE"`
-	P90Ms              float64 `parquet:"name=p90_ms, type=DOUBLE"`
-	P95Ms              float64 `parquet:"name=p95_ms, type=DOUBLE"`
-	P99Ms              float64 `parquet:"name=p99_ms, type=DOUBLE"`
-	DurationDigestJSON string  `parquet:"name=duration_digest_json, type=BYTE_ARRAY, convertedtype=UTF8"`
-	GroupsJSON         string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
-	MessagingJSON      string  `parquet:"name=messaging_json, type=BYTE_ARRAY, convertedtype=UTF8"`
-	TransactionsJSON   string  `parquet:"name=transactions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
-	ByRegionJSON       string  `parquet:"name=by_region_json, type=BYTE_ARRAY, convertedtype=UTF8"`
-	BrowserJSON        string  `parquet:"name=browser_json, type=BYTE_ARRAY, convertedtype=UTF8"`
-	BrowserDeviceJSON  string  `parquet:"name=browser_by_device_json, type=BYTE_ARRAY, convertedtype=UTF8"`
-	TelemetryJSON      string  `parquet:"name=telemetry_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	TimestampUnixMs       int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
+	TimestampRFC3339      string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestID                string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestName              string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	ActiveVUsers          int64   `parquet:"name=active_vusers, type=INT64"`
+	TPS                   float64 `parquet:"name=tps, type=DOUBLE"`
+	AvgResponseMs         float64 `parquet:"name=avg_response_ms, type=DOUBLE"`
+	ErrorPct              float64 `parquet:"name=error_pct, type=DOUBLE"`
+	TotalTx               int64   `parquet:"name=total_transactions, type=INT64"`
+	TotalErrors           int64   `parquet:"name=total_errors, type=INT64"`
+	P50Ms                 float64 `parquet:"name=p50_ms, type=DOUBLE"`
+	P90Ms                 float64 `parquet:"name=p90_ms, type=DOUBLE"`
+	P95Ms                 float64 `parquet:"name=p95_ms, type=DOUBLE"`
+	P99Ms                 float64 `parquet:"name=p99_ms, type=DOUBLE"`
+	DurationDigestJSON    string  `parquet:"name=duration_digest_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	GroupsJSON            string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	MessagingProgressJSON string  `parquet:"name=messaging_progress_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	MessagingJSON         string  `parquet:"name=messaging_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	TransactionsJSON      string  `parquet:"name=transactions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	ByRegionJSON          string  `parquet:"name=by_region_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	BrowserJSON           string  `parquet:"name=browser_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	BrowserDeviceJSON     string  `parquet:"name=browser_by_device_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	TelemetryJSON         string  `parquet:"name=telemetry_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 }
 
 func newArchiveRecorder(generatorID string, testID string, testName string) (*archiveRecorder, error) {
@@ -1289,6 +1291,7 @@ func (w *archiveRecorder) RecordIntervalSummary(summary archiveIntervalSummary) 
 	if w.recordErr != nil {
 		return w.recordErr
 	}
+	summary.MessagingProgress = summary.MessagingProgress.Clone()
 	summary.TestID = w.manifest.TestID
 	summary.TestName = w.manifest.TestName
 	if err := w.summaryEncoder.Encode(summary); err != nil {
@@ -1723,28 +1726,29 @@ func toParquetSummaries(items []archiveIntervalSummary) []parquetIntervalSummary
 	rows := make([]parquetIntervalSummary, 0, len(items))
 	for _, item := range items {
 		rows = append(rows, parquetIntervalSummary{
-			TimestampUnixMs:    item.Timestamp.UnixMilli(),
-			TimestampRFC3339:   item.Timestamp.Format(time.RFC3339Nano),
-			TestID:             item.TestID,
-			TestName:           item.TestName,
-			ActiveVUsers:       item.ActiveVUsers,
-			TPS:                item.TPS,
-			AvgResponseMs:      item.AvgResponseMs,
-			ErrorPct:           item.ErrorPct,
-			TotalTx:            item.TotalTx,
-			TotalErrors:        item.TotalErrors,
-			P50Ms:              item.P50Ms,
-			P90Ms:              item.P90Ms,
-			P95Ms:              item.P95Ms,
-			P99Ms:              item.P99Ms,
-			DurationDigestJSON: mustJSON(item.DurationDigest),
-			GroupsJSON:         mustJSON(item.Groups),
-			MessagingJSON:      mustJSON(item.Messaging),
-			TransactionsJSON:   mustJSON(item.Transactions),
-			ByRegionJSON:       mustJSON(item.ByRegion),
-			BrowserJSON:        mustJSON(item.Browser),
-			BrowserDeviceJSON:  mustJSON(item.BrowserByDevice),
-			TelemetryJSON:      mustJSON(item.Telemetry),
+			TimestampUnixMs:       item.Timestamp.UnixMilli(),
+			TimestampRFC3339:      item.Timestamp.Format(time.RFC3339Nano),
+			TestID:                item.TestID,
+			TestName:              item.TestName,
+			ActiveVUsers:          item.ActiveVUsers,
+			TPS:                   item.TPS,
+			AvgResponseMs:         item.AvgResponseMs,
+			ErrorPct:              item.ErrorPct,
+			TotalTx:               item.TotalTx,
+			TotalErrors:           item.TotalErrors,
+			P50Ms:                 item.P50Ms,
+			P90Ms:                 item.P90Ms,
+			P95Ms:                 item.P95Ms,
+			P99Ms:                 item.P99Ms,
+			DurationDigestJSON:    mustJSON(item.DurationDigest),
+			GroupsJSON:            mustJSON(item.Groups),
+			MessagingJSON:         mustJSON(item.Messaging),
+			MessagingProgressJSON: messagingProgressJSON(item.MessagingProgress),
+			TransactionsJSON:      mustJSON(item.Transactions),
+			ByRegionJSON:          mustJSON(item.ByRegion),
+			BrowserJSON:           mustJSON(item.Browser),
+			BrowserDeviceJSON:     mustJSON(item.BrowserByDevice),
+			TelemetryJSON:         mustJSON(item.Telemetry),
 		})
 	}
 	return rows

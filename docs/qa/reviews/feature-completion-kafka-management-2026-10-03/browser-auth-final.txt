@@ -1,0 +1,14 @@
+Building controller...
+Starting controller on http://127.0.0.1:18382 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.K9jOzQHQwX)...
+Controller healthy.
+Starting controller on http://127.0.0.1:18382 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.K9jOzQHQwX)...
+Controller healthy.
+Auth profile verified: local-auth.
+
+Running 1 test using 1 worker
+
+(node:77497) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/workflow-monitoring.spec.ts:225:1 › Kafka management authoring retains scope, sealed-secret policy and revision conflicts through reload (8.9s)
+
+  1 passed (9.8s)

@@ -1,0 +1,26 @@
+[
+  {
+    "gate": "telemetry-normal-repeat",
+    "exit_code": 0,
+    "seconds": 1.244,
+    "log": "/private/tmp/apexload-telemetry-normal-repeat-2026-10-04.log"
+  },
+  {
+    "gate": "telemetry-race-repeat",
+    "exit_code": 0,
+    "seconds": 2.185,
+    "log": "/private/tmp/apexload-telemetry-race-repeat-2026-10-04.log"
+  },
+  {
+    "gate": "upload-storage-race-final",
+    "exit_code": 0,
+    "seconds": 19.379,
+    "log": "/private/tmp/apexload-upload-storage-race-final-2026-10-04.log"
+  },
+  {
+    "gate": "native-upload-lifecycle-final",
+    "exit_code": 1,
+    "seconds": 170.821,
+    "log": "/private/tmp/apexload-native-upload-lifecycle-final-2026-10-04.log"
+  }
+]

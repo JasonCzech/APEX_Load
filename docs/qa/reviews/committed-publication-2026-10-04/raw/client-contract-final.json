@@ -1,0 +1,17 @@
+{
+  "generated_contract_sha256": "1b9208a2f347799d5dced166553af97a2a32e4ce84245cbcf5942d2a331f91c4",
+  "index_before_sha256": "f35bfa66e68314a77bafaa3a6eb07182f1f5746309b72593b00078aa87106528",
+  "gates": [
+    {
+      "name": "typecheck",
+      "exit_code": 0,
+      "elapsed_seconds": 65.44640374183655
+    },
+    {
+      "name": "build",
+      "exit_code": 0,
+      "elapsed_seconds": 41.74229669570923
+    }
+  ],
+  "index_after_sha256": "34078e0427fbe85d36b8b00edc47dce9eb44a1c58fa76150acdbdb8e2b6f5a4e"
+}

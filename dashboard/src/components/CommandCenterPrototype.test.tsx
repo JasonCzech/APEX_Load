@@ -389,6 +389,38 @@ describe('CommandCenterPrototype', () => {
     expect(inputByLabel('Live Checkout target VUsers').value).toBe('65')
   })
 
+  it('keeps the selected run status consistent with acknowledged controls when the catalog is stale', async () => {
+    const run = buildLiveVuserTest()
+    const other = { ...run, id: 'other-run', name: 'Other run' }
+    let current = run
+    let resolvePause: ((response: Response) => void) | undefined
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      const url = requestUrl(input)
+      if (url.includes('/tests?')) return Promise.resolve(jsonResponse({ tests: [run, other], total: 2 }))
+      if (url.endsWith(`/tests/${run.id}`)) return Promise.resolve(jsonResponse(current))
+      if (url.endsWith('/pause')) return new Promise(resolve => { resolvePause = response => { current = { ...run, status: 'PAUSED' }; resolve(response) } })
+      if (url.endsWith('/resume')) current = run
+      return Promise.resolve(jsonResponse({}))
+    })
+    await act(async () => { root.render(<CommandCenterPrototype projectId="project-1" testId={run.id} onSelectRun={vi.fn()} />) })
+    await flush()
+    const selector = container.querySelector<HTMLSelectElement>('select[aria-label="Current run"]')!
+    expect(selector.selectedOptions[0].textContent).toContain('RUNNING')
+    await click(buttonNamed('Pause'))
+    await confirmRunAction('Pause Test')
+    expect(selector.selectedOptions[0].textContent).toContain('RUNNING')
+    await act(async () => { resolvePause?.(jsonResponse({})); await Promise.resolve() })
+    await flush()
+    expect(buttonNamed('Resume')).toBeDefined()
+    expect(selector.selectedOptions[0].textContent).toContain('PAUSED')
+    expect(Array.from(selector.options).find(option => option.value === other.id)?.textContent).toContain('RUNNING')
+    await click(buttonNamed('Resume'))
+    await confirmRunAction('Resume Test')
+    await flush()
+    expect(selector.selectedOptions[0].textContent).toContain('RUNNING')
+    expect(buttonNamed('Pause')).toBeDefined()
+  })
+
   it('does not apply a late pause response to the newly selected run', async () => {
     const runA = buildLiveVuserTest()
     const runB = { ...buildLiveVuserTest(), id: 'run-b', name: 'Second run' }

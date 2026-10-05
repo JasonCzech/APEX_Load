@@ -1,0 +1,55 @@
+{
+  "method": "owned disposable Docker server, trusted SDK transport seam; production loopback/network guards remain enabled",
+  "fixture": "pkg/prometheus/testdata/run_compatibility.py",
+  "test": "pkg/prometheus/compatibility_test.go",
+  "architectures": [
+    "linux/arm64"
+  ],
+  "profiles": [
+    {
+      "backend": "prometheus",
+      "version": "2.55.1",
+      "image": "prom/prometheus:v2.55.1@sha256:2659f4c2ebb718e7695cb9b25ffa7d6be64db013daba13e05c875451cf51b0d3",
+      "metrics": true,
+      "targets": true,
+      "alerts": true,
+      "range_points": 5,
+      "terminal_points": 1,
+      "diagnostic_records": 2,
+      "discovery": {
+        "metrics_including_truncation_sentinel": 201,
+        "labels": 32,
+        "label_values": 1,
+        "series": 1,
+        "metadata": 1,
+        "targets": 1
+      }
+    },
+    {
+      "backend": "prometheus",
+      "version": "3.13.0",
+      "image": "prom/prometheus:v3.13.0@sha256:c6b27ea434f8389bfe233fbc7be381cf50587c286e871bc842008f5a1b1908a7",
+      "metrics": true,
+      "targets": true,
+      "alerts": true,
+      "range_points": 5,
+      "terminal_points": 1,
+      "diagnostic_records": 2,
+      "discovery": {
+        "metrics_including_truncation_sentinel": 201,
+        "labels": 33,
+        "label_values": 1,
+        "series": 1,
+        "metadata": 1,
+        "targets": 1
+      }
+    }
+  ],
+  "not_qualified": [
+    "Azure managed live workspace, Entra RBAC and private endpoint",
+    "production private-network TLS deployment",
+    "Thanos/Mimir",
+    "native histogram provider output beyond synthetic fixtures"
+  ],
+  "qualified_on_utc": "2026-10-04"
+}

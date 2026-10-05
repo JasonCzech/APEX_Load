@@ -62,7 +62,7 @@ func (tr *TestRunner) validateTestMonitorBindings(project string, b *storage.Mon
 	return nil
 }
 func safeMonitorSource(source storage.MonitorSource) storage.MonitorSource {
-	if source.Pack == "appdynamics" {
+	if source.CanonicalProvider() {
 		source.CredentialRef = ""
 		source.CollectorPublicKey = ""
 	}
@@ -70,7 +70,9 @@ func safeMonitorSource(source storage.MonitorSource) storage.MonitorSource {
 }
 func safeMonitorJob(job storage.RunMonitorJob) storage.RunMonitorJob {
 	job.ConnectionSnapshot = nil
+	job.PrometheusConnectionSnapshot = nil
 	job.QueryCoverage = nil
+	job.PrometheusDiagnosticTimes = nil
 	job.StableSinceAt = nil
 	job.Source = safeMonitorSource(job.Source)
 	job.FinalDigest = ""
@@ -85,6 +87,7 @@ func safePreparation(p *storage.Preparation) *storage.Preparation {
 	_ = json.Unmarshal(raw, &out)
 	if out.Monitors != nil {
 		out.Monitors.Connections = nil
+		out.Monitors.PrometheusConnections = nil
 		for id, s := range out.Monitors.Sources {
 			out.Monitors.Sources[id] = safeMonitorSource(s)
 		}

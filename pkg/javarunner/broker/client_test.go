@@ -376,3 +376,156 @@ func TestBrokerClientCloseHostPreservesPeerAndReservation(t *testing.T) {
 		t.Fatal("peer lost", e)
 	}
 }
+
+func installUnstartedBrokerWave(t *testing.T, f *brokerServiceFixture, c *BrokerClient) (*BrokerClientWave, *DedicatedWave, string) {
+	t.Helper()
+	b := binding()
+	b.OwnerEpoch = c.ownerEpoch
+	preparer, err := f.service.profiles["approved"].NewPreparer([]javarunner.DedicatedHostContext{managedContext()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Install the exact state published by reserve before its asynchronous
+	// Prepare goroutine is scheduled. No scheduler sleeps are involved.
+	wave, err := NewDedicatedWave(t.Context(), f.store, f.epoch, b, []string{"session"}, 100, time.Second, 10*time.Second, preparer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const waveID = "reserved-wave"
+	id := wave.Records()[0].ID
+	f.service.mu.Lock()
+	owner := f.service.owners["generator"]
+	f.service.mu.Unlock()
+	owner.mu.Lock()
+	owner.waves[waveID] = &brokerWave{wave: wave, sequences: map[string]uint64{id: 0}, busy: map[string]bool{}, renewSequences: map[string]uint64{id: 0}, renewBusy: map[string]bool{}, lease: time.Second, runDuration: time.Minute, deadline: time.Now().Add(10 * time.Second)}
+	owner.mu.Unlock()
+	w := &BrokerClientWave{client: c, id: waveID, digest: b.ConfigurationSHA256, phase: "preparing", lease: time.Second, hosts: map[string]*brokerClientHost{id: {session: "session"}}}
+	c.mu.Lock()
+	c.waves[waveID] = w
+	c.mu.Unlock()
+	return w, wave, id
+}
+func TestBrokerClientReadyBeforeAsyncPreparationStarts(t *testing.T) {
+	f := newBrokerServiceFixture(t, nil)
+	c := managedBrokerClient(t, f)
+	w, wave, id := installUnstartedBrokerWave(t, f, c)
+	ready, err := w.Ready(t.Context())
+	if err != nil || ready {
+		t.Fatal("unstarted preparation must remain usable and not ready", ready, err)
+	}
+	if c.terminal.Load() || w.phase != "preparing" {
+		t.Fatal("reserved admission incorrectly fenced client", w.phase)
+	}
+	out, status := f.request(t, BrokerRequest{Operation: "ready", OwnerEpoch: c.ownerEpoch, OwnerToken: c.ownerToken, WaveID: w.id})
+	if status != http.StatusOK || out.State != "preparing" || len(out.Hosts) != 1 || out.Hosts[0].HostID != id || out.Hosts[0].SessionID != "session" {
+		t.Fatal("readiness projection lost the immutable reservation", status, out)
+	}
+	wave.mu.Lock()
+	phase := wave.phase
+	wave.mu.Unlock()
+	if phase != "reserved" || record(t, f.store, f.epoch, id).State != javarunner.HostReserved || f.calls.Load() != 0 {
+		t.Fatal("readiness polling advanced preparation or ran user code", phase)
+	}
+	if err := w.Commit(t.Context()); !errors.Is(err, ErrState) {
+		t.Fatal("not-ready reserved wave committed", err)
+	}
+	if _, err := w.Invoke(t.Context(), id, "init", nil); err == nil || f.calls.Load() != 0 {
+		t.Fatal("not-ready reserved wave invoked user code", err)
+	}
+	if err := c.Renew(t.Context()); err != nil {
+		t.Fatal("valid owner became unusable after an early readiness poll", err)
+	}
+	if err := wave.Prepare(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := w.Ready(t.Context()); err != nil || !ready {
+		t.Fatal("actual prepared wave was not ready", ready, err)
+	}
+	if f.calls.Load() != 0 {
+		t.Fatal("preparation ran user code")
+	}
+	if err := w.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Invoke(t.Context(), id, "init", nil); err != nil || f.calls.Load() != 1 {
+		t.Fatal("prepared/committed wave could not invoke", err)
+	}
+	if err := w.Abort(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := w.Ready(t.Context()); ready || !errors.Is(err, ErrFence) {
+		t.Fatal("retiring reservation appeared ready", ready, err)
+	}
+}
+func TestBrokerClientUnstartedWaveReadinessStillEnforcesFences(t *testing.T) {
+	for _, state := range []string{"cancelled_wave", "expired_wave", "expired_owner"} {
+		t.Run(state, func(t *testing.T) {
+			f := newBrokerServiceFixture(t, nil)
+			c := managedBrokerClient(t, f)
+			w, _, _ := installUnstartedBrokerWave(t, f, c)
+			f.service.mu.Lock()
+			owner := f.service.owners["generator"]
+			f.service.mu.Unlock()
+			switch state {
+			case "cancelled_wave":
+				if err := w.Abort(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+			case "expired_wave":
+				owner.mu.Lock()
+				serverWave := owner.waves[w.id]
+				owner.mu.Unlock()
+				serverWave.mu.Lock()
+				serverWave.deadline = time.Now().Add(-time.Millisecond)
+				serverWave.mu.Unlock()
+			case "expired_owner":
+				owner.mu.Lock()
+				owner.deadline = time.Now().Add(-time.Millisecond)
+				owner.mu.Unlock()
+			}
+			ready, err := w.Ready(t.Context())
+			if ready || err == nil {
+				t.Fatal("inactive reservation appeared pending/ready", ready, err)
+			}
+			if state == "cancelled_wave" {
+				if !errors.Is(err, ErrFence) {
+					t.Fatal(err)
+				}
+			} else {
+				var failure *BrokerFailure
+				want := "java_broker_operation_failed"
+				if state == "expired_owner" {
+					want = "java_broker_owner_fenced"
+				}
+				if !errors.As(err, &failure) || failure.Code != want {
+					t.Fatal("readiness weakened the authority fence", err)
+				}
+			}
+			if f.calls.Load() != 0 {
+				t.Fatal("fenced reservation invoked user code")
+			}
+		})
+	}
+}
+func TestBrokerClientUnstartedWaveReadinessRejectsForgedInventory(t *testing.T) {
+	for _, field := range []string{"wave", "host", "session"} {
+		t.Run(field, func(t *testing.T) {
+			f := newBrokerServiceFixture(t, nil)
+			c := managedBrokerClient(t, f)
+			w, _, _ := installUnstartedBrokerWave(t, f, c)
+			corruptBrokerResponse(t, c, func(out *BrokerResponse) {
+				switch field {
+				case "wave":
+					out.WaveID = "other-wave"
+				case "host":
+					out.Hosts[0].HostID = "other-host"
+				case "session":
+					out.Hosts[0].SessionID = "other-session"
+				}
+			})
+			if ready, err := w.Ready(t.Context()); ready || !errors.Is(err, ErrBrokerTransport) || !c.terminal.Load() {
+				t.Fatal("forged pending inventory accepted", ready, err)
+			}
+		})
+	}
+}

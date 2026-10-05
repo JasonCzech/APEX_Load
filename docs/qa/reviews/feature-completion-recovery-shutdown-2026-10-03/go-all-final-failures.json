@@ -1,0 +1,274 @@
+[
+  {
+    "line": 284,
+    "name": "--- FAIL: TestLegacyDirectArtifactEndpointCannotBypassTransactionSanitization (0.02s)",
+    "detail": [
+      "    archive_transaction_sanitize_test.go:273: direct transaction status=500 body={\"error\":\"internal server error\",\"ref\":\"bb07327bf07947f5\"}"
+    ]
+  },
+  {
+    "line": 683,
+    "name": "--- FAIL: TestReleaseRunCapacityWaitsForTerminalArchive (0.32s)",
+    "detail": [
+      "    capacity_operations_test.go:599: NewSQLiteStore: failed to create idx_bruno_native_batches_project_created: database or disk is full (13)"
+    ]
+  },
+  {
+    "line": 685,
+    "name": "--- FAIL: TestReverseCapacityReadinessPersistsPoolMembership (0.00s)",
+    "detail": [
+      "    testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestReverseCapacityReadinessPersistsPoolMembership810297799: no space left on device"
+    ]
+  },
+  {
+    "line": 687,
+    "name": "--- FAIL: TestReverseCapacityReadinessExcludesAnotherRunsBurstSession (0.00s)",
+    "detail": [
+      "    testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestReverseCapacityReadinessExcludesAnotherRunsBurstSession2646910518: no space left on device"
+    ]
+  },
+  {
+    "line": 689,
+    "name": "--- FAIL: TestDirectCapacityReadinessRequiresGeneratorHeartbeat (0.00s)",
+    "detail": [
+      "    testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestDirectCapacityReadinessRequiresGeneratorHeartbeat4074973173: no space left on device"
+    ]
+  },
+  {
+    "line": 691,
+    "name": "--- FAIL: TestOrphanReconcileHardExpiresTrackedCapacity (0.00s)",
+    "detail": [
+      "    testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestOrphanReconcileHardExpiresTrackedCapacity253761560: no space left on device"
+    ]
+  },
+  {
+    "line": 693,
+    "name": "--- FAIL: TestOrphanReconcileAdoptsLostProviderIdentityByDurableLaunchIntent (0.00s)",
+    "detail": [
+      "    testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestOrphanReconcileAdoptsLostProviderIdentityByDurableLaunchInte1220974085: no space left on device"
+    ]
+  },
+  {
+    "line": 695,
+    "name": "--- FAIL: TestOrphanReconcileReapsUntrackedProviderCapacity (0.00s)",
+    "detail": [
+      "    testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestOrphanReconcileReapsUntrackedProviderCapacity2491442026: no space left on device"
+    ]
+  },
+  {
+    "line": 697,
+    "name": "--- FAIL: TestOrphanReconcileAdoptsLaunchIntentOnlyOnce (0.00s)",
+    "detail": [
+      "    testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestOrphanReconcileAdoptsLaunchIntentOnlyOnce2738066239: no space left on device"
+    ]
+  },
+  {
+    "line": 1902,
+    "name": "--- FAIL: TestArchiveQueryEndpoints (16.09s)",
+    "detail": []
+  },
+  {
+    "line": 1903,
+    "name": "    --- FAIL: TestArchiveQueryEndpoints/safe_transaction_jsonl_download (0.01s)",
+    "detail": [
+      "        handlers_archive_test.go:243: artifact status = 500, want 200 body={\"error\":\"internal server error\",\"ref\":\"a271591cae002406\"}"
+    ]
+  },
+  {
+    "line": 1905,
+    "name": "    --- FAIL: TestArchiveQueryEndpoints/browser_diagnostics_download (0.84s)",
+    "detail": [
+      "        handlers_archive_test.go:259: browser diagnostics status = 500, want 200 body={\"error\":\"internal server error\",\"ref\":\"22a3ec9b35b626ea\"}"
+    ]
+  },
+  {
+    "line": 5741,
+    "name": "--- FAIL: TestDistributedCompletionRecordsArchiveFailure (1.10s)",
+    "detail": []
+  },
+  {
+    "line": 5742,
+    "name": "    --- FAIL: TestDistributedCompletionRecordsArchiveFailure/FAILED/remote_collection_unavailable (0.37s)",
+    "detail": [
+      "        run_archive_failure_test.go:149: failed to create idx_correlation_rulesets_project: database or disk is full (13)"
+    ]
+  },
+  {
+    "line": 5744,
+    "name": "    --- FAIL: TestDistributedCompletionRecordsArchiveFailure/ABORTED/remote_collection_unavailable (0.26s)",
+    "detail": [
+      "        run_archive_failure_test.go:149: failed to create idx_threshold_evaluations_project: database or disk is full (13)"
+    ]
+  },
+  {
+    "line": 5746,
+    "name": "    --- FAIL: TestDistributedCompletionRecordsArchiveFailure/FAILED/remote_collection_failed (0.22s)",
+    "detail": [
+      "        run_archive_failure_test.go:149: failed to create idx_shared_data_pools_project: database or disk is full (13)"
+    ]
+  },
+  {
+    "line": 5748,
+    "name": "    --- FAIL: TestDistributedCompletionRecordsArchiveFailure/COMPLETE/remote_collection_failed (0.24s)",
+    "detail": [
+      "        run_archive_failure_test.go:149: failed to create idx_domain_deployment_targets_cluster: database or disk is full (13)"
+    ]
+  },
+  {
+    "line": 5750,
+    "name": "--- FAIL: TestTerminalUnconfirmedArchiveReadbackAfterRestart (0.23s)",
+    "detail": [
+      "    run_archive_failure_test.go:186: failed to create idx_execution_plan_schedule_occurrences_retention: database or disk is full (13)"
+    ]
+  },
+  {
+    "line": 5752,
+    "name": "--- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources (0.23s)",
+    "detail": []
+  },
+  {
+    "line": 5753,
+    "name": "    --- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources/pending (0.23s)",
+    "detail": [
+      "        run_archive_recovery_test.go:18: failed to create idx_shared_data_pools_project: database or disk is full (13)"
+    ]
+  },
+  {
+    "line": 5755,
+    "name": "    --- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources/cache (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources904897169: no space left on device"
+    ]
+  },
+  {
+    "line": 5757,
+    "name": "    --- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources/expired (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources3286452177: no space left on device"
+    ]
+  },
+  {
+    "line": 5759,
+    "name": "    --- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources/exhausted (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources1993610266: no space left on device"
+    ]
+  },
+  {
+    "line": 5761,
+    "name": "    --- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources/resolved (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources1850241121: no space left on device"
+    ]
+  },
+  {
+    "line": 5763,
+    "name": "    --- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources/catalog_unavailable (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources2494558519: no space left on device"
+    ]
+  },
+  {
+    "line": 5765,
+    "name": "    --- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources/publication (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources2016535998: no space left on device"
+    ]
+  },
+  {
+    "line": 5767,
+    "name": "    --- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources/untrusted_publication (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources3911883687: no space left on device"
+    ]
+  },
+  {
+    "line": 5769,
+    "name": "    --- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources/available (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources3142800309: no space left on device"
+    ]
+  },
+  {
+    "line": 5771,
+    "name": "    --- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources/active (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources2902755916: no space left on device"
+    ]
+  },
+  {
+    "line": 5773,
+    "name": "    --- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources/changed_start (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources1500731450: no space left on device"
+    ]
+  },
+  {
+    "line": 5775,
+    "name": "    --- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources/changed_end (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources1830792100: no space left on device"
+    ]
+  },
+  {
+    "line": 5777,
+    "name": "    --- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources/changed_status (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources1228816272: no space left on device"
+    ]
+  },
+  {
+    "line": 5779,
+    "name": "    --- FAIL: TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources/other_project (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources2637246155: no space left on device"
+    ]
+  },
+  {
+    "line": 5781,
+    "name": "--- FAIL: TestRunArchiveRecoverySingleRunReadsAndIncarnationRecheck (0.00s)",
+    "detail": []
+  },
+  {
+    "line": 5782,
+    "name": "    --- FAIL: TestRunArchiveRecoverySingleRunReadsAndIncarnationRecheck/read (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoverySingleRunReadsAndIncarnationRecheckread1035804046: no space left on device"
+    ]
+  },
+  {
+    "line": 5784,
+    "name": "    --- FAIL: TestRunArchiveRecoverySingleRunReadsAndIncarnationRecheck/store_failure (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoverySingleRunReadsAndIncarnationRecheckstore_3572278163: no space left on device"
+    ]
+  },
+  {
+    "line": 5786,
+    "name": "    --- FAIL: TestRunArchiveRecoverySingleRunReadsAndIncarnationRecheck/replaced_during_read (0.00s)",
+    "detail": [
+      "        testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestRunArchiveRecoverySingleRunReadsAndIncarnationRecheckreplac1822409176: no space left on device"
+    ]
+  },
+  {
+    "line": 6435,
+    "name": "--- FAIL: TestStaleReplicaScriptMutationsCannotTouchCrossProjectReplacement (0.19s)",
+    "detail": [
+      "    script_ha_mutation_test.go:16: NewSQLiteStore: initialize scheduler content revision: database or disk is full (13)"
+    ]
+  },
+  {
+    "line": 6437,
+    "name": "--- FAIL: TestStoreScriptDurableRejectsStaleCrossProjectReplica (0.00s)",
+    "detail": [
+      "    testing.go:1426: TempDir: mkdir /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestStoreScriptDurableRejectsStaleCrossProjectReplica546234258: no space left on device"
+    ]
+  },
+  {
+    "line": 6520,
+    "name": "--- FAIL: TestHistoricalArchiveSecretSurfacesAreMasked (0.02s)",
+    "detail": [
+      "    security_library_hardening_test.go:405: GET /api/v1/tests/d6d44291-6134-4a27-b83c-d734c5cd4051/archive status = 500 body={\"error\":\"internal server error\",\"ref\":\"6988de5d0e116a1a\"}"
+    ]
+  }
+]

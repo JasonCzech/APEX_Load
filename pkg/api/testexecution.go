@@ -4497,7 +4497,15 @@ func (tr *TestRunner) applyDurationAdjustment(test *ManagedTest, multiEngine *en
 
 func (tr *TestRunner) applyPause(test *ManagedTest, multiEngine *engine.MultiGroupEngine, backend testExecutionBackend) error {
 	if multiEngine != nil {
-		return multiEngine.Pause()
+		tr.mu.RLock()
+		parent := test.executionCtx
+		tr.mu.RUnlock()
+		if parent == nil {
+			parent = context.Background()
+		}
+		ctx, cancel := context.WithTimeout(parent, localPauseQuiescenceTimeout)
+		defer cancel()
+		return multiEngine.PauseAndWait(ctx)
 	}
 	pausable, ok := backend.(pausableExecutionBackend)
 	if !ok {
@@ -4816,12 +4824,21 @@ func (tr *TestRunner) PauseTest(id string) error {
 	}
 	if err := tr.applyPause(test, multiEngine, backend); err != nil {
 		var uncertain *distributedPauseUncertainError
-		if errors.As(err, &uncertain) {
+		if errors.As(err, &uncertain) || errors.Is(err, engine.ErrPauseQuiescenceUnproven) {
 			return tr.failClosedUncertainPauseControl(test, "RUNNING", backend, err)
 		}
 		return err
 	}
 
+	pauseStartedAt := time.Now().UTC()
+	if multiEngine != nil {
+		started, confirmed := multiEngine.PauseStartedAt()
+		if !confirmed {
+			err := &engine.PauseQuiescenceUnprovenError{Cause: fmt.Errorf("local pause changed before controller confirmation")}
+			return tr.failClosedUncertainPauseControl(test, "RUNNING", backend, err)
+		}
+		pauseStartedAt = started.UTC()
+	}
 	tr.mu.Lock()
 	if !tr.isExecutionLeader() {
 		tr.mu.Unlock()
@@ -4847,7 +4864,7 @@ func (tr *TestRunner) PauseTest(id string) error {
 		}
 		return fmt.Errorf("test changed from RUNNING to %s while pause was being applied", currentStatus)
 	}
-	pausedAt := time.Now().UTC()
+	pausedAt := pauseStartedAt
 	previousEarlyStopBreachStartedAt := cloneTimePtr(test.earlyStopBreachStartedAt)
 	test.Status = "PAUSED"
 	test.PausedAt = &pausedAt
@@ -5068,16 +5085,19 @@ func (tr *TestRunner) failClosedUncertainPauseControl(test *ManagedTest, expecte
 		return errors.Join(controlErr, fmt.Errorf("cannot persist uncertain remote control from %s; test is now %s", expectedStatus, current))
 	}
 	test.Status = "STOPPING"
-	test.Error = "remote pause/resume state is uncertain: " + controlErr.Error()
+	test.Error = "pause/resume state is uncertain: " + controlErr.Error()
 	persistErr := retryDurableTransition(func() error { return tr.saveManagedTestRecord(test) })
 	tr.cancelAllVUserScaleRampsLocked(test)
 	cancel := test.cancel
+	multiEngine := test.multiEngine
 	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	tr.mu.Unlock()
 	tr.broadcastEvent("test_stopping", eventSnapshot)
 
 	var stopErr error
-	if stoppable, ok := backend.(contextStoppableExecutionBackend); ok {
+	if multiEngine != nil {
+		multiEngine.Stop()
+	} else if stoppable, ok := backend.(contextStoppableExecutionBackend); ok {
 		stopErr = stoppable.StopTestContext(context.Background(), tr, test)
 	} else if stoppable, ok := backend.(stoppableExecutionBackend); ok {
 		stopErr = stoppable.StopTest(tr, test)
@@ -5499,6 +5519,7 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 	alreadyTerminal := isTerminalTestStatus(test.Status)
 	status := test.Status
 	specs := test.groupSpecs
+	resourcePeaks, resourcePeakErr := runtimeReservationGroups(test, false)
 	runtimeSecrets := make([]map[string]string, len(test.Groups))
 	for index := range test.Groups {
 		runtimeSecrets[index] = test.Groups[index].runtimeSecretValues
@@ -5507,6 +5528,9 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 
 	if boundsErr != nil {
 		return nil, boundsErr
+	}
+	if resourcePeakErr != nil {
+		return nil, resourcePeakErr
 	}
 	if alreadyTerminal {
 		// The runtime this engine needs has already been released, so there is
@@ -5520,6 +5544,9 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 		return nil, err
 	}
 	for index := range groups {
+		if index < len(resourcePeaks) {
+			groups[index].RuntimeResourcePeakVUsers = resourcePeaks[index].VUsers
+		}
 		groups[index].ScenarioID = strings.TrimSpace(test.ScenarioID)
 		groups[index].RunID = test.ID
 		groups[index].RunCorrelationOrigins = tr.runMonitorCorrelationOrigins(test.ID)
@@ -5693,6 +5720,33 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 	}
 	tr.mu.Unlock()
 
+	if err := mge.ReserveRuntimeResources(ctx); err != nil {
+		return ctx, nil, nil, false, fmt.Errorf("local runtime resource admission: %w", err)
+	}
+	{
+		demands := mge.RuntimeResourceDemands()
+		currentVUsers := mge.GetGroupVUsers()
+		tr.mu.Lock()
+		if tr.tests[test.ID] != test || test.executionCtx != ctx || ctx.Err() != nil {
+			tr.mu.Unlock()
+			return ctx, nil, nil, false, errors.New("preparation execution no longer current")
+		}
+		peaks, peakErr := runtimeReservationGroups(test, false)
+		if peakErr != nil {
+			tr.mu.Unlock()
+			return ctx, nil, nil, false, peakErr
+		}
+		test.GeneratorShards = localRuntimeResourceAllocations(peaks, demands, currentVUsers)
+		if test.preparationID != "" {
+			test.preparationPeerCheck = func(context.Context) error {
+				if !mge.RuntimeResourceReservationsCurrent() {
+					return errors.New("prepared runtime resource reservation unavailable")
+				}
+				return nil
+			}
+		}
+		tr.mu.Unlock()
+	}
 	if err := tr.awaitPreparedStart(test); err != nil {
 		return ctx, nil, nil, false, err
 	}

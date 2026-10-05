@@ -300,6 +300,12 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 	if assignment.executionGeneration != request.GetExecutionGeneration() {
 		return commitTransition{err: status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", assignment.executionGeneration)}
 	}
+	for name, claim := range assignment.groupRuntimeResourceClaims {
+		execution := service.executions[testID][name]
+		if (!assignment.committed || execution != nil && !execution.started.Load()) && !ValidRuntimeResourceAdmission(claim, runtimeResourceAdmission(claim, assignment.groupRuntimeResources[name])) {
+			return commitTransition{err: status.Error(codes.FailedPrecondition, "runtime resource reservation is no longer current")}
+		}
+	}
 	if assignment.requireTestExecutionLease && !service.testExecutionLeaseCurrentLocked(testID, assignment.executionGeneration, now) {
 		return commitTransition{err: status.Error(codes.FailedPrecondition, "test assignment execution lease is missing or expired")}
 	}
@@ -342,6 +348,9 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 			}
 			if execution.started.Load() {
 				continue
+			}
+			if !execution.engine.RuntimeResourceReservationsCurrent() {
+				return commitTransition{err: status.Error(codes.FailedPrecondition, "engine runtime resource reservation is no longer current")}
 			}
 			scriptID := assignment.groupScripts[groupName]
 			cached, cachedOK := service.scriptCache.get(scriptID)
@@ -529,6 +538,7 @@ func (service *Service) commitValidatedWork(ctx context.Context, request *pb.Wor
 			// controller's 30s safety minimum immediately after it is armed.
 			supervisionTTL = supervision.ttl
 		}
+		resourceAdmissions := service.runtimeResourceAdmissionsLocked(service.assignments[request.GetTestId()])
 		service.mu.Unlock()
 		if transition.lifecycle != nil {
 			service.publishLifecycleTransitionLocked(transition.lifecycle)
@@ -540,7 +550,7 @@ func (service *Service) commitValidatedWork(ctx context.Context, request *pb.Wor
 		}
 		switch transition.kind {
 		case commitTransitionAccepted:
-			return &pb.WorkCommitAck{Accepted: true, RunSupervisionArmed: supervisionArmed, RunSupervisionTtlMilliseconds: supervisionTTL.Milliseconds()}, nil
+			return &pb.WorkCommitAck{Accepted: true, RuntimeResourceAdmissions: resourceAdmissions, RunSupervisionArmed: supervisionArmed, RunSupervisionTtlMilliseconds: supervisionTTL.Milliseconds()}, nil
 		case commitTransitionRejected:
 			return &pb.WorkCommitAck{Accepted: false, ErrorMessage: transition.errorMessage}, nil
 		case commitTransitionWait:
@@ -558,7 +568,7 @@ func (service *Service) commitValidatedWork(ctx context.Context, request *pb.Wor
 			for _, event := range transition.starts {
 				service.startExecutionEvent(event)
 			}
-			return &pb.WorkCommitAck{Accepted: true, RunSupervisionArmed: supervisionArmed, RunSupervisionTtlMilliseconds: supervisionTTL.Milliseconds()}, nil
+			return &pb.WorkCommitAck{Accepted: true, RuntimeResourceAdmissions: resourceAdmissions, RunSupervisionArmed: supervisionArmed, RunSupervisionTtlMilliseconds: supervisionTTL.Milliseconds()}, nil
 		default:
 			return nil, status.Error(codes.Internal, "assignment coordinator returned an invalid commit decision")
 		}
@@ -722,6 +732,7 @@ func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Servi
 	assignment, _ = coordinator.beginStopping(testID, assignment.executionGeneration, assignment)
 	service.assignments[testID] = assignment
 	persistentJavaDrainToken := service.reserveAssignmentJavaDrainLocked(assignment)
+	releaseAssignmentRuntimeResources(assignment)
 	service.clearTestExecutionLeaseLocked(testID)
 	service.retainRunSupervisionDrainLocked(testID, assignment)
 	delete(service.assignments, testID)
@@ -837,8 +848,14 @@ func (service *Service) releaseStopDrain(token uint64) {
 	service.mu.Unlock()
 }
 
+type pauseExecutionEngine interface {
+	Pause() error
+	PauseAndWait(context.Context) error
+	Resume() error
+}
+
 type enginePauseParticipant struct {
-	engine *engine.MultiGroupEngine
+	engine pauseExecutionEngine
 }
 
 type pauseTransitionPlan struct {
@@ -851,6 +868,7 @@ type pauseTransitionPlan struct {
 	operationSequence   uint64
 	runSupervisionToken []byte
 	participants        []enginePauseParticipant
+	requireQuiescence   bool
 }
 
 type pauseTransitionDecision struct {
@@ -866,7 +884,11 @@ func (coordinator *assignmentLifecycleCoordinator) planPauseLocked(service *Serv
 	return coordinator.planPauseWithTokenLocked(service, testID, paused, generation, operationID, operationSequence, nil)
 }
 
-func (coordinator *assignmentLifecycleCoordinator) planPauseWithTokenLocked(service *Service, testID string, paused bool, generation uint64, operationID string, operationSequence uint64, runSupervisionToken []byte) pauseTransitionDecision {
+func (coordinator *assignmentLifecycleCoordinator) planPauseWithTokenLocked(service *Service, testID string, paused bool, generation uint64, operationID string, operationSequence uint64, runSupervisionToken []byte, requireProof ...bool) pauseTransitionDecision {
+	requireQuiescence := len(requireProof) > 0 && requireProof[0]
+	if requireQuiescence && (!paused || !service.executionEnabled) {
+		return pauseTransitionDecision{err: status.Error(codes.FailedPrecondition, "messaging quiescence requires an executing pause participant")}
+	}
 	if stage := coordinator.pendingStages[testID]; stage != nil {
 		return pauseTransitionDecision{wait: stage.done}
 	}
@@ -900,7 +922,9 @@ func (coordinator *assignmentLifecycleCoordinator) planPauseWithTokenLocked(serv
 			if assignment.pauseOperationID != operationID || assignment.paused != paused {
 				return pauseTransitionDecision{err: status.Error(codes.FailedPrecondition, "pause operation sequence was already used for a different operation")}
 			}
-			return pauseTransitionDecision{appliedOperationID: operationID, appliedSequence: operationSequence, idempotent: true}
+			if !requireQuiescence {
+				return pauseTransitionDecision{appliedOperationID: operationID, appliedSequence: operationSequence, idempotent: true}
+			}
 		}
 	}
 
@@ -924,6 +948,9 @@ func (coordinator *assignmentLifecycleCoordinator) planPauseWithTokenLocked(serv
 			}
 		}
 	}
+	if requireQuiescence && len(participants) == 0 {
+		return pauseTransitionDecision{err: status.Error(codes.FailedPrecondition, "messaging quiescence has no executing participant")}
+	}
 	control, wait := coordinator.reserveControlLocked(testID, generation, assignmentControlPause)
 	if wait != nil {
 		return pauseTransitionDecision{wait: wait}
@@ -938,30 +965,40 @@ func (coordinator *assignmentLifecycleCoordinator) planPauseWithTokenLocked(serv
 		operationSequence:   operationSequence,
 		runSupervisionToken: append([]byte(nil), runSupervisionToken...),
 		participants:        participants,
+		requireQuiescence:   requireQuiescence,
 	}}
 }
 
-func applyPauseParticipants(participants []enginePauseParticipant, paused bool) (int, error) {
+func applyPauseParticipants(ctx context.Context, participants []enginePauseParticipant, paused bool, requireQuiescence bool) (int, error) {
 	for index, participant := range participants {
 		var err error
 		if paused {
-			err = participant.engine.Pause()
+			if requireQuiescence {
+				err = participant.engine.PauseAndWait(ctx)
+			} else {
+				err = participant.engine.Pause()
+			}
 		} else {
 			err = participant.engine.Resume()
 		}
 		if err != nil {
+			if errors.Is(err, engine.ErrPauseQuiescenceUnproven) {
+				return index + 1, err // The failing participant already latched.
+			}
 			return index, err
 		}
 	}
 	return len(participants), nil
 }
 
-func rollbackPauseParticipants(participants []enginePauseParticipant, applied int, paused bool) error {
+func rollbackPauseParticipants(ctx context.Context, participants []enginePauseParticipant, applied int, paused bool, requireQuiescence bool) error {
 	rollbackErrors := make([]error, 0)
 	for index := applied - 1; index >= 0; index-- {
 		var err error
 		if paused {
-			err = participants[index].engine.Pause()
+			// Restoring a prior paused state always needs actual proof, including
+			// compensation for a legacy/ordinary Resume request.
+			err = participants[index].engine.PauseAndWait(ctx)
 		} else {
 			err = participants[index].engine.Resume()
 		}
@@ -970,6 +1007,18 @@ func rollbackPauseParticipants(participants []enginePauseParticipant, applied in
 		}
 	}
 	return errors.Join(rollbackErrors...)
+}
+
+func (service *Service) rollbackPausePlan(plan *pauseTransitionPlan, applied int) error {
+	timeout := service.runSupervisionDrain
+	if timeout <= 0 {
+		timeout = defaultRunSupervisionDrain
+	}
+	// Request cancellation cannot prevent restoring safety. This independent
+	// bounded compensation window never changes an admitted action's budget.
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return rollbackPauseParticipants(ctx, plan.participants, applied, plan.previousPaused, true)
 }
 
 func (coordinator *assignmentLifecycleCoordinator) commitPauseLocked(service *Service, plan *pauseTransitionPlan) (*pb.MetricsBatch, error) {
@@ -1012,7 +1061,39 @@ func (service *Service) abortControl(plan *pendingAssignmentControl) {
 	service.mu.Unlock()
 }
 
+// A mixed or unproved compensation cannot remain under a continue/orphan
+// policy. Detach this exact control incarnation and use the retained bounded
+// hard-stop drain, without waiting for engine or transport completion here.
+func (service *Service) failClosedPause(plan *pauseTransitionPlan) {
+	const reason = "messaging_pause_quiescence_unproven"
+	service.metricsBroker.lockPublication()
+	service.mu.Lock()
+	var stops []detachedFencedTest
+	var batch *pb.MetricsBatch
+	if service.lifecycleCoordinator.controlCurrentLocked(plan.control) {
+		assignment, ok := service.assignments[plan.testID]
+		if ok && assignment.executionGeneration == plan.generation &&
+			(emptyRunSupervisionTokenHash(assignment.runSupervisionTokenHash) || sameRunSupervisionToken(assignment.runSupervisionTokenHash, plan.runSupervisionToken)) {
+			batch = service.metricsBatchForAssignment(plan.testID, assignment, "STOPPING", reason)
+			stops = service.detachFencedTestsLocked([]string{plan.testID}, plan.generation, false)
+		}
+		service.lifecycleCoordinator.completeControlLocked(plan.control)
+	}
+	service.mu.Unlock()
+	if batch != nil {
+		service.publishLifecycleTransitionLocked(batch)
+	}
+	service.metricsBroker.unlockPublication()
+	for _, stop := range stops {
+		stop.finalState, stop.finalError, stop.escalationReason = "FAILED", reason, reason
+		service.startDetachedRunDrain(stop, false)
+	}
+}
+
 func (service *Service) SetPaused(ctx context.Context, request *pb.PauseRequest) (*pb.PauseAck, error) {
+	if request.GetRequireQuiescence() && !request.GetPause() {
+		return nil, status.Error(codes.InvalidArgument, "messaging quiescence is valid only for pause")
+	}
 	if request != nil {
 		if err := service.validateRunMutationToken(request.GetTestId(), request.GetExecutionGeneration(), request.GetRunSupervisionToken()); err != nil {
 			return nil, err
@@ -1028,11 +1109,17 @@ func (service *Service) SetPaused(ctx context.Context, request *pb.PauseRequest)
 	if request.GetOperationSequence() == 0 {
 		return nil, status.Error(codes.InvalidArgument, "operation_sequence is required")
 	}
-	appliedOperationID, appliedSequence, err := service.setPausedWithOperation(ctx, request.GetTestId(), request.GetPause(), request.GetExecutionGeneration(), operationID, request.GetOperationSequence(), request.GetRunSupervisionToken())
+	appliedOperationID, appliedSequence, err := service.setPausedWithOperation(ctx, request.GetTestId(), request.GetPause(), request.GetExecutionGeneration(), operationID, request.GetOperationSequence(), request.GetRunSupervisionToken(), request.GetRequireQuiescence())
 	if err != nil {
 		return nil, err
 	}
+	var quiescenceConfirmed *bool
+	if request.GetRequireQuiescence() {
+		confirmed := true
+		quiescenceConfirmed = &confirmed
+	}
 	return &pb.PauseAck{
+		QuiescenceConfirmed:      quiescenceConfirmed,
 		Accepted:                 true,
 		CurrentPaused:            request.GetPause(),
 		AppliedOperationId:       appliedOperationID,
@@ -1040,7 +1127,7 @@ func (service *Service) SetPaused(ctx context.Context, request *pb.PauseRequest)
 	}, nil
 }
 
-func (service *Service) setPausedWithOperation(ctx context.Context, testID string, paused bool, executionGeneration uint64, operationID string, operationSequence uint64, runSupervisionToken []byte) (string, uint64, error) {
+func (service *Service) setPausedWithOperation(ctx context.Context, testID string, paused bool, executionGeneration uint64, operationID string, operationSequence uint64, runSupervisionToken []byte, requireProof ...bool) (string, uint64, error) {
 	if testID == "" {
 		return "", 0, status.Error(codes.InvalidArgument, "test_id is required")
 	}
@@ -1055,7 +1142,7 @@ func (service *Service) setPausedWithOperation(ctx context.Context, testID strin
 			service.mu.Unlock()
 			return "", 0, status.FromContextError(ctx.Err()).Err()
 		}
-		decision := service.lifecycleCoordinator.planPauseWithTokenLocked(service, testID, paused, executionGeneration, operationID, operationSequence, runSupervisionToken)
+		decision := service.lifecycleCoordinator.planPauseWithTokenLocked(service, testID, paused, executionGeneration, operationID, operationSequence, runSupervisionToken, requireProof...)
 		service.mu.Unlock()
 		if decision.err != nil {
 			return "", 0, decision.err
@@ -1077,13 +1164,14 @@ func (service *Service) setPausedWithOperation(ctx context.Context, testID strin
 		}
 
 		plan := decision.plan
-		applied, applyErr := applyPauseParticipants(plan.participants, plan.targetPaused)
+		applied, applyErr := applyPauseParticipants(ctx, plan.participants, plan.targetPaused, plan.requireQuiescence)
 		if applyErr != nil {
-			rollbackErr := rollbackPauseParticipants(plan.participants, applied, plan.previousPaused)
-			service.abortControl(plan.control)
+			rollbackErr := service.rollbackPausePlan(plan, applied)
 			if rollbackErr != nil {
+				service.failClosedPause(plan)
 				return "", 0, status.Errorf(codes.Internal, "update running pause state: %v; rollback failed: %v", applyErr, rollbackErr)
 			}
+			service.abortControl(plan.control)
 			return "", 0, status.Errorf(codes.FailedPrecondition, "update running pause state: %v", applyErr)
 		}
 
@@ -1105,11 +1193,12 @@ func (service *Service) setPausedWithOperation(ctx context.Context, testID strin
 		service.mu.Unlock()
 		service.metricsBroker.unlockPublication()
 
-		rollbackErr := rollbackPauseParticipants(plan.participants, len(plan.participants), plan.previousPaused)
-		service.abortControl(plan.control)
+		rollbackErr := service.rollbackPausePlan(plan, len(plan.participants))
 		if rollbackErr != nil {
+			service.failClosedPause(plan)
 			return "", 0, status.Errorf(codes.Internal, "%v; rollback running pause state: %v", commitErr, rollbackErr)
 		}
+		service.abortControl(plan.control)
 		return "", 0, commitErr
 	}
 }
@@ -1183,6 +1272,9 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 	currentGroupVUsers, ok := assignment.groups[request.GetGroupName()]
 	if !ok {
 		return scaleTransitionDecision{err: status.Error(codes.NotFound, "group assignment not found")}
+	}
+	if peak, managed := assignment.groupRuntimeResourcePeaks[request.GetGroupName()]; managed && request.GetTargetVusers() > peak {
+		return scaleTransitionDecision{err: status.Error(codes.FailedPrecondition, "runtime resource immutable peak exceeded")}
 	}
 	if err := service.validatePodCapacityAssignmentLocked(testID, request.GetGroupName(), request.GetTargetVusers()); err != nil {
 		return scaleTransitionDecision{err: status.Error(codes.ResourceExhausted, err.Error())}

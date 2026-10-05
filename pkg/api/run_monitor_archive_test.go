@@ -42,7 +42,7 @@ func checkAppDynamicsArchiveCanonical(t *testing.T, limited bool) {
 		t.Fatal(err)
 	}
 	bindings := &storage.MonitorBindings{Sources: []storage.MonitorBinding{{SourceID: source.ID, Required: true}}}
-	record := &storage.TestRecord{ID: "archive-run", Name: "run", ProjectID: "proj-a", Status: "RUNNING", StartTime: start, StartedAt: &start, MonitorBindings: bindings}
+	record := &storage.TestRecord{GoalConfig: &GoalConfig{MonitorRules: []analysis.MonitorRule{{SourceID: source.ID, Metric: "calls", Unit: "count", Statistic: "sum", Comparator: "lte", Threshold: 5}}}, ID: "archive-run", Name: "run", ProjectID: "proj-a", Status: "RUNNING", StartTime: start, StartedAt: &start, MonitorBindings: bindings}
 	if err := durable.SaveTest(record); err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,45 @@
+Disposable PostgreSQL16 migration/roundtrip fixture; one CPU,512MiB,loopback only.
+=== RUN   TestPostgresAnalysisWorkflows
+=== RUN   TestPostgresAnalysisWorkflows/preparation_takeover
+=== RUN   TestPostgresAnalysisWorkflows/preparation_expiry
+--- PASS: TestPostgresAnalysisWorkflows (1.65s)
+    --- PASS: TestPostgresAnalysisWorkflows/preparation_takeover (0.04s)
+    --- PASS: TestPostgresAnalysisWorkflows/preparation_expiry (0.02s)
+=== RUN   TestPostgresManagementRelease28LegacyUpgrade
+--- PASS: TestPostgresManagementRelease28LegacyUpgrade (2.00s)
+=== RUN   TestPostgresManagementCohortConcurrentFences
+    postgres_monitor_management_integration_test.go:106: ERROR: insert or update on table "monitor_management_polls" violates foreign key constraint "apexload_fk_monitor_management_polls_id" (SQLSTATE 23503)
+--- FAIL: TestPostgresManagementCohortConcurrentFences (1.43s)
+=== RUN   TestPostgresManagementTerminalStatusSerializesIssuanceAndPublication
+=== RUN   TestPostgresManagementTerminalStatusSerializesIssuanceAndPublication/issuance
+    postgres_monitor_management_integration_test.go:197: ERROR: insert or update on table "monitor_management_polls" violates foreign key constraint "apexload_fk_monitor_management_polls_id" (SQLSTATE 23503)
+=== RUN   TestPostgresManagementTerminalStatusSerializesIssuanceAndPublication/publication
+    postgres_monitor_management_integration_test.go:197: ERROR: insert or update on table "monitor_management_polls" violates foreign key constraint "apexload_fk_monitor_management_polls_id" (SQLSTATE 23503)
+--- FAIL: TestPostgresManagementTerminalStatusSerializesIssuanceAndPublication (2.24s)
+    --- FAIL: TestPostgresManagementTerminalStatusSerializesIssuanceAndPublication/issuance (1.17s)
+    --- FAIL: TestPostgresManagementTerminalStatusSerializesIssuanceAndPublication/publication (1.07s)
+=== RUN   TestPostgresManagementConcurrentStartsRespectAssignedCapacity
+--- PASS: TestPostgresManagementConcurrentStartsRespectAssignedCapacity (1.78s)
+=== RUN   TestPostgresManagementRetentionCursorSerializesPeers
+    postgres_monitor_management_integration_test.go:303: ERROR: insert or update on table "monitor_management_polls" violates foreign key constraint "apexload_fk_monitor_management_polls_id" (SQLSTATE 23503)
+--- FAIL: TestPostgresManagementRetentionCursorSerializesPeers (0.96s)
+=== RUN   TestPostgresManagementRetentionCancellationLeavesNoPartialProgress
+    postgres_monitor_management_integration_test.go:373: ERROR: insert or update on table "monitor_management_polls" violates foreign key constraint "apexload_fk_monitor_management_polls_id" (SQLSTATE 23503)
+--- FAIL: TestPostgresManagementRetentionCancellationLeavesNoPartialProgress (1.07s)
+=== RUN   TestPostgresManagementPollRetentionSweepProjectPrefix
+    postgres_monitor_retention_integration_test.go:15: ERROR: insert or update on table "monitor_management_polls" violates foreign key constraint "apexload_fk_monitor_management_polls_id" (SQLSTATE 23503)
+--- FAIL: TestPostgresManagementPollRetentionSweepProjectPrefix (1.08s)
+=== RUN   TestPostgresManagementPollRetentionSweepConcurrentCursor
+    postgres_monitor_retention_integration_test.go:25: ERROR: insert or update on table "monitor_management_polls" violates foreign key constraint "apexload_fk_monitor_management_polls_id" (SQLSTATE 23503)
+--- FAIL: TestPostgresManagementPollRetentionSweepConcurrentCursor (1.14s)
+=== RUN   TestPostgresManagementPollRetentionSweepCancelsLockWaits
+=== RUN   TestPostgresManagementPollRetentionSweepCancelsLockWaits/cursor
+    postgres_monitor_retention_integration_test.go:85: ERROR: insert or update on table "monitor_management_polls" violates foreign key constraint "apexload_fk_monitor_management_polls_id" (SQLSTATE 23503)
+=== RUN   TestPostgresManagementPollRetentionSweepCancelsLockWaits/project
+    postgres_monitor_retention_integration_test.go:85: ERROR: insert or update on table "monitor_management_polls" violates foreign key constraint "apexload_fk_monitor_management_polls_id" (SQLSTATE 23503)
+--- FAIL: TestPostgresManagementPollRetentionSweepCancelsLockWaits (2.12s)
+    --- FAIL: TestPostgresManagementPollRetentionSweepCancelsLockWaits/cursor (0.97s)
+    --- FAIL: TestPostgresManagementPollRetentionSweepCancelsLockWaits/project (1.15s)
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/storage	15.892s
+FAIL

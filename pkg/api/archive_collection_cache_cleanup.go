@@ -23,6 +23,19 @@ type collectionCacheCleanupCandidate struct {
 	identity      os.FileInfo
 }
 
+// File-lock acquisition checks the actual deadline even before a context timer
+// publishes Err. Cleanup must use that same authority boundary when deciding
+// whether a busy-source timeout belongs to its own retry window or its caller.
+func collectionCacheCleanupContextError(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if deadline, ok := ctx.Deadline(); ok && !deadline.After(time.Now()) {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
 // Discover local copies, not global SQL jobs: controllers may use independent
 // staging roots. SQL anchors remain available to every controller until normal
 // test retention removes them. Unanchored local evidence is never pruned here.
@@ -39,7 +52,7 @@ func discoverCollectionCacheCleanupCandidates(ctx context.Context, root *os.Root
 		}
 		defer dir.Close()
 		for {
-			if err := ctx.Err(); err != nil {
+			if err := collectionCacheCleanupContextError(ctx); err != nil {
 				return err
 			}
 			entries, readErr := dir.ReadDir(128)
@@ -115,7 +128,7 @@ func (tr *TestRunner) retirePublishedCollectionCaches(ctx context.Context) error
 	candidates, scanErr := discoverCollectionCacheCleanupCandidates(ctx, root)
 	failures := []error{scanErr}
 	for _, candidate := range candidates {
-		if err := ctx.Err(); err != nil {
+		if err := collectionCacheCleanupContextError(ctx); err != nil {
 			return errors.Join(append(failures, err)...)
 		}
 		if err := tr.retirePublishedCollectionCache(ctx, root, candidate); err != nil {
@@ -139,7 +152,7 @@ func (tr *TestRunner) retirePublishedCollectionCache(ctx context.Context, root *
 	lockCtx, cancel := context.WithTimeout(ctx, time.Second)
 	release, err := lockArchivePublicationSource(lockCtx, candidate.testID)
 	cancel()
-	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+	if errors.Is(err, context.DeadlineExceeded) && collectionCacheCleanupContextError(ctx) == nil {
 		return nil
 	}
 	if err != nil {
@@ -226,7 +239,7 @@ func (tr *TestRunner) retirePublishedCollectionCache(ctx context.Context, root *
 		if !localTargets[target] || !confirmed[target] {
 			continue
 		}
-		if err := ctx.Err(); err != nil {
+		if err := collectionCacheCleanupContextError(ctx); err != nil {
 			return err
 		}
 		source, err := cache.load(ctx, target)
@@ -249,7 +262,7 @@ func (tr *TestRunner) retirePublishedCollectionCache(ctx context.Context, root *
 		if err != nil {
 			return err
 		}
-		err = ctx.Err()
+		err = collectionCacheCleanupContextError(ctx)
 		if err == nil {
 			err = removeArchiveDirectoryAt(root, relative, identity)
 		}
@@ -427,7 +440,7 @@ func verifyCollectionCacheForCleanup(ctx context.Context, source *cachedArchiveS
 			return errors.New("cached payload changed before cleanup")
 		}
 	}
-	return ctx.Err()
+	return collectionCacheCleanupContextError(ctx)
 }
 
 // Cleanup runs separately from publication retries. Large confirmed copies must

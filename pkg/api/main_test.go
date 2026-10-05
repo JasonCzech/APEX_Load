@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/analysis/duckdb"
 	"github.com/jasonczech/apexload/pkg/config"
 )
 
@@ -20,6 +21,9 @@ const generatorArchiveMinFreeEnv = "APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES"
 // `go list all` / wails builds that walk the tree. Individual tests may still
 // override APEXLOAD_ARCHIVE_DIR via t.Setenv.
 func TestMain(m *testing.M) {
+	if handled, code := duckdb.DispatchNativeWorker(); handled {
+		os.Exit(code)
+	}
 	os.Exit(runArchiveSandboxedTests(m))
 }
 

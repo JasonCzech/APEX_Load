@@ -50,7 +50,7 @@ function protocolRuntimeCapacities(generator: SystemInventoryGenerator, protocol
 }
 
 function protocolRuntimeAvailableVUsers(generator: SystemInventoryGenerator, protocol?: string): number | undefined {
-  const capacities = protocolRuntimeCapacities(generator, protocol)
+  const capacities = protocolRuntimeCapacities(generator, protocol).filter(capacity => !capacity.available || capacity.max_vusers > 0 || !capacity.resources)
   if (capacities.length === 0) return undefined
   return capacities.reduce((available, capacity) => {
     const candidate = capacity.available && capacity.max_vusers > 0 && capacity.available_vusers > 0
@@ -90,7 +90,11 @@ function generatorCapacityForProtocol(generator: SystemInventoryGenerator, proto
 function generatorCapacityLabel(generator: SystemInventoryGenerator, protocol?: string, javaProfile?: string): string {
   if (javaProfile) return `${javaHostCeiling(generator, javaProfile)} host ceiling · reservation required`
   const capacity = generatorCapacityForProtocol(generator, protocol)
-  return capacity === null ? 'capacity unknown' : `${capacity} capacity`
+  const base = capacity === null ? 'capacity unknown' : `${capacity} capacity`
+  const resources = protocolRuntimeCapacities(generator, protocol).find(item => item.resources)?.resources
+  if (!resources) return base
+  if (!resources.available) return `${base} · processor capacity unavailable`
+  return `${base} · ${resources.available_processors}/${resources.max_processors} processors, ${resources.available_workers}/${resources.max_workers} workers available · ${resources.draining_processors} processors/${resources.draining_workers} workers draining`
 }
 
 function generatorCanRun(generator: SystemInventoryGenerator, protocol?: string, javaProfile?: string) {

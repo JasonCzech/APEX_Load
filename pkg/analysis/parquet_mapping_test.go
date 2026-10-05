@@ -37,3 +37,16 @@ func TestParquetMappingScalarPathsAndSemantics(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeNativeObservationUnitAliases(t *testing.T) {
+	for _, test := range []struct{ wire, canonical string }{
+		{"observations", "count"}, {"observations/s", "count/s"}, {"%", "percent"},
+	} {
+		t.Run(test.wire, func(t *testing.T) {
+			unit, scale, err := NormalizeUnit(test.wire)
+			if err != nil || unit != test.canonical || scale != 1 {
+				t.Fatalf("unit=%q scale=%g error=%v", unit, scale, err)
+			}
+		})
+	}
+}

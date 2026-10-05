@@ -1,0 +1,12 @@
+Building controller...
+Starting controller on http://127.0.0.1:18381 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.14ZlokooVq)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 1 test using 1 worker
+
+(node:77330) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/workflow-monitoring.spec.ts:225:1 › Kafka management authoring retains scope, sealed-secret policy and revision conflicts through reload (1.7s)
+
+  1 passed (2.8s)

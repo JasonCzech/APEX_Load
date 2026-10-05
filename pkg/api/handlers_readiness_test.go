@@ -575,7 +575,7 @@ func TestStartRefreshesDurableReadinessSettingsBeforeFirstResponse(t *testing.T)
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
-	defer base.Close()
+	t.Cleanup(func() { _ = base.Close() })
 	store := newControlledContextSettingsStore(base)
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: "127.0.0.1:0", Store: store})
 	server.staticFS = readinessTestStaticFS()
@@ -591,28 +591,57 @@ func TestStartRefreshesDurableReadinessSettingsBeforeFirstResponse(t *testing.T)
 	}
 	drainReadinessSettingsSignals(store.callSignal)
 
+	var startErr error
+	startDone := make(chan struct{})
+	runnerLocked := false
+	unlockRunner := func() {
+		if runnerLocked {
+			server.runner.mu.Unlock()
+			runnerLocked = false
+		}
+	}
+	// Register teardown before taking the lock or launching Start so every fatal
+	// assertion stops listeners and workers before the underlying store closes.
+	// A closed completion channel can be observed by both the test and cleanup.
+	t.Cleanup(func() {
+		unlockRunner()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			t.Errorf("cleanup Shutdown: %v", err)
+		}
+		select {
+		case <-startDone:
+		case <-shutdownCtx.Done():
+			t.Errorf("cleanup waiting for Start: %v", shutdownCtx.Err())
+		}
+	})
+
 	// Force the startup refresh to exercise its context-bounded TryLock retry.
 	// A one-shot opportunistic apply would miss this update and serve stale data.
 	server.runner.mu.Lock()
-	startErr := make(chan error, 1)
-	go func() { startErr <- server.Start() }()
+	runnerLocked = true
+	go func() {
+		startErr = server.Start()
+		close(startDone)
+	}()
 	select {
 	case <-store.callSignal:
 	case <-time.After(time.Second):
-		server.runner.mu.Unlock()
+		unlockRunner()
 		t.Fatal("startup settings refresh did not read the contextual store")
 	}
 	if server.BoundAddrReady() {
-		server.runner.mu.Unlock()
+		unlockRunner()
 		t.Fatal("server published its listener before applying startup settings")
 	}
-	server.runner.mu.Unlock()
+	unlockRunner()
 
 	deadline := time.Now().Add(3 * time.Second)
 	for !server.BoundAddrReady() && time.Now().Before(deadline) {
 		select {
-		case err := <-startErr:
-			t.Fatalf("Start returned before binding: %v", err)
+		case <-startDone:
+			t.Fatalf("Start returned before binding: %v", startErr)
 		case <-time.After(5 * time.Millisecond):
 		}
 	}
@@ -639,8 +668,13 @@ func TestStartRefreshesDurableReadinessSettingsBeforeFirstResponse(t *testing.T)
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		t.Fatalf("Shutdown: %v", err)
 	}
-	if err := <-startErr; err != nil {
-		t.Fatalf("Start after Shutdown: %v", err)
+	select {
+	case <-startDone:
+		if startErr != nil {
+			t.Fatalf("Start after Shutdown: %v", startErr)
+		}
+	case <-shutdownCtx.Done():
+		t.Fatalf("waiting for Start after Shutdown: %v", shutdownCtx.Err())
 	}
 }
 

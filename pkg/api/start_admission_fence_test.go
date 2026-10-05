@@ -1352,7 +1352,9 @@ func TestSameValueRuntimeOverlayProviderOutageDefersVerificationWithoutReplay(t 
 	)
 	runner.mu.Unlock()
 
-	firstErr := runner.StartTest(test.ID)
+	// This test owns the explicit manual retry. Automatic recovery has its own
+	// no-second-request regression and must not race this Start assertion.
+	firstErr := runner.StartTestWithOptions(test.ID, StartTestOptions{deferPostShakeoutRecoveryEnqueue: true})
 	if !errors.Is(firstErr, errStartAdmissionEvidenceStale) || !errors.Is(firstErr, providerErr) {
 		t.Fatalf("first StartTest error = %v, want retryable provider-evidence outage", firstErr)
 	}

@@ -1,0 +1,739 @@
+=== RUN   TestLoadAdapterTargetsStrictDocumentAndBounds
+--- PASS: TestLoadAdapterTargetsStrictDocumentAndBounds (0.00s)
+=== RUN   TestAdapterApprovalRejectsCredentialDestinationsAndUnknownPacks
+--- PASS: TestAdapterApprovalRejectsCredentialDestinationsAndUnknownPacks (0.00s)
+=== RUN   TestNewValidates
+--- PASS: TestNewValidates (0.00s)
+=== RUN   TestNewRejectsCleartextTokenTransport
+=== RUN   TestNewRejectsCleartextTokenTransport/loopback_http_ok
+=== RUN   TestNewRejectsCleartextTokenTransport/localhost_http_ok
+=== RUN   TestNewRejectsCleartextTokenTransport/https_ok
+=== RUN   TestNewRejectsCleartextTokenTransport/non-loopback_http_rejected
+=== RUN   TestNewRejectsCleartextTokenTransport/non-loopback_http_allowed_with_opt-in
+2026/10/03 20:35:02 WARN collector token will be sent in CLEARTEXT to a non-loopback http controller; use https in production controller=http://controller.example:8080
+=== RUN   TestNewRejectsCleartextTokenTransport/unknown_scheme_rejected
+--- PASS: TestNewRejectsCleartextTokenTransport (0.00s)
+    --- PASS: TestNewRejectsCleartextTokenTransport/loopback_http_ok (0.00s)
+    --- PASS: TestNewRejectsCleartextTokenTransport/localhost_http_ok (0.00s)
+    --- PASS: TestNewRejectsCleartextTokenTransport/https_ok (0.00s)
+    --- PASS: TestNewRejectsCleartextTokenTransport/non-loopback_http_rejected (0.00s)
+    --- PASS: TestNewRejectsCleartextTokenTransport/non-loopback_http_allowed_with_opt-in (0.00s)
+    --- PASS: TestNewRejectsCleartextTokenTransport/unknown_scheme_rejected (0.00s)
+=== RUN   TestHostSamplesNonEmpty
+--- PASS: TestHostSamplesNonEmpty (0.00s)
+=== RUN   TestCollectBuildsPackPerName
+--- PASS: TestCollectBuildsPackPerName (0.00s)
+=== RUN   TestNewRejectsUnimplementedPacks
+--- PASS: TestNewRejectsUnimplementedPacks (0.00s)
+=== RUN   TestNewRejectsUnsafePrometheusURL
+--- PASS: TestNewRejectsUnsafePrometheusURL (0.00s)
+=== RUN   TestPrometheusScrapeIsSourceSpecificAndBounded
+--- PASS: TestPrometheusScrapeIsSourceSpecificAndBounded (0.00s)
+=== RUN   TestPrometheusFailureDegradesWithoutFalsePack
+--- PASS: TestPrometheusFailureDegradesWithoutFalsePack (0.00s)
+=== RUN   TestPrometheusScrapeDoesNotFollowRedirect
+--- PASS: TestPrometheusScrapeDoesNotFollowRedirect (0.00s)
+=== RUN   TestPushHeartbeatSetsAuthAndPath
+--- PASS: TestPushHeartbeatSetsAuthAndPath (0.00s)
+=== RUN   TestPushHeartbeatHandles401
+--- PASS: TestPushHeartbeatHandles401 (0.00s)
+=== RUN   TestPrometheusPreservesTypeAndSourceTimestamp
+--- PASS: TestPrometheusPreservesTypeAndSourceTimestamp (0.00s)
+=== RUN   TestPrometheusRejectsAmbiguousOrOversizeSamples
+--- PASS: TestPrometheusRejectsAmbiguousOrOversizeSamples (0.00s)
+=== RUN   TestPrometheusHTTPBodyBoundAndDeadline
+--- PASS: TestPrometheusHTTPBodyBoundAndDeadline (0.00s)
+=== RUN   TestPackConfigurationIsOwnedAndUnique
+--- PASS: TestPackConfigurationIsOwnedAndUnique (0.00s)
+=== RUN   TestPrometheusRejectsOtherTimestampFormats
+--- PASS: TestPrometheusRejectsOtherTimestampFormats (0.00s)
+=== RUN   TestCloudQueryApproval
+--- PASS: TestCloudQueryApproval (0.00s)
+=== RUN   TestCloudWatchEvidenceBoundsAndSemantics
+--- PASS: TestCloudWatchEvidenceBoundsAndSemantics (0.00s)
+=== RUN   TestAzureMonitorMissingIsNotZero
+--- PASS: TestAzureMonitorMissingIsNotZero (0.00s)
+=== RUN   TestCloudRequestsBoundRetriesAndResponses
+--- PASS: TestCloudRequestsBoundRetriesAndResponses (0.30s)
+=== RUN   TestCloudJobsDoNotRequireSealedCredentialsOrPollAtPreparation
+--- PASS: TestCloudJobsDoNotRequireSealedCredentialsOrPollAtPreparation (0.00s)
+=== RUN   TestCloudWatchSignedRequestAndAccountFence
+--- PASS: TestCloudWatchSignedRequestAndAccountFence (0.00s)
+=== RUN   TestCloudWindowExcludesPartialMinutesWithoutDroppingWholeFirstMinute
+--- PASS: TestCloudWindowExcludesPartialMinutesWithoutDroppingWholeFirstMinute (0.00s)
+=== RUN   TestCloudMissingBucketCanArriveLater
+=== RUN   TestCloudMissingBucketCanArriveLater/cloudwatch
+=== RUN   TestCloudMissingBucketCanArriveLater/azure-monitor
+--- PASS: TestCloudMissingBucketCanArriveLater (0.00s)
+    --- PASS: TestCloudMissingBucketCanArriveLater/cloudwatch (0.00s)
+    --- PASS: TestCloudMissingBucketCanArriveLater/azure-monitor (0.00s)
+=== RUN   TestAzureMonitorRejectsEquivalentTimestamps
+--- PASS: TestAzureMonitorRejectsEquivalentTimestamps (0.00s)
+=== RUN   TestSealedMonitorCredentialsIdentityAndExpiry
+=== RUN   TestSealedMonitorCredentialsIdentityAndExpiry/destination
+=== RUN   TestSealedMonitorCredentialsIdentityAndExpiry/project
+=== RUN   TestSealedMonitorCredentialsIdentityAndExpiry/lease
+=== RUN   TestSealedMonitorCredentialsIdentityAndExpiry/revision
+--- PASS: TestSealedMonitorCredentialsIdentityAndExpiry (0.00s)
+    --- PASS: TestSealedMonitorCredentialsIdentityAndExpiry/destination (0.00s)
+    --- PASS: TestSealedMonitorCredentialsIdentityAndExpiry/project (0.00s)
+    --- PASS: TestSealedMonitorCredentialsIdentityAndExpiry/lease (0.00s)
+    --- PASS: TestSealedMonitorCredentialsIdentityAndExpiry/revision (0.00s)
+=== RUN   TestRunJobSignatureAndLease
+=== RUN   TestRunJobSignatureAndLease/signature
+=== RUN   TestRunJobSignatureAndLease/payload
+--- PASS: TestRunJobSignatureAndLease (0.00s)
+    --- PASS: TestRunJobSignatureAndLease/signature (0.00s)
+    --- PASS: TestRunJobSignatureAndLease/payload (0.00s)
+=== RUN   TestSignedCollectorDoesNotScrapeWithoutRunAndRetriesEvidence
+2026/10/03 20:35:03 WARN collector run monitoring degraded err="monitor job request returned 503"
+--- PASS: TestSignedCollectorDoesNotScrapeWithoutRunAndRetriesEvidence (0.00s)
+=== RUN   TestSignedCollectorRejectsUnapprovedDestination
+--- PASS: TestSignedCollectorRejectsUnapprovedDestination (0.00s)
+=== RUN   TestCloudEmptyWindowRetainsCollectionInterval
+--- PASS: TestCloudEmptyWindowRetainsCollectionInterval (0.00s)
+=== RUN   TestManagementDelayedTimerDeadlineRejectsAdmission
+--- PASS: TestManagementDelayedTimerDeadlineRejectsAdmission (0.00s)
+=== RUN   TestManagementDelayedTimerQueueExpiryRejectsCallback
+=== RUN   TestManagementDelayedTimerQueueExpiryRejectsCallback/poll
+=== RUN   TestManagementDelayedTimerQueueExpiryRejectsCallback/origin
+--- PASS: TestManagementDelayedTimerQueueExpiryRejectsCallback (0.20s)
+    --- PASS: TestManagementDelayedTimerQueueExpiryRejectsCallback/poll (0.10s)
+    --- PASS: TestManagementDelayedTimerQueueExpiryRejectsCallback/origin (0.10s)
+=== RUN   TestManagementDelayedTimerCallbackCannotReturnSuccess
+--- PASS: TestManagementDelayedTimerCallbackCannotReturnSuccess (0.03s)
+=== RUN   TestManagementCompletionUsesActualDeadlineAndSignedExpiry
+=== RUN   TestManagementCompletionUsesActualDeadlineAndSignedExpiry/valid
+=== RUN   TestManagementCompletionUsesActualDeadlineAndSignedExpiry/delayed_poll_timer
+=== RUN   TestManagementCompletionUsesActualDeadlineAndSignedExpiry/delayed_parent_timer
+=== RUN   TestManagementCompletionUsesActualDeadlineAndSignedExpiry/signed_expiry
+=== RUN   TestManagementCompletionUsesActualDeadlineAndSignedExpiry/scheduling_expiry
+--- PASS: TestManagementCompletionUsesActualDeadlineAndSignedExpiry (0.00s)
+    --- PASS: TestManagementCompletionUsesActualDeadlineAndSignedExpiry/valid (0.00s)
+    --- PASS: TestManagementCompletionUsesActualDeadlineAndSignedExpiry/delayed_poll_timer (0.00s)
+    --- PASS: TestManagementCompletionUsesActualDeadlineAndSignedExpiry/delayed_parent_timer (0.00s)
+    --- PASS: TestManagementCompletionUsesActualDeadlineAndSignedExpiry/signed_expiry (0.00s)
+    --- PASS: TestManagementCompletionUsesActualDeadlineAndSignedExpiry/scheduling_expiry (0.00s)
+=== RUN   TestKafkaOwnedIODelayedTimerFencesEntryAndJoinsPhysicalClose
+=== RUN   TestKafkaOwnedIODelayedTimerFencesEntryAndJoinsPhysicalClose/entry
+=== RUN   TestKafkaOwnedIODelayedTimerFencesEntryAndJoinsPhysicalClose/completion
+--- PASS: TestKafkaOwnedIODelayedTimerFencesEntryAndJoinsPhysicalClose (0.03s)
+    --- PASS: TestKafkaOwnedIODelayedTimerFencesEntryAndJoinsPhysicalClose/entry (0.00s)
+    --- PASS: TestKafkaOwnedIODelayedTimerFencesEntryAndJoinsPhysicalClose/completion (0.03s)
+=== RUN   TestManagementRequestRejectsMissingOrExpiredAuthorityBeforeAdmission
+=== RUN   TestManagementRequestRejectsMissingOrExpiredAuthorityBeforeAdmission/missing_scheduling_deadline
+=== RUN   TestManagementRequestRejectsMissingOrExpiredAuthorityBeforeAdmission/missing_signed_authorization
+=== RUN   TestManagementRequestRejectsMissingOrExpiredAuthorityBeforeAdmission/expired_scheduling_deadline
+=== RUN   TestManagementRequestRejectsMissingOrExpiredAuthorityBeforeAdmission/expired_signed_authorization
+--- PASS: TestManagementRequestRejectsMissingOrExpiredAuthorityBeforeAdmission (0.00s)
+    --- PASS: TestManagementRequestRejectsMissingOrExpiredAuthorityBeforeAdmission/missing_scheduling_deadline (0.00s)
+    --- PASS: TestManagementRequestRejectsMissingOrExpiredAuthorityBeforeAdmission/missing_signed_authorization (0.00s)
+    --- PASS: TestManagementRequestRejectsMissingOrExpiredAuthorityBeforeAdmission/expired_scheduling_deadline (0.00s)
+    --- PASS: TestManagementRequestRejectsMissingOrExpiredAuthorityBeforeAdmission/expired_signed_authorization (0.00s)
+=== RUN   TestManagementRequestContextUsesEarliestAuthority
+=== RUN   TestManagementRequestContextUsesEarliestAuthority/signed_authorization
+=== RUN   TestManagementRequestContextUsesEarliestAuthority/scheduling_deadline
+=== RUN   TestManagementRequestContextUsesEarliestAuthority/parent_deadline
+=== RUN   TestManagementRequestContextUsesEarliestAuthority/operation_budget
+--- PASS: TestManagementRequestContextUsesEarliestAuthority (0.00s)
+    --- PASS: TestManagementRequestContextUsesEarliestAuthority/signed_authorization (0.00s)
+    --- PASS: TestManagementRequestContextUsesEarliestAuthority/scheduling_deadline (0.00s)
+    --- PASS: TestManagementRequestContextUsesEarliestAuthority/parent_deadline (0.00s)
+    --- PASS: TestManagementRequestContextUsesEarliestAuthority/operation_budget (0.00s)
+=== RUN   TestManagementQueuedRequestExpiresAtSignedAuthority
+=== RUN   TestManagementQueuedRequestExpiresAtSignedAuthority/poll
+=== RUN   TestManagementQueuedRequestExpiresAtSignedAuthority/origin
+--- PASS: TestManagementQueuedRequestExpiresAtSignedAuthority (0.16s)
+    --- PASS: TestManagementQueuedRequestExpiresAtSignedAuthority/poll (0.08s)
+    --- PASS: TestManagementQueuedRequestExpiresAtSignedAuthority/origin (0.08s)
+=== RUN   TestManagementSignedExpiryCancelsActualReadButRetainsPhysicalCleanup
+--- PASS: TestManagementSignedExpiryCancelsActualReadButRetainsPhysicalCleanup (0.14s)
+=== RUN   TestManagementSchedulerSignedExpiryKeepsSourceChargedUntilActualReturn
+--- PASS: TestManagementSchedulerSignedExpiryKeepsSourceChargedUntilActualReturn (0.23s)
+=== RUN   TestManagementPollGrantBoundedIdentityAndExactCohort
+=== RUN   TestManagementPollGrantBoundedIdentityAndExactCohort/source
+=== RUN   TestManagementPollGrantBoundedIdentityAndExactCohort/generation
+=== RUN   TestManagementPollGrantBoundedIdentityAndExactCohort/cohort
+=== RUN   TestManagementPollGrantBoundedIdentityAndExactCohort/hash
+=== RUN   TestManagementPollGrantBoundedIdentityAndExactCohort/deadline
+=== RUN   TestManagementPollGrantBoundedIdentityAndExactCohort/availability
+--- PASS: TestManagementPollGrantBoundedIdentityAndExactCohort (0.00s)
+    --- PASS: TestManagementPollGrantBoundedIdentityAndExactCohort/source (0.00s)
+    --- PASS: TestManagementPollGrantBoundedIdentityAndExactCohort/generation (0.00s)
+    --- PASS: TestManagementPollGrantBoundedIdentityAndExactCohort/cohort (0.00s)
+    --- PASS: TestManagementPollGrantBoundedIdentityAndExactCohort/hash (0.00s)
+    --- PASS: TestManagementPollGrantBoundedIdentityAndExactCohort/deadline (0.00s)
+    --- PASS: TestManagementPollGrantBoundedIdentityAndExactCohort/availability (0.00s)
+=== RUN   TestManagementCredentialsPurposeAndOwnerBinding
+=== RUN   TestManagementCredentialsPurposeAndOwnerBinding/revision
+=== RUN   TestManagementCredentialsPurposeAndOwnerBinding/instance
+=== RUN   TestManagementCredentialsPurposeAndOwnerBinding/generation
+=== RUN   TestManagementCredentialsPurposeAndOwnerBinding/scope
+=== RUN   TestManagementCredentialsPurposeAndOwnerBinding/identity
+=== RUN   TestManagementCredentialsPurposeAndOwnerBinding/lease
+--- PASS: TestManagementCredentialsPurposeAndOwnerBinding (0.00s)
+    --- PASS: TestManagementCredentialsPurposeAndOwnerBinding/revision (0.00s)
+    --- PASS: TestManagementCredentialsPurposeAndOwnerBinding/instance (0.00s)
+    --- PASS: TestManagementCredentialsPurposeAndOwnerBinding/generation (0.00s)
+    --- PASS: TestManagementCredentialsPurposeAndOwnerBinding/scope (0.00s)
+    --- PASS: TestManagementCredentialsPurposeAndOwnerBinding/identity (0.00s)
+    --- PASS: TestManagementCredentialsPurposeAndOwnerBinding/lease (0.00s)
+=== RUN   TestManagementAsyncCoalescesCohortAndRetriesLostReply
+--- PASS: TestManagementAsyncCoalescesCohortAndRetriesLostReply (1.06s)
+=== RUN   TestManagementIgnoredCancellationKeepsSourceChargedAndHeartbeatAvailable
+--- PASS: TestManagementIgnoredCancellationKeepsSourceChargedAndHeartbeatAvailable (0.05s)
+=== RUN   TestManagementRequestBoundsAndActualReturnJoin
+--- PASS: TestManagementRequestBoundsAndActualReturnJoin (0.01s)
+=== RUN   TestManagementSpoolRecoveryRetriesWithoutObserverOrOwnerRelabel
+--- PASS: TestManagementSpoolRecoveryRetriesWithoutObserverOrOwnerRelabel (0.03s)
+=== RUN   TestCollectorCombinedSpoolBudgetAndLegacyCompatibility
+--- PASS: TestCollectorCombinedSpoolBudgetAndLegacyCompatibility (0.00s)
+=== RUN   TestManagementCredentialsMatchesApprovedPrincipal
+=== RUN   TestManagementCredentialsMatchesApprovedPrincipal/plain
+=== RUN   TestManagementCredentialsMatchesApprovedPrincipal/different_principal
+=== RUN   TestManagementCredentialsMatchesApprovedPrincipal/missing_bundle
+=== RUN   TestManagementCredentialsMatchesApprovedPrincipal/mechanism_mismatch
+=== RUN   TestManagementCredentialsMatchesApprovedPrincipal/managed_alias
+--- PASS: TestManagementCredentialsMatchesApprovedPrincipal (0.00s)
+    --- PASS: TestManagementCredentialsMatchesApprovedPrincipal/plain (0.00s)
+    --- PASS: TestManagementCredentialsMatchesApprovedPrincipal/different_principal (0.00s)
+    --- PASS: TestManagementCredentialsMatchesApprovedPrincipal/missing_bundle (0.00s)
+    --- PASS: TestManagementCredentialsMatchesApprovedPrincipal/mechanism_mismatch (0.00s)
+    --- PASS: TestManagementCredentialsMatchesApprovedPrincipal/managed_alias (0.00s)
+=== RUN   TestManagementSignedUnavailableAndMissingSecretSkipObserver
+=== RUN   TestManagementSignedUnavailableAndMissingSecretSkipObserver/signed_unavailable
+=== RUN   TestManagementSignedUnavailableAndMissingSecretSkipObserver/missing_basic_secret
+=== RUN   TestManagementSignedUnavailableAndMissingSecretSkipObserver/missing_sasl_secret
+=== RUN   TestManagementSignedUnavailableAndMissingSecretSkipObserver/missing_shared_key
+--- PASS: TestManagementSignedUnavailableAndMissingSecretSkipObserver (0.14s)
+    --- PASS: TestManagementSignedUnavailableAndMissingSecretSkipObserver/signed_unavailable (0.03s)
+    --- PASS: TestManagementSignedUnavailableAndMissingSecretSkipObserver/missing_basic_secret (0.03s)
+    --- PASS: TestManagementSignedUnavailableAndMissingSecretSkipObserver/missing_sasl_secret (0.03s)
+    --- PASS: TestManagementSignedUnavailableAndMissingSecretSkipObserver/missing_shared_key (0.04s)
+=== RUN   TestManagementAcceptedReceiptRequiresSignedExactCore
+=== RUN   TestManagementAcceptedReceiptRequiresSignedExactCore/missing_terminal_grant
+=== RUN   TestManagementAcceptedReceiptRequiresSignedExactCore/changed_accepted_core
+--- PASS: TestManagementAcceptedReceiptRequiresSignedExactCore (4.12s)
+    --- PASS: TestManagementAcceptedReceiptRequiresSignedExactCore/missing_terminal_grant (2.06s)
+    --- PASS: TestManagementAcceptedReceiptRequiresSignedExactCore/changed_accepted_core (2.06s)
+=== RUN   TestManagementTerminalGrantNeverAuthorizesObservation
+--- PASS: TestManagementTerminalGrantNeverAuthorizesObservation (0.00s)
+=== RUN   TestManagementBeginRequiresCurrentCollectingAuthority
+=== RUN   TestManagementBeginRequiresCurrentCollectingAuthority/accepted
+=== RUN   TestManagementBeginRequiresCurrentCollectingAuthority/abandoned
+=== RUN   TestManagementBeginRequiresCurrentCollectingAuthority/released
+=== RUN   TestManagementBeginRequiresCurrentCollectingAuthority/draining
+=== RUN   TestManagementBeginRequiresCurrentCollectingAuthority/expired
+--- PASS: TestManagementBeginRequiresCurrentCollectingAuthority (0.01s)
+    --- PASS: TestManagementBeginRequiresCurrentCollectingAuthority/accepted (0.00s)
+    --- PASS: TestManagementBeginRequiresCurrentCollectingAuthority/abandoned (0.00s)
+    --- PASS: TestManagementBeginRequiresCurrentCollectingAuthority/released (0.00s)
+    --- PASS: TestManagementBeginRequiresCurrentCollectingAuthority/draining (0.00s)
+    --- PASS: TestManagementBeginRequiresCurrentCollectingAuthority/expired (0.00s)
+=== RUN   TestManagementIndependentWakeAndRevisionSerialization
+--- PASS: TestManagementIndependentWakeAndRevisionSerialization (0.13s)
+=== RUN   TestManagementSchedulingStatePrunesChurnButKeepsAuthority
+--- PASS: TestManagementSchedulingStatePrunesChurnButKeepsAuthority (0.00s)
+=== RUN   TestManagementSharedOriginBoundsAndSolaceThrottle
+--- PASS: TestManagementSharedOriginBoundsAndSolaceThrottle (0.00s)
+=== RUN   TestManagementFabricatedAbandonCannotRejectAcceptedEvidence
+--- PASS: TestManagementFabricatedAbandonCannotRejectAcceptedEvidence (2.05s)
+=== RUN   TestCollectorSpoolCombinedStartupJobsAndCorruption
+--- PASS: TestCollectorSpoolCombinedStartupJobsAndCorruption (0.00s)
+=== RUN   TestCollectorSpoolFreshByteReservationAndInstalledErrorAccounting
+--- PASS: TestCollectorSpoolFreshByteReservationAndInstalledErrorAccounting (0.00s)
+=== RUN   TestManagementCapacityExhaustionPreventsFreshGrantAndObserver
+--- PASS: TestManagementCapacityExhaustionPreventsFreshGrantAndObserver (0.02s)
+=== RUN   TestManagementLocalAliasRejectsHiddenPortAndURLSyntax
+--- PASS: TestManagementLocalAliasRejectsHiddenPortAndURLSyntax (0.00s)
+=== RUN   TestManagementReadinessDoesNotWaitForSpoolSchedulingLock
+--- PASS: TestManagementReadinessDoesNotWaitForSpoolSchedulingLock (0.00s)
+=== RUN   TestManagementLocalApprovalOwnsInputCopies
+--- PASS: TestManagementLocalApprovalOwnsInputCopies (0.00s)
+=== RUN   TestManagementDormantTargetDoesNotPoisonLegacyReadiness
+--- PASS: TestManagementDormantTargetDoesNotPoisonLegacyReadiness (0.00s)
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge/valid_minimum
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge/valid_maximum
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge/minimum
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge/excess_CPU
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge/huge_CPU
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge/nonce_replaced
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge/nonce_not_extended
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge/optional_extension
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge/duplicate_iteration
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge/empty_salt
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge/malformed_salt
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge/noncanonical_salt
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge/leading_zero
+=== RUN   TestKafkaManagementSCRAMBoundsBeforeChallenge/signed_iteration
+--- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge (0.00s)
+    --- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge/valid_minimum (0.00s)
+    --- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge/valid_maximum (0.00s)
+    --- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge/minimum (0.00s)
+    --- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge/excess_CPU (0.00s)
+    --- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge/huge_CPU (0.00s)
+    --- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge/nonce_replaced (0.00s)
+    --- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge/nonce_not_extended (0.00s)
+    --- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge/optional_extension (0.00s)
+    --- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge/duplicate_iteration (0.00s)
+    --- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge/empty_salt (0.00s)
+    --- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge/malformed_salt (0.00s)
+    --- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge/noncanonical_salt (0.00s)
+    --- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge/leading_zero (0.00s)
+    --- PASS: TestKafkaManagementSCRAMBoundsBeforeChallenge/signed_iteration (0.00s)
+=== RUN   TestKafkaManagementSCRAMServerProofIsRequired
+--- PASS: TestKafkaManagementSCRAMServerProofIsRequired (0.00s)
+=== RUN   TestKafkaManagementProviderErrorsDoNotObserveDefaults
+--- PASS: TestKafkaManagementProviderErrorsDoNotObserveDefaults (0.00s)
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/workload_identity
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/missing_credential_ref
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/missing_trust
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/relative_trust
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/HTTP_endpoint
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/missing_Kafka
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/anonymous
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/missing_credential_version
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/missing_file
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/different_port
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/zero_port
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/multicast
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/broadcast
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/missing_map
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/extra_map
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/DNS_dial
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/unspecified
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/IPv6_zone
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/short_cadence
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/wrong_cluster
+=== RUN   TestKafkaManagementTargetRejectsInvalidExecutableProfiles/unapproved_map
+--- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles (0.02s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/workload_identity (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/missing_credential_ref (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/missing_trust (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/relative_trust (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/HTTP_endpoint (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/missing_Kafka (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/anonymous (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/missing_credential_version (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/missing_file (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/different_port (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/zero_port (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/multicast (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/broadcast (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/missing_map (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/extra_map (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/DNS_dial (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/unspecified (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/IPv6_zone (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/short_cadence (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/wrong_cluster (0.00s)
+    --- PASS: TestKafkaManagementTargetRejectsInvalidExecutableProfiles/unapproved_map (0.00s)
+=== RUN   TestKafkaManagementCanonicalStaticRoutesDoNotExpandApproval
+--- PASS: TestKafkaManagementCanonicalStaticRoutesDoNotExpandApproval (0.00s)
+=== RUN   TestKafkaManagementEndpointsAndMapRejectAmbiguity
+=== RUN   TestKafkaManagementEndpointsAndMapRejectAmbiguity/canonical_endpoint_duplicate
+=== RUN   TestKafkaManagementEndpointsAndMapRejectAmbiguity/canonical_map_duplicate
+=== RUN   TestKafkaManagementEndpointsAndMapRejectAmbiguity/literal_identity_mismatch
+--- PASS: TestKafkaManagementEndpointsAndMapRejectAmbiguity (0.00s)
+    --- PASS: TestKafkaManagementEndpointsAndMapRejectAmbiguity/canonical_endpoint_duplicate (0.00s)
+    --- PASS: TestKafkaManagementEndpointsAndMapRejectAmbiguity/canonical_map_duplicate (0.00s)
+    --- PASS: TestKafkaManagementEndpointsAndMapRejectAmbiguity/literal_identity_mismatch (0.00s)
+=== RUN   TestKafkaManagementLocalJSONRejectsDuplicateAndUnboundedRouting
+--- PASS: TestKafkaManagementLocalJSONRejectsDuplicateAndUnboundedRouting (0.00s)
+=== RUN   TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles
+=== RUN   TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/too_many_certificates
+=== RUN   TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/empty
+=== RUN   TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/leading_garbage
+=== RUN   TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/invalid_DER
+=== RUN   TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/garbage
+=== RUN   TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/trailing_garbage
+=== RUN   TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/other_block
+=== RUN   TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/duplicate_certificate
+=== RUN   TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/oversize
+=== RUN   TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/malformed_first_block
+=== RUN   TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/unterminated_first_block
+--- PASS: TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles (0.03s)
+    --- PASS: TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/too_many_certificates (0.00s)
+    --- PASS: TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/empty (0.00s)
+    --- PASS: TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/leading_garbage (0.00s)
+    --- PASS: TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/invalid_DER (0.00s)
+    --- PASS: TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/garbage (0.00s)
+    --- PASS: TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/trailing_garbage (0.00s)
+    --- PASS: TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/other_block (0.00s)
+    --- PASS: TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/duplicate_certificate (0.00s)
+    --- PASS: TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/oversize (0.00s)
+    --- PASS: TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/malformed_first_block (0.00s)
+    --- PASS: TestKafkaManagementTrustRejectsMalformedAndExcessiveBundles/unterminated_first_block (0.00s)
+=== RUN   TestKafkaManagementTrustIsImmutableAndReconstructedExplicitly
+--- PASS: TestKafkaManagementTrustIsImmutableAndReconstructedExplicitly (0.00s)
+=== RUN   TestKafkaManagementOwnedApprovalRejectsCallerMutation
+--- PASS: TestKafkaManagementOwnedApprovalRejectsCallerMutation (0.00s)
+=== RUN   TestKafkaManagementDormantApprovalDoesNotBecomeExecutable
+--- PASS: TestKafkaManagementDormantApprovalDoesNotBecomeExecutable (0.00s)
+=== RUN   TestKafkaManagementNewValidatesEverySelectedTarget
+--- PASS: TestKafkaManagementNewValidatesEverySelectedTarget (0.00s)
+=== RUN   TestKafkaManagementConstructionAndReadinessMakeNoTargetConnections
+--- PASS: TestKafkaManagementConstructionAndReadinessMakeNoTargetConnections (0.03s)
+=== RUN   TestManagementRetainedResourceJoinsProofAndRejectsLateRegistration
+--- PASS: TestManagementRetainedResourceJoinsProofAndRejectsLateRegistration (0.00s)
+=== RUN   TestManagementUnprovenResourceKeepsSourceChargedThroughCancellation
+--- PASS: TestManagementUnprovenResourceKeepsSourceChargedThroughCancellation (0.03s)
+=== RUN   TestManagementRequestBudgetUsesBoundedTypedReason
+--- PASS: TestManagementRequestBudgetUsesBoundedTypedReason (0.00s)
+=== RUN   TestKafkaManagementResponseFixedLayouts
+=== RUN   TestKafkaManagementResponseFixedLayouts/api-versions-0
+=== RUN   TestKafkaManagementResponseFixedLayouts/handshake-1
+=== RUN   TestKafkaManagementResponseFixedLayouts/authentication-1
+=== RUN   TestKafkaManagementResponseFixedLayouts/coordinator-2
+=== RUN   TestKafkaManagementResponseFixedLayouts/metadata-8
+=== RUN   TestKafkaManagementResponseFixedLayouts/metadata-12
+=== RUN   TestKafkaManagementResponseFixedLayouts/offset-fetch-7
+=== RUN   TestKafkaManagementResponseFixedLayouts/list-offsets-5
+--- PASS: TestKafkaManagementResponseFixedLayouts (0.00s)
+    --- PASS: TestKafkaManagementResponseFixedLayouts/api-versions-0 (0.00s)
+    --- PASS: TestKafkaManagementResponseFixedLayouts/handshake-1 (0.00s)
+    --- PASS: TestKafkaManagementResponseFixedLayouts/authentication-1 (0.00s)
+    --- PASS: TestKafkaManagementResponseFixedLayouts/coordinator-2 (0.00s)
+    --- PASS: TestKafkaManagementResponseFixedLayouts/metadata-8 (0.00s)
+    --- PASS: TestKafkaManagementResponseFixedLayouts/metadata-12 (0.00s)
+    --- PASS: TestKafkaManagementResponseFixedLayouts/offset-fetch-7 (0.00s)
+    --- PASS: TestKafkaManagementResponseFixedLayouts/list-offsets-5 (0.00s)
+=== RUN   TestKafkaManagementResponseOffsetSentinelsAndErrors
+=== RUN   TestKafkaManagementResponseOffsetSentinelsAndErrors/group-error-precedes-success-looking-row
+=== RUN   TestKafkaManagementResponseOffsetSentinelsAndErrors/partition-error-retained
+--- PASS: TestKafkaManagementResponseOffsetSentinelsAndErrors (0.00s)
+    --- PASS: TestKafkaManagementResponseOffsetSentinelsAndErrors/group-error-precedes-success-looking-row (0.00s)
+    --- PASS: TestKafkaManagementResponseOffsetSentinelsAndErrors/partition-error-retained (0.00s)
+=== RUN   TestKafkaManagementResponseMissingDoesNotBecomeZero
+--- PASS: TestKafkaManagementResponseMissingDoesNotBecomeZero (0.00s)
+=== RUN   TestKafkaManagementResponseTruncationCorrelationAndTrailing
+=== RUN   TestKafkaManagementResponseTruncationCorrelationAndTrailing/api-versions-0
+=== RUN   TestKafkaManagementResponseTruncationCorrelationAndTrailing/handshake-1
+=== RUN   TestKafkaManagementResponseTruncationCorrelationAndTrailing/authentication-1
+=== RUN   TestKafkaManagementResponseTruncationCorrelationAndTrailing/coordinator-2
+=== RUN   TestKafkaManagementResponseTruncationCorrelationAndTrailing/metadata-8
+=== RUN   TestKafkaManagementResponseTruncationCorrelationAndTrailing/metadata-12
+=== RUN   TestKafkaManagementResponseTruncationCorrelationAndTrailing/offset-fetch-7
+=== RUN   TestKafkaManagementResponseTruncationCorrelationAndTrailing/list-offsets-5
+--- PASS: TestKafkaManagementResponseTruncationCorrelationAndTrailing (0.00s)
+    --- PASS: TestKafkaManagementResponseTruncationCorrelationAndTrailing/api-versions-0 (0.00s)
+    --- PASS: TestKafkaManagementResponseTruncationCorrelationAndTrailing/handshake-1 (0.00s)
+    --- PASS: TestKafkaManagementResponseTruncationCorrelationAndTrailing/authentication-1 (0.00s)
+    --- PASS: TestKafkaManagementResponseTruncationCorrelationAndTrailing/coordinator-2 (0.00s)
+    --- PASS: TestKafkaManagementResponseTruncationCorrelationAndTrailing/metadata-8 (0.00s)
+    --- PASS: TestKafkaManagementResponseTruncationCorrelationAndTrailing/metadata-12 (0.00s)
+    --- PASS: TestKafkaManagementResponseTruncationCorrelationAndTrailing/offset-fetch-7 (0.00s)
+    --- PASS: TestKafkaManagementResponseTruncationCorrelationAndTrailing/list-offsets-5 (0.00s)
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/brokerI
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/topicI
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/partitionI
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/replicasI
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/isrI
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/offlineI
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/unknown-topicI
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/negative-epochI
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/brokerM
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/topicM
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/partitionM
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/replicasM
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/isrM
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/offlineM
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/unknown-topicM
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/null-topicM
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/negative-epochM
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/fetch-duplicate-topic
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/list-duplicate-topic
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/fetch-duplicate-partition
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/list-duplicate-partition
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/fetch-unknown-topic
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/list-unknown-topic
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/fetch-unknown-partition
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/list-unknown-partition
+=== RUN   TestKafkaManagementResponseRejectsDuplicatesAndExpansion/additional-metadata-partition-is-only-bounded-routing-context
+--- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/brokerI (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/topicI (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/partitionI (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/replicasI (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/isrI (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/offlineI (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/unknown-topicI (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/negative-epochI (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/brokerM (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/topicM (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/partitionM (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/replicasM (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/isrM (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/offlineM (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/unknown-topicM (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/null-topicM (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/negative-epochM (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/fetch-duplicate-topic (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/list-duplicate-topic (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/fetch-duplicate-partition (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/list-duplicate-partition (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/fetch-unknown-topic (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/list-unknown-topic (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/fetch-unknown-partition (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/list-unknown-partition (0.00s)
+    --- PASS: TestKafkaManagementResponseRejectsDuplicatesAndExpansion/additional-metadata-partition-is-only-bounded-routing-context (0.00s)
+=== RUN   TestKafkaManagementResponseBoundedArraysAndStrings
+=== RUN   TestKafkaManagementResponseBoundedArraysAndStrings/routing-record-total
+=== RUN   TestKafkaManagementResponseBoundedArraysAndStrings/array-limit-applies-to-skipped-replicas
+=== RUN   TestKafkaManagementResponseBoundedArraysAndStrings/ignored-application-metadata-bounded
+=== RUN   TestKafkaManagementResponseBoundedArraysAndStrings/auth-challenge-bounded
+=== RUN   TestKafkaManagementResponseBoundedArraysAndStrings/auth-lifetime-negative
+--- PASS: TestKafkaManagementResponseBoundedArraysAndStrings (0.00s)
+    --- PASS: TestKafkaManagementResponseBoundedArraysAndStrings/routing-record-total (0.00s)
+    --- PASS: TestKafkaManagementResponseBoundedArraysAndStrings/array-limit-applies-to-skipped-replicas (0.00s)
+    --- PASS: TestKafkaManagementResponseBoundedArraysAndStrings/ignored-application-metadata-bounded (0.00s)
+    --- PASS: TestKafkaManagementResponseBoundedArraysAndStrings/auth-challenge-bounded (0.00s)
+    --- PASS: TestKafkaManagementResponseBoundedArraysAndStrings/auth-lifetime-negative (0.00s)
+=== RUN   TestKafkaManagementResponseFlexibleTagsAndCompactLengths
+=== RUN   TestKafkaManagementResponseFlexibleTagsAndCompactLengths/huge-tag-count
+=== RUN   TestKafkaManagementResponseFlexibleTagsAndCompactLengths/too-many-tags
+=== RUN   TestKafkaManagementResponseFlexibleTagsAndCompactLengths/noncanonical-count
+=== RUN   TestKafkaManagementResponseFlexibleTagsAndCompactLengths/overflow-count
+=== RUN   TestKafkaManagementResponseFlexibleTagsAndCompactLengths/duplicate-tags
+=== RUN   TestKafkaManagementResponseFlexibleTagsAndCompactLengths/descending-tags
+=== RUN   TestKafkaManagementResponseFlexibleTagsAndCompactLengths/huge-payload
+=== RUN   TestKafkaManagementResponseFlexibleTagsAndCompactLengths/truncated-payload
+=== RUN   TestKafkaManagementResponseFlexibleTagsAndCompactLengths/valid-header-and-nested-tags-are-skipped
+=== RUN   TestKafkaManagementResponseFlexibleTagsAndCompactLengths/cumulative-tag-payload
+=== RUN   TestKafkaManagementResponseFlexibleTagsAndCompactLengths/null-array
+=== RUN   TestKafkaManagementResponseFlexibleTagsAndCompactLengths/overflow-compact-array
+=== RUN   TestKafkaManagementResponseFlexibleTagsAndCompactLengths/noncanonical-array
+--- PASS: TestKafkaManagementResponseFlexibleTagsAndCompactLengths (0.00s)
+    --- PASS: TestKafkaManagementResponseFlexibleTagsAndCompactLengths/huge-tag-count (0.00s)
+    --- PASS: TestKafkaManagementResponseFlexibleTagsAndCompactLengths/too-many-tags (0.00s)
+    --- PASS: TestKafkaManagementResponseFlexibleTagsAndCompactLengths/noncanonical-count (0.00s)
+    --- PASS: TestKafkaManagementResponseFlexibleTagsAndCompactLengths/overflow-count (0.00s)
+    --- PASS: TestKafkaManagementResponseFlexibleTagsAndCompactLengths/duplicate-tags (0.00s)
+    --- PASS: TestKafkaManagementResponseFlexibleTagsAndCompactLengths/descending-tags (0.00s)
+    --- PASS: TestKafkaManagementResponseFlexibleTagsAndCompactLengths/huge-payload (0.00s)
+    --- PASS: TestKafkaManagementResponseFlexibleTagsAndCompactLengths/truncated-payload (0.00s)
+    --- PASS: TestKafkaManagementResponseFlexibleTagsAndCompactLengths/valid-header-and-nested-tags-are-skipped (0.00s)
+    --- PASS: TestKafkaManagementResponseFlexibleTagsAndCompactLengths/cumulative-tag-payload (0.00s)
+    --- PASS: TestKafkaManagementResponseFlexibleTagsAndCompactLengths/null-array (0.00s)
+    --- PASS: TestKafkaManagementResponseFlexibleTagsAndCompactLengths/overflow-compact-array (0.00s)
+    --- PASS: TestKafkaManagementResponseFlexibleTagsAndCompactLengths/noncanonical-array (0.00s)
+=== RUN   TestKafkaManagementResponseCanonicalBoolAndVersionBoundaries
+=== RUN   TestKafkaManagementResponseCanonicalBoolAndVersionBoundaries/metadata12-has-no-cluster-acl
+=== RUN   TestKafkaManagementResponseCanonicalBoolAndVersionBoundaries/api-versions0-has-no-throttle-or-header-tags
+--- PASS: TestKafkaManagementResponseCanonicalBoolAndVersionBoundaries (0.00s)
+    --- PASS: TestKafkaManagementResponseCanonicalBoolAndVersionBoundaries/metadata12-has-no-cluster-acl (0.00s)
+    --- PASS: TestKafkaManagementResponseCanonicalBoolAndVersionBoundaries/api-versions0-has-no-throttle-or-header-tags (0.00s)
+=== RUN   TestKafkaManagementActualBroker
+    messaging_kafka_integration_test.go:293: genuine Kafka fixture is not configured
+--- SKIP: TestKafkaManagementActualBroker (0.00s)
+=== RUN   TestKafkaManagementControlledTLSOffsetsAndFrameAudit
+=== RUN   TestKafkaManagementControlledTLSOffsetsAndFrameAudit/metadata8/plain
+=== RUN   TestKafkaManagementControlledTLSOffsetsAndFrameAudit/metadata8/scram_sha_256
+=== RUN   TestKafkaManagementControlledTLSOffsetsAndFrameAudit/metadata8/scram_sha_512
+=== RUN   TestKafkaManagementControlledTLSOffsetsAndFrameAudit/metadata12/plain
+=== RUN   TestKafkaManagementControlledTLSOffsetsAndFrameAudit/metadata12/scram_sha_256
+=== RUN   TestKafkaManagementControlledTLSOffsetsAndFrameAudit/metadata12/scram_sha_512
+--- PASS: TestKafkaManagementControlledTLSOffsetsAndFrameAudit (0.02s)
+    --- PASS: TestKafkaManagementControlledTLSOffsetsAndFrameAudit/metadata8/plain (0.00s)
+    --- PASS: TestKafkaManagementControlledTLSOffsetsAndFrameAudit/metadata8/scram_sha_256 (0.00s)
+    --- PASS: TestKafkaManagementControlledTLSOffsetsAndFrameAudit/metadata8/scram_sha_512 (0.01s)
+    --- PASS: TestKafkaManagementControlledTLSOffsetsAndFrameAudit/metadata12/plain (0.00s)
+    --- PASS: TestKafkaManagementControlledTLSOffsetsAndFrameAudit/metadata12/scram_sha_256 (0.00s)
+    --- PASS: TestKafkaManagementControlledTLSOffsetsAndFrameAudit/metadata12/scram_sha_512 (0.01s)
+=== RUN   TestKafkaManagementPartialCoverageKeepsIndependentBoundaries
+=== RUN   TestKafkaManagementPartialCoverageKeepsIndependentBoundaries/denied
+=== RUN   TestKafkaManagementPartialCoverageKeepsIndependentBoundaries/missing
+=== RUN   TestKafkaManagementPartialCoverageKeepsIndependentBoundaries/unstable
+--- PASS: TestKafkaManagementPartialCoverageKeepsIndependentBoundaries (0.02s)
+    --- PASS: TestKafkaManagementPartialCoverageKeepsIndependentBoundaries/denied (0.00s)
+    --- PASS: TestKafkaManagementPartialCoverageKeepsIndependentBoundaries/missing (0.00s)
+    --- PASS: TestKafkaManagementPartialCoverageKeepsIndependentBoundaries/unstable (0.01s)
+=== RUN   TestKafkaManagementWrongClusterAndCertificateNeverReadData
+=== RUN   TestKafkaManagementWrongClusterAndCertificateNeverReadData/cluster
+=== RUN   TestKafkaManagementWrongClusterAndCertificateNeverReadData/certificate
+--- PASS: TestKafkaManagementWrongClusterAndCertificateNeverReadData (0.01s)
+    --- PASS: TestKafkaManagementWrongClusterAndCertificateNeverReadData/cluster (0.00s)
+    --- PASS: TestKafkaManagementWrongClusterAndCertificateNeverReadData/certificate (0.00s)
+=== RUN   TestKafkaManagementUnapprovedCoordinatorNeverDialled
+--- PASS: TestKafkaManagementUnapprovedCoordinatorNeverDialled (0.00s)
+=== RUN   TestKafkaManagementCorruptFrameAndCancellationJoin
+=== RUN   TestKafkaManagementCorruptFrameAndCancellationJoin/correlation
+=== RUN   TestKafkaManagementCorruptFrameAndCancellationJoin/cancelled_read
+--- PASS: TestKafkaManagementCorruptFrameAndCancellationJoin (0.00s)
+    --- PASS: TestKafkaManagementCorruptFrameAndCancellationJoin/correlation (0.00s)
+    --- PASS: TestKafkaManagementCorruptFrameAndCancellationJoin/cancelled_read (0.00s)
+=== RUN   TestKafkaManagementAuthenticationLifetimeDoesNotIncludeResponseLatency
+=== RUN   TestKafkaManagementAuthenticationLifetimeDoesNotIncludeResponseLatency/already_expired_response
+=== RUN   TestKafkaManagementAuthenticationLifetimeDoesNotIncludeResponseLatency/bounded_lifetime
+=== RUN   TestKafkaManagementAuthenticationLifetimeDoesNotIncludeResponseLatency/maximum_wire_lifetime
+--- PASS: TestKafkaManagementAuthenticationLifetimeDoesNotIncludeResponseLatency (0.03s)
+    --- PASS: TestKafkaManagementAuthenticationLifetimeDoesNotIncludeResponseLatency/already_expired_response (0.02s)
+    --- PASS: TestKafkaManagementAuthenticationLifetimeDoesNotIncludeResponseLatency/bounded_lifetime (0.00s)
+    --- PASS: TestKafkaManagementAuthenticationLifetimeDoesNotIncludeResponseLatency/maximum_wire_lifetime (0.00s)
+=== RUN   TestKafkaManagementOldestCaptureAgeIncludesLaterBoundaryWait
+--- PASS: TestKafkaManagementOldestCaptureAgeIncludesLaterBoundaryWait (0.06s)
+=== RUN   TestKafkaTransactionSetupReapJoinsLateActualAcquisition
+--- PASS: TestKafkaTransactionSetupReapJoinsLateActualAcquisition (0.00s)
+=== RUN   TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation
+=== RUN   TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/unapproved_setup_port
+=== RUN   TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/unapproved_broker_port
+=== RUN   TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/different_loopback_IP
+=== RUN   TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/nonloopback_setup
+=== RUN   TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/hostname_setup
+=== RUN   TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/advertised_management_mismatch
+=== RUN   TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/unknown_management_hostname
+=== RUN   TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/port_overflow
+--- PASS: TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation (0.00s)
+    --- PASS: TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/unapproved_setup_port (0.00s)
+    --- PASS: TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/unapproved_broker_port (0.00s)
+    --- PASS: TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/different_loopback_IP (0.00s)
+    --- PASS: TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/nonloopback_setup (0.00s)
+    --- PASS: TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/hostname_setup (0.00s)
+    --- PASS: TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/advertised_management_mismatch (0.00s)
+    --- PASS: TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/unknown_management_hostname (0.00s)
+    --- PASS: TestKafkaTransactionSetupAddressRequiresExactFixtureAllocation/port_overflow (0.00s)
+=== RUN   TestKafkaTransactionSetupErrorClassDoesNotDiscloseProviderText
+--- PASS: TestKafkaTransactionSetupErrorClassDoesNotDiscloseProviderText (0.00s)
+=== RUN   TestKafkaManagementCloseJoinsFirstOwnerAndRetainsPoll
+--- PASS: TestKafkaManagementCloseJoinsFirstOwnerAndRetainsPoll (0.09s)
+=== RUN   TestKafkaManagementCloseErrorRequiresPhysicalAcknowledgement
+=== RUN   TestKafkaManagementCloseErrorRequiresPhysicalAcknowledgement/unproven
+=== RUN   TestKafkaManagementCloseErrorRequiresPhysicalAcknowledgement/acknowledged
+--- PASS: TestKafkaManagementCloseErrorRequiresPhysicalAcknowledgement (0.03s)
+    --- PASS: TestKafkaManagementCloseErrorRequiresPhysicalAcknowledgement/unproven (0.03s)
+    --- PASS: TestKafkaManagementCloseErrorRequiresPhysicalAcknowledgement/acknowledged (0.00s)
+=== RUN   TestKafkaManagementCancellationJoinsBlockedPhysicalClose
+--- PASS: TestKafkaManagementCancellationJoinsBlockedPhysicalClose (0.03s)
+=== RUN   TestKafkaManagementOperationPanicClosesOwnedConnection
+--- PASS: TestKafkaManagementOperationPanicClosesOwnedConnection (0.00s)
+=== RUN   TestKafkaManagementTypedDialGuardRejectsSecondAndUnapprovedAttempt
+--- PASS: TestKafkaManagementTypedDialGuardRejectsSecondAndUnapprovedAttempt (0.00s)
+=== RUN   TestKafkaManagementMaximumActualOperationsIsTwo
+--- PASS: TestKafkaManagementMaximumActualOperationsIsTwo (0.03s)
+=== RUN   TestKafkaManagementConnectionExpiryPreventsFurtherFrames
+--- PASS: TestKafkaManagementConnectionExpiryPreventsFurtherFrames (0.00s)
+=== RUN   TestKafkaManagementTransportRejectsUnapprovedEndpointBeforeDial
+--- PASS: TestKafkaManagementTransportRejectsUnapprovedEndpointBeforeDial (0.00s)
+=== RUN   TestKafkaManagementTransportClosesBeforeThirdLiveConnection
+--- PASS: TestKafkaManagementTransportClosesBeforeThirdLiveConnection (0.00s)
+=== RUN   TestKafkaManagementReconcilesEveryEndpointClusterRoutingIdentity
+=== RUN   TestKafkaManagementReconcilesEveryEndpointClusterRoutingIdentity/same_identity
+=== RUN   TestKafkaManagementReconcilesEveryEndpointClusterRoutingIdentity/conflicting_node_route
+=== RUN   TestKafkaManagementReconcilesEveryEndpointClusterRoutingIdentity/topic_recreation
+=== RUN   TestKafkaManagementReconcilesEveryEndpointClusterRoutingIdentity/leader_change
+--- PASS: TestKafkaManagementReconcilesEveryEndpointClusterRoutingIdentity (0.00s)
+    --- PASS: TestKafkaManagementReconcilesEveryEndpointClusterRoutingIdentity/same_identity (0.00s)
+    --- PASS: TestKafkaManagementReconcilesEveryEndpointClusterRoutingIdentity/conflicting_node_route (0.00s)
+    --- PASS: TestKafkaManagementReconcilesEveryEndpointClusterRoutingIdentity/topic_recreation (0.00s)
+    --- PASS: TestKafkaManagementReconcilesEveryEndpointClusterRoutingIdentity/leader_change (0.00s)
+=== RUN   TestKafkaManagementRequestWireContracts
+=== RUN   TestKafkaManagementRequestWireContracts/api-versions-0
+=== RUN   TestKafkaManagementRequestWireContracts/sasl-handshake-1
+=== RUN   TestKafkaManagementRequestWireContracts/sasl-authenticate-1
+=== RUN   TestKafkaManagementRequestWireContracts/find-coordinator-2
+=== RUN   TestKafkaManagementRequestWireContracts/metadata-8
+=== RUN   TestKafkaManagementRequestWireContracts/metadata-12
+=== RUN   TestKafkaManagementRequestWireContracts/offset-fetch-7
+=== RUN   TestKafkaManagementRequestWireContracts/list-offsets-high-watermark
+=== RUN   TestKafkaManagementRequestWireContracts/list-offsets-last-stable
+--- PASS: TestKafkaManagementRequestWireContracts (0.00s)
+    --- PASS: TestKafkaManagementRequestWireContracts/api-versions-0 (0.00s)
+    --- PASS: TestKafkaManagementRequestWireContracts/sasl-handshake-1 (0.00s)
+    --- PASS: TestKafkaManagementRequestWireContracts/sasl-authenticate-1 (0.00s)
+    --- PASS: TestKafkaManagementRequestWireContracts/find-coordinator-2 (0.00s)
+    --- PASS: TestKafkaManagementRequestWireContracts/metadata-8 (0.00s)
+    --- PASS: TestKafkaManagementRequestWireContracts/metadata-12 (0.00s)
+    --- PASS: TestKafkaManagementRequestWireContracts/offset-fetch-7 (0.00s)
+    --- PASS: TestKafkaManagementRequestWireContracts/list-offsets-high-watermark (0.00s)
+    --- PASS: TestKafkaManagementRequestWireContracts/list-offsets-last-stable (0.00s)
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/produce
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/generic-api
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/future-metadata
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/downgraded-offset-fetch
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/all-topics
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/all-commits
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/empty-group
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/auth-fallback
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/oversized-auth
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/unexpected-auth
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/unknown-isolation
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/duplicate-topic
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/unsorted-topics
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/oversized-topic
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/null-partitions
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/negative-partition
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/negative-epoch
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/duplicate-partition
+=== RUN   TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/unsorted-partitions
+--- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/produce (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/generic-api (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/future-metadata (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/downgraded-offset-fetch (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/all-topics (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/all-commits (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/empty-group (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/auth-fallback (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/oversized-auth (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/unexpected-auth (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/unknown-isolation (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/duplicate-topic (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/unsorted-topics (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/oversized-topic (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/null-partitions (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/negative-partition (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/negative-epoch (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/duplicate-partition (0.00s)
+    --- PASS: TestKafkaManagementRequestRejectsExpansionAndUnsupportedAPIs/unsorted-partitions (0.00s)
+=== RUN   TestKafkaManagementRequestBudgetsBeforeEncoding
+=== RUN   TestKafkaManagementRequestBudgetsBeforeEncoding/aggregate-frame
+=== RUN   TestKafkaManagementRequestBudgetsBeforeEncoding/aggregate-entities
+--- PASS: TestKafkaManagementRequestBudgetsBeforeEncoding (0.00s)
+    --- PASS: TestKafkaManagementRequestBudgetsBeforeEncoding/aggregate-frame (0.00s)
+    --- PASS: TestKafkaManagementRequestBudgetsBeforeEncoding/aggregate-entities (0.00s)
+=== RUN   TestOTLPAuthenticationBoundsAndSemantics
+--- PASS: TestOTLPAuthenticationBoundsAndSemantics (0.00s)
+=== RUN   TestOTLPLateArrivalAcknowledgementSurvivesRestart
+--- PASS: TestOTLPLateArrivalAcknowledgementSurvivesRestart (0.01s)
+=== RUN   TestAdapterUnitNormalization
+--- PASS: TestAdapterUnitNormalization (0.00s)
+=== RUN   TestOTLPJournalRestartAndFailure
+--- PASS: TestOTLPJournalRestartAndFailure (0.01s)
+=== RUN   TestOTLPUnsupportedPointCounts
+--- PASS: TestOTLPUnsupportedPointCounts (0.00s)
+=== RUN   TestOTLPBatchMetadataExpansionSplitsWithoutDropping
+--- PASS: TestOTLPBatchMetadataExpansionSplitsWithoutDropping (0.04s)
+=== RUN   TestPrometheusBoundedDimensionSets
+--- PASS: TestPrometheusBoundedDimensionSets (0.00s)
+=== RUN   TestCollectorSpoolRestartAndIsolation
+--- PASS: TestCollectorSpoolRestartAndIsolation (0.02s)
+=== RUN   TestCollectorSpoolSingleOwner
+--- PASS: TestCollectorSpoolSingleOwner (0.02s)
+=== RUN   TestFixedLinuxCommandPackParsing
+--- PASS: TestFixedLinuxCommandPackParsing (0.00s)
+=== RUN   TestSSHCommandPackPinnedIdentity
+--- PASS: TestSSHCommandPackPinnedIdentity (0.00s)
+=== RUN   FuzzKafkaManagementResponseDecoder
+=== RUN   FuzzKafkaManagementResponseDecoder/seed#0
+=== RUN   FuzzKafkaManagementResponseDecoder/seed#1
+=== RUN   FuzzKafkaManagementResponseDecoder/seed#2
+=== RUN   FuzzKafkaManagementResponseDecoder/seed#3
+=== RUN   FuzzKafkaManagementResponseDecoder/seed#4
+=== RUN   FuzzKafkaManagementResponseDecoder/seed#5
+=== RUN   FuzzKafkaManagementResponseDecoder/seed#6
+=== RUN   FuzzKafkaManagementResponseDecoder/seed#7
+--- PASS: FuzzKafkaManagementResponseDecoder (0.00s)
+    --- PASS: FuzzKafkaManagementResponseDecoder/seed#0 (0.00s)
+    --- PASS: FuzzKafkaManagementResponseDecoder/seed#1 (0.00s)
+    --- PASS: FuzzKafkaManagementResponseDecoder/seed#2 (0.00s)
+    --- PASS: FuzzKafkaManagementResponseDecoder/seed#3 (0.00s)
+    --- PASS: FuzzKafkaManagementResponseDecoder/seed#4 (0.00s)
+    --- PASS: FuzzKafkaManagementResponseDecoder/seed#5 (0.00s)
+    --- PASS: FuzzKafkaManagementResponseDecoder/seed#6 (0.00s)
+    --- PASS: FuzzKafkaManagementResponseDecoder/seed#7 (0.00s)
+PASS
+ok      github.com/jasonczech/apexload/pkg/collectoragent   9.719s

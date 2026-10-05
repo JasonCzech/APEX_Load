@@ -1,0 +1,122 @@
+[
+  {
+    "path": "dashboard/src/types/generated/openapi.ts",
+    "bytes": 4940064,
+    "sha256": "59a52a037b90d1cce3abe79fa6821be78150b2fca3886566715b72c0ee61e551"
+  },
+  {
+    "path": "docs/swagger.yaml",
+    "bytes": 14364719,
+    "sha256": "3fe0ac937a01d4619cfef6ad676d03db22c5b4b61c4090d07d540356e291fcd3"
+  },
+  {
+    "path": "pkg/api/analysis_backend.go",
+    "bytes": 1339,
+    "sha256": "6eb4e8deeeb9758aae4a5de5bde2f86379b2678690af89ca43b32beca07df649"
+  },
+  {
+    "path": "pkg/api/analysis_cleanup.go",
+    "bytes": 5966,
+    "sha256": "7179720987fb98858ec03b74c25c4952c0484e162d0e9418c0eb4972f4adf556"
+  },
+  {
+    "path": "pkg/api/analysis_imports_native_test.go",
+    "bytes": 10732,
+    "sha256": "39dc808c4d433e685ab998d0c1bf98e178f8ec74b64ede4751db902a4ea76f71"
+  },
+  {
+    "path": "pkg/api/analysis_objects.go",
+    "bytes": 6660,
+    "sha256": "e87f553c6b45c21d5ed1e9049d54197fa5aad660e5033071461d7553233c8b02"
+  },
+  {
+    "path": "pkg/api/analysis_reconciliation.go",
+    "bytes": 13351,
+    "sha256": "8065809480f1ff762760620bdcddc5d1db7b2615256c128c6540d31a3cad99f5"
+  },
+  {
+    "path": "pkg/api/analysis_upload_delete_key_test.go",
+    "bytes": 10867,
+    "sha256": "35b022f337dde1e5a920b2367cd5a73a8bb753333b00252d162dbf67550d8570"
+  },
+  {
+    "path": "pkg/api/analysis_upload_goexit_test.go",
+    "bytes": 5869,
+    "sha256": "bea88c23cdaca3a44397ff75b5acd0ef1c9cf60813fc502b13ef8a7a5c6f2edb"
+  },
+  {
+    "path": "pkg/api/analysis_upload_physical_owner.go",
+    "bytes": 8148,
+    "sha256": "216eba6204e99523344bb8714964c9e7163eeb6fa9ec6d2180a94fb26748480e"
+  },
+  {
+    "path": "pkg/api/analysis_upload_physical_owner_test.go",
+    "bytes": 11984,
+    "sha256": "8b9d2759036ef48fa49994eebdb861c09b98f801ad886e2cd982f47d337fec8a"
+  },
+  {
+    "path": "pkg/api/analysis_upload_pipeline.go",
+    "bytes": 10956,
+    "sha256": "ae955f306821469a951a2d343b081d990d14f137f0eb9089836013003612051e"
+  },
+  {
+    "path": "pkg/api/analysis_upload_reconciliation_test.go",
+    "bytes": 24923,
+    "sha256": "8142ddf95ae6e1df2776be3d139583ce9308168d504ad599b2e828136110abf3"
+  },
+  {
+    "path": "pkg/api/apidocs/swagger.yaml",
+    "bytes": 14364719,
+    "sha256": "3fe0ac937a01d4619cfef6ad676d03db22c5b4b61c4090d07d540356e291fcd3"
+  },
+  {
+    "path": "pkg/api/handlers_analysis_imports.go",
+    "bytes": 25502,
+    "sha256": "20e59f3c7a3dc49e964cf179f9a40ba1fad9ecdb24413fb88acd79005c33ed48"
+  },
+  {
+    "path": "pkg/storage/analysis_attempts.go",
+    "bytes": 27520,
+    "sha256": "d6c33e5e36340458e22ea1e04d23a22c2fa07d9668428c6ef4112338e723cde2"
+  },
+  {
+    "path": "pkg/storage/analysis_cleanup.go",
+    "bytes": 10095,
+    "sha256": "6eacfa795fc32f5d1e1b18b75871c9f63b55bdad8bda33377f1d09ab5c85dcd3"
+  },
+  {
+    "path": "pkg/storage/analysis_imports.go",
+    "bytes": 12103,
+    "sha256": "09f07758abe6226d01e1a2395bd35fb6155968cbd5907d77c3d1c00e1f053fbc"
+  },
+  {
+    "path": "pkg/storage/analysis_upload_writers.go",
+    "bytes": 18571,
+    "sha256": "e9e62b5c23212782a425f6a790ee3cec5147ca75cdaa25f66fc743ec89d2f627"
+  },
+  {
+    "path": "pkg/storage/analysis_upload_writers_postgres_test.go",
+    "bytes": 5226,
+    "sha256": "9a6cc3f6181e249438644d2ba565bf86255973a5287f2af4bc78353024cbd4fe"
+  },
+  {
+    "path": "pkg/storage/analysis_upload_writers_test.go",
+    "bytes": 20471,
+    "sha256": "8c860cceba9c83ce85e4096f98aa5f8335f69cb7240263ac441fc9f106c088b7"
+  },
+  {
+    "path": "pkg/storage/schema_migrations.go",
+    "bytes": 11239,
+    "sha256": "2c8b584bc3670183901f264d601f5efda1b9bd58441798faa5d6be6c7abb9d17"
+  },
+  {
+    "path": "pkg/storage/sqlite_deletion_graph_coverage_test.go",
+    "bytes": 12759,
+    "sha256": "52edb9b764d0d49dd1b7b481248b31a04300ad6ef08c5ec3a680677fc2f50999"
+  },
+  {
+    "path": "pkg/storage/sqlite_schema.go",
+    "bytes": 150916,
+    "sha256": "ecff300e0ab952303a1b5a99efb30384b7bd59f9a35cc90eddb08cedad640484"
+  }
+]
