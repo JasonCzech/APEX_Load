@@ -11,7 +11,8 @@ func TestDependenciesIgnoreCommentsAndTrackPrecedingProducers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(findings) != 1 || findings[0].Code != "missing_producer:absent" || findings[0].Gate != GateExecution {
+	// An unresolved {{var.*}} is replayed as placeholder text with a warning.
+	if len(findings) != 1 || findings[0].Code != "missing_producer:absent" || findings[0].Gate != GatePromotion || findings[0].Severity != "warning" {
 		t.Fatalf("findings=%+v", findings)
 	}
 }
@@ -96,7 +97,27 @@ func TestDependencyNamespacesCannotHideExecutionBlocker(t *testing.T) {
 func TestVerificationTemplateDependenciesAreExecutable(t *testing.T) {
 	s := &dsl.Script{Actions: []dsl.Action{{Type: "source_verification", Params: map[string]any{"operation": "register", "id": "check", "text": "{{var.missing}}", "scope": "body"}, Metadata: map[string]any{"raw_source": "{{var.comment}}"}}}}
 	findings, err := AnalyzeDependencies(s)
-	if err != nil || len(findings) != 1 || findings[0].Code != "missing_producer:missing" || findings[0].Gate != GateExecution {
+	if err != nil || len(findings) != 1 || findings[0].Code != "missing_producer:missing" || findings[0].Gate != GatePromotion {
 		t.Fatalf("verification dependencies=%+v err=%v", findings, err)
+	}
+}
+
+func TestJSONHelperMissingProducerBlocksExecution(t *testing.T) {
+	s := &dsl.Script{Actions: []dsl.Action{
+		{Type: "source_json", Params: map[string]any{"json_object": "doc", "buffer": "{{var.absent}}"}},
+		{Type: "POST", Target: "https://example.test", Body: "{{var.absent}}"},
+	}}
+	findings, err := AnalyzeDependencies(s)
+	if err != nil || len(findings) != 2 {
+		t.Fatalf("findings=%+v err=%v", findings, err)
+	}
+	for _, f := range findings {
+		want := GatePromotion
+		if f.ActionPath == "actions[0]" {
+			want = GateExecution
+		}
+		if f.Code != "missing_producer:absent" || f.Gate != want {
+			t.Fatalf("finding at %s = %+v, want gate %s", f.ActionPath, f, want)
+		}
 	}
 }

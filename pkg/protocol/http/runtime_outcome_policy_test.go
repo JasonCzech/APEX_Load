@@ -206,3 +206,30 @@ func TestHTTPWarningPolicyDoesNotHideBodyReadFailure(t *testing.T) {
 		t.Fatalf("body failure hidden: %+v %v", result, err)
 	}
 }
+
+func TestUnresolvedVariablePlaceholderIsSentWithWarning(t *testing.T) {
+	var received atomic.Value
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		received.Store(string(body))
+		io.WriteString(w, "ok")
+	}))
+	defer server.Close()
+	h := initCompatibilityHTTP(t, nil)
+	result, err := h.Execute(context.Background(), &protocol.Action{Type: "http_request", Method: "POST", Target: server.URL + "?store={{var.store_ref}}",
+		Body: []byte(`{"store":"{{var.store_ref}}","other":"{{ var.missing_two }}"}`)})
+	if err != nil || !result.Success {
+		t.Fatalf("%+v %v", result, err)
+	}
+	if got, _ := received.Load().(string); !strings.Contains(got, "{{var.store_ref}}") {
+		t.Fatalf("placeholder not sent literally: %q", got)
+	}
+	names, _ := result.ProtocolEvidence["unresolved_variables"].([]string)
+	if result.ProtocolEvidence["unresolved_variable_sent"] != true || len(names) != 2 || names[0] != "store_ref" || names[1] != "missing_two" {
+		t.Fatalf("evidence = %+v, warnings = %v", result.ProtocolEvidence, result.WarningCodes)
+	}
+	clean, err := h.Execute(context.Background(), &protocol.Action{Type: "http_request", Method: "GET", Target: server.URL})
+	if err != nil || clean.ProtocolEvidence["unresolved_variable_sent"] != nil {
+		t.Fatalf("clean request warned: %+v %v", clean.ProtocolEvidence, err)
+	}
+}

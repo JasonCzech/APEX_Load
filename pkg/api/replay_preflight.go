@@ -60,7 +60,15 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 		Issues:               appendUniqueStrings(append([]string(nil), issues...), append(reviewGateIssues, messagingIssues...)...),
 		Warnings:             append(append([]string(nil), warnings...), messagingWarnings...),
 	}
-	preflight.MissingVariables = replayMissingVariables(script, variables)
+	readiness := requestimport.AnalyzeVariableReadiness(script, variables)
+	preflight.MissingVariables = readiness.Missing
+	// HTTP replay keeps a missing variable as its placeholder text, and the
+	// request that sends it warns, as the load-test runtime does. Only
+	// references with no placeholder fallback refuse replay; an importer that
+	// must never send a placeholder stamps an execution gate instead.
+	if placeholders := replayPlaceholderVariables(readiness); len(placeholders) > 0 {
+		preflight.Warnings = append(preflight.Warnings, "variable(s) with no seed or preceding extractor are sent as placeholder text: "+strings.Join(placeholders, ", "))
+	}
 	preflight.RequiredSecrets, preflight.MissingSecrets = replaySecretRefs(script, secretResolver)
 	dataWarnings := replayDataSourceWarnings(script)
 	if len(dataWarnings) > 0 {
@@ -77,7 +85,7 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 			preflight.Warnings = append(preflight.Warnings, fmt.Sprintf("secret(s) require project configuration before execution: %s", strings.Join(preflight.MissingSecrets, ", ")))
 		}
 	}
-	preflight.Valid = preflight.Valid && len(reviewGateIssues) == 0 && len(messagingIssues) == 0 && len(preflight.MissingVariables) == 0 && len(dataWarnings) == 0 &&
+	preflight.Valid = preflight.Valid && len(reviewGateIssues) == 0 && len(messagingIssues) == 0 && len(readiness.Blocking) == 0 && len(dataWarnings) == 0 &&
 		(!controllerManagedSecrets || len(preflight.MissingSecrets) == 0)
 	preflight.Checks = []ReplayPreflightCheck{
 		{
@@ -95,8 +103,8 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 		{
 			ID:     "variables",
 			Label:  "Variable readiness",
-			Status: replayCheckStatus(len(preflight.MissingVariables) == 0, false),
-			Detail: replayListDetail(preflight.MissingVariables, "All replay variables are seeded or extracted before use."),
+			Status: replayCheckStatus(len(readiness.Blocking) == 0, len(preflight.MissingVariables) > 0),
+			Detail: replayVariableDetail(readiness),
 		},
 		{
 			ID:     "secrets",
@@ -279,6 +287,34 @@ func replayEvidenceCaptureCheck(script *dsl.Script) ReplayPreflightCheck {
 
 func replayMissingVariables(script *dsl.Script, variables map[string]string) []string {
 	return requestimport.MissingVariables(script, variables)
+}
+
+func replayPlaceholderVariables(readiness requestimport.VariableReadiness) []string {
+	blocking := make(map[string]struct{}, len(readiness.Blocking))
+	for _, name := range readiness.Blocking {
+		blocking[name] = struct{}{}
+	}
+	var placeholders []string
+	for _, name := range readiness.Missing {
+		if _, ok := blocking[name]; !ok {
+			placeholders = append(placeholders, name)
+		}
+	}
+	return placeholders
+}
+
+func replayVariableDetail(readiness requestimport.VariableReadiness) string {
+	if len(readiness.Missing) == 0 {
+		return "All replay variables are seeded or extracted before use."
+	}
+	var parts []string
+	if len(readiness.Blocking) > 0 {
+		parts = append(parts, "Unresolved: "+strings.Join(readiness.Blocking, ", "))
+	}
+	if placeholders := replayPlaceholderVariables(readiness); len(placeholders) > 0 {
+		parts = append(parts, "Sent as placeholder text: "+strings.Join(placeholders, ", "))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func replaySecretRefs(script *dsl.Script, resolvers ...engine.SecretResolver) ([]string, []string) {

@@ -315,9 +315,27 @@ describe('buildLocalReplayPreflight', () => {
       ],
     })
 
-    expect(preflight.valid).toBe(false)
+    // HTTP replay sends the unresolved reference as placeholder text and warns.
+    expect(preflight.valid).toBe(true)
     expect(preflight.missing_variables).toEqual(['session_id'])
-    expect(preflight.checks?.find(check => check.id === 'variables')?.detail).toBe('session_id')
+    expect(preflight.checks?.find(check => check.id === 'variables')).toMatchObject({ status: 'warn', detail: 'Sent as placeholder text: session_id' })
+    expect(preflight.warnings).toEqual(['variable(s) with no seed or preceding extractor are sent as placeholder text: session_id'])
+  })
+
+  it('blocks a missing variable that has no placeholder fallback', () => {
+    const jsonHelper = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [{ name: 'Eval', type: 'source_json', target: '', params: { json_object: 'doc', buffer: '{{var.document}}' } }],
+    })
+    const browser = buildLocalReplayPreflight({
+      ...baseScript,
+      protocol: 'browser',
+      actions: [{ name: 'Open', type: 'browser_navigate', target: '/stores/{{var.store}}' }],
+    })
+    expect(jsonHelper.valid).toBe(false)
+    expect(jsonHelper.checks?.find(check => check.id === 'variables')).toMatchObject({ status: 'fail', detail: 'Unresolved: document' })
+    expect(browser.valid).toBe(false)
+    expect(browser.checks?.find(check => check.id === 'variables')?.status).toBe('fail')
   })
 
   it('flags empty and missing data source bindings', () => {

@@ -1,10 +1,12 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +37,42 @@ func parseReplayOutcomePolicy(config map[string]any) replayOutcomePolicy {
 	p.acceptRecordedAura = strings.EqualFold(strings.TrimSpace(policy), "accept_recorded")
 	return p
 }
+
+var unresolvedVariablePattern = regexp.MustCompile(`\{\{\s*var\.([A-Za-z_][A-Za-z0-9_.]{0,127})\s*\}\}`)
+
+// noteUnresolvedVariables records variables a request sends as placeholder
+// text because nothing produced them. Like LoadRunner, which sends an
+// undefined {param} literally and warns that it "is not a parameter", the
+// request still goes out; the warning names the variables (script names, never
+// values) so a missing producer is visible in run results.
+func noteUnresolvedVariables(result *protocol.Result, target string, body []byte, headers protocol.HeaderList) {
+	var names []string
+	seen := map[string]bool{}
+	collect := func(text string) {
+		if !strings.Contains(text, "{{") {
+			return
+		}
+		for _, match := range unresolvedVariablePattern.FindAllStringSubmatch(text, -1) {
+			if !seen[match[1]] && len(names) < 8 {
+				seen[match[1]] = true
+				names = append(names, match[1])
+			}
+		}
+	}
+	collect(target)
+	if bytes.Contains(body, []byte("{{")) {
+		collect(string(body))
+	}
+	for _, header := range headers {
+		collect(header.Value)
+	}
+	if len(names) == 0 {
+		return
+	}
+	addReplayWarning(result, "unresolved_variable_sent")
+	result.ProtocolEvidence["unresolved_variables"] = names
+}
+
 func addReplayWarning(result *protocol.Result, code string) {
 	if result.ProtocolEvidence == nil {
 		result.ProtocolEvidence = map[string]any{}
