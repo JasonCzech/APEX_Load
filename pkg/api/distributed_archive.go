@@ -174,6 +174,9 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 	if err := writeDistributedDynatraceEvidence(workingDir, &manifest, tr, test, completedAt, mergeOutput); err != nil {
 		return nil, err
 	}
+	if err := writeDistributedProviderLookups(workingDir, &manifest, tr, test, mergeOutput); err != nil {
+		return nil, err
+	}
 	if err := applyTransactionSLARules(workingDir, &manifest); err != nil {
 		return nil, err
 	}
@@ -2660,4 +2663,47 @@ func mergeRemoteArchiveDataset(
 		return err
 	}
 	return destination.Sync()
+}
+
+// writeDistributedProviderLookups archives the controller's lookup outcomes.
+// Like the capture evidence, they live with the run's monitoring artifacts.
+func writeDistributedProviderLookups(root string, manifest *RunArchiveManifest, tr *TestRunner, test *ManagedTest, budgets ...*archiveOutputBudget) error {
+	if manifest == nil || test == nil || test.ELKCapture == nil && test.DynatraceCapture == nil {
+		return nil
+	}
+	outputBudget, err := mergeBudget(root, budgets)
+	if err != nil {
+		return err
+	}
+	if len(budgets) == 0 {
+		defer outputBudget.close()
+	}
+	var artifacts *runArtifacts
+	if tr != nil {
+		tr.mu.RLock()
+		artifacts = test.elkArtifacts
+		tr.mu.RUnlock()
+	} else {
+		artifacts = test.elkArtifacts
+	}
+	var records []ProviderLookupRecord
+	truncated := false
+	if artifacts != nil {
+		artifacts.stopMonitoring()
+		artifacts.lookupMu.Lock()
+		records = append(records, artifacts.providerLookups...)
+		truncated = artifacts.providerLookupsTruncated
+		artifacts.lookupMu.Unlock()
+	}
+	manifest.ProviderLookupsFile = providerLookupsFileName
+	manifest.ProviderLookupsTruncated = truncated
+	return writeArchiveMergeJSONL(filepath.Join(root, manifest.ProviderLookupsFile), outputBudget, func(encoder *json.Encoder) error {
+		for _, record := range records {
+			if err := encoder.Encode(record); err != nil {
+				return err
+			}
+			manifest.ProviderLookupCount++
+		}
+		return nil
+	})
 }

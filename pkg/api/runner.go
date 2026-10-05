@@ -1211,6 +1211,8 @@ type TxMetrics struct {
 	P90Ms              float64                 `json:"p90_ms"`
 	P95Ms              float64                 `json:"p95_ms,omitempty"`
 	P99Ms              float64                 `json:"p99_ms"`
+	// Exemplars are this window's requests whose trace context was sent.
+	Exemplars []engine.TraceExemplar `json:"exemplars,omitempty"`
 }
 
 type LiveErrorPattern struct {
@@ -1509,22 +1511,28 @@ type runArtifacts struct {
 	elkLastPoll          time.Time
 	elkStatus            *ELKCaptureStatus
 	elkSampleIDs         map[string]struct{}
-	elkTraceIDs          map[string]struct{}
+	elkLookups           exemplarLookupSet // guarded by elkMu
 	elkSamples           []ELKLogSample
 	dynatracePollMu      sync.Mutex
 	dynatraceMu          sync.Mutex
 	dynatraceLastPoll    time.Time
 	dynatraceStatus      *DynatraceCaptureStatus
 	dynatraceEvidenceIDs map[string]struct{}
-	dynatraceTraceIDs    map[string]struct{}
+	dynatraceLookups     exemplarLookupSet // legacy capture polls; guarded by dynatraceMu
+	nativeTraceLookups   exemplarLookupSet // native trace proof; guarded by dynatraceMu
+	nativeTraceStored    map[string]bool   // guarded by dynatraceMu
 	nativeDynatrace      atomic.Bool
-	nativeTraceChecked   bool   // guarded by monitorMu
-	nativeTraceWritten   string // guarded by dynatraceMu
+	nativeTraceChecked   bool // guarded by monitorMu
 	dynatraceLogs        []DynatraceLogSample
 	dynatraceProblems    []DynatraceProblemSummary
 	slaEvaluated         bool
 	slaBreached          bool
 	slaDetails           []string
+	// Provider lookup outcomes for distributed archives; local runs also
+	// stream them through the archive writer.
+	lookupMu                 sync.Mutex
+	providerLookups          []ProviderLookupRecord
+	providerLookupsTruncated bool
 }
 
 // TestRunnerOption customizes a TestRunner at construction. Options are applied

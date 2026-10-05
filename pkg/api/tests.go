@@ -626,6 +626,9 @@ func cloneTxMetricsMap(in map[string]*TxMetrics) map[string]*TxMetrics {
 		if len(tx.CorrelationIDs) > 0 {
 			clone.CorrelationIDs = append([]string(nil), tx.CorrelationIDs...)
 		}
+		if len(tx.Exemplars) > 0 {
+			clone.Exemplars = append([]engine.TraceExemplar(nil), tx.Exemplars...)
+		}
 		out[key] = &clone
 	}
 	if len(out) == 0 {

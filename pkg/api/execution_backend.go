@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
 	"strings"
 	"time"
 
@@ -476,45 +475,7 @@ func (a *runArtifacts) resultSink() engine.ResultSink {
 	return combinedResultSink{
 		a.recorder,
 		liveErrorEvidenceSink{runner: a.runner, test: a.test},
-		elkTraceEvidenceSink{artifacts: a},
 	}
-}
-
-type elkTraceEvidenceSink struct{ artifacts *runArtifacts }
-
-func (sink elkTraceEvidenceSink) RecordResult(result *protocol.Result) error {
-	if sink.artifacts == nil || result == nil || sink.artifacts.test == nil || (sink.artifacts.test.ELKCapture == nil && sink.artifacts.test.DynatraceCapture == nil && !sink.artifacts.nativeDynatrace.Load()) {
-		return nil
-	}
-	traceID := strings.TrimSpace(traceIDFromCorrelationID(result.CorrelationID))
-	if traceID == "" {
-		return nil
-	}
-	if sink.artifacts.test.ELKCapture != nil {
-		sink.artifacts.elkMu.Lock()
-		if sink.artifacts.elkTraceIDs == nil {
-			sink.artifacts.elkTraceIDs = make(map[string]struct{})
-		}
-		if len(sink.artifacts.elkTraceIDs) < 64 {
-			sink.artifacts.elkTraceIDs[traceID] = struct{}{}
-		}
-		sink.artifacts.elkMu.Unlock()
-	}
-	if sink.artifacts.test.DynatraceCapture != nil || sink.artifacts.nativeDynatrace.Load() {
-		sink.artifacts.dynatraceMu.Lock()
-		if sink.artifacts.dynatraceTraceIDs == nil {
-			sink.artifacts.dynatraceTraceIDs = make(map[string]struct{})
-		}
-		if len(sink.artifacts.dynatraceTraceIDs) < 64 {
-			sink.artifacts.dynatraceTraceIDs[traceID] = struct{}{}
-		}
-		sink.artifacts.dynatraceMu.Unlock()
-	}
-	return nil
-}
-
-func (sink elkTraceEvidenceSink) RecordTransaction(result *protocol.Result) error {
-	return sink.RecordResult(result)
 }
 
 type combinedResultSink []engine.ResultSink
@@ -669,19 +630,29 @@ func (a *runArtifacts) collectDynatraceMetrics(ctx context.Context, test *Manage
 		live.Dynatrace = status
 		return metrics
 	}
-	traceIDs := make([]string, 0, len(a.dynatraceTraceIDs))
-	for traceID := range a.dynatraceTraceIDs {
-		traceIDs = append(traceIDs, traceID)
-	}
+	traceIDs := a.dynatraceLookups.take()
 	a.dynatraceMu.Unlock()
-	sort.Strings(traceIDs)
 	start := test.CreatedAt
 	if test.StartedAt != nil {
 		start = *test.StartedAt
 	}
 	result := queryDynatraceWithClient(ctx, a.runner, test.DynatraceCapture, test.ID, traceIDs, start, now, a.monitorHTTPClient)
 	if ctx.Err() == context.Canceled {
+		a.dynatraceMu.Lock()
+		a.dynatraceLookups.restore(traceIDs)
+		a.dynatraceMu.Unlock()
 		return nil // Shutdown must not replace the final good snapshot with an error.
+	}
+	if dynatraceLogsFilterByTrace(test.DynatraceCapture, test.ID, traceIDs) {
+		returned := make([]string, 0, len(result.Logs))
+		for _, sample := range result.Logs {
+			returned = append(returned, sample.TraceID)
+		}
+		var logsErr error
+		if status := result.Capabilities["logs"]; status.Status != "connected" {
+			logsErr = errors.New(firstNonEmptyString(status.Message, "Dynatrace log query unavailable"))
+		}
+		a.recordProviderLookups(providerLookupOutcomes("dynatrace", traceIDs, returned, len(result.Logs) >= dynatraceLogQueryLimit, logsErr, now))
 	}
 
 	a.dynatraceMu.Lock()
@@ -762,19 +733,26 @@ func (a *runArtifacts) collectELKMetrics(ctx context.Context, test *ManagedTest,
 			return metrics
 		}
 	}
-	traceIDs := make([]string, 0, len(a.elkTraceIDs))
-	for traceID := range a.elkTraceIDs {
-		traceIDs = append(traceIDs, traceID)
-	}
+	traceIDs := a.elkLookups.take()
 	a.elkMu.Unlock()
 	start := test.CreatedAt
 	if test.StartedAt != nil {
 		start = *test.StartedAt
 	}
-	sort.Strings(traceIDs)
 	result, err := queryELKWithClient(ctx, a.runner, test.ELKCapture, test.ID, traceIDs, start, now, a.monitorHTTPClient)
 	if ctx.Err() == context.Canceled {
+		a.elkMu.Lock()
+		a.elkLookups.restore(traceIDs)
+		a.elkMu.Unlock()
 		return nil
+	}
+	// Trace IDs are only asked about when the search filters by them.
+	if elkFiltersByTrace(test.ELKCapture, test.ID, traceIDs) {
+		returned := make([]string, 0, len(result.Samples))
+		for _, sample := range result.Samples {
+			returned = append(returned, sample.TraceID)
+		}
+		a.recordProviderLookups(providerLookupOutcomes("elasticsearch", traceIDs, returned, len(result.Samples) >= elkSearchSampleLimit, err, now))
 	}
 
 	a.elkMu.Lock()

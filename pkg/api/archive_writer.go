@@ -58,6 +58,10 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 	if test.DynatraceCapture != nil {
 		targets = append(targets, "dynatrace_evidence.jsonl")
 	}
+	lookupCapture := test.ELKCapture != nil || test.DynatraceCapture != nil
+	if lookupCapture {
+		targets = append(targets, providerLookupsFileName)
+	}
 	if err := validateArchiveArtifactTargets(archiveDir, targets...); err != nil {
 		return nil, fmt.Errorf("inspect archive targets: %w", err)
 	}
@@ -118,6 +122,22 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 		}
 		dynatraceEvidenceFile = "dynatrace_evidence.jsonl"
 	}
+	var lookupFile *os.File
+	var lookupBuf *bufio.Writer
+	var lookupEncoder *json.Encoder
+	providerLookupsFile := ""
+	if lookupCapture {
+		lookupFile, lookupBuf, lookupEncoder, err = open(providerLookupsFileName)
+		if err != nil {
+			for _, file := range []*os.File{txFile, resourceFile, summaryFile, elkFile, dynatraceFile} {
+				if file != nil {
+					file.Close()
+				}
+			}
+			return nil, fmt.Errorf("open provider lookup archive: %w", err)
+		}
+		providerLookupsFile = providerLookupsFileName
+	}
 
 	initialProvenance := maskRunArchiveProvenance(provenance)
 	writer := &runArchiveWriter{
@@ -136,6 +156,7 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 			IntervalSummariesParquetFile: "interval_summaries.parquet",
 			ELKEvidenceFile:              elkEvidenceFile,
 			DynatraceEvidenceFile:        dynatraceEvidenceFile,
+			ProviderLookupsFile:          providerLookupsFile,
 		},
 		region:           strings.TrimSpace(os.Getenv("APEXLOAD_REGION")),
 		rootDir:          archiveDir,
@@ -159,6 +180,9 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 		dynatraceEncoder: dynatraceEncoder,
 		flushStop:        make(chan struct{}),
 		flushStopped:     make(chan struct{}),
+		lookupFile:       lookupFile,
+		lookupBuf:        lookupBuf,
+		lookupEncoder:    lookupEncoder,
 	}
 	go writer.flushLoop()
 	return writer, nil
@@ -195,7 +219,7 @@ func (w *runArchiveWriter) stopFlushLoop() {
 
 func (w *runArchiveWriter) flushBuffersLocked() error {
 	var failures []error
-	for _, writer := range []*bufio.Writer{w.txBuf, w.resourceBuf, w.summaryBuf, w.elkBuf, w.dynatraceBuf} {
+	for _, writer := range []*bufio.Writer{w.txBuf, w.resourceBuf, w.summaryBuf, w.elkBuf, w.dynatraceBuf, w.lookupBuf} {
 		if writer == nil {
 			continue
 		}
@@ -619,6 +643,30 @@ func (w *runArchiveWriter) RecordELKSamples(samples []ELKLogSample) error {
 	return nil
 }
 
+// RecordProviderLookups appends lookup outcomes, up to the run's bound.
+func (w *runArchiveWriter) RecordProviderLookups(records []ProviderLookupRecord) error {
+	if w == nil || w.lookupEncoder == nil || len(records) == 0 {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.flushErr != nil {
+		return w.flushErr
+	}
+	for _, record := range records {
+		if w.manifest.ProviderLookupCount >= maxProviderLookupRecords {
+			w.manifest.ProviderLookupsTruncated = true
+			return nil
+		}
+		if err := w.lookupEncoder.Encode(record); err != nil {
+			w.flushErr = err
+			return err
+		}
+		w.manifest.ProviderLookupCount++
+	}
+	return nil
+}
+
 func (w *runArchiveWriter) RecordDynatraceEvidence(records []DynatraceEvidenceRecord) error {
 	if w == nil || w.dynatraceEncoder == nil || len(records) == 0 {
 		return nil
@@ -769,7 +817,7 @@ func (w *runArchiveWriter) syncAndCloseDataFilesLocked() error {
 	if w == nil {
 		return nil
 	}
-	files := []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.elkFile, w.dynatraceFile}
+	files := []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.elkFile, w.dynatraceFile, w.lookupFile}
 	w.txFile = nil
 	w.resourceFile = nil
 	w.summaryFile = nil
@@ -991,6 +1039,8 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		{Name: manifest.MonitorManagementFile, Kind: "evidence", Format: "jsonl", RecordType: "monitor_management_v1", Count: manifest.MonitorManagementSnapshotCount},
 		{Name: manifest.MonitorDiagnosticsFile, Kind: "evidence", Format: "jsonl", RecordType: "monitor_diagnostics_v1", Count: manifest.MonitorDiagnosticsCount},
 		{Name: manifest.IntervalDistributionsFile, Kind: "evidence", Format: "jsonl", RecordType: intervalDistributionRecordType, Count: manifest.IntervalDistributionCount},
+		{Name: manifest.ProviderLookupsFile, Kind: "evidence", Format: "jsonl", RecordType: providerLookupRecordType, Count: manifest.ProviderLookupCount},
+		{Name: manifest.ExemplarsFile, Kind: "evidence", Format: "jsonl", RecordType: exemplarRecordType, Count: manifest.ExemplarCount},
 	}
 	for _, export := range manifest.CSVExports {
 		if export.Status == "complete" {

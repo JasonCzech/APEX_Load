@@ -84,7 +84,7 @@ func (tr *TestRunner) persistIntervalDistributionArchive(ctx context.Context, te
 	if manifest.IntervalDistributionsFile != "" {
 		return nil
 	}
-	budget, err := newIntervalDistributionBudget(ctx, record)
+	budget, err := newEvidenceSidecarBudget(ctx, record, envArchiveIntervalDistributionsMaxBytes, 256<<20)
 	if err != nil {
 		return err
 	}
@@ -147,14 +147,15 @@ func (tr *TestRunner) persistIntervalDistributionArchive(ctx context.Context, te
 	return updateRunArchiveSingleArtifactIntegrity(record.ArchivePath, manifest, RunArchiveArtifact{Name: intervalDistributionsArchiveFileName, Kind: "evidence", Format: "jsonl", RecordType: intervalDistributionRecordType, Count: count})
 }
 
-// newIntervalDistributionBudget sizes the sidecar's own allowance. It keeps
-// the adjunct free-space floor and shares the archive root's backlog budget.
-func newIntervalDistributionBudget(ctx context.Context, record *storage.RunArchiveRecord) (*archiveOutputBudget, error) {
+// newEvidenceSidecarBudget sizes a post-finalize sidecar's own allowance from
+// env (default fallback, at most 4 GiB). It keeps the adjunct free-space floor
+// and shares the archive root's backlog budget.
+func newEvidenceSidecarBudget(ctx context.Context, record *storage.RunArchiveRecord, env string, fallback int64) (*archiveOutputBudget, error) {
 	root, err := archiveBacklogRootForRecord(record)
 	if err != nil {
 		return nil, err
 	}
-	limit, err := collectionCacheByteLimit(envArchiveIntervalDistributionsMaxBytes, 256<<20, 4<<30)
+	limit, err := collectionCacheByteLimit(env, fallback, 4<<30)
 	if err != nil {
 		return nil, err
 	}

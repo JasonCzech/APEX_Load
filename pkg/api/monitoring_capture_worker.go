@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
-	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -119,20 +118,26 @@ func (a *runArtifacts) stopMonitoring() {
 	a.monitorWorkers.Wait()
 }
 
-// Distributed metrics carry observed W3C correlations even though no local
-// VUser result sink exists. Feed that bounded evidence into the same collector.
+// observeMonitoringTraces feeds each live window's exemplars to the provider
+// lookups that are on. Each provider poll then takes the best 64 since its
+// last poll: errors first, then slow requests, then representative samples.
 func (a *runArtifacts) observeMonitoringTraces(live *LiveMetrics) {
 	if a == nil || live == nil || a.test == nil || (a.test.ELKCapture == nil && a.test.DynatraceCapture == nil && !a.nativeDynatrace.Load()) {
 		return
 	}
-	sink := elkTraceEvidenceSink{artifacts: a}
-	for _, tx := range live.Transactions {
-		if tx != nil {
-			for _, correlation := range tx.CorrelationIDs {
-				_ = sink.RecordResult(&protocol.Result{CorrelationID: correlation})
-			}
-		}
+	if a.test.ELKCapture != nil {
+		a.elkMu.Lock()
+		a.elkLookups.observe(live)
+		a.elkMu.Unlock()
 	}
+	a.dynatraceMu.Lock()
+	if a.test.DynatraceCapture != nil {
+		a.dynatraceLookups.observe(live)
+	}
+	if a.nativeDynatrace.Load() {
+		a.nativeTraceLookups.observe(live)
+	}
+	a.dynatraceMu.Unlock()
 }
 
 // Caller holds dynatraceMu. Reserve half the evidence for each capability.

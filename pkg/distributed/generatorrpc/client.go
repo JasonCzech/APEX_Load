@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"strings"
 	"sync"
@@ -255,6 +256,7 @@ type MetricAggregate struct {
 	BytesReceived    int64
 	TPS              float64
 	DurationDigest   *engine.TDigestSnapshot
+	Exemplars        []engine.TraceExemplar
 }
 
 type BrowserMetrics struct {
@@ -1779,7 +1781,45 @@ func metricAggregateFromProto(value *pb.MetricAggregate) *MetricAggregate {
 		DurationDigest:   tdigestSnapshotFromProto(value.GetDurationDigest()),
 		Messaging:        messagingSummaryFromJSON(value.GetMessagingSummaryJson(), value.GetMessagingVersion()),
 		MessagingVersion: value.GetMessagingVersion(),
+		Exemplars:        traceExemplarsFromProto(value.GetExemplars()),
 	}
+}
+
+// traceExemplarsFromProto keeps at most three well-formed exemplars with
+// distinct reasons; anything malformed is dropped, never repaired.
+func traceExemplarsFromProto(values []*pb.TraceExemplar) []engine.TraceExemplar {
+	var out []engine.TraceExemplar
+	seen := map[string]bool{}
+	for _, value := range values {
+		reason := value.GetReason()
+		if len(out) == engine.MaxTraceExemplars || seen[reason] {
+			break
+		}
+		if reason != engine.ExemplarSlowestSuccess && reason != engine.ExemplarFirstError && reason != engine.ExemplarSample {
+			continue
+		}
+		duration := value.GetDurationMs()
+		if !protocol.ValidTraceID(value.GetTraceId()) || len(value.GetSpanId()) > 16 || math.IsNaN(duration) || math.IsInf(duration, 0) || duration < 0 {
+			continue
+		}
+		seen[reason] = true
+		out = append(out, engine.TraceExemplar{
+			TraceID: value.GetTraceId(), SpanID: value.GetSpanId(), DurationMs: duration, Success: value.GetSuccess(),
+			StatusCode: int(value.GetStatusCode()), Reason: reason, Timestamp: time.UnixMilli(value.GetTimestampUnixMs()).UTC(),
+		})
+	}
+	return out
+}
+
+func traceExemplarsToProto(values []engine.TraceExemplar) []*pb.TraceExemplar {
+	out := make([]*pb.TraceExemplar, 0, len(values))
+	for _, value := range values {
+		out = append(out, &pb.TraceExemplar{
+			TraceId: value.TraceID, SpanId: value.SpanID, DurationMs: value.DurationMs, Success: value.Success,
+			StatusCode: int32(value.StatusCode), Reason: value.Reason, TimestampUnixMs: value.Timestamp.UnixMilli(),
+		})
+	}
+	return out
 }
 
 func metricAggregateToProto(value *MetricAggregate) *pb.MetricAggregate {
@@ -1807,6 +1847,7 @@ func metricAggregateToProto(value *MetricAggregate) *pb.MetricAggregate {
 		DurationDigest:       tdigestSnapshotToProto(value.DurationDigest),
 		MessagingSummaryJson: messagingSummaryJSON(value.Messaging),
 		MessagingVersion:     value.MessagingVersion,
+		Exemplars:            traceExemplarsToProto(value.Exemplars),
 	}
 }
 

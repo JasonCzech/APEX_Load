@@ -33,7 +33,7 @@ func TestDynatraceTraceWorkerShutdownBoundsFinalStorageFlush(t *testing.T) {
 	blockedStore := &blockedDynatraceTraceStore{SQLiteStore: store, writeStarted: writeStarted}
 	runner := NewTestRunner(1, NewHub(), blockedStore)
 	blockedStore.runner = runner
-	artifacts := &runArtifacts{runner: runner, dynatraceTraceIDs: map[string]struct{}{fmt.Sprintf("%032x", 1): {}}}
+	artifacts := &runArtifacts{runner: runner, nativeTraceLookups: lookupSetOf(fmt.Sprintf("%032x", 1))}
 	artifacts.nativeDynatrace.Store(true)
 	ctx, cancel := context.WithCancel(t.Context())
 	artifacts.startNativeDynatraceTraceWorker(ctx, job.ProjectID, job.RunID, job.StartedAt, executionLeaseTerm{})
@@ -83,7 +83,7 @@ func TestDynatraceTraceWorkerCannotAdoptSuccessorExecutionTerm(t *testing.T) {
 		t.Fatal("successor execution ownership was not admitted")
 	}
 	artifacts.dynatraceMu.Lock()
-	artifacts.dynatraceTraceIDs = map[string]struct{}{fmt.Sprintf("%032x", 1): {}}
+	artifacts.nativeTraceLookups = lookupSetOf(fmt.Sprintf("%032x", 1))
 	artifacts.dynatraceMu.Unlock()
 	cancel()
 	artifacts.monitorWorkers.Wait()

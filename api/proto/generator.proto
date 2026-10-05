@@ -588,6 +588,19 @@ message MetricAggregate {
   TDigestSnapshot duration_digest = 18;
   string messaging_summary_json = 19; // bounded, validated protocol.MessagingSummary v1/v2
   uint32 messaging_version = 20;
+  // Up to three requests from this window whose trace context was sent:
+  // slowest success, first error and one sample (exemplars_v1).
+  repeated TraceExemplar exemplars = 21;
+}
+
+message TraceExemplar {
+  string trace_id = 1;
+  string span_id = 2;
+  double duration_ms = 3;
+  bool success = 4;
+  int32 status_code = 5;
+  string reason = 6;
+  int64 timestamp_unix_ms = 7;
 }
 
 message BrowserMetrics {

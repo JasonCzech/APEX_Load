@@ -78,3 +78,17 @@ func isLowerHexString(value string) bool {
 	}
 	return value != ""
 }
+
+// ValidTraceID reports whether id is a lowercase, non-zero W3C trace ID.
+func ValidTraceID(id string) bool {
+	return len(id) == 32 && isLowerHexString(id) && strings.Trim(id, "0") != ""
+}
+
+// LookupTraceID returns the trace ID a result's request actually sent, or ""
+// when it sent none: exemplars and provider lookups only use these.
+func (c *SentTraceContext) LookupTraceID() string {
+	if c == nil || !c.Sent || !ValidTraceID(c.TraceID) {
+		return ""
+	}
+	return c.TraceID
+}

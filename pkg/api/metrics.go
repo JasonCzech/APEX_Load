@@ -312,6 +312,7 @@ func buildTxMetricsFromAction(name string, am *engine.ActionMetrics, window time
 		AvgTTFBMs:        am.AvgTTFBMs,
 		CorrelationIDs:   append([]string(nil), am.CorrelationIDs...),
 		CorrelationCount: am.CorrelationCount,
+		Exemplars:        append([]engine.TraceExemplar(nil), am.Exemplars...),
 		Count:            am.Count,
 		Errors:           am.Errors,
 		AvgMs:            float64(am.AvgDuration.Microseconds()) / 1000.0,

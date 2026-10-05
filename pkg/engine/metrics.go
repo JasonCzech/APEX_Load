@@ -305,6 +305,9 @@ type ActionMetrics struct {
 	P99              time.Duration
 	BytesSent        int64
 	BytesRecv        int64
+	// Exemplars are this window's requests whose trace context was sent.
+	Exemplars          []TraceExemplar `json:"exemplars,omitempty"`
+	exemplarCandidates int64
 }
 
 func NewMetricsCollector(bufferSize int) *MetricsCollector {
@@ -743,6 +746,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				snap.ByTransaction[transactionName] = tm
 			}
 			mergeActionResult(tm, r)
+			recordTraceExemplar(tm, r)
 			recordDurationSample(transactionDigests, transactionDurationSum, transactionName, r.Duration)
 
 			if region := strings.TrimSpace(r.Region); region != "" {
@@ -788,6 +792,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				snap.ByAction[actionName] = am
 			}
 			mergeActionResult(am, r)
+			recordTraceExemplar(am, r)
 			recordDurationSample(actionDigests, actionDurationSum, actionName, r.Duration)
 
 			if dependencyTarget := strings.TrimSpace(r.DependencyTarget); dependencyTarget != "" {

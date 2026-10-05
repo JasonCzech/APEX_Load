@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/engine"
-	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -87,25 +86,26 @@ func TestELKStringFieldSupportsLiteralAndNestedDots(t *testing.T) {
 	}
 }
 
-func TestELKTraceEvidenceSinkDoesNotWaitForPollSerialization(t *testing.T) {
+func TestLiveTraceObservationDoesNotWaitForPollSerialization(t *testing.T) {
 	artifacts := &runArtifacts{test: &ManagedTest{ELKCapture: &ELKCaptureConfig{ConnectionID: "elk-a"}}}
 	artifacts.elkPollMu.Lock()
 	defer artifacts.elkPollMu.Unlock()
 
-	done := make(chan error, 1)
+	done := make(chan struct{})
 	go func() {
-		done <- (elkTraceEvidenceSink{artifacts: artifacts}).RecordResult(&protocol.Result{CorrelationID: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"})
+		artifacts.observeMonitoringTraces(&LiveMetrics{Transactions: map[string]*TxMetrics{"checkout": {Exemplars: []engine.TraceExemplar{{TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", Reason: engine.ExemplarSample, Success: true}}}}})
+		close(done)
 	}()
 	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
+	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("VUser trace evidence blocked behind ELK polling")
+		t.Fatal("live trace evidence blocked behind ELK polling")
 	}
-	if _, ok := artifacts.elkTraceIDs["4bf92f3577b34da6a3ce929d0e0e4736"]; !ok {
-		t.Fatalf("trace IDs = %#v", artifacts.elkTraceIDs)
+	artifacts.elkMu.Lock()
+	ids := artifacts.elkLookups.take()
+	artifacts.elkMu.Unlock()
+	if len(ids) != 1 || ids[0] != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Fatalf("trace IDs = %v", ids)
 	}
 }
 

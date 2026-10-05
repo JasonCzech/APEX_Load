@@ -83,10 +83,11 @@ func TestDistributedMonitoringFeedsObservedTracesIntoBothCaptures(t *testing.T) 
 	}
 	live := buildLiveMetricsFromDistributedBatch(test, generatorrpc.MetricsBatch{TestID: test.ID, TimestampUnixMs: time.Now().UnixMilli(), WindowMs: 1000, Transactions: transactions}, 80, nil)
 	artifacts.enrichLiveMetrics(test, live)
-	if len(artifacts.elkTraceIDs) != 64 || len(artifacts.dynatraceTraceIDs) != 64 {
-		t.Fatalf("trace bounds: ELK=%d Dynatrace=%d", len(artifacts.elkTraceIDs), len(artifacts.dynatraceTraceIDs))
+	elk, dynatrace := artifacts.elkLookups.take(), artifacts.dynatraceLookups.take()
+	if len(elk) != 64 || len(dynatrace) != 64 {
+		t.Fatalf("trace bounds: ELK=%d Dynatrace=%d", len(elk), len(dynatrace))
 	}
-	for traceID := range artifacts.elkTraceIDs {
+	for _, traceID := range elk {
 		if len(traceID) != 32 {
 			t.Fatalf("invalid observed trace ID: %s", traceID)
 		}

@@ -49,6 +49,8 @@ func archiveManifestArtifactNames(manifest *RunArchiveManifest) (map[string]stru
 		manifest.MonitorManagementFile,
 		manifest.MonitorDiagnosticsFile,
 		manifest.IntervalDistributionsFile,
+		manifest.ProviderLookupsFile,
+		manifest.ExemplarsFile,
 		"manifest.json",
 	} {
 		if strings.TrimSpace(name) == "" {
@@ -122,6 +124,12 @@ func validateRunArchiveManifestArtifacts(manifest *RunArchiveManifest) error {
 		return err
 	}
 	if manifest.IntervalDistributionsFile, err = optionalArchiveArtifactName("interval_distributions_file", manifest.IntervalDistributionsFile); err != nil {
+		return err
+	}
+	if manifest.ProviderLookupsFile, err = optionalArchiveArtifactName("provider_lookups_file", manifest.ProviderLookupsFile); err != nil {
+		return err
+	}
+	if manifest.ExemplarsFile, err = optionalArchiveArtifactName("exemplars_file", manifest.ExemplarsFile); err != nil {
 		return err
 	}
 	return nil

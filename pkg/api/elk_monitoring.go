@@ -522,7 +522,7 @@ func buildELKSearchBody(cfg *ELKCaptureConfig, testID string, traceIDs []string,
 		aggs["metric_"+metric.Name] = map[string]any{metric.Operation: map[string]any{"field": metric.Field}}
 	}
 	fields := compactNonEmptyStrings(cfg.TimestampField, cfg.LevelField, cfg.MessageField, cfg.TestIDField, cfg.TraceIDField)
-	return map[string]any{"size": 20, "track_total_hits": true, "query": map[string]any{"bool": map[string]any{"filter": filters}}, "sort": []any{map[string]any{cfg.TimestampField: "desc"}}, "_source": fields, "aggs": aggs}
+	return map[string]any{"size": elkSearchSampleLimit, "track_total_hits": true, "query": map[string]any{"bool": map[string]any{"filter": filters}}, "sort": []any{map[string]any{cfg.TimestampField: "desc"}}, "_source": fields, "aggs": aggs}
 }
 
 func decodeELKQueryResult(data []byte, cfg *ELKCaptureConfig) (elkQueryResult, error) {
@@ -644,4 +644,13 @@ func elkExternalMetrics(connectionID string, values map[string]float64) map[stri
 		result["elk."+connectionID+"."+key] = values[key]
 	}
 	return result
+}
+
+// elkSearchSampleLimit is the most log rows one ELK search returns.
+const elkSearchSampleLimit = 20
+
+// elkFiltersByTrace reports whether a search with these inputs filters by
+// trace ID, which only happens when no test ID field is configured.
+func elkFiltersByTrace(cfg *ELKCaptureConfig, testID string, traceIDs []string) bool {
+	return cfg != nil && len(traceIDs) > 0 && strings.TrimSpace(cfg.TraceIDField) != "" && (testID == "" || strings.TrimSpace(cfg.TestIDField) == "")
 }

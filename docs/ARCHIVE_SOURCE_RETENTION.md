@@ -457,6 +457,10 @@ outcomes. A retry receives a new allowance; removed or replaced bytes are not
 refunded within an attempt, and recovery itself consumes that attempt's allowance.
 No source data is deleted to make space.
 
+`exemplars.jsonl` has its own allowance too,
+`APEXLOAD_ARCHIVE_EXEMPLARS_MAX_BYTES` (default 64 MiB, up to 4 GiB), with
+the same truncate-and-mark behaviour.
+
 `interval_distributions.jsonl` has its own allowance,
 `APEXLOAD_ARCHIVE_INTERVAL_DISTRIBUTIONS_MAX_BYTES` (default 256 MiB, positive
 integer bytes up to 4 GiB), with the same free-space floor. It is separate so a

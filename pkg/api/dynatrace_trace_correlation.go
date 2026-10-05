@@ -2,9 +2,9 @@ package api
 
 import (
 	"context"
-	"sort"
-	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type dynatraceRunTraceStore interface {
@@ -48,15 +48,26 @@ func (a *runArtifacts) persistNativeDynatraceTraceIDs(ctx context.Context, proje
 		return
 	}
 	a.dynatraceMu.Lock()
-	ids := make([]string, 0, len(a.dynatraceTraceIDs))
-	for id := range a.dynatraceTraceIDs {
-		ids = append(ids, id)
+	window := a.nativeTraceLookups.take()
+	if len(a.nativeTraceStored) >= storage.MaxDynatraceRunTraceIDs {
+		// Storage keeps the first 64 proofs per job; it can accept no more.
+		a.dynatraceMu.Unlock()
+		return
 	}
-	sort.Strings(ids)
-	fingerprint := strings.Join(ids, ",")
-	unchanged := fingerprint == a.nativeTraceWritten
+	ids := make([]string, 0, len(window))
+	for _, id := range window {
+		if !a.nativeTraceStored[id] {
+			ids = append(ids, id)
+		}
+	}
 	a.dynatraceMu.Unlock()
-	if len(ids) == 0 || unchanged || ctx.Err() != nil {
+	if len(ids) == 0 {
+		return
+	}
+	if ctx.Err() != nil {
+		a.dynatraceMu.Lock()
+		a.nativeTraceLookups.restore(ids)
+		a.dynatraceMu.Unlock()
 		return
 	}
 	leaseName, owner, generation := "", "", uint64(0)
@@ -69,9 +80,17 @@ func (a *runArtifacts) persistNativeDynatraceTraceIDs(ctx context.Context, proje
 		accepted, writeErr = store.RecordDynatraceRunTraceIDsFencedContext(ctx, project, run, started, ids, leaseName, owner, generation)
 		return writeErr
 	})
-	if err == nil && accepted {
-		a.dynatraceMu.Lock()
-		a.nativeTraceWritten = fingerprint
-		a.dynatraceMu.Unlock()
+	a.dynatraceMu.Lock()
+	defer a.dynatraceMu.Unlock()
+	if err != nil || !accepted {
+		// A rejected or failed write keeps its IDs for the next attempt.
+		a.nativeTraceLookups.restore(ids)
+		return
+	}
+	if a.nativeTraceStored == nil {
+		a.nativeTraceStored = map[string]bool{}
+	}
+	for _, id := range ids {
+		a.nativeTraceStored[id] = true
 	}
 }

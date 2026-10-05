@@ -869,7 +869,7 @@ func queryDynatraceLogs(ctx context.Context, runner *TestRunner, cfg *DynatraceC
 		return nil, nil, err
 	}
 	fields := strings.Join(compactNonEmptyStrings(cfg.LogTimestampField, cfg.LogStatusField, cfg.LogMessageField, cfg.LogTestIDField, cfg.LogTraceIDField), ", ")
-	query := fetch + " | filter " + filter + " | fields " + fields + " | sort " + cfg.LogTimestampField + " desc | limit 100"
+	query := fetch + " | filter " + filter + " | fields " + fields + " | sort " + cfg.LogTimestampField + " desc | limit " + strconv.Itoa(dynatraceLogQueryLimit)
 	records, err := executeDynatraceDQL(ctx, runner, cfg, query, client)
 	if err != nil {
 		return nil, nil, err
@@ -1210,4 +1210,13 @@ func dynatraceEvidenceKey(record DynatraceEvidenceRecord) string {
 		return "problem|" + firstNonEmpty(record.Problem.ID, record.Problem.DisplayID, record.Problem.Title+"|"+strconv.FormatInt(record.Problem.StartTime.UnixMilli(), 10))
 	}
 	return ""
+}
+
+// dynatraceLogQueryLimit is the most log records one capture query returns.
+const dynatraceLogQueryLimit = 100
+
+// dynatraceLogsFilterByTrace reports whether a log query with these inputs
+// filters by trace ID, which only happens without a test ID field.
+func dynatraceLogsFilterByTrace(cfg *DynatraceCaptureConfig, testID string, traceIDs []string) bool {
+	return cfg != nil && cfg.LogsEnabled && len(traceIDs) > 0 && cfg.LogTraceIDField != "" && (testID == "" || cfg.LogTestIDField == "")
 }

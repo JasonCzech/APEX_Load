@@ -15,7 +15,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/collectoragent"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/engine"
-	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -410,10 +409,11 @@ func TestDynatraceNativeW3CCorrelationUsesDurableObservedRunIdentities(t *testin
 	if !artifacts.nativeDynatrace.Load() || test.DynatraceCapture != nil {
 		t.Fatal("native trace capture did not activate independently of legacy capture")
 	}
-	if err := (elkTraceEvidenceSink{artifacts: artifacts}).RecordResult(&protocol.Result{CorrelationID: "00-" + known + "-00f067aa0ba902b7-01"}); err != nil {
-		t.Fatal(err)
-	}
-	artifacts.observeMonitoringTraces(&LiveMetrics{Transactions: map[string]*TxMetrics{"remote": {CorrelationIDs: []string{"00-" + remote + "-00f067aa0ba902b7-01"}}}})
+	// A local window's exemplar and an older peer's correlation ID both reach the proof set.
+	artifacts.observeMonitoringTraces(&LiveMetrics{Transactions: map[string]*TxMetrics{
+		"local":  {Exemplars: []engine.TraceExemplar{{TraceID: known, Reason: engine.ExemplarSample, Success: true}}},
+		"remote": {CorrelationIDs: []string{"00-" + remote + "-00f067aa0ba902b7-01"}},
+	}})
 	artifacts.stopMonitoring() // Final worker flush persists both local and distributed IDs.
 	jobs, err := store.ListRunMonitorJobs(job.ProjectID, job.RunID)
 	if err != nil || len(jobs) != 1 || len(jobs[0].RunTraceIDs) != 2 {

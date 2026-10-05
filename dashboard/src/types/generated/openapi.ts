@@ -3053,6 +3053,9 @@ export interface operations {
               "elk_evidence_count"?: number;
               "elk_evidence_file"?: string;
               "error"?: string;
+              "exemplar_count"?: number;
+              "exemplars_file"?: string;
+              "exemplars_truncated"?: boolean;
               "frozen_monitor_rules"?: Array<{
                 "backend"?: string;
                 "comparator"?: string;
@@ -3209,6 +3212,9 @@ export interface operations {
                 "traffic_profile"?: (Record<string, unknown>) | null;
                 "workload"?: (Record<string, unknown>) | null;
               };
+              "provider_lookup_count"?: number;
+              "provider_lookups_file"?: string;
+              "provider_lookups_truncated"?: boolean;
               "resource_sample_count"?: number;
               "resource_samples_file"?: string;
               "resource_samples_parquet_file"?: string;
@@ -30271,6 +30277,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -30297,6 +30304,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -30802,6 +30810,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -30836,6 +30845,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -30994,6 +31004,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -31023,6 +31034,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -31092,6 +31104,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -31174,6 +31187,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -36543,6 +36557,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -36736,6 +36751,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -37383,6 +37399,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -37417,6 +37434,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -37585,6 +37603,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -37614,6 +37633,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -37683,6 +37703,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -37765,6 +37786,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -37828,6 +37850,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -38037,6 +38060,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -38524,6 +38548,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -38720,6 +38745,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -38956,6 +38982,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -39213,6 +39240,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -54507,6 +54535,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -54533,6 +54562,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -55038,6 +55068,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -55072,6 +55103,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -55230,6 +55262,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -55259,6 +55292,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -55328,6 +55362,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -55410,6 +55445,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -56215,6 +56251,9 @@ export interface operations {
             "elk_evidence_count"?: number;
             "elk_evidence_file"?: string;
             "error"?: string;
+            "exemplar_count"?: number;
+            "exemplars_file"?: string;
+            "exemplars_truncated"?: boolean;
             "frozen_monitor_rules"?: Array<{
               "backend"?: string;
               "comparator": string;
@@ -57728,6 +57767,9 @@ export interface operations {
               }) | null;
               "workload"?: (Record<string, unknown>) | null;
             };
+            "provider_lookup_count"?: number;
+            "provider_lookups_file"?: string;
+            "provider_lookups_truncated"?: boolean;
             "resource_sample_count": number;
             "resource_samples_file": string;
             "resource_samples_parquet_file"?: string;
@@ -59878,6 +59920,9 @@ export interface operations {
               "elk_evidence_count"?: number;
               "elk_evidence_file"?: string;
               "error"?: string;
+              "exemplar_count"?: number;
+              "exemplars_file"?: string;
+              "exemplars_truncated"?: boolean;
               "frozen_monitor_rules"?: Array<{
                 "backend"?: string;
                 "comparator": string;
@@ -60520,6 +60565,9 @@ export interface operations {
                 }) | null;
                 "workload"?: (Record<string, unknown>) | null;
               };
+              "provider_lookup_count"?: number;
+              "provider_lookups_file"?: string;
+              "provider_lookups_truncated"?: boolean;
               "resource_sample_count": number;
               "resource_samples_file": string;
               "resource_samples_parquet_file"?: string;
@@ -65123,6 +65171,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -65316,6 +65365,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -65963,6 +66013,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -65997,6 +66048,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -66165,6 +66217,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -66194,6 +66247,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -66263,6 +66317,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -66345,6 +66400,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -66408,6 +66464,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -66617,6 +66674,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -67104,6 +67162,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -67300,6 +67359,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -67536,6 +67596,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -67793,6 +67854,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -84252,6 +84314,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -84445,6 +84508,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -85092,6 +85156,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -85126,6 +85191,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -85294,6 +85360,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -85323,6 +85390,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -85392,6 +85460,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -85474,6 +85543,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -85537,6 +85607,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -85746,6 +85817,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -86233,6 +86305,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -86429,6 +86502,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -86665,6 +86739,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -86922,6 +86997,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -97957,6 +98033,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -97983,6 +98060,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -98488,6 +98566,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -98522,6 +98601,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -98680,6 +98760,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -98709,6 +98790,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -98778,6 +98860,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -98860,6 +98943,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -99519,6 +99603,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -99545,6 +99630,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -100050,6 +100136,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -100084,6 +100171,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -100242,6 +100330,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -100271,6 +100360,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -100340,6 +100430,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -100422,6 +100513,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -101081,6 +101173,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -101107,6 +101200,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -101612,6 +101706,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -101646,6 +101741,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -101804,6 +101900,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -101833,6 +101930,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -101902,6 +102000,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -101984,6 +102083,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -102643,6 +102743,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -102669,6 +102770,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -103174,6 +103276,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -103208,6 +103311,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -103366,6 +103470,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -103395,6 +103500,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -103464,6 +103570,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -103546,6 +103653,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -104205,6 +104313,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -104231,6 +104340,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -104736,6 +104846,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -104770,6 +104881,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -104928,6 +105040,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -104957,6 +105070,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -105026,6 +105140,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -105108,6 +105223,7 @@ export interface operations {
                   "dependency_target"?: string;
                   "dependency_type"?: string;
                   "errors": number;
+                  "exemplars"?: Array<Record<string, unknown>>;
                   "last_error_at"?: string;
                   "last_error_message"?: string;
                   "last_status_code"?: number;
@@ -125496,6 +125612,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -125689,6 +125806,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -126336,6 +126454,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -126370,6 +126489,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -126538,6 +126658,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -126567,6 +126688,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -126636,6 +126758,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -126718,6 +126841,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -126781,6 +126905,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -126990,6 +127115,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -127477,6 +127603,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -127673,6 +127800,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -127909,6 +128037,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;
@@ -128166,6 +128295,7 @@ export interface operations {
                 "dependency_target"?: string;
                 "dependency_type"?: string;
                 "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
                 "last_error_at"?: string;
                 "last_error_message"?: string;
                 "last_status_code"?: number;

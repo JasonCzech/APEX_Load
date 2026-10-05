@@ -228,6 +228,42 @@ this change, or by protocols that do not record it, omit `trace_sent`.
 These behaviours are covered by unit and engine tests against local HTTP
 servers; they have not yet been qualified against a live APM tenant.
 
+### Trace exemplars and provider lookups
+
+Only requests whose trace context was actually sent (`trace_sent: true` with a
+valid trace ID) become exemplars.
+
+- **Live:** each transaction keeps, per metrics window, its slowest success,
+  its first error and one uniformly sampled request, carried as `exemplars`
+  (trace ID, span ID, duration, success, status, reason) on live transaction
+  metrics. Generators advertise `exemplars_v1`; the controller falls back to
+  correlation IDs for generators without it.
+- **Provider lookups:** ELK, Dynatrace log capture and native Dynatrace trace
+  attribution no longer stop at the first 64 trace IDs of the run. Each poll
+  takes the best 64 exemplars since its previous poll: errors first, then slow
+  requests, then representative samples. ELK and Dynatrace log capture only
+  filter by trace ID when no test ID field is configured, so only those polls
+  record lookups. Native Dynatrace still proves at most 64 trace IDs per job;
+  they are now the run's errors and slowest requests rather than its first.
+- **Lookup outcomes:** each looked-up trace ID is archived in
+  `provider_lookups.jsonl` (`apexload.provider_lookup.v1`) as `found`,
+  `not_found` or `error`. `result_limited` marks a miss when the provider
+  returned its row limit (20 for ELK, 100 for Dynatrace logs), so the miss is
+  not conclusive. `not_sampled`, `not_retained` and `expired` are reserved for
+  when providers report sampling and retention. At most 20,000 outcomes are
+  kept (`provider_lookups_truncated`). Distributed runs keep them with the
+  controller's capture state, like the capture evidence.
+- **Post-run exemplars:** after finalization, `exemplars.jsonl`
+  (`apexload.exemplar.v1`) holds, per transaction (population, group and
+  name) and interval, up to two slowest successes, two errors of distinct
+  error classes and two requests nearest the interval median. The median
+  comes from `interval_distributions.jsonl`. Caps are 2,000 per transaction
+  and 20,000 per run, taken round-robin across intervals and then across
+  transactions so a cap thins the whole run instead of dropping its end.
+  Ties break by duration, then timestamp, then trace ID. Selection is a pure
+  function of the archive, so it is byte-identical when repeated.
+  `exemplars_truncated` marks any cap.
+
 ### Signal boundary
 
 This implementation exports traces only. Prometheus remains the metrics

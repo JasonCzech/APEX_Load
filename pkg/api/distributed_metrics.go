@@ -1063,6 +1063,7 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 		P90Ms:              aggregate.P90Ms,
 		P95Ms:              aggregate.P95Ms,
 		P99Ms:              aggregate.P99Ms,
+		Exemplars:          append([]engine.TraceExemplar(nil), aggregate.Exemplars...),
 	}
 }
 
@@ -1512,6 +1513,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	if len(values) == 1 && values[0].Count > 0 {
 		copy := values[0]
 		copy.Messaging = copy.Messaging.Clone()
+		copy.Exemplars = append([]engine.TraceExemplar(nil), copy.Exemplars...)
 		return &copy
 	}
 	out := generatorrpc.MetricAggregate{}
@@ -1539,6 +1541,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		out.BytesSent += value.BytesSent
 		out.BytesReceived += value.BytesReceived
 		out.TPS += value.TPS
+		out.Exemplars = engine.MergeTraceExemplars(out.Exemplars, value.Exemplars)
 		if engine.ValidateDurationDigest(value.DurationDigest, value.Count) == nil {
 			if durationDigest == nil {
 				durationDigest = engine.NewTDigest(value.DurationDigest.Compression)

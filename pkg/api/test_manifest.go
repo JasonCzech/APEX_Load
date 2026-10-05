@@ -818,6 +818,10 @@ func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTe
 		// The sidecar is additive evidence; a later adjunct refresh retries it.
 		slog.Warn("failed to archive interval distributions", "test_id", test.ID, "error", err)
 	}
+	// Exemplars read the interval medians, so they follow the distributions.
+	if err := tr.persistExemplarArchive(context.Background(), record, archiveManifest); err != nil {
+		slog.Warn("failed to archive exemplars", "test_id", test.ID, "error", err)
+	}
 	manifest, err := tr.buildTestManifestForManagedTest(test, test.ID, record, false)
 	if err != nil {
 		return err

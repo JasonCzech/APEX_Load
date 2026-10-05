@@ -8642,6 +8642,13 @@ paths:
                           type: string
                         error:
                           type: string
+                        exemplar_count:
+                          type: integer
+                          format: int64
+                        exemplars_file:
+                          type: string
+                        exemplars_truncated:
+                          type: boolean
                         frozen_monitor_rules:
                           type: array
                           items:
@@ -9103,6 +9110,13 @@ paths:
                               description: 'Go type: rca.WorkloadKey'
                               additionalProperties: true
                               nullable: true
+                        provider_lookup_count:
+                          type: integer
+                          format: int64
+                        provider_lookups_file:
+                          type: string
+                        provider_lookups_truncated:
+                          type: boolean
                         resource_sample_count:
                           type: integer
                           format: int64
@@ -71466,6 +71480,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -71549,6 +71568,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -73171,6 +73195,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -73293,6 +73322,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -73817,6 +73851,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -73912,6 +73951,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -74136,6 +74180,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -74395,6 +74444,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -76226,6 +76280,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -76309,6 +76368,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -77931,6 +77995,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -78053,6 +78122,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -78577,6 +78651,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -78672,6 +78751,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -78896,6 +78980,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -79155,6 +79244,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -80987,6 +81081,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -81070,6 +81169,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -82692,6 +82796,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -82814,6 +82923,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -83338,6 +83452,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -83433,6 +83552,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -83657,6 +83781,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -83916,6 +84045,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -85760,6 +85894,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -85843,6 +85982,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -87465,6 +87609,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -87587,6 +87736,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -88111,6 +88265,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -88206,6 +88365,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -88430,6 +88594,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -88689,6 +88858,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -90533,6 +90707,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -90616,6 +90795,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -92238,6 +92422,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -92360,6 +92549,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -92884,6 +93078,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -92979,6 +93178,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -93203,6 +93407,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -93462,6 +93671,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -95306,6 +95520,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -95389,6 +95608,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -97011,6 +97235,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -97133,6 +97362,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -97657,6 +97891,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -97752,6 +97991,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -97976,6 +98220,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -98235,6 +98484,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -100079,6 +100333,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -100162,6 +100421,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -101784,6 +102048,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -101906,6 +102175,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -102430,6 +102704,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -102525,6 +102804,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -102749,6 +103033,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -103008,6 +103297,11 @@ paths:
                                 errors:
                                   type: integer
                                   format: int64
+                                exemplars:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
                                 last_error_at:
                                   type: string
                                   format: date-time
@@ -277973,6 +278267,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -278662,6 +278961,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -280691,6 +280995,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -280810,6 +281119,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -281365,6 +281679,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -281459,6 +281778,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -281682,6 +282006,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -281940,6 +282269,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -282144,6 +282478,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -282888,6 +283227,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -284494,6 +284838,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -285195,6 +285544,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -286025,6 +286379,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -286920,6 +287279,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -289589,6 +289953,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -290278,6 +290647,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -292307,6 +292681,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -292426,6 +292805,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -292981,6 +293365,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -293075,6 +293464,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -293298,6 +293692,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -293556,6 +293955,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -293760,6 +294164,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -294504,6 +294913,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -296110,6 +296524,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -296811,6 +297230,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -297641,6 +298065,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -298536,6 +298965,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -301791,6 +302225,13 @@ paths:
                     type: string
                   error:
                     type: string
+                  exemplar_count:
+                    type: integer
+                    format: int64
+                  exemplars_file:
+                    type: string
+                  exemplars_truncated:
+                    type: boolean
                   frozen_monitor_rules:
                     type: array
                     items:
@@ -306300,6 +306741,13 @@ paths:
                         nullable: true
                     required:
                       - execution_settings
+                  provider_lookup_count:
+                    type: integer
+                    format: int64
+                  provider_lookups_file:
+                    type: string
+                  provider_lookups_truncated:
+                    type: boolean
                   resource_sample_count:
                     type: integer
                     format: int64
@@ -314115,6 +314563,13 @@ paths:
                         type: string
                       error:
                         type: string
+                      exemplar_count:
+                        type: integer
+                        format: int64
+                      exemplars_file:
+                        type: string
+                      exemplars_truncated:
+                        type: boolean
                       frozen_monitor_rules:
                         type: array
                         items:
@@ -316166,6 +316621,13 @@ paths:
                             nullable: true
                         required:
                           - execution_settings
+                      provider_lookup_count:
+                        type: integer
+                        format: int64
+                      provider_lookups_file:
+                        type: string
+                      provider_lookups_truncated:
+                        type: boolean
                       resource_sample_count:
                         type: integer
                         format: int64
@@ -323637,6 +324099,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -324326,6 +324793,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -326355,6 +326827,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -326474,6 +326951,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -327029,6 +327511,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -327123,6 +327610,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -327346,6 +327838,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -327604,6 +328101,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -327808,6 +328310,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -328552,6 +329059,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -330158,6 +330670,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -330859,6 +331376,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -331689,6 +332211,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -332584,6 +333111,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -335197,6 +335729,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -335886,6 +336423,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -337915,6 +338457,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -338034,6 +338581,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -338589,6 +339141,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -338683,6 +339240,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -338906,6 +339468,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -339164,6 +339731,11 @@ paths:
                               errors:
                                 type: integer
                                 format: int64
+                              exemplars:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
                               last_error_at:
                                 type: string
                                 format: date-time
@@ -339368,6 +339940,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -340112,6 +340689,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -341718,6 +342300,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -342419,6 +343006,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -343249,6 +343841,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time
@@ -344144,6 +344741,11 @@ paths:
                             errors:
                               type: integer
                               format: int64
+                            exemplars:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             last_error_at:
                               type: string
                               format: date-time

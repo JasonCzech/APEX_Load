@@ -113,6 +113,15 @@ type RunArchiveManifest struct {
 	IntervalDistributionCount      int64  `json:"interval_distribution_count,omitempty"`
 	IntervalDistributionsSource    string `json:"interval_distributions_source,omitempty"`
 	IntervalDistributionsTruncated bool   `json:"interval_distributions_truncated,omitempty"`
+	// ProviderLookupsFile records each trace ID asked of a provider
+	// (apexload.provider_lookup.v1). ExemplarsFile holds the post-run
+	// exemplars (apexload.exemplar.v1), written once after finalize.
+	ProviderLookupsFile      string `json:"provider_lookups_file,omitempty"`
+	ProviderLookupCount      int64  `json:"provider_lookup_count,omitempty"`
+	ProviderLookupsTruncated bool   `json:"provider_lookups_truncated,omitempty"`
+	ExemplarsFile            string `json:"exemplars_file,omitempty"`
+	ExemplarCount            int64  `json:"exemplar_count,omitempty"`
+	ExemplarsTruncated       bool   `json:"exemplars_truncated,omitempty"`
 }
 
 type TransactionSLARuleResult struct {
@@ -961,6 +970,10 @@ type runArchiveWriter struct {
 	detailBytes         int64
 	detailPriorityItems [4]int64
 	detailPriorityBytes [4]int64
+	// Provider lookup outcomes stream here when a capture can look up traces.
+	lookupFile    *os.File
+	lookupBuf     *bufio.Writer
+	lookupEncoder *json.Encoder
 }
 
 func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {
