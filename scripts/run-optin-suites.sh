@@ -74,6 +74,17 @@ run_suite() {
   rm -f "${output_file}"
 }
 
+# Each bounded Kafka qualification owns its broker and requires all genuine
+# case markers. Retain its sanitized receipts at a fresh private path; an absent
+# tool/fixture or failed case propagates through run_suite as FAIL, never PASS.
+run_kafka_fixture() {
+  local wrapper="$1"
+  local report_dir
+  report_dir="$(mktemp -d "${TMPDIR:-/tmp}/apexload-kafka-optin.XXXXXX")" || return 1
+  printf 'Kafka qualification receipts: %s\n' "${report_dir}"
+  "./scripts/${wrapper}" --report "${report_dir}/report.json"
+}
+
 run_suite "analytics_duckdb (embedded native analytics)" \
   "CGO-enabled Go toolchain on a supported native platform" '[[ "$(go env CGO_ENABLED)" == "1" ]]' \
   go test -tags analytics_duckdb -count=1 ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Parquet|Container|Lagged|Bucket)'
@@ -140,6 +151,18 @@ run_suite "live PostgreSQL migration and concurrent startup" \
   "[[ ${run_all} == 1 && -n \"\${APEXLOAD_TEST_POSTGRES_URL:-}\" ]]" \
   go test -tags postgres_integration -count=1 \
     -run '^Test(Postgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle|AnalysisWorkflows)|AppDynamicsDurablePostgresHeadsCursorAndOwnerFence)$' ./pkg/storage
+
+# These separate profiles provision their own pinned disposable broker.
+# --all is the sole opt-in; do not silently skip missing tools/required fixtures.
+run_suite "Kafka owned-seek qualification (kafka_real,kafka_seek_integration)" \
+  "--all; Docker, Python 3, OpenSSL, Go; isolated pinned Kafka 3.9.2 TLS/SASL PLAIN fixture" \
+  "[[ ${run_all} == 1 ]]" \
+  run_kafka_fixture test-kafka-owned-seek.sh
+
+run_suite "Kafka transaction qualification (kafka_real,kafka_transaction_integration)" \
+  "--all; Docker, Python 3, OpenSSL, Go; separate isolated pinned Kafka 3.9.2 TLS/SASL PLAIN fixture" \
+  "[[ ${run_all} == 1 ]]" \
+  run_kafka_fixture test-kafka-transactions.sh
 
 run_suite "live Kafka integration" \
   "--all and KAFKA_BROKERS" "[[ ${run_all} == 1 && -n \"\${KAFKA_BROKERS:-}\" ]]" \

@@ -1,0 +1,6 @@
+=== RUN   TestKafkaOwnedSeekActualBroker
+    owned_seek_integration_test.go:23: kafka_seek_integration requires APEXLOAD_KAFKA_SEEK_FIXTURE; genuine broker qualification is missing
+--- FAIL: TestKafkaOwnedSeekActualBroker (0.00s)
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/protocol/kafka	0.373s
+FAIL

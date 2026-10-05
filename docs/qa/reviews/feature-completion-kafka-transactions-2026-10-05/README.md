@@ -47,3 +47,29 @@ The fixture pins the Kafka registry/index/platform digest, one CPU, 1.5 GiB cont
 ## Explicit remaining gates
 
 Fresh-source qualification does not establish durable logical-identity continuation, broker restart/retry or failover, transactional revocation/cancellation outcomes, multiple input topics, multi-broker clusters, other broker versions/authentication, hosted brokers or Event Hubs Kafka tiers. HTTP/database side effects are outside Kafka atomicity. Full repository composition remains required before integration; no unrelated provider, platform or analytics gate is certified by this record.
+
+## Opt-in inventory registration follow-up
+
+The composed repository gate found missing opt-in inventory/runner registrations.
+Both `kafka_seek_integration` and `kafka_transaction_integration` now have explicit
+rows in [TEST_PROGRAM](../../TEST_PROGRAM.md#build-tag-gates) and separate
+`--all` runner entries calling the existing bounded wrappers. Each wrapper gets
+a fresh private report directory, printed for receipt discovery. Default `SKIP`
+and `--list` establish no qualification; an explicitly selected wrapper failure
+remains a failed opt-in suite.
+
+The [focused inventory/runner gate](evidence/optin-registration-go-final.json)
+passes, and the new offline Bash regression proves no fixture invocation for
+list/default runs, both wrapper invocations under `--all`, isolated retained
+receipt paths and propagation of required-fixture failures without a provider
+PASS. [Python controls](evidence/optin-registration-python.json) pass 22 tests;
+[shell syntax](evidence/optin-registration-shell.json),
+[actual inventory listing](evidence/optin-registration-list.json) and
+documentation checks pass. Direct
+[owned-seek](evidence/optin-registration-negative-seek.json) and
+[transaction](evidence/optin-registration-negative-transactions.json) tagged
+runs with their fixture variables unset deliberately return exit 1 and parent
+FAIL, with no PASS/SKIP markers. These negative checks validate refusal before
+broker access and do not replace the genuine passing receipts above. This small
+registration follow-up changes no Kafka runtime, broker fixture or prior
+qualification scope; the composed full repository gate remains required.

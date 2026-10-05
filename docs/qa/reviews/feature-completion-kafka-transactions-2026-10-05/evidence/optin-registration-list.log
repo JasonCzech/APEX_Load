@@ -1,0 +1,24 @@
+
+=== opt-in suite summary ===
+LIST  analytics_duckdb (embedded native analytics) — requires: CGO-enabled Go toolchain on a supported native platform
+LIST  apexload_fault_probe (evacuation guard pause) — requires: nothing (tests a tagged disposable-cluster fault hook)
+LIST  kafka_real (franz-go client) — requires: nothing (compiles the real client)
+LIST  jms_solace_real (AMQP adapter) — requires: nothing (compiles the real client)
+LIST  jms_servicebus_real (Azure Service Bus adapter) — requires: nothing (compiles the real client)
+LIST  eventhubs_real (azeventhubs adapter) — requires: nothing (compiles the real client)
+LIST  recording_e2e (real recording and replay) — requires: --all, pinned Node/Chromium, and desktop display or Xvfb
+LIST  LR_Scripts corpus smoke — requires: a pinned LR_Scripts checkout (./scripts/fetch-lr-scripts-corpus.sh)
+LIST  Java operator AppCDS archive — requires: APEXLOAD_JAVA_CDS_TEST_JDK_HOME (HotSpot 17+ JDK)
+LIST  Java dedicated evidence fixtures — requires: APEXLOAD_JAVA_EVIDENCE_FIXTURE_DIR (built fixtures.jar and lib/*.jar), java and javac
+LIST  Java execution-pod local containment — requires: APEXLOAD_JAVA_POD_DOCKER_IMAGE (local Alpine JDK21 image), Docker, Go, javac and jar
+LIST  HA failover soak — requires: --all
+LIST  performance smoke (perf evidence probes) — requires: --all
+LIST  live PostgreSQL migration and concurrent startup — requires: --all and APEXLOAD_TEST_POSTGRES_URL (dedicated test database)
+LIST  Kafka owned-seek qualification (kafka_real,kafka_seek_integration) — requires: --all; Docker, Python 3, OpenSSL, Go; isolated pinned Kafka 3.9.2 TLS/SASL PLAIN fixture
+LIST  Kafka transaction qualification (kafka_real,kafka_transaction_integration) — requires: --all; Docker, Python 3, OpenSSL, Go; separate isolated pinned Kafka 3.9.2 TLS/SASL PLAIN fixture
+LIST  live Kafka integration — requires: --all and KAFKA_BROKERS
+LIST  live Solace AMQP integration — requires: --all and SOLACE_AMQP_URL + SOLACE_QUEUE
+LIST  live Azure Service Bus integration — requires: --all and SERVICEBUS_CONNECTION_STRING (or SERVICEBUS_NAMESPACE)
+LIST  live Azure Event Hubs round trip — requires: --all and EVENTHUBS_CONNECTION_STRING
+
+(--list: nothing was run. See docs/qa/TEST_PROGRAM.md)
