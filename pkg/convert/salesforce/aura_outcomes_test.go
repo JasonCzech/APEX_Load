@@ -712,3 +712,21 @@ func TestAuraWireBodyDecoderBoundsDecodedEnvelopeSeparately(t *testing.T) {
 		t.Fatal("wire-body decode work was not charged in the review budget")
 	}
 }
+
+// A recorded framework error is a known failure of the whole batch: the batch
+// counts as complete evidence, and the review says the recording failed there.
+func TestAuraBaselineReportsRecordedFrameworkErrors(t *testing.T) {
+	body := "message=" + url.QueryEscape(syntheticAuraRequest)
+	response := `*/{"exceptionEvent":true,"event":{"descriptor":"markup://aura:invalidSession"}}/*ERROR*/`
+	review, err := Analyze(auraTestScript(body), AnalyzeOptions{BuildNative: true, HARData: auraTestHAR(t, body, response)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcomes := review.AuraOutcomes
+	if outcomes == nil || outcomes.CompleteBatches != 1 || outcomes.IssueCounts[aura.InvalidSession] != 1 || outcomes.RecordedFailureActions != 0 {
+		t.Fatalf("outcomes = %#v", outcomes)
+	}
+	if !strings.Contains(strings.Join(review.Warnings, "\n"), "1 captured Aura response(s) were framework errors (invalid session: 1") {
+		t.Fatalf("warnings = %v", review.Warnings)
+	}
+}

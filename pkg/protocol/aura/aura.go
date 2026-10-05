@@ -55,7 +55,19 @@ const (
 	InvalidForm        Code = "invalid_form"
 	MissingMessage     Code = "missing_message"
 	DuplicateMessage   Code = "duplicate_message"
+	// Framework errors answer the whole batch instead of its actions: the
+	// session is invalid, the client is out of sync with the server, or
+	// another Aura exception event.
+	InvalidSession  Code = "invalid_session"
+	ClientOutOfSync Code = "client_out_of_sync"
+	FrameworkError  Code = "framework_error"
 )
+
+// IsFrameworkError reports a response-level Aura framework error, a known
+// failure rather than an ambiguous envelope.
+func IsFrameworkError(code Code) bool {
+	return code == InvalidSession || code == ClientOutOfSync || code == FrameworkError
+}
 
 type Outcome struct {
 	Ordinal int   `json:"ordinal"`
@@ -272,7 +284,7 @@ func ValidateRequest(body []byte) Report {
 
 func InspectResponse(body []byte) Report {
 	actions, issues := parseEnvelope(body, false)
-	report := Report{Complete: len(issues) == 0, HasResponse: true, ResponseActions: len(actions), Issues: issues}
+	report := Report{Complete: len(issues) == 0 || IsFrameworkError(issues[0].Code), HasResponse: true, ResponseActions: len(actions), Issues: issues}
 	for i, action := range actions {
 		report.addOutcome(i+1, action.state)
 	}
@@ -285,10 +297,13 @@ func InspectResponse(body []byte) Report {
 func Validate(requestBody, responseBody []byte) Report {
 	requests, requestIssues := parseRequest(requestBody)
 	responses, responseIssues := parseEnvelope(responseBody, false)
-	report := Report{Complete: len(requestIssues) == 0 && len(responseIssues) == 0, HasResponse: true,
+	// A framework error is a known failure of the whole batch, so the report is
+	// complete although no action has an outcome.
+	frameworkError := len(responseIssues) > 0 && IsFrameworkError(responseIssues[0].Code)
+	report := Report{Complete: len(requestIssues) == 0 && (len(responseIssues) == 0 || frameworkError), HasResponse: true,
 		RequestActions: len(requests), ResponseActions: len(responses)}
 	report.Issues = append(requestIssues, responseIssues...)
-	if !report.Complete {
+	if !report.Complete || frameworkError {
 		return report
 	}
 	byID := make(map[string]action, len(responses))
@@ -365,6 +380,11 @@ func parseEnvelope(body []byte, request bool) ([]action, []Issue) {
 	if len(body) > MaxEnvelopeBytes {
 		return fail(ByteLimit, 0)
 	}
+	if !request {
+		if inner, wrapped := unwrapFrameworkError(body); wrapped {
+			return fail(frameworkErrorCode(inner), 0)
+		}
+	}
 	if !utf8.Valid(body) || !validStringEscapes(body) {
 		return fail(InvalidJSON, 0)
 	}
@@ -384,6 +404,11 @@ func parseEnvelope(body []byte, request bool) ([]action, []Issue) {
 	}
 	items, ok := envelope["actions"].([]any)
 	if !ok {
+		// The client decodes a non-200 body directly and treats an exception
+		// event there as a framework error too.
+		if !request && envelope["exceptionEvent"] == true {
+			return fail(frameworkErrorCode(body), 0)
+		}
 		return fail(InvalidEnvelope, 0)
 	}
 	if len(items) == 0 {
@@ -435,6 +460,8 @@ const (
 	actionsMode
 	actionMode
 	scalarMode
+	frameworkErrorMode
+	eventMode
 )
 
 type scanner struct {
@@ -477,7 +504,7 @@ func (s *scanner) read(depth int, retain mode) (any, Code) {
 	case '{':
 		seen := make(map[string]bool)
 		var object map[string]any
-		if retain == envelopeMode || retain == actionMode {
+		if retain == envelopeMode || retain == actionMode || retain == frameworkErrorMode || retain == eventMode {
 			object = make(map[string]any)
 		}
 		for s.decoder.More() {
@@ -494,11 +521,15 @@ func (s *scanner) read(depth int, retain mode) (any, Code) {
 			}
 			seen[key] = true
 			childMode := discardMode
-			if retain == envelopeMode && key == "actions" {
+			switch {
+			case retain == envelopeMode && key == "actions":
 				childMode = actionsMode
-			}
-			if retain == actionMode && (key == "id" || key == "descriptor" || key == "state") {
+			case retain == actionMode && (key == "id" || key == "descriptor" || key == "state"),
+				(retain == envelopeMode || retain == frameworkErrorMode) && key == "exceptionEvent",
+				retain == eventMode && key == "descriptor":
 				childMode = scalarMode
+			case retain == frameworkErrorMode && key == "event":
+				childMode = eventMode
 			}
 			value, code := s.read(depth+1, childMode)
 			if code != "" {
@@ -553,6 +584,53 @@ func (s *scanner) read(depth int, retain mode) (any, Code) {
 		return nil, ""
 	default:
 		return nil, InvalidJSON
+	}
+}
+
+// unwrapFrameworkError mirrors the Aura client's decode of a response that
+// ends in "/*ERROR*/": the JSON lies between the first "*/" and the last "/*".
+func unwrapFrameworkError(body []byte) ([]byte, bool) {
+	trimmed := bytes.TrimRight(body, " \t\r\n")
+	if !bytes.HasSuffix(trimmed, []byte("/*ERROR*/")) {
+		return nil, false
+	}
+	start, end := bytes.Index(trimmed, []byte("*/")), bytes.LastIndex(trimmed, []byte("/*"))
+	if start < 0 || end < start+2 {
+		return nil, true
+	}
+	return trimmed[start+2 : end], true
+}
+
+// frameworkErrorCode classifies a framework error body the way the Aura client
+// does: an exception event for aura:invalidSession or aura:clientOutOfSync, or
+// any other error. Only the enum is reported, never the event or its message.
+func frameworkErrorCode(body []byte) Code {
+	if len(body) == 0 || !utf8.Valid(body) || !validStringEscapes(body) {
+		return FrameworkError
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	scanner := scanner{decoder: decoder}
+	value, code := scanner.read(0, frameworkErrorMode)
+	if code != "" {
+		return FrameworkError
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return FrameworkError
+	}
+	object, _ := value.(map[string]any)
+	if object["exceptionEvent"] != true {
+		return FrameworkError
+	}
+	event, _ := object["event"].(map[string]any)
+	descriptor, _ := event["descriptor"].(string)
+	switch strings.TrimPrefix(descriptor, "markup://") {
+	case "aura:invalidSession":
+		return InvalidSession
+	case "aura:clientOutOfSync":
+		return ClientOutOfSync
+	default:
+		return FrameworkError
 	}
 }
 

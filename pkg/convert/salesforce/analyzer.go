@@ -219,6 +219,9 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 		if outcomes.RecordedFailureActions > 0 {
 			review.Warnings = append(review.Warnings, fmt.Sprintf("%d Aura action(s) in %d request(s) already failed in the recording. Replay still requires success and labels these failures \"also failed in the recording\"; to accept the recorded outcome for all of them, set the script's HTTP setting \"Aura actions that failed in the recording\" to \"Accept the recorded outcome\".", outcomes.RecordedFailureActions, outcomes.RecordedFailureBatches))
 		}
+		if frameworkErrors := outcomes.IssueCounts[aura.InvalidSession] + outcomes.IssueCounts[aura.ClientOutOfSync] + outcomes.IssueCounts[aura.FrameworkError]; frameworkErrors > 0 {
+			review.Warnings = append(review.Warnings, fmt.Sprintf("%d captured Aura response(s) were framework errors (invalid session: %d, client out of sync: %d, other: %d); the recording already failed at those requests, so repair or re-record it before controlled replay.", frameworkErrors, outcomes.IssueCounts[aura.InvalidSession], outcomes.IssueCounts[aura.ClientOutOfSync], outcomes.IssueCounts[aura.FrameworkError]))
+		}
 		if failed > outcomes.RecordedFailureActions {
 			review.Warnings = append(review.Warnings, "Captured Aura responses contain unsuccessful action states that could not be matched to the imported request; review those baseline failures before controlled replay.")
 		}

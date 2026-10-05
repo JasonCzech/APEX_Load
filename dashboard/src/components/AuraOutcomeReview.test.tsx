@@ -33,6 +33,13 @@ describe('AuraOutcomeReview', () => {
     expect(container.textContent).not.toContain('Captured success')
   })
 
+  it('names Aura framework errors instead of calling them unreadable JSON', () => {
+    render(report({ issue_counts: { invalid_session: 1, client_out_of_sync: 2, framework_error: 1 } }))
+    expect(container.textContent).toContain('Aura framework error: the session is invalid (1)')
+    expect(container.textContent).toContain('Aura framework error: the client is out of sync with the server (2)')
+    expect(container.textContent).toContain('Aura framework error (1)')
+  })
+
   it('explains the replay decision for actions that failed in the recording', () => {
     render(report({ state_counts: { SUCCESS: 1, ERROR: 2 }, recorded_failure_actions: 2, recorded_failure_batches: 1 }))
     expect(container.textContent).toContain('2 actions in 1 request already failed in the recording')

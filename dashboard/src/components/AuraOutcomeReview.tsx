@@ -28,6 +28,9 @@ const ISSUE_LABELS: Record<string, string> = {
   invalid_form: 'Request form could not be inspected',
   missing_message: 'Request message missing',
   duplicate_message: 'Multiple request messages',
+  invalid_session: 'Aura framework error: the session is invalid',
+  client_out_of_sync: 'Aura framework error: the client is out of sync with the server',
+  framework_error: 'Aura framework error',
 }
 
 // Treat wire values as untrusted even though the server emits a value-free report.

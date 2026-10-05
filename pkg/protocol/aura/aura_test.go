@@ -237,3 +237,49 @@ func TestApplyRecordedBaseline(t *testing.T) {
 		t.Fatalf("a replay that succeeds where the recording failed must pass: %+v", recovered)
 	}
 }
+
+// The Aura client unwraps a response ending in /*ERROR*/ (the JSON between the
+// first */ and the last /*) and treats an exception event as a framework
+// error; it reads a non-200 exception body the same way without the wrapper.
+func TestFrameworkErrorResponses(t *testing.T) {
+	event := func(descriptor string) string {
+		return `{"exceptionEvent":true,"event":{"descriptor":"` + descriptor + `","attributes":{"values":{"newToken":"private-token"}}},"message":"private-message"}`
+	}
+	for name, tc := range map[string]struct {
+		response string
+		want     Code
+	}{
+		"invalid session":         {"*/" + event("markup://aura:invalidSession") + "/*ERROR*/", InvalidSession},
+		"client out of sync":      {"*/" + event("markup://aura:clientOutOfSync") + "/*ERROR*/\n", ClientOutOfSync},
+		"other event":             {"*/" + event("markup://c:privateEvent") + "/*ERROR*/", FrameworkError},
+		"exception without event": {`*/{"exceptionEvent":true,"message":"private-message"}/*ERROR*/`, FrameworkError},
+		"not an exception event":  {`*/{"message":"private-message"}/*ERROR*/`, FrameworkError},
+		"malformed JSON":          {"*/{not json/*ERROR*/", FrameworkError},
+		"no opening marker":       {`{"exceptionEvent":true}/*ERROR*/`, FrameworkError},
+		"unwrapped exception":     {event("markup://aura:invalidSession"), InvalidSession},
+	} {
+		report := Validate([]byte(request), []byte(tc.response))
+		if !report.Complete || report.Success || len(report.Issues) != 1 || report.Issues[0].Code != tc.want || len(report.Outcomes) != 0 {
+			t.Errorf("%s: report = %+v, want complete failure %s", name, report, tc.want)
+			continue
+		}
+		if got := report.Err().Error(); got != "Aura validation failed: "+string(tc.want) {
+			t.Errorf("%s: error = %q", name, got)
+		}
+		encoded, _ := json.Marshal(report)
+		for _, private := range []string{"private-token", "private-message", "privateEvent", "invalidSession", "clientOutOfSync"} {
+			if strings.Contains(string(encoded)+report.Err().Error(), private) {
+				t.Errorf("%s: report discloses %q: %s", name, private, encoded)
+			}
+		}
+		if inspected := InspectResponse([]byte(tc.response)); !inspected.Complete || inspected.Issues[0].Code != tc.want {
+			t.Errorf("%s: InspectResponse = %+v", name, inspected)
+		}
+	}
+
+	// A successful envelope that merely contains the marker is not an error.
+	marker := `{"actions":[{"id":"1;a","state":"SUCCESS","returnValue":"/*ERROR*/"},{"id":"2;a","state":"SUCCESS"}]}`
+	if report := Validate([]byte(request), []byte(marker)); !report.Success {
+		t.Fatalf("marker inside a value treated as an error: %+v", report)
+	}
+}
