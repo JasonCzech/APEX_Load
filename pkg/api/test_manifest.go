@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -812,6 +813,10 @@ func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTe
 	}
 	if err := tr.persistRunMonitorArchive(test.ProjectID, test.ID, record, archiveManifest, budget); err != nil {
 		return err
+	}
+	if err := tr.persistIntervalDistributionArchive(context.Background(), test.ID, record, archiveManifest); err != nil {
+		// The sidecar is additive evidence; a later adjunct refresh retries it.
+		slog.Warn("failed to archive interval distributions", "test_id", test.ID, "error", err)
 	}
 	manifest, err := tr.buildTestManifestForManagedTest(test, test.ID, record, false)
 	if err != nil {

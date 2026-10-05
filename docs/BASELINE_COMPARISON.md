@@ -14,6 +14,12 @@ Stable observed plateaus exclude recorded pauses, idle/baseline phases and the f
 
 Default changes: latency 10% **and** 10 ms; throughput 10%; errors 1 percentage point; resources 20% in either direction. Mean/P95 require 100 successful samples, P99 1,000; resources require 10 samples and 80% coverage. Zero references have absolute differences with percentage unavailable. Lower resource usage is not automatically an improvement. Rules are advisory and do not alter recorded SLA or acceptance outcomes.
 
+## Workload qualification
+
+Each assessment carries a `workload` block: the current run's offered workload and, per baseline, a status of `qualified`, `partial` or `unqualified` with reasons. The key comes from the run's frozen start configuration: each group's arrival model (closed VUsers, open arrival rate, or goal-oriented target rate), its planned load levels, the planned mix, pacing and think time, disclosure-safe script digests and a digest of the other runtime overrides.
+
+A baseline is unqualified when the arrival model or load unit changes, a group's number of planned levels changes, any level differs by more than 5%, or the planned mix moves by an L1 distance above 0.05 (`arrival_model_changed`, `levels_changed`, `offered_load_changed`, `mix_changed`). It is partial when the load matches but pacing, a script or the runtime configuration changed (`pacing_changed`, `script_changed`, `config_changed`), or when something cannot be confirmed. Runs archived before keys were frozen get a key derived from recorded provenance, which lacks the arrival model and script digests, so they are at best partial. Achieved throughput is reported beside the status as an outcome; it never qualifies a baseline. The block is advisory and does not change matched windows, row qualifications, findings or the verdict.
+
 ## Monitoring and historical limitations
 
 Only archived resources and frozen dashboard captures are read. Historical comparisons never query current monitoring. Known source identity, units, metric kind and labels must match, or an operator must explicitly confirm a mapping. Sum/mean/max aggregation uses aligned contributing instances; incomplete intervals reduce coverage. Counters are converted to rates before instance aggregation and reset intervals are excluded. Instance counts are displayed.

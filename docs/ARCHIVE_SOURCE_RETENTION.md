@@ -457,6 +457,13 @@ outcomes. A retry receives a new allowance; removed or replaced bytes are not
 refunded within an attempt, and recovery itself consumes that attempt's allowance.
 No source data is deleted to make space.
 
+`interval_distributions.jsonl` has its own allowance,
+`APEXLOAD_ARCHIVE_INTERVAL_DISTRIBUTIONS_MAX_BYTES` (default 256 MiB, positive
+integer bytes up to 4 GiB), with the same free-space floor. It is separate so a
+long run's distributions cannot exhaust the shared allowance before the archive
+manifest is written. When the allowance runs out, the sidecar ends at the last
+complete interval and the manifest marks it truncated; finalization continues.
+
 This bounds metadata output on disk. It does not bound JSON serialization memory,
 streamed PDF/CSV/DOCX exports, aggregate concurrent writers or retained backlog.
 It also does not replace a filesystem or Kubernetes ephemeral-storage quota.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/engine"
 	protocolmetrics "github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/rca"
 )
 
 type baselineTransactionKey struct{ group, protocol, name string }
@@ -34,6 +35,7 @@ type baselineComparisonRun struct {
 	transactions   map[baselineTransactionKey]map[int]*baselineTransactionAccumulator
 	resources      map[string]baselineResourceSeries
 	warnings       []string
+	achievedTPS    float64
 }
 
 func baselineRunInfo(t *ManagedTest) BaselineRunIdentity {
@@ -77,6 +79,7 @@ func (s *Server) readBaselineComparisonRun(ctx context.Context, t *ManagedTest, 
 	if manifest.Provenance.StartedAt != nil {
 		started = *manifest.Provenance.StartedAt
 	}
+	r.achievedTPS = achievedComparisonTPS(summaries, started)
 	groups := map[string]string{}
 	canonicalGroups := map[string]bool{}
 	for _, g := range manifest.Provenance.Groups {
@@ -272,6 +275,8 @@ func baselineWindowIndex(r *baselineComparisonRun, w *BaselineLoadWindow) int {
 func compareBaselineRuns(current *baselineComparisonRun, baselines []*baselineComparisonRun, request BaselineComparisonRequest, p BaselineComparisonPolicy) *BaselineComparisonSnapshot {
 	out := &BaselineComparisonSnapshot{Current: current.identity, CreatedAt: time.Now().UTC(), RuleVersion: baselineComparisonRuleVersion, Request: request, Policy: p, Baselines: []BaselineRunIdentity{}, Transactions: []BaselineComparisonRow{}, Resources: []BaselineComparisonRow{}, Setup: []BaselineSetupDifference{}, Findings: []BaselineComparisonFinding{}, Warnings: append([]string{}, current.warnings...)}
 	out.Telemetry = append(out.Telemetry, current.telemetry)
+	currentWorkload := comparisonWorkloadKey(current, p.GroupMappings, request.Population)
+	out.Workload = &BaselineWorkloadQualification{Current: currentWorkload, Baselines: map[string]rca.WorkloadQualification{}}
 	qualifications := map[string][]string{}
 	keys := map[baselineTransactionKey]bool{}
 	for k := range current.transactions {
@@ -283,6 +288,9 @@ func compareBaselineRuns(current *baselineComparisonRun, baselines []*baselineCo
 		for _, warning := range b.warnings {
 			out.Warnings = append(out.Warnings, b.identity.Name+": "+warning)
 		}
+		workload := rca.QualifyBaseline(currentWorkload, comparisonWorkloadKey(b, p.GroupMappings, request.Population))
+		workload.AchievedThroughput = &rca.AchievedThroughput{CurrentTPS: current.achievedTPS, BaselineTPS: b.achievedTPS}
+		out.Workload.Baselines[b.identity.ID] = workload
 		differences := baselineSetupDifferences(current, b)
 		out.Setup = append(out.Setup, differences...)
 		for _, d := range differences {

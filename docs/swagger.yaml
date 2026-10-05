@@ -4454,6 +4454,20 @@ paths:
                           type: array
                           items:
                             type: string
+                        workload:
+                          type: object
+                          properties:
+                            baselines:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: rca.WorkloadQualification'
+                                additionalProperties: true
+                            current:
+                              type: object
+                              description: 'Go type: rca.WorkloadKey'
+                              additionalProperties: true
+                          nullable: true
                       nullable: true
                     browser_by_device:
                       type: object
@@ -8794,7 +8808,21 @@ paths:
                               type: object
                               additionalProperties: true
                               nullable: true
+                            workload:
+                              type: object
+                              description: 'Go type: rca.WorkloadKey'
+                              additionalProperties: true
+                              nullable: true
                           nullable: true
+                        interval_distribution_count:
+                          type: integer
+                          format: int64
+                        interval_distributions_file:
+                          type: string
+                        interval_distributions_source:
+                          type: string
+                        interval_distributions_truncated:
+                          type: boolean
                         interval_summaries_file:
                           type: string
                         interval_summaries_parquet_file:
@@ -9047,6 +9075,11 @@ paths:
                               format: int64
                             traffic_profile:
                               type: object
+                              additionalProperties: true
+                              nullable: true
+                            workload:
+                              type: object
+                              description: 'Go type: rca.WorkloadKey'
                               additionalProperties: true
                               nullable: true
                         resource_sample_count:
@@ -301107,9 +301140,23 @@ paths:
                           - value_semantics
                           - version
                         nullable: true
+                      workload:
+                        type: object
+                        description: 'Go type: rca.WorkloadKey'
+                        additionalProperties: true
+                        nullable: true
                     required:
                       - execution_settings
                     nullable: true
+                  interval_distribution_count:
+                    type: integer
+                    format: int64
+                  interval_distributions_file:
+                    type: string
+                  interval_distributions_source:
+                    type: string
+                  interval_distributions_truncated:
+                    type: boolean
                   interval_summaries_file:
                     type: string
                   interval_summaries_parquet_file:
@@ -303438,6 +303485,11 @@ paths:
                           - value_semantics
                           - version
                         nullable: true
+                      workload:
+                        type: object
+                        description: 'Go type: rca.WorkloadKey'
+                        additionalProperties: true
+                        nullable: true
                     required:
                       - execution_settings
                   resource_sample_count:
@@ -305633,6 +305685,23 @@ paths:
                         type: array
                         items:
                           type: string
+                      workload:
+                        type: object
+                        properties:
+                          baselines:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              description: 'Go type: rca.WorkloadQualification'
+                              additionalProperties: true
+                          current:
+                            type: object
+                            description: 'Go type: rca.WorkloadKey'
+                            additionalProperties: true
+                        required:
+                          - baselines
+                          - current
+                        nullable: true
                     required:
                       - baselines
                       - created_at
@@ -312096,9 +312165,23 @@ paths:
                               - value_semantics
                               - version
                             nullable: true
+                          workload:
+                            type: object
+                            description: 'Go type: rca.WorkloadKey'
+                            additionalProperties: true
+                            nullable: true
                         required:
                           - execution_settings
                         nullable: true
+                      interval_distribution_count:
+                        type: integer
+                        format: int64
+                      interval_distributions_file:
+                        type: string
+                      interval_distributions_source:
+                        type: string
+                      interval_distributions_truncated:
+                        type: boolean
                       interval_summaries_file:
                         type: string
                       interval_summaries_parquet_file:
@@ -313181,6 +313264,11 @@ paths:
                               - target_duration
                               - value_semantics
                               - version
+                            nullable: true
+                          workload:
+                            type: object
+                            description: 'Go type: rca.WorkloadKey'
+                            additionalProperties: true
                             nullable: true
                         required:
                           - execution_settings
@@ -318069,6 +318157,23 @@ paths:
                     type: array
                     items:
                       type: string
+                  workload:
+                    type: object
+                    properties:
+                      baselines:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          description: 'Go type: rca.WorkloadQualification'
+                          additionalProperties: true
+                      current:
+                        type: object
+                        description: 'Go type: rca.WorkloadKey'
+                        additionalProperties: true
+                    required:
+                      - baselines
+                      - current
+                    nullable: true
                 required:
                   - baselines
                   - created_at
@@ -319984,6 +320089,23 @@ paths:
                     type: array
                     items:
                       type: string
+                  workload:
+                    type: object
+                    properties:
+                      baselines:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          description: 'Go type: rca.WorkloadQualification'
+                          additionalProperties: true
+                      current:
+                        type: object
+                        description: 'Go type: rca.WorkloadKey'
+                        additionalProperties: true
+                    required:
+                      - baselines
+                      - current
+                    nullable: true
                 required:
                   - baselines
                   - created_at

@@ -55,6 +55,15 @@ func (b *archiveOutputBudget) freeSpaceError() error {
 	}
 	return &archiveOutputAdmissionError{cause: cause}
 }
+
+// admits reports whether n more bytes fit the byte allowance, without
+// latching a failure, so a writer can stop cleanly before the limit.
+func (b *archiveOutputBudget) admits(n int) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.err == nil && int64(n) <= b.remaining
+}
+
 func (b *archiveOutputBudget) failure() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()

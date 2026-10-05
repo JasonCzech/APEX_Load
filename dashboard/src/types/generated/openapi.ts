@@ -1569,6 +1569,10 @@ export interface operations {
                 "unavailable"?: number;
               }) | null;
               "warnings"?: Array<string>;
+              "workload"?: ({
+                "baselines"?: Record<string, Record<string, unknown>>;
+                "current"?: Record<string, unknown>;
+              }) | null;
             }) | null;
             "browser_by_device"?: Record<string, ({
               "avg_blocking_resources"?: number;
@@ -3104,7 +3108,12 @@ export interface operations {
                 "termination_mode"?: string;
                 "total_vusers"?: number;
                 "traffic_profile"?: (Record<string, unknown>) | null;
+                "workload"?: (Record<string, unknown>) | null;
               }) | null;
+              "interval_distribution_count"?: number;
+              "interval_distributions_file"?: string;
+              "interval_distributions_source"?: string;
+              "interval_distributions_truncated"?: boolean;
               "interval_summaries_file"?: string;
               "interval_summaries_parquet_file"?: string;
               "interval_summary_count"?: number;
@@ -3190,6 +3199,7 @@ export interface operations {
                 "termination_mode"?: string;
                 "total_vusers"?: number;
                 "traffic_profile"?: (Record<string, unknown>) | null;
+                "workload"?: (Record<string, unknown>) | null;
               };
               "resource_sample_count"?: number;
               "resource_samples_file"?: string;
@@ -26360,6 +26370,10 @@ export interface operations {
               "unavailable": number;
             }) | null;
             "warnings": Array<string>;
+            "workload"?: ({
+              "baselines": Record<string, Record<string, unknown>>;
+              "current": Record<string, unknown>;
+            }) | null;
           }) | null;
         };
       };
@@ -50160,6 +50174,10 @@ export interface operations {
               "unavailable": number;
             }) | null;
             "warnings": Array<string>;
+            "workload"?: ({
+              "baselines": Record<string, Record<string, unknown>>;
+              "current": Record<string, unknown>;
+            }) | null;
           }) | null;
           "text/csv": string;
         };
@@ -56184,7 +56202,12 @@ export interface operations {
                   "start_offset"?: string;
                 };
               }) | null;
+              "workload"?: (Record<string, unknown>) | null;
             }) | null;
+            "interval_distribution_count"?: number;
+            "interval_distributions_file"?: string;
+            "interval_distributions_source"?: string;
+            "interval_distributions_truncated"?: boolean;
             "interval_summaries_file": string;
             "interval_summaries_parquet_file"?: string;
             "interval_summary_count": number;
@@ -56962,6 +56985,7 @@ export interface operations {
                   "start_offset"?: string;
                 };
               }) | null;
+              "workload"?: (Record<string, unknown>) | null;
             };
             "resource_sample_count": number;
             "resource_samples_file": string;
@@ -57545,6 +57569,10 @@ export interface operations {
                 "unavailable": number;
               }) | null;
               "warnings": Array<string>;
+              "workload"?: ({
+                "baselines": Record<string, Record<string, unknown>>;
+                "current": Record<string, unknown>;
+              }) | null;
             }) | null;
             "browser_by_device"?: Record<string, ({
               "avg_blocking_resources"?: number;
@@ -59374,7 +59402,12 @@ export interface operations {
                   "warnings"?: Array<string>;
                   "window"?: Record<string, unknown>;
                 }) | null;
+                "workload"?: (Record<string, unknown>) | null;
               }) | null;
+              "interval_distribution_count"?: number;
+              "interval_distributions_file"?: string;
+              "interval_distributions_source"?: string;
+              "interval_distributions_truncated"?: boolean;
               "interval_summaries_file": string;
               "interval_summaries_parquet_file"?: string;
               "interval_summary_count": number;
@@ -59712,6 +59745,7 @@ export interface operations {
                   "warnings"?: Array<string>;
                   "window"?: Record<string, unknown>;
                 }) | null;
+                "workload"?: (Record<string, unknown>) | null;
               };
               "resource_sample_count": number;
               "resource_samples_file": string;

@@ -366,29 +366,10 @@ func oracleP95Windows(summaries []IntervalSummaryRecord) []oracleP95Window {
 		ordered = append(ordered, summary)
 	}
 	sort.SliceStable(ordered, func(left, right int) bool { return ordered[left].Timestamp.Before(ordered[right].Timestamp) })
-	windows := make([]oracleP95Window, 0, len(ordered))
-	for i, summary := range ordered {
-		end := summary.Timestamp.UTC()
-		if len(windows) > 0 && !end.After(windows[len(windows)-1].end) {
-			continue // duplicate timestamp: ambiguous, keep the first
-		}
-		span := time.Duration(summary.SampleWindowSeconds * float64(time.Second))
-		if span <= 0 {
-			switch {
-			case len(windows) > 0:
-				span = end.Sub(windows[len(windows)-1].end)
-			case i+1 < len(ordered):
-				span = ordered[i+1].Timestamp.UTC().Sub(end)
-			}
-		}
-		if span <= 0 {
-			continue
-		}
-		start := end.Add(-span)
-		if len(windows) > 0 && start.Before(windows[len(windows)-1].end) {
-			start = windows[len(windows)-1].end
-		}
-		windows = append(windows, oracleP95Window{start: start, end: end, p95: summary.P95Ms})
+	spans := archiveIntervalWindows(ordered)
+	windows := make([]oracleP95Window, 0, len(spans))
+	for _, span := range spans {
+		windows = append(windows, oracleP95Window{start: span.start, end: span.end, p95: ordered[span.summary].P95Ms})
 	}
 	return windows
 }

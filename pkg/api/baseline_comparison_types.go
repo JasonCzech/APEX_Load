@@ -85,6 +85,8 @@ type BaselineComparisonSnapshot struct {
 	Setup        []BaselineSetupDifference   `json:"setup"`
 	Findings     []BaselineComparisonFinding `json:"findings"`
 	Warnings     []string                    `json:"warnings"`
+	// Workload qualifies each baseline against the current run's offered load.
+	Workload *BaselineWorkloadQualification `json:"workload,omitempty"`
 }
 
 type BaselineMeasurement struct {

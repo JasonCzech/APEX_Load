@@ -48,6 +48,7 @@ func archiveManifestArtifactNames(manifest *RunArchiveManifest) (map[string]stru
 		manifest.MonitorEvidenceFile,
 		manifest.MonitorManagementFile,
 		manifest.MonitorDiagnosticsFile,
+		manifest.IntervalDistributionsFile,
 		"manifest.json",
 	} {
 		if strings.TrimSpace(name) == "" {
@@ -118,6 +119,9 @@ func validateRunArchiveManifestArtifacts(manifest *RunArchiveManifest) error {
 		return fmt.Errorf("unsupported monitor management version")
 	}
 	if manifest.MonitorDiagnosticsFile, err = optionalArchiveArtifactName("monitor_diagnostics_file", manifest.MonitorDiagnosticsFile); err != nil {
+		return err
+	}
+	if manifest.IntervalDistributionsFile, err = optionalArchiveArtifactName("interval_distributions_file", manifest.IntervalDistributionsFile); err != nil {
 		return err
 	}
 	return nil

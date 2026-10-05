@@ -45,6 +45,7 @@ func captureBaselineComparisonMetadata(p *RunArchiveProvenance, test *ManagedTes
 		Runtime any
 		Scripts map[string]string
 	}{groups, p.RuntimeSettings, scripts})
+	p.Workload = frozenWorkloadKey(p, test, scripts)
 	p.ComparisonMetrics = map[string]BaselineMetricDefinition{}
 	for _, target := range externalMetricTargetsForTest(test) {
 		parsed, err := url.Parse(target.URL)

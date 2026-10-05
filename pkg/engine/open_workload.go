@@ -9,6 +9,12 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
+// IsOpenWorkload reports whether the script runs the open arrival model, so
+// run provenance can record the model the engine actually used.
+func IsOpenWorkload(script *dsl.Script) bool {
+	return isOpenWorkload(script)
+}
+
 func isOpenWorkload(script *dsl.Script) bool {
 	if script == nil {
 		return false

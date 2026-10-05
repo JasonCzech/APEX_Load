@@ -18,6 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/rca"
 )
 
 const archiveSchemaVersion = "apexload.archive.v4"
@@ -106,6 +107,12 @@ type RunArchiveManifest struct {
 	TransactionRuleResults            []TransactionSLARuleResult         `json:"transaction_rule_results,omitempty"`
 	TransactionResponseTimeSLAResults []TransactionResponseTimeSLAResult `json:"transaction_response_time_sla_results,omitempty"`
 	MessageDetailCapture              *RunArchiveMessageDetailCapture    `json:"message_detail_capture,omitempty"`
+	// IntervalDistributionsFile holds per-interval duration distributions
+	// (apexload.interval_distribution.v1), written once after finalize.
+	IntervalDistributionsFile      string `json:"interval_distributions_file,omitempty"`
+	IntervalDistributionCount      int64  `json:"interval_distribution_count,omitempty"`
+	IntervalDistributionsSource    string `json:"interval_distributions_source,omitempty"`
+	IntervalDistributionsTruncated bool   `json:"interval_distributions_truncated,omitempty"`
 }
 
 type TransactionSLARuleResult struct {
@@ -195,6 +202,9 @@ type RunArchiveProvenance struct {
 	StoppedBySubject      string                              `json:"stopped_by_subject,omitempty"`
 	StoppedByDisplayName  string                              `json:"stopped_by_display_name,omitempty"`
 	Governance            *RunArchiveGovernanceSnapshot       `json:"governance,omitempty"`
+	// Workload is the offered workload frozen from the compiled run, used to
+	// qualify baselines.
+	Workload *rca.WorkloadKey `json:"workload,omitempty"`
 }
 
 type RunArchiveGovernanceSnapshot struct {
