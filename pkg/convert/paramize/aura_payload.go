@@ -64,20 +64,11 @@ func hasAuraLocation(l Location) bool {
 	return len(l.AuraRoute) > 0 || l.ActionPath != "" || l.PayloadShape != "" || l.DecodedFieldPath != "" || len(l.EncodingLayers) > 0
 }
 
-// LooksAuraParameterName extends the shared business-name heuristic only for
-// structured Aura leaves, whose authored JSON commonly uses camelCase.
+// LooksAuraParameterName applies the shared business-name heuristic to a
+// structured Aura leaf, excluding Aura framework and session fields.
 func LooksAuraParameterName(key string) bool {
-	var normalized strings.Builder
-	for i, c := range key {
-		if c >= 'A' && c <= 'Z' && i > 0 {
-			normalized.WriteByte('_')
-		}
-		normalized.WriteRune(c)
-	}
-	key = normalized.String()
-	lower := strings.ToLower(strings.NewReplacer("_", "", "-", "").Replace(key))
-	switch lower {
-	case "clientid", "oauthclientid", "oauth2clientid", "fwuid", "context", "applicationcontext", "sessionid":
+	switch strings.Join(parameterNameWords(key), "") {
+	case "fwuid", "context", "applicationcontext", "sessionid":
 		return false
 	}
 	return LooksParameterName(key)
