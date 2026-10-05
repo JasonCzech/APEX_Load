@@ -1,0 +1,22 @@
+{
+  "schema": "apexload.second-har-evaluation.final-qualification.v1",
+  "created_at_utc": "2026-10-05T23:03:51.411589+00:00",
+  "scope": "User-supplied second HAR, offline aggregate-only evaluation; documentation checkpoint only, no application source changes.",
+  "input_sha256": "4a145fb5f253fe0bea37b5d45b77c6e10a3b3375dfd483992b2d2d5ad90a05e4",
+  "offline_probe": "Retained historical process passed; all435 requests converted, no blockers/HTTP attempts, source bytes unchanged,11 direct source/module bookends unchanged.",
+  "review_cycle": [
+    "Independent v1 found one elapsed-time wording issue; exact finding retained.",
+    "Report corrected to whole offline probe process elapsed, with isolated conversion time explicitly unmeasured.",
+    "Independent v2 found no additional issues and reverified all previous evidence, hashes and local links."
+  ],
+  "repository_docs_limit": "Overall docs checker remains red only for existing pending authoring composition link recorded in documentation-validation-v1.json; this report local links pass.",
+  "raw_output": "Exact ignored .log must be explicitly included; output is one aggregate JSON object, not private capture contents.",
+  "excluded": [
+    "Original capture",
+    "Raw/private endpoint, credential, body or correlation values",
+    "Generated executable script",
+    "API upload/persistence",
+    "Runtime replay/browser/native HAR qualification",
+    "Full program acceptance or push"
+  ]
+}
