@@ -107,12 +107,19 @@ export type DynatraceMetricQuery = {
 }
 
 export interface DynatraceConnection {
+  revision?: number; verified_revision?: number; collection_mode?: 'direct' | 'collector'; collector_agent_id?: string
+  events_enabled?: boolean; spans_enabled?: boolean; grail_metrics_enabled?: boolean; grail_events_enabled?: boolean; topology_mode?: '' | 'classic' | 'smartscape'
+  requests_per_minute?: number; platform_requests_per_minute?: number; max_scan_bytes?: number; max_run_scan_bytes?: number; drain_reserve_bytes?: number
+  capabilities?: Record<string, unknown>
   id: string
   project_id: string
   name: string
   description?: string
   enabled: boolean
-  status: 'unconfigured' | 'ready' | 'disabled'
+  /** Native monitoring readiness; native sources also require a verified revision. */
+  status: 'unconfigured' | 'unverified' | 'ready' | 'disabled'
+  /** Legacy per-test capture readiness: enabled and fully configured. */
+  legacy_capture_status?: 'unconfigured' | 'ready' | 'disabled'
   environment_url?: string
   platform_url?: string
   metrics_enabled: boolean

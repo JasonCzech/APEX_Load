@@ -192,6 +192,7 @@ type runtimeSecretRecoveryState struct {
 type TestRunner struct {
 	appDynamicsPrepare    func(context.Context, storage.MonitorSource, *storage.AppDynamicsConnectionSnapshot) error
 	prometheusPrepare     func(context.Context, storage.MonitorSource, *storage.PrometheusConnectionSnapshot, []analysis.MonitorRule) error
+	dynatracePrepare      func(context.Context, storage.MonitorSource, *storage.DynatraceConnectionSnapshot) error
 	thresholdJournal      *thresholdJournalWriter
 	tests                 map[string]*ManagedTest
 	scripts               map[string]*StoredScript
@@ -1515,6 +1516,9 @@ type runArtifacts struct {
 	dynatraceStatus      *DynatraceCaptureStatus
 	dynatraceEvidenceIDs map[string]struct{}
 	dynatraceTraceIDs    map[string]struct{}
+	nativeDynatrace      atomic.Bool
+	nativeTraceChecked   bool   // guarded by monitorMu
+	nativeTraceWritten   string // guarded by dynatraceMu
 	dynatraceLogs        []DynatraceLogSample
 	dynatraceProblems    []DynatraceProblemSummary
 	slaEvaluated         bool

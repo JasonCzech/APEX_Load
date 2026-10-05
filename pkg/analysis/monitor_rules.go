@@ -10,20 +10,27 @@ import (
 
 // MonitorRule is a terminal guardrail. It deliberately has no runtime stop flag.
 type MonitorRule struct {
-	QueryID            string            `json:"query_id,omitempty"`
-	EvaluationMode     string            `json:"evaluation_mode,omitempty"`
-	RequireFreshness   bool              `json:"require_freshness,omitempty"`
-	SourceID           string            `json:"source_id"`
-	Metric             string            `json:"metric"`
-	Dimensions         map[string]string `json:"dimensions,omitempty"`
-	Unit               string            `json:"unit"`
-	Statistic          string            `json:"statistic"`
-	Comparator         string            `json:"comparator"`
-	Threshold          float64           `json:"threshold"`
-	Severity           string            `json:"severity,omitempty"`
-	MinCoveragePct     float64           `json:"min_coverage_pct,omitempty"`
-	StartOffsetSeconds int               `json:"start_offset_seconds,omitempty"`
-	EndOffsetSeconds   *int              `json:"end_offset_seconds,omitempty"`
+	QueryID             string            `json:"query_id,omitempty"`
+	EvaluationMode      string            `json:"evaluation_mode,omitempty"`
+	RequireFreshness    bool              `json:"require_freshness,omitempty"`
+	SourceID            string            `json:"source_id"`
+	Metric              string            `json:"metric"`
+	Dimensions          map[string]string `json:"dimensions,omitempty"`
+	Unit                string            `json:"unit"`
+	Statistic           string            `json:"statistic"`
+	Comparator          string            `json:"comparator"`
+	Threshold           float64           `json:"threshold"`
+	Severity            string            `json:"severity,omitempty"`
+	MinCoveragePct      float64           `json:"min_coverage_pct,omitempty"`
+	StartOffsetSeconds  int               `json:"start_offset_seconds,omitempty"`
+	EndOffsetSeconds    *int              `json:"end_offset_seconds,omitempty"`
+	Provider            string            `json:"provider,omitempty"`
+	Backend             string            `json:"backend,omitempty"`
+	MetricID            string            `json:"metric_id,omitempty"`
+	EntityIDs           map[string]string `json:"entity_ids,omitempty"`
+	SourceStatistic     string            `json:"source_statistic,omitempty"`
+	ResolutionSeconds   int               `json:"resolution_seconds,omitempty"`
+	EvaluationOperation string            `json:"evaluation_operation,omitempty"`
 }
 type MonitorRuleResult struct {
 	Rule            MonitorRule `json:"rule"`
@@ -38,6 +45,14 @@ func (r MonitorRule) Validate() error {
 	if len(r.QueryID) > 128 || r.EvaluationMode != "" && r.EvaluationMode != "series_points" && r.EvaluationMode != "exact_window" {
 		return errors.New("invalid monitoring evaluation mode")
 	}
+	if r.Provider != "" && r.Provider != "appdynamics" && r.Provider != "dynatrace" && r.Provider != "prometheus" || len(r.Backend) > 64 || len(r.MetricID) > 256 || len(r.SourceStatistic) > 64 || r.ResolutionSeconds < 0 || r.ResolutionSeconds > 86400 || len(r.EntityIDs) > 16 {
+		return errors.New("invalid provider monitoring series selection")
+	}
+	for k, v := range r.EntityIDs {
+		if k == "" || len(k) > 128 || len(v) > 128 {
+			return errors.New("invalid monitoring rule entity identity")
+		}
+	}
 	if r.SourceID == "" || r.Metric == "" || r.Unit == "" || len(r.SourceID) > 256 || len(r.Metric) > 256 || len(r.Unit) > 64 || math.IsNaN(r.Threshold) || math.IsInf(r.Threshold, 0) || math.IsNaN(r.MinCoveragePct) || r.MinCoveragePct < 0 || r.MinCoveragePct > 100 || len(r.Dimensions) > 16 || r.StartOffsetSeconds < 0 || r.EndOffsetSeconds != nil && *r.EndOffsetSeconds <= r.StartOffsetSeconds {
 		return errors.New("invalid monitoring rule identity, threshold or window")
 	}
@@ -46,8 +61,10 @@ func (r MonitorRule) Validate() error {
 			return errors.New("invalid monitoring rule dimensions")
 		}
 	}
-	switch r.Statistic {
+	op := r.operation()
+	switch op {
 	case "avg", "min", "max", "sum":
+	case "time_average", "weighted_average":
 	default:
 		return errors.New("unsupported monitor statistic")
 	}
@@ -61,9 +78,15 @@ func (r MonitorRule) Validate() error {
 	}
 	return nil
 }
+func (r MonitorRule) operation() string {
+	if r.EvaluationOperation != "" {
+		return r.EvaluationOperation
+	}
+	return r.Statistic
+}
 func EvaluateMonitorRule(rule MonitorRule, points []MetricPoint, start, end time.Time) MonitorRuleResult {
 	for _, p := range points {
-		if p.Source == rule.SourceID && p.Provider != nil && p.Provider.Name == "prometheus" {
+		if p.Source == rule.SourceID && p.Provider != nil && p.Provider.Name == "prometheus" && (rule.Provider == "" || rule.Provider == "prometheus") {
 			return evaluatePrometheusRule(rule, points, start, end)
 		}
 	}
@@ -89,7 +112,14 @@ func EvaluateMonitorRule(rule MonitorRule, points []MetricPoint, start, end time
 	queryUntil := until.Truncate(time.Second)
 	var eligible []MetricPoint
 	for _, p := range points {
-		if p.Source != rule.SourceID || p.MetricName != rule.Metric || p.Unit != rule.Unit || p.Value == nil || p.Quality != QualityValid || p.Provider == nil || !p.Provider.Settled || !p.Provider.AggregationEligible || p.Provider.BucketStart.Before(from) || p.Provider.BucketEnd.After(until) || p.Validate() != nil {
+		if p.Source != rule.SourceID || p.MetricName != rule.Metric || p.Unit != rule.Unit || p.Value == nil || p.Quality != QualityValid || p.Provider == nil || p.Provider.Synthetic || !p.Provider.Settled || !p.Provider.AggregationEligible || p.Provider.BucketStart.Before(from) || p.Provider.BucketEnd.After(until) || p.Validate() != nil {
+			continue
+		}
+		meta := p.Provider
+		if meta.Statistic == "p95" || meta.Statistic == "p99" {
+			continue
+		}
+		if rule.Provider != "" && meta.Name != rule.Provider || rule.Backend != "" && meta.Backend != rule.Backend || rule.MetricID != "" && meta.MetricID != rule.MetricID || rule.SourceStatistic != "" && meta.Statistic != rule.SourceStatistic || rule.ResolutionSeconds > 0 && meta.ResolutionSeconds != rule.ResolutionSeconds || len(rule.EntityIDs) > 0 && !maps.Equal(rule.EntityIDs, meta.EntityIDs) {
 			continue
 		}
 		if len(rule.Dimensions) > 0 && !maps.Equal(rule.Dimensions, p.Dimensions) {
@@ -112,11 +142,12 @@ func EvaluateMonitorRule(rule MonitorRule, points []MetricPoint, start, end time
 	var covered, numerator, weight, sum float64
 	min, max := math.Inf(1), math.Inf(-1)
 	resolution := time.Duration(identity.Provider.ResolutionSeconds) * time.Second
-	windowFrom := from.Truncate(resolution)
-	if windowFrom.Before(from) {
-		windowFrom = windowFrom.Add(resolution)
-	}
-	windowEnd := until.Truncate(resolution)
+	// Provider buckets need not begin on a UTC minute. Grail time series use
+	// their returned timeframe as the bucket origin, so count expected full
+	// buckets on that grid rather than silently dropping a boundary bucket.
+	windowFrom := identity.Provider.BucketStart
+	windowFrom = windowFrom.Add(-(windowFrom.Sub(from) / resolution) * resolution)
+	windowEnd := windowFrom.Add((until.Sub(windowFrom) / resolution) * resolution)
 	if identity.Provider.QueryWindow {
 		windowFrom, windowEnd = from, until
 	}
@@ -124,8 +155,12 @@ func EvaluateMonitorRule(rule MonitorRule, points []MetricPoint, start, end time
 		return result
 	}
 	for _, p := range eligible {
-		if !maps.Equal(identity.Dimensions, p.Dimensions) || identity.Provider.MetricID != p.Provider.MetricID || p.Provider.ResolutionSeconds != identity.Provider.ResolutionSeconds {
+		if !maps.Equal(identity.Dimensions, p.Dimensions) || !compatibleProvider(identity.Provider, p.Provider) {
 			result.Message = "rule must identify one consistent source series"
+			return result
+		}
+		if !identity.Provider.QueryWindow && p.Provider.BucketStart.Sub(windowFrom)%resolution != 0 {
+			result.Message = "rule must identify one consistent bucket grid"
 			return result
 		}
 		if !previousEnd.IsZero() && p.Provider.BucketStart.Before(previousEnd) {
@@ -137,6 +172,14 @@ func EvaluateMonitorRule(rule MonitorRule, points []MetricPoint, start, end time
 		covered += p.Provider.BucketEnd.Sub(p.Provider.BucketStart).Seconds()
 		min = math.Min(min, value)
 		max = math.Max(max, value)
+		if rule.operation() == "weighted_average" && p.Provider.Statistic != "average" {
+			result.Message = "weighted average requires weighted source averages"
+			return result
+		}
+		if rule.operation() == "time_average" && p.Provider.Statistic != "time_average" {
+			result.Message = "time average requires declared gauge semantics"
+			return result
+		}
 		if p.Provider.Statistic == "average" {
 			if p.Provider.Count == nil || *p.Provider.Count <= 0 || p.Provider.Sum == nil {
 				result.Message = "source average has no valid observation weights"
@@ -161,8 +204,8 @@ func EvaluateMonitorRule(rule MonitorRule, points []MetricPoint, start, end time
 		return result
 	}
 	var observed float64
-	switch rule.Statistic {
-	case "avg":
+	switch rule.operation() {
+	case "avg", "time_average", "weighted_average":
 		observed = numerator / weight
 	case "min":
 		observed = min

@@ -15,6 +15,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 )
 
@@ -92,24 +93,26 @@ type RunMonitorStore interface {
 // MonitorSource contains only public collection configuration. Credentials are
 // resolved on the assigned collector; bearer tokens must never enter this row.
 type MonitorSource struct {
-	ManagementScope    *analysis.ManagementScope    `json:"management_scope,omitempty"`
-	ManagementIdentity *analysis.ManagementIdentity `json:"management_identity,omitempty"`
-	Prometheus         *prometheus.Selection        `json:"prometheus,omitempty"`
-	ExecutorMode       string                       `json:"executor_mode,omitempty"`
-	ConnectionID       string                       `json:"connection_id,omitempty"`
-	AppDynamics        *appdynamics.Selection       `json:"appdynamics,omitempty"`
-	CredentialRef      string                       `json:"credential_ref,omitempty"`
-	CollectorPublicKey string                       `json:"collector_public_key,omitempty"`
-	Service            string                       `json:"service,omitempty"`
-	ID                 string                       `json:"id"`
-	ProjectID          string                       `json:"project_id"`
-	Name               string                       `json:"name"`
-	Revision           int64                        `json:"revision"`
-	CollectorID        string                       `json:"collector_id"`
-	Pack               string                       `json:"pack"`
-	Destination        string                       `json:"destination,omitempty"`
-	IntervalSeconds    int                          `json:"interval_seconds"`
-	Enabled            bool                         `json:"enabled"`
+	ManagementScope          *analysis.ManagementScope    `json:"management_scope,omitempty"`
+	ManagementIdentity       *analysis.ManagementIdentity `json:"management_identity,omitempty"`
+	Prometheus               *prometheus.Selection        `json:"prometheus,omitempty"`
+	ExecutorMode             string                       `json:"executor_mode,omitempty"`
+	ConnectionID             string                       `json:"connection_id,omitempty"`
+	AppDynamics              *appdynamics.Selection       `json:"appdynamics,omitempty"`
+	CredentialRef            string                       `json:"credential_ref,omitempty"`
+	CollectorPublicKey       string                       `json:"collector_public_key,omitempty"`
+	Service                  string                       `json:"service,omitempty"`
+	ID                       string                       `json:"id"`
+	ProjectID                string                       `json:"project_id"`
+	Name                     string                       `json:"name"`
+	Revision                 int64                        `json:"revision"`
+	CollectorID              string                       `json:"collector_id"`
+	Pack                     string                       `json:"pack"`
+	Destination              string                       `json:"destination,omitempty"`
+	IntervalSeconds          int                          `json:"interval_seconds"`
+	Enabled                  bool                         `json:"enabled"`
+	LegacyConnectionRevision int64                        `json:"legacy_connection_revision,omitempty"`
+	Dynatrace                *dynatrace.Selection         `json:"dynatrace,omitempty"`
 }
 
 type MonitorBinding struct {
@@ -159,6 +162,11 @@ type RunMonitorJob struct {
 	State                        string                                          `json:"state"`
 	NextSequence                 int64                                           `json:"next_sequence"`
 	CoverageReason               string                                          `json:"coverage_reason,omitempty"`
+	DynatraceSnapshot            *DynatraceConnectionSnapshot                    `json:"-"`
+	ProviderCursor               string                                          `json:"-"`
+	RunTraceIDs                  []string                                        `json:"-"`
+	ScanConsumedBytes            int64                                           `json:"scan_consumed_bytes,omitempty"`
+	ScanReservedBytes            int64                                           `json:"scan_reserved_bytes,omitempty"`
 }
 
 type MonitorBatchReceipt struct {
@@ -348,6 +356,29 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 				job.CoverageReason = "connection_source_mismatch"
 			}
 		}
+		if job.CoverageReason == "" && job.Source.Pack == "dynatrace" {
+			if prepared != nil {
+				job.DynatraceSnapshot = prepared.DynatraceConnections[binding.SourceID]
+			}
+			if job.DynatraceSnapshot == nil {
+				conn, e := scanDynatraceConnection(tx.QueryRow(`SELECT `+dynatraceConnectionColumns+` FROM dynatrace_connections WHERE id=? AND project_id=?`, job.Source.ConnectionID, project))
+				if errors.Is(e, sql.ErrNoRows) {
+					job.CoverageReason = "connection_deleted"
+				} else if e != nil {
+					return nil, e
+				} else if conn.Readiness() != "ready" {
+					job.CoverageReason = "connection_not_ready"
+				} else {
+					job.DynatraceSnapshot = conn.Snapshot()
+				}
+			}
+			if job.CoverageReason == "" && ValidateDynatraceSourceConnection(job.Source, job.DynatraceSnapshot) != nil {
+				job.CoverageReason = "connection_source_mismatch"
+			}
+			if job.CoverageReason == "" && ValidateDynatraceVerifiedSelection(job.Source.Dynatrace, job.DynatraceSnapshot) != nil {
+				job.CoverageReason = "connection_capability_unavailable"
+			}
+		}
 		if job.CoverageReason == "" && job.Source.ExecutorMode != "direct" {
 			var health, packsJSON string
 			var seen sql.NullTime
@@ -389,6 +420,9 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 				}
 				if job.Source.Pack == "prometheus-query" && !slices.Contains(packs, "prometheus-query.v1") {
 					job.CoverageReason = "collector_prometheus_contract_unavailable"
+				}
+				if job.Source.Pack == "dynatrace" && !slices.Contains(packs, "dynatrace.v1") {
+					job.CoverageReason = "collector_dynatrace_contract_unavailable"
 				}
 			}
 		}
@@ -614,8 +648,11 @@ func (s *SQLiteStore) StopRunMonitors(project, run string, at time.Time) error {
 }
 
 func (m MonitorSource) Validate() error {
+	if m.LegacyConnectionRevision < 0 || m.LegacyConnectionRevision > 0 && m.Pack != "dynatrace" {
+		return errors.New("invalid legacy connection revision")
+	}
 	if m.ManagementScope != nil || m.ManagementIdentity != nil {
-		if m.Prometheus != nil || m.AppDynamics != nil || m.ExecutorMode != "" || m.ConnectionID != "" {
+		if m.Prometheus != nil || m.AppDynamics != nil || m.Dynatrace != nil || m.ExecutorMode != "" || m.ConnectionID != "" {
 			return errors.New("management source cannot include provider query configuration")
 		}
 		return validateManagementMonitorSource(m)
@@ -632,10 +669,7 @@ func (m MonitorSource) Validate() error {
 		return errors.New("collector ID is required")
 	}
 	if m.Pack == "appdynamics" {
-		if m.Prometheus != nil {
-			return errors.New("Prometheus selection requires its own query pack")
-		}
-		if m.ConnectionID == "" || m.AppDynamics == nil || m.AppDynamics.ProjectID != m.ProjectID || m.AppDynamics.Validate() != nil || m.IntervalSeconds < 60 || m.IntervalSeconds > 3600 || m.CredentialRef != "" {
+		if m.ConnectionID == "" || m.AppDynamics == nil || m.Dynatrace != nil || m.Prometheus != nil || m.AppDynamics.ProjectID != m.ProjectID || m.AppDynamics.Validate() != nil || m.IntervalSeconds < 60 || m.IntervalSeconds > 3600 || m.CredentialRef != "" {
 			return errors.New("invalid AppDynamics monitor source")
 		}
 		if len(m.AppDynamics.Metrics) == 0 && len(m.AppDynamics.Analytics) == 0 && !m.AppDynamics.Events && !m.AppDynamics.Violations && !m.AppDynamics.Snapshots {
@@ -644,12 +678,18 @@ func (m MonitorSource) Validate() error {
 		return nil
 	}
 	if m.Pack == "prometheus-query" {
-		if m.ConnectionID == "" || m.Prometheus == nil || m.Prometheus.ProjectID != m.ProjectID || m.Prometheus.Validate() != nil || m.IntervalSeconds < 15 || m.IntervalSeconds > 3600 || m.CredentialRef != "" || m.AppDynamics != nil {
+		if m.ConnectionID == "" || m.Prometheus == nil || m.Prometheus.ProjectID != m.ProjectID || m.Prometheus.Validate() != nil || m.IntervalSeconds < 15 || m.IntervalSeconds > 3600 || m.CredentialRef != "" || m.AppDynamics != nil || m.Dynatrace != nil {
 			return errors.New("invalid Prometheus query source")
 		}
 		return nil
 	}
-	if m.ExecutorMode == "direct" || m.ConnectionID != "" || m.AppDynamics != nil || m.Prometheus != nil {
+	if m.Pack == "dynatrace" {
+		if m.ConnectionID == "" || m.Dynatrace == nil || m.Dynatrace.ProjectID != m.ProjectID || m.Dynatrace.Validate() != nil || m.IntervalSeconds < 60 || m.IntervalSeconds > 3600 || m.CredentialRef != "" || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace.Cursor != "" || m.Dynatrace.QueryOffset != 0 {
+			return errors.New("invalid Dynatrace monitor source")
+		}
+		return nil
+	}
+	if m.ExecutorMode == "direct" || m.ConnectionID != "" || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace != nil {
 		return errors.New("provider fields require a governed provider pack")
 	}
 	if m.IntervalSeconds < 1 || m.IntervalSeconds > 3600 {
@@ -704,7 +744,10 @@ func (s *SQLiteStore) SaveMonitorSource(m MonitorSource, expected int64) (*Monit
 	if m.Pack == "prometheus-query" && m.IntervalSeconds == 0 {
 		m.IntervalSeconds = 30
 	}
-	if m.Pack == "appdynamics" && m.IntervalSeconds == 0 {
+	if m.Pack == "dynatrace" && m.ExecutorMode == "" {
+		m.ExecutorMode = "direct"
+	}
+	if (m.Pack == "appdynamics" || m.Pack == "dynatrace") && m.IntervalSeconds == 0 {
 		m.IntervalSeconds = 60
 	}
 	if err := m.Validate(); err != nil {
@@ -728,6 +771,11 @@ func (s *SQLiteStore) SaveMonitorSource(m MonitorSource, expected int64) (*Monit
 	}
 	if m.Pack == "prometheus-query" {
 		if err = validatePrometheusSourceTx(tx, &m); err != nil {
+			return nil, err
+		}
+	}
+	if m.Pack == "dynatrace" {
+		if err = validateDynatraceSourceTx(tx, &m); err != nil {
 			return nil, err
 		}
 	}
@@ -773,6 +821,11 @@ func (s *SQLiteStore) SaveMonitorSource(m MonitorSource, expected int64) (*Monit
 		return nil, err
 	} else if n != 1 {
 		return nil, ErrMonitorRevision
+	}
+	if expected > 0 {
+		if _, err = cancelMonitorPreparationsTx(tx, m.ProjectID, func(p *Preparation) bool { return preparationUsesMonitorSource(p, m.ID) }); err != nil {
+			return nil, err
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return nil, err
@@ -822,7 +875,22 @@ func (s *SQLiteStore) DeleteMonitorSource(project, id string, expected int64) er
 	} else if n != 1 {
 		return ErrMonitorRevision
 	}
+	if _, err = cancelMonitorPreparationsTx(tx, project, func(p *Preparation) bool { return preparationUsesMonitorSource(p, id) }); err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+func preparationUsesMonitorSource(p *Preparation, id string) bool {
+	if p == nil || p.Monitors == nil {
+		return false
+	}
+	for _, binding := range p.Monitors.Bindings.Sources {
+		if binding.SourceID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SQLiteStore) GetMonitorBindings(project, scenario string) (*MonitorBindings, error) {
@@ -928,5 +996,5 @@ func (m MonitorSource) ReadinessDestination() string {
 // CanonicalProvider identifies jobs whose query progress and revisions are
 // durably reconciled; legacy point-only packs retain their wire contract.
 func (m MonitorSource) CanonicalProvider() bool {
-	return m.Pack == "appdynamics" || m.Pack == "prometheus-query"
+	return m.Pack == "appdynamics" || m.Pack == "prometheus-query" || m.Pack == "dynatrace"
 }

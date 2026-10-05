@@ -1,5 +1,6 @@
 import type { PrometheusSelection } from './prometheus'
 import type { AnalysisPoint } from './analysis'
+import type { DynatraceSelection } from './dynatrace'
 
 export interface AppDynamicsConfig {
   endpoint: string
@@ -84,10 +85,12 @@ export interface MonitorSource {
   id: string; name: string; project_id?: string; revision: number; collector_id: string
   pack: string; destination?: string; interval_seconds: number; enabled: boolean
   credential_ref?: string; collector_public_key?: string; service?: string
-  connection_id?: string; executor_mode?: 'direct' | 'collector'; appdynamics?: AppDynamicsSelection; prometheus?: PrometheusSelection
+  connection_id?: string; executor_mode?: 'direct' | 'collector'; appdynamics?: AppDynamicsSelection; prometheus?: PrometheusSelection; dynatrace?: DynatraceSelection
 }
 export interface MonitorBinding { source_id: string; required: boolean }
 export interface MonitorRule {
+  provider?: 'appdynamics' | 'dynatrace'; backend?: string; metric_id?: string; entity_ids?: Record<string, string>
+  source_statistic?: string; resolution_seconds?: number; evaluation_operation?: 'avg' | 'time_average' | 'weighted_average' | 'min' | 'max' | 'sum'
   source_id: string; query_id?: string; evaluation_mode?: 'series_points' | 'exact_window'; require_freshness?: boolean; metric: string; dimensions?: Record<string, string>; unit: string
   statistic: 'avg' | 'min' | 'max' | 'sum'; comparator: 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'neq'
   threshold: number; severity: 'fail' | 'warning'; min_coverage_pct: number
@@ -95,6 +98,7 @@ export interface MonitorRule {
 }
 export interface MonitorRuleResult { rule: MonitorRule; status: string; observed?: number; coverage_pct: number; eligible_buckets: number; message: string }
 export interface AppDynamicsEvidence {
+  provider?: 'appdynamics' | 'dynatrace'
   id?: string; source_id?: string; type?: string; kind?: string; timestamp_utc?: string; timestamp?: string
   severity?: string; title?: string; summary?: string; message?: string; application_id?: string; entity_id?: string
   business_transaction_id?: string; correlation?: string; correlation_strength?: string; status?: string
@@ -108,7 +112,7 @@ export interface RunMonitorJob {
 export interface RunMonitorCoverage {
   job_id: string; source_id: string; source_revision: number; binding_revision: number
   connection_id?: string; connection_revision?: number; executor_mode?: string
-  appdynamics?: AppDynamicsSelection; prometheus?: PrometheusSelection; required: boolean; state: string; reason?: string; batches: number
+  appdynamics?: AppDynamicsSelection; prometheus?: PrometheusSelection; dynatrace?: DynatraceSelection; required: boolean; state: string; reason?: string; batches: number
   provider_coverage?: Record<string, AppDynamicsCapability>; topology?: AppDynamicsEntity[]
 }
 export interface RunMonitorDiagnostic { source_id: string; diagnostic: AppDynamicsEvidence }

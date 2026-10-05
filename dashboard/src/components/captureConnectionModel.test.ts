@@ -24,7 +24,7 @@ describe('capture connection readiness guidance', () => {
   it('only requires configuration for selected capabilities', () => {
     expect(dynatraceMissing({ ...dynatrace, logs_enabled: false })).toEqual(['At least one capture capability'])
     expect(dynatraceMissing({ ...dynatrace, logs_enabled: false, problems_enabled: true })).toEqual(['Environment URL', 'Environment token secret reference'])
-    expect(dynatraceMissing({ ...dynatrace, logs_enabled: false, metrics_enabled: true })).toContain('Complete metric selector')
+    expect(dynatraceMissing({ ...dynatrace, logs_enabled: false, metrics_enabled: true, metric_queries: [{ name: '', metric_selector: 'builtin:host.cpu.usage', aggregation: 'avg' }] })).toContain('Complete metric selector')
     expect(dynatraceMissing({ ...dynatrace, platform_auth_type: 'platform_token' })).toEqual(['Platform token secret reference'])
     expect(dynatraceMissing({ ...dynatrace, oauth_scopes: [] })).toEqual(['OAuth scopes'])
   })

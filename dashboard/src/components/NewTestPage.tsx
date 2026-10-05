@@ -609,7 +609,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     const list = api.listDynatraceConnections
     if (!activeProjectID || typeof list !== 'function') { setDynatraceConnections([]); setDynatraceConnectionId(''); return () => { cancelled = true } }
     setDynatraceLoading(true); setDynatraceError(false)
-    void list(activeProjectID).then(response => { if (cancelled) return; const ready = (response.connections || []).filter(connection => connection.status === 'ready'); setDynatraceConnections(ready);  }).catch(() => { if (!cancelled) { setDynatraceConnections([]); setDynatraceError(true) } }).finally(() => { if (!cancelled) setDynatraceLoading(false) })
+    void list(activeProjectID).then(response => { if (cancelled) return; const ready = (response.connections || []).filter(connection => (connection.legacy_capture_status ?? connection.status) === 'ready'); setDynatraceConnections(ready);  }).catch(() => { if (!cancelled) { setDynatraceConnections([]); setDynatraceError(true) } }).finally(() => { if (!cancelled) setDynatraceLoading(false) })
     return () => { cancelled = true }
   }, [api, activeProjectID, captureRetry])
   useEffect(() => {

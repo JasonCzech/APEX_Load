@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 686,
-    "public": 24,
-    "protected": 662,
-    "rbac": 657,
+    "routes": 691,
+    "public": 27,
+    "protected": 664,
+    "rbac": 659,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 686,
+    "green": 691,
     "partial": 0,
     "missing": 0
   },
@@ -5728,6 +5728,32 @@
       "service_account_scope": "write"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/monitoring/collectors/{id}/dynatrace-operations",
+      "operation_id": "handlePollDynatraceOperations",
+      "public": true,
+      "authenticated": false,
+      "state": "GREEN",
+      "enforcement": "public",
+      "access": "Public (no authentication required)",
+      "anonymous_assertion": "route is registered without HTTP auth middleware",
+      "role_assertion": "not applicable to public route",
+      "allowed_roles": {}
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/collectors/{id}/dynatrace-operations/{operation_id}/result",
+      "operation_id": "handleDynatraceOperationResult",
+      "public": true,
+      "authenticated": false,
+      "state": "GREEN",
+      "enforcement": "public",
+      "access": "Public (no authentication required)",
+      "anonymous_assertion": "route is registered without HTTP auth middleware",
+      "role_assertion": "not applicable to public route",
+      "allowed_roles": {}
+    },
+    {
       "method": "POST",
       "path": "/api/v1/monitoring/collectors/{id}/heartbeat",
       "operation_id": "handleCollectorHeartbeat",
@@ -5803,6 +5829,19 @@
       "access": "Collector token via Bearer or X-APEXLoad-API-Key",
       "anonymous_assertion": "HTTP 401 without collector token; HTTP 200 with valid collector bearer token",
       "role_assertion": "not applicable; route authenticates a collector capability rather than an RBAC role",
+      "allowed_roles": {}
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/scan-reservations",
+      "operation_id": "handleDynatraceScanReservation",
+      "public": true,
+      "authenticated": false,
+      "state": "GREEN",
+      "enforcement": "public",
+      "access": "Public (no authentication required)",
+      "anonymous_assertion": "route is registered without HTTP auth middleware",
+      "role_assertion": "not applicable to public route",
       "allowed_roles": {}
     },
     {
@@ -7336,18 +7375,20 @@
       "authenticated": true,
       "state": "GREEN",
       "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "HTTP 401 before handler",
       "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
       "allowed_roles": {
         "global": [
           "editor",
           "project_admin",
-          "system_admin"
+          "system_admin",
+          "viewer"
         ],
         "project": [
           "editor",
-          "project_admin"
+          "project_admin",
+          "viewer"
         ]
       },
       "denied_role": "qa_contract_unlisted",
@@ -7444,6 +7485,56 @@
       },
       "denied_role": "qa_contract_unlisted",
       "service_account_scope": "write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/operations",
+      "operation_id": "handleCreateDynatraceOperation",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/operations/{operation_id}",
+      "operation_id": "handleGetDynatraceOperation",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
     },
     {
       "method": "POST",

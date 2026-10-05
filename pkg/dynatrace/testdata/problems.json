@@ -1,0 +1,29 @@
+{
+  "totalCount": 1,
+  "pageSize": 100,
+  "nextPageKey": "page-two",
+  "problems": [
+    {
+      "problemId": "06F288EE2A930951-1791028800000",
+      "displayId": "P-251012",
+      "title": "Response time degradation password=secret",
+      "impactLevel": "SERVICES",
+      "severityLevel": "PERFORMANCE",
+      "status": "OPEN",
+      "affectedEntities": [
+        {"entityId": {"id": "SERVICE-0000000000000001", "type": "SERVICE"}, "name": "checkout"},
+        {"entityId": {"id": "HOST-0000000000000002", "type": "HOST"}, "name": "web-1"}
+      ],
+      "impactedEntities": [
+        {"entityId": {"id": "SERVICE-0000000000000001", "type": "SERVICE"}, "name": "checkout"}
+      ],
+      "rootCauseEntity": {"entityId": {"id": "SERVICE-0000000000000001", "type": "SERVICE"}, "name": "checkout"},
+      "managementZones": [],
+      "entityTags": [],
+      "problemFilters": [],
+      "startTime": 1791028800000,
+      "endTime": -1
+    }
+  ],
+  "warnings": []
+}

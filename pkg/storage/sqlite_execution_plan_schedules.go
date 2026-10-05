@@ -5,6 +5,7 @@ package storage
 // run logic is shared at the api layer, the persistence is parallel.
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"strings"
@@ -185,16 +186,20 @@ func (s *SQLiteStore) UpdateExecutionPlanScheduleIfRevisionAndLeaseTermHeld(sche
 // beginExecutionLeaseTermTransaction validates and locks the durable execution
 // lease. A nil transaction with a nil error means the supplied term is fenced.
 func (s *SQLiteStore) beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID string, leaseGeneration uint64) (*storeTx, error) {
+	return s.beginExecutionLeaseTermTransactionContext(context.Background(), leaseName, leaseOwnerID, leaseGeneration)
+}
+
+func (s *SQLiteStore) beginExecutionLeaseTermTransactionContext(ctx context.Context, leaseName, leaseOwnerID string, leaseGeneration uint64) (*storeTx, error) {
 	leaseName = strings.TrimSpace(leaseName)
 	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
 	if leaseName == "" || leaseOwnerID == "" || leaseGeneration == 0 {
 		return nil, errors.New("lease name, owner token, and positive generation are required")
 	}
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	held, err := schedulerLeaseTermHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID, leaseGeneration)
+	held, err := schedulerLeaseTermHeldInTransactionContext(ctx, tx, s.db.dialect, leaseName, leaseOwnerID, leaseGeneration)
 	if err != nil || !held {
 		_ = tx.Rollback()
 		return nil, err

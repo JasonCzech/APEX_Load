@@ -21,13 +21,20 @@ func validateAppDynamicsSecretReferences(connection *storage.AppDynamicsConnecti
 }
 
 func (s *Server) appendAppDynamicsSecretUsage(usage projectSecretUsage) (projectSecretUsage, error) {
-	store, ok := s.store.(storage.AppDynamicsSecretReferenceStore)
-	if !ok {
-		return usage, nil
+	var consumers []storage.AppDynamicsSecretConsumer
+	if store, ok := s.store.(storage.AppDynamicsSecretReferenceStore); ok {
+		var err error
+		consumers, err = store.ListAppDynamicsSecretConsumers(usage.ProjectID, usage.Name)
+		if err != nil {
+			return usage, err
+		}
 	}
-	consumers, err := store.ListAppDynamicsSecretConsumers(usage.ProjectID, usage.Name)
-	if err != nil {
-		return usage, err
+	if dynatraceStore, ok := s.store.(storage.DynatraceSecretReferenceStore); ok {
+		dynatraceConsumers, e := dynatraceStore.ListDynatraceSecretConsumers(usage.ProjectID, usage.Name)
+		if e != nil {
+			return usage, e
+		}
+		consumers = append(consumers, dynatraceConsumers...)
 	}
 	for _, consumer := range consumers {
 		usage.Consumers = append(usage.Consumers, projectSecretConsumer{ScriptID: consumer.ResourceType + ":" + consumer.ResourceID, ScriptName: scrubELKText(consumer.Name), ResourceType: consumer.ResourceType, ResourceID: consumer.ResourceID, ReferenceCount: consumer.ReferenceCount})
@@ -45,13 +52,20 @@ func (s *Server) appendAppDynamicsSecretUsage(usage projectSecretUsage) (project
 }
 
 func (s *Server) invalidateAppDynamicsSecretPreparations(_ context.Context, project, name string) error {
-	store, ok := s.store.(storage.AppDynamicsSecretReferenceStore)
-	if !ok {
-		return nil
+	var preparations []storage.Preparation
+	if store, ok := s.store.(storage.AppDynamicsSecretReferenceStore); ok {
+		var err error
+		preparations, err = store.InvalidateAppDynamicsSecretPreparations(project, name, time.Now().UTC())
+		if err != nil {
+			return err
+		}
 	}
-	preparations, err := store.InvalidateAppDynamicsSecretPreparations(project, name, time.Now().UTC())
-	if err != nil {
-		return err
+	if dynatraceStore, ok := s.store.(storage.DynatraceSecretReferenceStore); ok {
+		additional, e := dynatraceStore.InvalidateDynatraceSecretPreparations(project, name, time.Now().UTC())
+		if e != nil {
+			return e
+		}
+		preparations = append(preparations, additional...)
 	}
 	for _, preparation := range preparations {
 		if s.runner != nil {
