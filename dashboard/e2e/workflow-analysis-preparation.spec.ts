@@ -57,6 +57,14 @@ async function captureIdentityFilters(filters: Locator, path: string) {
       const toolbar = container.querySelector(':scope > .main-topbar')
       const top = Math.max(container.getBoundingClientRect().top, toolbar?.getBoundingClientRect().bottom ?? 0)
       const bottom = Math.min(window.innerHeight, container.getBoundingClientRect().bottom)
+      const card = element.closest('.monitor-card')
+      if (!(card instanceof HTMLElement) || card.scrollWidth > card.clientWidth + 1) return false
+      const descriptions = Array.from(card.querySelectorAll('.exportable-chart > .sr-only'))
+      if (descriptions.length === 0 || descriptions.some(description => {
+        const style = getComputedStyle(description)
+        const bounds = description.getBoundingClientRect()
+        return style.position !== 'absolute' || style.clip !== 'rect(0px, 0px, 0px, 0px)' || bounds.width > 1.01 || bounds.height > 1.01 || description.getAttribute('aria-hidden') === 'true'
+      })) return false
       return box.top >= top && box.bottom <= bottom && box.left >= 0 && box.right <= window.innerWidth && element.scrollWidth <= element.clientWidth + 1 && Array.from(element.querySelectorAll('input, button')).every(control => {
         const bounds = control.getBoundingClientRect()
         const x = (bounds.left + bounds.right) / 2; const y = (bounds.top + bounds.bottom) / 2

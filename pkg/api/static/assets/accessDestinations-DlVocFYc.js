@@ -1,0 +1,1 @@
+var e=[`users`,`onboard`,`accounts`,`create-account`,`events`,`usage`,`review`];function t(t){return e.includes(t)}function n(e=`users`,t=window.location.hash){let n=new URLSearchParams(t.split(`?`)[1]||``),r=new URLSearchParams({accessView:e});for(let e of[`projectId`,`applicationId`,`releaseId`]){let t=n.get(e);t&&r.set(e,t)}return`#/access?${r}`}export{t as n,n as t};

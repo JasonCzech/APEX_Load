@@ -28,31 +28,33 @@ type AnalysisImportFile struct {
 	Chunks       []AnalysisChunk `json:"chunks,omitempty"`
 }
 type AnalysisImport struct {
-	UploadWriterVersion int                                `json:"upload_writer_version,omitempty"`
-	ID                  string                             `json:"id"`
-	ProjectID           string                             `json:"project_id"`
-	Name                string                             `json:"name"`
-	Revision            int64                              `json:"revision"`
-	State               string                             `json:"state"`
-	Files               []AnalysisImportFile               `json:"files"`
-	Mapping             *analysis.ParquetMapping           `json:"mapping,omitempty"`
-	AllowRejected       bool                               `json:"allow_rejected"`
-	Accepted            int64                              `json:"accepted"`
-	Rejected            int64                              `json:"rejected"`
-	Rejections          []analysis.ParquetRejectionSummary `json:"rejections,omitempty"`
-	RejectionArtifacts  []string                           `json:"rejection_artifacts,omitempty"`
-	RejectionSHA256     map[string]string                  `json:"rejection_sha256,omitempty"`
-	Normalized          []string                           `json:"normalized,omitempty"`
-	NormalizedSHA256    map[string]string                  `json:"normalized_sha256,omitempty"`
-	ObsoleteObjects     []string                           `json:"obsolete_objects,omitempty"`
-	MappingID           string                             `json:"mapping_id,omitempty"`
-	MappingRevision     int64                              `json:"mapping_revision,omitempty"`
-	RunID               string                             `json:"run_id,omitempty"`
-	Error               string                             `json:"error,omitempty"`
-	Owner               string                             `json:"-"`
-	LeaseExpiresAt      time.Time                          `json:"-"`
-	CreatedAt           time.Time                          `json:"created_at"`
-	UpdatedAt           time.Time                          `json:"updated_at"`
+	PartitionManifestVersion int                                   `json:"partition_manifest_version,omitempty"`
+	PartitionManifest        *analysis.NormalizedPartitionManifest `json:"partition_manifest,omitempty"`
+	UploadWriterVersion      int                                   `json:"upload_writer_version,omitempty"`
+	ID                       string                                `json:"id"`
+	ProjectID                string                                `json:"project_id"`
+	Name                     string                                `json:"name"`
+	Revision                 int64                                 `json:"revision"`
+	State                    string                                `json:"state"`
+	Files                    []AnalysisImportFile                  `json:"files"`
+	Mapping                  *analysis.ParquetMapping              `json:"mapping,omitempty"`
+	AllowRejected            bool                                  `json:"allow_rejected"`
+	Accepted                 int64                                 `json:"accepted"`
+	Rejected                 int64                                 `json:"rejected"`
+	Rejections               []analysis.ParquetRejectionSummary    `json:"rejections,omitempty"`
+	RejectionArtifacts       []string                              `json:"rejection_artifacts,omitempty"`
+	RejectionSHA256          map[string]string                     `json:"rejection_sha256,omitempty"`
+	Normalized               []string                              `json:"normalized,omitempty"`
+	NormalizedSHA256         map[string]string                     `json:"normalized_sha256,omitempty"`
+	ObsoleteObjects          []string                              `json:"obsolete_objects,omitempty"`
+	MappingID                string                                `json:"mapping_id,omitempty"`
+	MappingRevision          int64                                 `json:"mapping_revision,omitempty"`
+	RunID                    string                                `json:"run_id,omitempty"`
+	Error                    string                                `json:"error,omitempty"`
+	Owner                    string                                `json:"-"`
+	LeaseExpiresAt           time.Time                             `json:"-"`
+	CreatedAt                time.Time                             `json:"created_at"`
+	UpdatedAt                time.Time                             `json:"updated_at"`
 }
 
 type AnalysisImportStore interface {
@@ -77,7 +79,7 @@ func (s *SQLiteStore) SaveAnalysisImport(in AnalysisImport, expected int64) (*An
 	if expected == 0 {
 		in.CreatedAt = in.UpdatedAt
 	}
-	body, err := json.Marshal(in)
+	body, err := analysis.MarshalBoundedAnalysisJSON(in, 2<<20)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +109,7 @@ func (s *SQLiteStore) SaveAnalysisImport(in AnalysisImport, expected int64) (*An
 	if in.State == "normalizing" || in.Owner != "" || !in.LeaseExpiresAt.IsZero() {
 		return nil, errors.New("worker ownership requires dedicated analysis attempt methods")
 	}
-	if expected == 0 && (len(in.Normalized) != 0 || len(in.NormalizedSHA256) != 0 || len(in.RejectionArtifacts) != 0 || len(in.RejectionSHA256) != 0 || in.Accepted != 0 || in.Rejected != 0 || len(in.Rejections) != 0 || len(in.ObsoleteObjects) != 0) {
+	if expected == 0 && (in.PartitionManifestVersion != 0 || in.PartitionManifest != nil || len(in.Normalized) != 0 || len(in.NormalizedSHA256) != 0 || len(in.RejectionArtifacts) != 0 || len(in.RejectionSHA256) != 0 || in.Accepted != 0 || in.Rejected != 0 || len(in.Rejections) != 0 || len(in.ObsoleteObjects) != 0) {
 		return nil, errors.New("unclaimed analytical output metadata")
 	}
 	if expected == 0 && in.UploadWriterVersion != 0 && in.UploadWriterVersion != AnalysisUploadWriterVersion {
@@ -252,7 +254,8 @@ func (s *SQLiteStore) ListAnalysisImports(project string, limit, offset int) ([]
 // Equivalence is restricted to that zero-field representation: nonempty plans,
 // hashes, summary rows, ordering and counts retain exact existing equality.
 func analysisImportOwnedOutputsEqual(a, b AnalysisImport) bool {
-	return a.Accepted == b.Accepted && a.Rejected == b.Rejected &&
+	return a.PartitionManifestVersion == b.PartitionManifestVersion && reflect.DeepEqual(a.PartitionManifest, b.PartitionManifest) &&
+		a.Accepted == b.Accepted && a.Rejected == b.Rejected &&
 		(len(a.Normalized) == 0 && len(b.Normalized) == 0 || reflect.DeepEqual(a.Normalized, b.Normalized)) &&
 		(len(a.NormalizedSHA256) == 0 && len(b.NormalizedSHA256) == 0 || reflect.DeepEqual(a.NormalizedSHA256, b.NormalizedSHA256)) &&
 		(len(a.RejectionArtifacts) == 0 && len(b.RejectionArtifacts) == 0 || reflect.DeepEqual(a.RejectionArtifacts, b.RejectionArtifacts)) &&

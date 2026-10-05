@@ -41,6 +41,22 @@ The script-revision authoring slice adds schema release 37, coherent authored do
 
 The browser availability correction makes legacy action-summary estimates explicitly unscored when any required component or valid sample count is absent. Live/archive/comparison cards, charts, CSV and root-cause advisories preserve unavailable evidence and exact cohort identities; only complete device summaries are ranked. The full dashboard cycle passes in both authentication profiles and affected Go normal/race checks pass in [the review record](qa/reviews/feature-completion-browser-availability-2026-10-05/README.md); the final composed repository Go gate also passed against the final embedded dashboard. This is `legacy-summary-availability-v2`, not standards-qualified document scoring. BE-1–BE-4 and BI-1–BI-4 remain open.
 
+The native partition slice implements producer-verified immutable manifests,
+conservative object selection before artifact I/O, complete comparison plan
+keys, selected-object hash/size checks and bounded artifact geometry responses.
+Actual DuckDB production statements demonstrate projection/filter pushdown;
+physical scan-byte reductions and scale performance are not inferred from
+artifact sizes. Submicrosecond native windows now retain authoritative buckets
+and disclose one effective microsecond window for dataset comparisons/overlays.
+Review corrected deadline/final-authorization gaps, durable upload metadata
+budget handling, version-1 receipt/deletion round trips, chart accessibility and
+Source Find editor detachment. Actual native API acceptance, SQLite/PostgreSQL
+normal/race checks, final full Go and both-profile full dashboard gates pass.
+[Review and evidence](qa/reviews/feature-completion-native-partitions-2026-10-05/README.md)
+retain all failed and superseded attempts. The 1 GiB reference, process
+restart/HA, remote-backend and five-platform release gates remain open; only
+10 GB acceptance is waived.
+
 ## Track status
 
 | Track | Status | Open work |

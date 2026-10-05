@@ -4,7 +4,6 @@ package api
 
 import (
 	"bytes"
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -21,7 +20,7 @@ func TestNativeAnalysisProjectedProtectedNewAndPersistedMappingsRefuseBeforeArti
 				t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "proj-a")
 				t.Setenv("APEXLOAD_ARCHIVE_BACKEND", "filesystem")
 				t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
-				s, raw := newTimeslotServer(t)
+				s, raw, legacyPath := newLegacyAnalysisFixtureServer(t)
 				if err := ensureAnalysisBackend(raw); err != nil {
 					t.Fatal(err)
 				}
@@ -46,7 +45,7 @@ func TestNativeAnalysisProjectedProtectedNewAndPersistedMappingsRefuseBeforeArti
 				if err != nil || current == nil || current.State != "uploading" || current.Revision != in.Revision || current.Mapping != nil {
 					t.Fatal("refused mapping mutated upload", current, err)
 				}
-				// Persist a historical mapping through the real existing storage protocol.
+				// Persist a pre-manifest historical mapping through fixture-only SQLite.
 				// Opaque bytes are deliberate: protected-path admission must refuse before
 				// attempting to inspect or read any normalized artifact, valid or otherwise.
 				in.Mapping = &mapping
@@ -56,11 +55,7 @@ func TestNativeAnalysisProjectedProtectedNewAndPersistedMappingsRefuseBeforeArti
 				if err != nil {
 					t.Fatal(err)
 				}
-				attempts := raw.(storage.AnalysisAttemptStore)
-				in, a, err := attempts.ClaimAnalysisImportAttempt(context.Background(), in.ID, in.ProjectID, in.Revision, time.Minute)
-				if err != nil {
-					t.Fatal(err)
-				}
+				in.Normalized = []string{analysisObjectKey(in.ProjectID, in.ID, "legacy-part-0.parquet")}
 				in.NormalizedSHA256 = map[string]string{}
 				in.Accepted = 1
 				for _, key := range in.Normalized {
@@ -70,17 +65,7 @@ func TestNativeAnalysisProjectedProtectedNewAndPersistedMappingsRefuseBeforeArti
 					}
 					in.NormalizedSHA256[key] = digest
 				}
-				if err := attempts.ConfirmAnalysisAttemptWritersQuiesced(t.Context(), in.ID, in.ProjectID, a.ID); err != nil {
-					t.Fatal(err)
-				}
-				digest, err := storage.AnalysisAttemptResultDigest(*in)
-				if err != nil {
-					t.Fatal(err)
-				}
-				in, err = attempts.PublishAnalysisImportAttempt(t.Context(), storage.AnalysisAttemptPublication{Import: *in, AttemptID: a.ID, Digest: digest})
-				if err != nil {
-					t.Fatal(err)
-				}
+				in = sealLegacyAnalysisFixture(t, legacyPath, in)
 				from, to := time.Unix(1700000000, 0).UTC(), time.Unix(1700000001, 0).UTC()
 				before := analytics.NativeBusy()
 				requests := []struct {

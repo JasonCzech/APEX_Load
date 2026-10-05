@@ -114,7 +114,7 @@ func TestAnalysisComparisonCancellationAndMissingScopeCannotServeRetainedPlan(t 
 	if err := server.verifyNativeAnalysisComparison(ctx, "proj-a"); err == nil {
 		t.Fatal("cancelled comparison served result")
 	}
-	plan := &analysisComparisonPipeline{plans: map[analysisDatasetQueryIdentity]analysisDatasetQueryPlan{{"deleted", "latency"}: {dataset: &storage.AnalysisImport{ID: "deleted", ProjectID: "proj-a", State: "ready", Revision: 1}}}}
+	plan := &analysisComparisonPipeline{plans: map[analysisDatasetQueryIdentity]analysisDatasetQueryPlan{{dataset: "deleted", metric: "latency"}: {dataset: &storage.AnalysisImport{ID: "deleted", ProjectID: "proj-a", State: "ready", Revision: 1}}}}
 	ctx = context.WithValue(t.Context(), analysisComparisonPipelineKey{}, plan)
 	if err := server.verifyNativeAnalysisComparison(ctx, "proj-a"); err == nil {
 		t.Fatal("retained private plan served missing dataset")

@@ -1,0 +1,7 @@
+--- FAIL: TestAnalysisPartitionResultDigestDurableEmptyCollections (0.05s)
+    analysis_partition_receipt_lifecycle_test.go:32: v1 digest differs after durable omission of empty output fields <nil>
+--- FAIL: TestAnalysisPartitionReceiptLifecycleSQLiteReopen (0.06s)
+    analysis_partition_receipt_lifecycle_test.go:65: exact publication receipt failed after durable empty-output round trip analytical publication requires authoritative reconciliation
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/storage	0.492s
+FAIL

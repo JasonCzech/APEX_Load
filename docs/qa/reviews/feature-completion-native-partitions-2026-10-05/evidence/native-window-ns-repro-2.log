@@ -1,0 +1,43 @@
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/from-plus-1ns
+    native_series_precision_test.go:55: returned noncanonical bucket origin 0 2026-01-01 00:00:00.123456001 +0000 UTC 2026-01-01 00:00:00.123456 +0000 UTC
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/from-minus-1ns
+    native_series_precision_test.go:55: returned noncanonical bucket origin 0 2026-01-01 00:00:00.123455999 +0000 UTC 2026-01-01 00:00:00.123455 +0000 UTC
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/to-plus-1ns
+    native_series_precision_test.go:51: raw nanosecond bounds invented/lost terminal buckets: actual=4 canonical=3
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/to-minus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/both-plus-1ns
+    native_series_precision_test.go:55: returned noncanonical bucket origin 0 2026-01-01 00:00:00.123456001 +0000 UTC 2026-01-01 00:00:00.123456 +0000 UTC
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/both-minus-1ns
+    native_series_precision_test.go:55: returned noncanonical bucket origin 0 2026-01-01 00:00:00.123455999 +0000 UTC 2026-01-01 00:00:00.123455 +0000 UTC
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/from-plus-1ns
+    native_series_precision_test.go:55: returned noncanonical bucket origin 0 1969-12-31 23:59:56.123456001 +0000 UTC 1969-12-31 23:59:56.123456 +0000 UTC
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/from-minus-1ns
+    native_series_precision_test.go:55: returned noncanonical bucket origin 0 1969-12-31 23:59:56.123455999 +0000 UTC 1969-12-31 23:59:56.123455 +0000 UTC
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/to-plus-1ns
+    native_series_precision_test.go:51: raw nanosecond bounds invented/lost terminal buckets: actual=4 canonical=3
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/to-minus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/both-plus-1ns
+    native_series_precision_test.go:55: returned noncanonical bucket origin 0 1969-12-31 23:59:56.123456001 +0000 UTC 1969-12-31 23:59:56.123456 +0000 UTC
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/both-minus-1ns
+    native_series_precision_test.go:55: returned noncanonical bucket origin 0 1969-12-31 23:59:56.123455999 +0000 UTC 1969-12-31 23:59:56.123455 +0000 UTC
+--- FAIL: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets (6.79s)
+    --- FAIL: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z (3.41s)
+        --- FAIL: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/from-plus-1ns (0.48s)
+        --- FAIL: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/from-minus-1ns (0.48s)
+        --- FAIL: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/to-plus-1ns (0.48s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/to-minus-1ns (0.48s)
+        --- FAIL: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/both-plus-1ns (0.48s)
+        --- FAIL: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/both-minus-1ns (0.48s)
+    --- FAIL: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z (3.39s)
+        --- FAIL: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/from-plus-1ns (0.48s)
+        --- FAIL: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/from-minus-1ns (0.49s)
+        --- FAIL: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/to-plus-1ns (0.48s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/to-minus-1ns (0.48s)
+        --- FAIL: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/both-plus-1ns (0.49s)
+        --- FAIL: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/both-minus-1ns (0.48s)
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/analysis/duckdb	7.441s
+FAIL

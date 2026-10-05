@@ -1,0 +1,15 @@
+Building controller...
+Starting controller on http://127.0.0.1:18571 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.5yTyho72uy)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 4 tests using 1 worker
+
+(node:63689) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/workflow-analysis-preparation.spec.ts:97:1 › Parquet upload, mapping, query and deletion remain in project scope (1.8s)
+  ✓  2 e2e/workflow-analysis-preparation.spec.ts:509:1 › imported comparison preserves both exact identity selectors across save and reopen (1.3s)
+  ✓  3 e2e/workflow-analysis-preparation.spec.ts:600:1 › older analytical peers keep v1 imports usable and refuse v2 identity work without downgrade (587ms)
+  ✓  4 e2e/workflow-script-editor.spec.ts:60:1 › authored script goals survive an unrelated editor save and canonical reopen (1.0s)
+
+  4 passed (5.4s)

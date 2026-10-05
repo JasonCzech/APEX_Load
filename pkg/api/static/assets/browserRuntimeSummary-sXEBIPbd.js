@@ -1,0 +1,1 @@
+function e(e){return e?e.charAt(0).toUpperCase()+e.slice(1):null}function t(t){if(!t)return null;let n=[t.device_profile,e(t.orientation),t.touch_mode===void 0?null:t.touch_mode?`Touch enabled`:`Touch disabled`,t.headless===void 0?null:t.headless?`Headless`:`Headed`].filter(e=>!!e);return n.length>0?n.join(` · `):null}export{t};

@@ -43,9 +43,11 @@ func workerTestRequest(b workerBootstrap) workerRequest {
 	}}
 }
 func workerTestNormalizeResult(b workerBootstrap) workerResult {
+	at := time.Unix(1700000000, 0).UTC()
+	stats := &analysis.NormalizedPartitionStats{Version: analysis.PartitionManifestVersion, SchemaVersion: analysis.SchemaVersion, IdentityVersion: 1, Kind: analysis.KindObservation, Unit: "ms", Rows: 2, Valid: 2, MinTime: &at, MaxTime: &at}
 	return workerResult{Status: "ok", Normalize: &workerNormalizeResult{
 		InputRows: 3, Accepted: 2, Rejected: 1,
-		Outputs:    []workerOutput{{Handle: b.Handles[1].Handle, SHA256: strings.Repeat("e", 64), Bytes: 100, Rows: 2}, {Handle: b.Handles[2].Handle, SHA256: strings.Repeat("f", 64), Bytes: 100, Rows: 1}},
+		Outputs:    []workerOutput{{Handle: b.Handles[1].Handle, SHA256: strings.Repeat("e", 64), Bytes: 100, Rows: 2, Partition: stats}, {Handle: b.Handles[2].Handle, SHA256: strings.Repeat("f", 64), Bytes: 100, Rows: 1}},
 		Rejections: []RejectionSummary{{File: 0, Measure: 0, Count: 1, Rows: []int64{2}}},
 	}}
 }

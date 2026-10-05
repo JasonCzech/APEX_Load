@@ -87,6 +87,7 @@ func (e *Engine) Normalize(ctx context.Context, input NormalizeRequest) (Normali
 				e.workerOutput[path] = descriptor
 				if handle.Role == "normalized" {
 					out.Files = append(out.Files, path)
+					out.Partitions = append(out.Partitions, NormalizedFilePartition{File: path, Bytes: descriptor.Bytes, SHA256: descriptor.SHA256, Stats: descriptor.Partition.Clone()})
 				} else {
 					out.RejectionFiles = append(out.RejectionFiles, path)
 				}

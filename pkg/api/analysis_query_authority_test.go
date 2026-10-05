@@ -182,7 +182,7 @@ func TestNativeComparisonAndSeriesRefuseLateContextFreeMetadataReplies(t *testin
 			owner.armed.Store(true)
 			deadline := time.Now().Add(30 * time.Millisecond)
 			ctx := nativeQueryDetachedDeadline{Context: context.Background(), deadline: deadline}
-			plan := &analysisComparisonPipeline{plans: map[analysisDatasetQueryIdentity]analysisDatasetQueryPlan{{in.ID, "value"}: {dataset: in}}}
+			plan := &analysisComparisonPipeline{plans: map[analysisDatasetQueryIdentity]analysisDatasetQueryPlan{{dataset: in.ID, metric: "value"}: {dataset: in}}}
 			var released sync.Once
 			done := make(chan error, 1)
 			joined := false

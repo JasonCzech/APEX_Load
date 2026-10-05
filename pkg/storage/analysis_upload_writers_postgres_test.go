@@ -32,8 +32,15 @@ func TestPostgresAnalysisUploadTwoStorePhysicalAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		if _, err := admin.ExecContext(context.Background(), "DROP SCHEMA "+quotePostgresIdentifier(schema)+" CASCADE"); err != nil {
+		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		if _, err := admin.ExecContext(cleanup, "DROP SCHEMA "+quotePostgresIdentifier(schema)+" CASCADE"); err != nil {
 			t.Error(err)
+			return
+		}
+		var remaining int
+		if err := admin.QueryRowContext(cleanup, `SELECT count(*) FROM pg_namespace WHERE nspname=$1`, schema).Scan(&remaining); err != nil || remaining != 0 {
+			t.Error("exact owned PostgreSQL upload fixture schema cleanup was not verified")
 		}
 	}()
 	dsn := postgresIntegrationURLWithSearchPath(t, url, schema)
@@ -50,6 +57,7 @@ func TestPostgresAnalysisUploadTwoStorePhysicalAuthority(t *testing.T) {
 	defer second.Close()
 	exerciseAnalysisUploadWriterAuthority(t, first.SQLiteStore, second.SQLiteStore)
 	exercisePostgresAnalysisUploadInvisibleCommitFence(t, ctx, admin, first.SQLiteStore, second.SQLiteStore)
+	exerciseAnalysisUploadMetadataLimit(t, first.SQLiteStore, second.SQLiteStore)
 	exerciseAnalysisUploadProjectDeletion(t, first.SQLiteStore)
 	if _, err := second.ResolveAnalysisUploadWriter(ctx, "monitor-p", uuid.NewString(), uuid.NewString()); !errors.Is(err, ErrAnalysisUploadNotCommitted) {
 		t.Fatal("completed project deletion did not permit fenced absence proof", err)

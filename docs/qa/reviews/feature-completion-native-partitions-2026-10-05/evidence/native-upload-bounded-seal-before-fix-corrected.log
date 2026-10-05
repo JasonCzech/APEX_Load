@@ -1,0 +1,5 @@
+--- FAIL: TestAnalysisUploadKnownMetadataLimitStillSealsAndQueuesExactOutput (0.22s)
+    analysis_upload_writers_test.go:259: known refusal retained unresolved writer <nil> analytical attempt authority lost
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/storage	0.788s
+FAIL

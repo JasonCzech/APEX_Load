@@ -14,28 +14,30 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/analysis"
 )
 
 var ErrAnalysisAuthority = errors.New("analytical attempt authority lost")
 var ErrAnalysisPublicationUnknown = errors.New("analytical publication requires authoritative reconciliation")
 
 type AnalysisAttempt struct {
-	ID                  string          `json:"id"`
-	ProjectID           string          `json:"project_id"`
-	ImportID            string          `json:"import_id"`
-	Revision            int64           `json:"revision"`
-	InputDigest         string          `json:"input_digest"`
-	Normalized          []string        `json:"normalized"`
-	Rejections          []string        `json:"rejections"`
-	Obsolete            []string        `json:"obsolete,omitempty"`
-	ObsoleteQuiesced    map[string]bool `json:"obsolete_quiesced,omitempty"`
-	CreatedAt           time.Time       `json:"created_at"`
-	AbsoluteExpiry      time.Time       `json:"absolute_expiry"`
-	PublicationDigest   string          `json:"publication_digest,omitempty"`
-	Published           *AnalysisImport `json:"published,omitempty"`
-	LegacyWriterUnknown bool            `json:"legacy_writer_unknown,omitempty"`
-	WritersQuiesced     bool            `json:"writers_quiesced"`
-	CleanupQueued       bool            `json:"cleanup_queued"`
+	PartitionManifestVersion int             `json:"partition_manifest_version,omitempty"`
+	ID                       string          `json:"id"`
+	ProjectID                string          `json:"project_id"`
+	ImportID                 string          `json:"import_id"`
+	Revision                 int64           `json:"revision"`
+	InputDigest              string          `json:"input_digest"`
+	Normalized               []string        `json:"normalized"`
+	Rejections               []string        `json:"rejections"`
+	Obsolete                 []string        `json:"obsolete,omitempty"`
+	ObsoleteQuiesced         map[string]bool `json:"obsolete_quiesced,omitempty"`
+	CreatedAt                time.Time       `json:"created_at"`
+	AbsoluteExpiry           time.Time       `json:"absolute_expiry"`
+	PublicationDigest        string          `json:"publication_digest,omitempty"`
+	Published                *AnalysisImport `json:"published,omitempty"`
+	LegacyWriterUnknown      bool            `json:"legacy_writer_unknown,omitempty"`
+	WritersQuiesced          bool            `json:"writers_quiesced"`
+	CleanupQueued            bool            `json:"cleanup_queued"`
 }
 type AnalysisAttemptPublication struct {
 	Import    AnalysisImport
@@ -59,14 +61,15 @@ type AnalysisAttemptStore interface {
 // Migration must create analysis_attempt_journal before adoption. It has no
 // project FK: publication receipts and exact cleanup plans outlive deletion.
 func analysisAttemptInputDigest(in AnalysisImport) (string, error) {
-	body, err := json.Marshal(struct {
-		UploadWriterVersion int
-		Files               []AnalysisImportFile
-		Mapping             any
-		AllowRejected       bool
-		MappingID           string
-		MappingRevision     int64
-	}{in.UploadWriterVersion, in.Files, in.Mapping, in.AllowRejected, in.MappingID, in.MappingRevision})
+	body, err := analysis.MarshalBoundedAnalysisJSON(struct {
+		PartitionManifestVersion int `json:"partition_manifest_version,omitempty"`
+		UploadWriterVersion      int
+		Files                    []AnalysisImportFile
+		Mapping                  any
+		AllowRejected            bool
+		MappingID                string
+		MappingRevision          int64
+	}{in.PartitionManifestVersion, in.UploadWriterVersion, in.Files, in.Mapping, in.AllowRejected, in.MappingID, in.MappingRevision}, 2<<20)
 	if err != nil || len(body) > 2<<20 {
 		return "", ErrAnalysisAuthority
 	}
@@ -110,7 +113,7 @@ func analysisAttemptJournalLoad(ctx context.Context, tx *storeTx, id, project st
 	return &a, nil
 }
 func analysisAttemptJournalWrite(ctx context.Context, tx *storeTx, a *AnalysisAttempt) error {
-	body, err := json.Marshal(a)
+	body, err := analysis.MarshalBoundedAnalysisJSON(a, 4<<20)
 	if err != nil || len(body) > 4<<20 {
 		return ErrAnalysisAuthority
 	}
@@ -128,7 +131,7 @@ func analysisAttemptJournalWrite(ctx context.Context, tx *storeTx, a *AnalysisAt
 	return err
 }
 func analysisAttemptJournalInsert(ctx context.Context, tx *storeTx, a *AnalysisAttempt) error {
-	body, err := json.Marshal(a)
+	body, err := analysis.MarshalBoundedAnalysisJSON(a, 4<<20)
 	if err != nil || len(body) > 4<<20 {
 		return ErrAnalysisAuthority
 	}
@@ -197,7 +200,7 @@ func analysisAttemptQuiescedKeys(ctx context.Context, tx *storeTx, project, id s
 	return keys, nil
 }
 func analysisAttemptUpdate(ctx context.Context, tx *storeTx, in *AnalysisImport, oldRevision int64, oldOwner, oldState string) error {
-	body, err := json.Marshal(in)
+	body, err := analysis.MarshalBoundedAnalysisJSON(in, 2<<20)
 	if err != nil || len(body) > 2<<20 {
 		return ErrAnalysisAuthority
 	}
@@ -221,7 +224,7 @@ func analysisAttemptLeaseValue(tx *storeTx, expiry time.Time) any {
 	return expiry.UTC().Format(time.RFC3339Nano)
 }
 func analysisAttemptPublishUpdate(ctx context.Context, tx *storeTx, in *AnalysisImport, oldRevision int64, oldOwner string, absolute time.Time) error {
-	body, err := json.Marshal(in)
+	body, err := analysis.MarshalBoundedAnalysisJSON(in, 2<<20)
 	if err != nil || len(body) > 2<<20 {
 		return ErrAnalysisAuthority
 	}
@@ -299,12 +302,16 @@ func (s *SQLiteStore) ClaimAnalysisImportAttempt(ctx context.Context, id, projec
 			return nil, nil, err
 		}
 	}
+	// Claim upgrades only the new immutable attempt; retained version0 owners
+	// keep their historical digest/publication contract until reconciled.
+	in.PartitionManifestVersion = analysis.PartitionManifestVersion
+	in.PartitionManifest = nil
 	inputDigest, err := analysisAttemptInputDigest(*in)
 	if err != nil {
 		return nil, nil, err
 	}
 	oldOwner, oldState := in.Owner, in.State
-	a := &AnalysisAttempt{ID: uuid.NewString(), ProjectID: project, ImportID: id, Revision: revision + 1, InputDigest: inputDigest, CreatedAt: now, AbsoluteExpiry: now.Add(16 * time.Minute), Normalized: []string{}, Rejections: []string{}}
+	a := &AnalysisAttempt{PartitionManifestVersion: analysis.PartitionManifestVersion, ID: uuid.NewString(), ProjectID: project, ImportID: id, Revision: revision + 1, InputDigest: inputDigest, CreatedAt: now, AbsoluteExpiry: now.Add(16 * time.Minute), Normalized: []string{}, Rejections: []string{}}
 	for i := range in.Files {
 		for j := range in.Mapping.Measures {
 			a.Normalized = append(a.Normalized, analysisAttemptKey(project, id, fmt.Sprintf("normalized-%s-part-%04d-%02d.parquet", a.ID, i, j)))
@@ -415,15 +422,37 @@ func analysisCanonicalHash(text string) bool {
 	return err == nil && len(body) == 32
 }
 func AnalysisAttemptResultDigest(in AnalysisImport) (string, error) {
-	body, err := json.Marshal(struct {
-		Files              []AnalysisImportFile
-		Normalized         []string
-		NormalizedSHA256   map[string]string
-		RejectionArtifacts []string
-		RejectionSHA256    map[string]string
-		Rejections         any
-		Accepted, Rejected int64
-	}{in.Files, in.Normalized, in.NormalizedSHA256, in.RejectionArtifacts, in.RejectionSHA256, in.Rejections, in.Accepted, in.Rejected})
+	// Version1 hashes the durable representation: these owner-managed output
+	// collections use omitempty in AnalysisImport, so an empty []/{} reloads as
+	// nil. Historical version0 receipts retain their exact original shape.
+	if in.PartitionManifestVersion == analysis.PartitionManifestVersion {
+		if len(in.Normalized) == 0 {
+			in.Normalized = nil
+		}
+		if len(in.NormalizedSHA256) == 0 {
+			in.NormalizedSHA256 = nil
+		}
+		if len(in.RejectionArtifacts) == 0 {
+			in.RejectionArtifacts = nil
+		}
+		if len(in.RejectionSHA256) == 0 {
+			in.RejectionSHA256 = nil
+		}
+		if len(in.Rejections) == 0 {
+			in.Rejections = nil
+		}
+	}
+	body, err := analysis.MarshalBoundedAnalysisJSON(struct {
+		PartitionManifestVersion int                                   `json:"partition_manifest_version,omitempty"`
+		PartitionManifest        *analysis.NormalizedPartitionManifest `json:"partition_manifest,omitempty"`
+		Files                    []AnalysisImportFile
+		Normalized               []string
+		NormalizedSHA256         map[string]string
+		RejectionArtifacts       []string
+		RejectionSHA256          map[string]string
+		Rejections               any
+		Accepted, Rejected       int64
+	}{in.PartitionManifestVersion, in.PartitionManifest, in.Files, in.Normalized, in.NormalizedSHA256, in.RejectionArtifacts, in.RejectionSHA256, in.Rejections, in.Accepted, in.Rejected}, 2<<20)
 	if err != nil || len(body) > 2<<20 {
 		return "", ErrAnalysisAuthority
 	}
@@ -432,6 +461,25 @@ func AnalysisAttemptResultDigest(in AnalysisImport) (string, error) {
 }
 func ValidateAnalysisPublication(in AnalysisImport, a AnalysisAttempt) error {
 	if in.ID != a.ImportID || in.ProjectID != a.ProjectID || in.Owner != a.ID || in.Revision != a.Revision || in.State != "normalizing" || in.Accepted < 0 || in.Rejected < 0 || !reflect.DeepEqual(in.Normalized, a.Normalized) || len(in.NormalizedSHA256) != len(a.Normalized) || len(in.RejectionArtifacts) != len(in.RejectionSHA256) {
+		return ErrAnalysisAuthority
+	}
+	if in.PartitionManifestVersion != a.PartitionManifestVersion {
+		return ErrAnalysisAuthority
+	}
+	switch a.PartitionManifestVersion {
+	case 0:
+		if in.PartitionManifest != nil {
+			return ErrAnalysisAuthority
+		}
+	case analysis.PartitionManifestVersion:
+		if in.PartitionManifest == nil || in.Mapping == nil {
+			return ErrAnalysisAuthority
+		}
+		mappingHash, err := analysis.PartitionMappingDigest(*in.Mapping)
+		if err != nil || in.PartitionManifest.MatchesArtifacts(in.ProjectID, in.ID, mappingHash, in.Mapping.Version, in.Normalized, in.NormalizedSHA256, in.Accepted) != nil {
+			return ErrAnalysisAuthority
+		}
+	default:
 		return ErrAnalysisAuthority
 	}
 	for _, key := range a.Normalized {

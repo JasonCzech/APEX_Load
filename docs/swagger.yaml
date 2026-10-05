@@ -18817,6 +18817,11 @@ paths:
                     type: boolean
                   native_parquet:
                     type: boolean
+                  partition_manifest_version:
+                    type: integer
+                    format: int64
+                  partition_pruning_available:
+                    type: boolean
                   preparation_enabled:
                     type: boolean
                   resource_configuration_accepted:
@@ -18840,6 +18845,8 @@ paths:
                   - metric_catalog
                   - monitoring_enabled
                   - native_parquet
+                  - partition_manifest_version
+                  - partition_pruning_available
                   - preparation_enabled
                   - resource_configuration_accepted
                   - spill_limit
@@ -18959,7 +18966,524 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties: {}
+                properties:
+                  advisory:
+                    type: boolean
+                  artifact_selections:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        avoided_artifact_bytes:
+                          type: integer
+                          format: int64
+                        dataset_id:
+                          type: string
+                        dataset_revision:
+                          type: integer
+                          format: int64
+                        manifest_digest:
+                          type: string
+                        manifest_version:
+                          type: integer
+                          format: int64
+                        mode:
+                          type: string
+                        pruned_objects:
+                          type: integer
+                          format: int64
+                        selected_objects:
+                          type: integer
+                          format: int64
+                        staged_artifact_bytes:
+                          type: integer
+                          format: int64
+                        total_artifact_bytes:
+                          type: integer
+                          format: int64
+                        total_objects:
+                          type: integer
+                          format: int64
+                      required:
+                        - avoided_artifact_bytes
+                        - dataset_id
+                        - dataset_revision
+                        - manifest_version
+                        - mode
+                        - pruned_objects
+                        - selected_objects
+                        - staged_artifact_bytes
+                        - total_artifact_bytes
+                        - total_objects
+                  correlation:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        coefficient:
+                          type: number
+                          format: double
+                          nullable: true
+                        coverage:
+                          type: number
+                          format: double
+                        expected_buckets:
+                          type: integer
+                          format: int64
+                        lag_seconds:
+                          type: integer
+                          format: int64
+                        pairs:
+                          type: integer
+                          format: int64
+                      required:
+                        - coverage
+                        - expected_buckets
+                        - lag_seconds
+                        - pairs
+                  interpretation:
+                    type: string
+                  left:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        active_runtime_ms:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        dataset_id:
+                          type: string
+                        derivation:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              algorithm:
+                                type: string
+                              bucket_seconds:
+                                type: integer
+                                format: int64
+                              operation:
+                                type: string
+                            required:
+                              - algorithm
+                              - operation
+                        dimensions:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        host:
+                          type: string
+                        input_kind:
+                          type: string
+                        kind:
+                          type: string
+                        metric_name:
+                          type: string
+                        metric_version:
+                          type: string
+                        population:
+                          type: string
+                        project_id:
+                          type: string
+                        provider:
+                          type: object
+                          properties:
+                            aggregation_eligible:
+                              type: boolean
+                            analysis_statistic:
+                              type: string
+                            backend:
+                              type: string
+                            backend_profile:
+                              type: string
+                            bucket_end:
+                              type: string
+                              format: date-time
+                            bucket_start:
+                              type: string
+                              format: date-time
+                            catalog_path:
+                              type: string
+                            count:
+                              type: number
+                              format: double
+                              nullable: true
+                            definition_hash:
+                              type: string
+                            display_labels:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_step_seconds:
+                              type: integer
+                              format: int64
+                            freshness_known:
+                              type: boolean
+                            max:
+                              type: number
+                              format: double
+                              nullable: true
+                            metric_id:
+                              type: string
+                            min:
+                              type: number
+                              format: double
+                              nullable: true
+                            mode:
+                              type: string
+                            name:
+                              type: string
+                            query_id:
+                              type: string
+                            query_window:
+                              type: boolean
+                            resolution_seconds:
+                              type: integer
+                              format: int64
+                            settled:
+                              type: boolean
+                            statistic:
+                              type: string
+                            sum:
+                              type: number
+                              format: double
+                              nullable: true
+                            synthetic:
+                              type: boolean
+                            underlying_sample_time:
+                              type: string
+                              format: date-time
+                              nullable: true
+                          required:
+                            - aggregation_eligible
+                            - bucket_end
+                            - bucket_start
+                            - metric_id
+                            - name
+                            - resolution_seconds
+                            - settled
+                            - statistic
+                          nullable: true
+                        quality:
+                          type: string
+                        received_at:
+                          type: string
+                          format: date-time
+                        relative_time_ms:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_id:
+                          type: string
+                        scenario_id:
+                          type: string
+                        schema_version:
+                          type: string
+                        service:
+                          type: string
+                        source:
+                          type: string
+                        timestamp_utc:
+                          type: string
+                          format: date-time
+                        unit:
+                          type: string
+                        value:
+                          type: number
+                          format: double
+                          nullable: true
+                      required:
+                        - kind
+                        - metric_name
+                        - project_id
+                        - quality
+                        - schema_version
+                        - source
+                        - timestamp_utc
+                  request:
+                    type: object
+                    properties:
+                      bucket_seconds:
+                        type: integer
+                        format: int64
+                      from:
+                        type: string
+                        format: date-time
+                      left:
+                        type: object
+                        properties:
+                          aggregation:
+                            type: string
+                          dataset_id:
+                            type: string
+                          dimensions:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          group:
+                            type: string
+                          host:
+                            type: string
+                          metric:
+                            type: string
+                          protocol:
+                            type: string
+                          run_id:
+                            type: string
+                          service:
+                            type: string
+                          source_id:
+                            type: string
+                          transaction:
+                            type: string
+                        required:
+                          - aggregation
+                          - metric
+                      max_lag_seconds:
+                        type: integer
+                        format: int64
+                      mode:
+                        type: string
+                      right:
+                        type: object
+                        properties:
+                          aggregation:
+                            type: string
+                          dataset_id:
+                            type: string
+                          dimensions:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          group:
+                            type: string
+                          host:
+                            type: string
+                          metric:
+                            type: string
+                          protocol:
+                            type: string
+                          run_id:
+                            type: string
+                          service:
+                            type: string
+                          source_id:
+                            type: string
+                          transaction:
+                            type: string
+                        required:
+                          - aggregation
+                          - metric
+                      to:
+                        type: string
+                        format: date-time
+                    required:
+                      - bucket_seconds
+                      - from
+                      - left
+                      - max_lag_seconds
+                      - mode
+                      - right
+                      - to
+                  right:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        active_runtime_ms:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        dataset_id:
+                          type: string
+                        derivation:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              algorithm:
+                                type: string
+                              bucket_seconds:
+                                type: integer
+                                format: int64
+                              operation:
+                                type: string
+                            required:
+                              - algorithm
+                              - operation
+                        dimensions:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        host:
+                          type: string
+                        input_kind:
+                          type: string
+                        kind:
+                          type: string
+                        metric_name:
+                          type: string
+                        metric_version:
+                          type: string
+                        population:
+                          type: string
+                        project_id:
+                          type: string
+                        provider:
+                          type: object
+                          properties:
+                            aggregation_eligible:
+                              type: boolean
+                            analysis_statistic:
+                              type: string
+                            backend:
+                              type: string
+                            backend_profile:
+                              type: string
+                            bucket_end:
+                              type: string
+                              format: date-time
+                            bucket_start:
+                              type: string
+                              format: date-time
+                            catalog_path:
+                              type: string
+                            count:
+                              type: number
+                              format: double
+                              nullable: true
+                            definition_hash:
+                              type: string
+                            display_labels:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_step_seconds:
+                              type: integer
+                              format: int64
+                            freshness_known:
+                              type: boolean
+                            max:
+                              type: number
+                              format: double
+                              nullable: true
+                            metric_id:
+                              type: string
+                            min:
+                              type: number
+                              format: double
+                              nullable: true
+                            mode:
+                              type: string
+                            name:
+                              type: string
+                            query_id:
+                              type: string
+                            query_window:
+                              type: boolean
+                            resolution_seconds:
+                              type: integer
+                              format: int64
+                            settled:
+                              type: boolean
+                            statistic:
+                              type: string
+                            sum:
+                              type: number
+                              format: double
+                              nullable: true
+                            synthetic:
+                              type: boolean
+                            underlying_sample_time:
+                              type: string
+                              format: date-time
+                              nullable: true
+                          required:
+                            - aggregation_eligible
+                            - bucket_end
+                            - bucket_start
+                            - metric_id
+                            - name
+                            - resolution_seconds
+                            - settled
+                            - statistic
+                          nullable: true
+                        quality:
+                          type: string
+                        received_at:
+                          type: string
+                          format: date-time
+                        relative_time_ms:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_id:
+                          type: string
+                        scenario_id:
+                          type: string
+                        schema_version:
+                          type: string
+                        service:
+                          type: string
+                        source:
+                          type: string
+                        timestamp_utc:
+                          type: string
+                          format: date-time
+                        unit:
+                          type: string
+                        value:
+                          type: number
+                          format: double
+                          nullable: true
+                      required:
+                        - kind
+                        - metric_name
+                        - project_id
+                        - quality
+                        - schema_version
+                        - source
+                        - timestamp_utc
+                  time_window:
+                    type: object
+                    properties:
+                      from:
+                        type: string
+                        format: date-time
+                      requested_from:
+                        type: string
+                        format: date-time
+                      requested_to:
+                        type: string
+                        format: date-time
+                      resolution:
+                        type: string
+                      to:
+                        type: string
+                        format: date-time
+                    required:
+                      - from
+                      - requested_from
+                      - requested_to
+                      - resolution
+                      - to
+                    nullable: true
+                required:
+                  - advisory
+                  - interpretation
+                  - left
+                  - request
+                  - right
         "400":
           description: Bad Request
           content:
@@ -20000,6 +20524,104 @@ paths:
                     type: array
                     items:
                       type: string
+                  partition_manifest:
+                    type: object
+                    properties:
+                      dataset_id:
+                        type: string
+                      digest:
+                        type: string
+                      mapping_sha256:
+                        type: string
+                      mapping_version:
+                        type: integer
+                        format: int64
+                      partitions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bytes:
+                              type: integer
+                              format: int64
+                            object_key:
+                              type: string
+                            sha256:
+                              type: string
+                            stats:
+                              type: object
+                              properties:
+                                identity:
+                                  type: object
+                                  description: 'Go type: NormalizedPartitionIdentity'
+                                  additionalProperties: true
+                                  nullable: true
+                                identity_version:
+                                  type: integer
+                                  format: int64
+                                kind:
+                                  type: string
+                                max_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                metric:
+                                  type: string
+                                  nullable: true
+                                min_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                missing:
+                                  type: integer
+                                  format: int64
+                                rows:
+                                  type: integer
+                                  format: int64
+                                schema_version:
+                                  type: string
+                                unit:
+                                  type: string
+                                valid:
+                                  type: integer
+                                  format: int64
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - identity_version
+                                - kind
+                                - missing
+                                - rows
+                                - schema_version
+                                - unit
+                                - valid
+                                - version
+                          required:
+                            - bytes
+                            - object_key
+                            - sha256
+                            - stats
+                      producer:
+                        type: string
+                      project_id:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - dataset_id
+                      - digest
+                      - mapping_sha256
+                      - mapping_version
+                      - partitions
+                      - producer
+                      - project_id
+                      - version
+                    nullable: true
+                  partition_manifest_version:
+                    type: integer
+                    format: int64
                   project_id:
                     type: string
                   rejected:
@@ -20298,7 +20920,249 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties: {}
+                properties:
+                  artifact_selections:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        avoided_artifact_bytes:
+                          type: integer
+                          format: int64
+                        dataset_id:
+                          type: string
+                        dataset_revision:
+                          type: integer
+                          format: int64
+                        manifest_digest:
+                          type: string
+                        manifest_version:
+                          type: integer
+                          format: int64
+                        mode:
+                          type: string
+                        pruned_objects:
+                          type: integer
+                          format: int64
+                        selected_objects:
+                          type: integer
+                          format: int64
+                        staged_artifact_bytes:
+                          type: integer
+                          format: int64
+                        total_artifact_bytes:
+                          type: integer
+                          format: int64
+                        total_objects:
+                          type: integer
+                          format: int64
+                      required:
+                        - avoided_artifact_bytes
+                        - dataset_id
+                        - dataset_revision
+                        - manifest_version
+                        - mode
+                        - pruned_objects
+                        - selected_objects
+                        - staged_artifact_bytes
+                        - total_artifact_bytes
+                        - total_objects
+                  dataset_id:
+                    type: string
+                  points:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        active_runtime_ms:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        dataset_id:
+                          type: string
+                        derivation:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              algorithm:
+                                type: string
+                              bucket_seconds:
+                                type: integer
+                                format: int64
+                              operation:
+                                type: string
+                            required:
+                              - algorithm
+                              - operation
+                        dimensions:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        host:
+                          type: string
+                        input_kind:
+                          type: string
+                        kind:
+                          type: string
+                        metric_name:
+                          type: string
+                        metric_version:
+                          type: string
+                        population:
+                          type: string
+                        project_id:
+                          type: string
+                        provider:
+                          type: object
+                          properties:
+                            aggregation_eligible:
+                              type: boolean
+                            analysis_statistic:
+                              type: string
+                            backend:
+                              type: string
+                            backend_profile:
+                              type: string
+                            bucket_end:
+                              type: string
+                              format: date-time
+                            bucket_start:
+                              type: string
+                              format: date-time
+                            catalog_path:
+                              type: string
+                            count:
+                              type: number
+                              format: double
+                              nullable: true
+                            definition_hash:
+                              type: string
+                            display_labels:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            entity_ids:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            evaluation_step_seconds:
+                              type: integer
+                              format: int64
+                            freshness_known:
+                              type: boolean
+                            max:
+                              type: number
+                              format: double
+                              nullable: true
+                            metric_id:
+                              type: string
+                            min:
+                              type: number
+                              format: double
+                              nullable: true
+                            mode:
+                              type: string
+                            name:
+                              type: string
+                            query_id:
+                              type: string
+                            query_window:
+                              type: boolean
+                            resolution_seconds:
+                              type: integer
+                              format: int64
+                            settled:
+                              type: boolean
+                            statistic:
+                              type: string
+                            sum:
+                              type: number
+                              format: double
+                              nullable: true
+                            synthetic:
+                              type: boolean
+                            underlying_sample_time:
+                              type: string
+                              format: date-time
+                              nullable: true
+                          required:
+                            - aggregation_eligible
+                            - bucket_end
+                            - bucket_start
+                            - metric_id
+                            - name
+                            - resolution_seconds
+                            - settled
+                            - statistic
+                          nullable: true
+                        quality:
+                          type: string
+                        received_at:
+                          type: string
+                          format: date-time
+                        relative_time_ms:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_id:
+                          type: string
+                        scenario_id:
+                          type: string
+                        schema_version:
+                          type: string
+                        service:
+                          type: string
+                        source:
+                          type: string
+                        timestamp_utc:
+                          type: string
+                          format: date-time
+                        unit:
+                          type: string
+                        value:
+                          type: number
+                          format: double
+                          nullable: true
+                      required:
+                        - kind
+                        - metric_name
+                        - project_id
+                        - quality
+                        - schema_version
+                        - source
+                        - timestamp_utc
+                  rejected_rows:
+                    type: integer
+                    format: int64
+                  time_window:
+                    type: object
+                    properties:
+                      from:
+                        type: string
+                        format: date-time
+                      requested_from:
+                        type: string
+                        format: date-time
+                      requested_to:
+                        type: string
+                        format: date-time
+                      resolution:
+                        type: string
+                      to:
+                        type: string
+                        format: date-time
+                    required:
+                      - from
+                      - requested_from
+                      - requested_to
+                      - resolution
+                      - to
+                    nullable: true
+                required:
+                  - dataset_id
+                  - points
+                  - rejected_rows
         "400":
           description: Bad Request
           content:
@@ -20674,6 +21538,104 @@ paths:
                     type: array
                     items:
                       type: string
+                  partition_manifest:
+                    type: object
+                    properties:
+                      dataset_id:
+                        type: string
+                      digest:
+                        type: string
+                      mapping_sha256:
+                        type: string
+                      mapping_version:
+                        type: integer
+                        format: int64
+                      partitions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bytes:
+                              type: integer
+                              format: int64
+                            object_key:
+                              type: string
+                            sha256:
+                              type: string
+                            stats:
+                              type: object
+                              properties:
+                                identity:
+                                  type: object
+                                  description: 'Go type: NormalizedPartitionIdentity'
+                                  additionalProperties: true
+                                  nullable: true
+                                identity_version:
+                                  type: integer
+                                  format: int64
+                                kind:
+                                  type: string
+                                max_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                metric:
+                                  type: string
+                                  nullable: true
+                                min_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                missing:
+                                  type: integer
+                                  format: int64
+                                rows:
+                                  type: integer
+                                  format: int64
+                                schema_version:
+                                  type: string
+                                unit:
+                                  type: string
+                                valid:
+                                  type: integer
+                                  format: int64
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - identity_version
+                                - kind
+                                - missing
+                                - rows
+                                - schema_version
+                                - unit
+                                - valid
+                                - version
+                          required:
+                            - bytes
+                            - object_key
+                            - sha256
+                            - stats
+                      producer:
+                        type: string
+                      project_id:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - dataset_id
+                      - digest
+                      - mapping_sha256
+                      - mapping_version
+                      - partitions
+                      - producer
+                      - project_id
+                      - version
+                    nullable: true
+                  partition_manifest_version:
+                    type: integer
+                    format: int64
                   project_id:
                     type: string
                   rejected:
@@ -20939,6 +21901,104 @@ paths:
                     type: array
                     items:
                       type: string
+                  partition_manifest:
+                    type: object
+                    properties:
+                      dataset_id:
+                        type: string
+                      digest:
+                        type: string
+                      mapping_sha256:
+                        type: string
+                      mapping_version:
+                        type: integer
+                        format: int64
+                      partitions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bytes:
+                              type: integer
+                              format: int64
+                            object_key:
+                              type: string
+                            sha256:
+                              type: string
+                            stats:
+                              type: object
+                              properties:
+                                identity:
+                                  type: object
+                                  description: 'Go type: NormalizedPartitionIdentity'
+                                  additionalProperties: true
+                                  nullable: true
+                                identity_version:
+                                  type: integer
+                                  format: int64
+                                kind:
+                                  type: string
+                                max_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                metric:
+                                  type: string
+                                  nullable: true
+                                min_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                missing:
+                                  type: integer
+                                  format: int64
+                                rows:
+                                  type: integer
+                                  format: int64
+                                schema_version:
+                                  type: string
+                                unit:
+                                  type: string
+                                valid:
+                                  type: integer
+                                  format: int64
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - identity_version
+                                - kind
+                                - missing
+                                - rows
+                                - schema_version
+                                - unit
+                                - valid
+                                - version
+                          required:
+                            - bytes
+                            - object_key
+                            - sha256
+                            - stats
+                      producer:
+                        type: string
+                      project_id:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - dataset_id
+                      - digest
+                      - mapping_sha256
+                      - mapping_version
+                      - partitions
+                      - producer
+                      - project_id
+                      - version
+                    nullable: true
+                  partition_manifest_version:
+                    type: integer
+                    format: int64
                   project_id:
                     type: string
                   rejected:
@@ -21205,6 +22265,104 @@ paths:
                     type: array
                     items:
                       type: string
+                  partition_manifest:
+                    type: object
+                    properties:
+                      dataset_id:
+                        type: string
+                      digest:
+                        type: string
+                      mapping_sha256:
+                        type: string
+                      mapping_version:
+                        type: integer
+                        format: int64
+                      partitions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bytes:
+                              type: integer
+                              format: int64
+                            object_key:
+                              type: string
+                            sha256:
+                              type: string
+                            stats:
+                              type: object
+                              properties:
+                                identity:
+                                  type: object
+                                  description: 'Go type: NormalizedPartitionIdentity'
+                                  additionalProperties: true
+                                  nullable: true
+                                identity_version:
+                                  type: integer
+                                  format: int64
+                                kind:
+                                  type: string
+                                max_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                metric:
+                                  type: string
+                                  nullable: true
+                                min_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                missing:
+                                  type: integer
+                                  format: int64
+                                rows:
+                                  type: integer
+                                  format: int64
+                                schema_version:
+                                  type: string
+                                unit:
+                                  type: string
+                                valid:
+                                  type: integer
+                                  format: int64
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - identity_version
+                                - kind
+                                - missing
+                                - rows
+                                - schema_version
+                                - unit
+                                - valid
+                                - version
+                          required:
+                            - bytes
+                            - object_key
+                            - sha256
+                            - stats
+                      producer:
+                        type: string
+                      project_id:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - dataset_id
+                      - digest
+                      - mapping_sha256
+                      - mapping_version
+                      - partitions
+                      - producer
+                      - project_id
+                      - version
+                    nullable: true
+                  partition_manifest_version:
+                    type: integer
+                    format: int64
                   project_id:
                     type: string
                   rejected:
@@ -21421,6 +22579,104 @@ paths:
                     type: array
                     items:
                       type: string
+                  partition_manifest:
+                    type: object
+                    properties:
+                      dataset_id:
+                        type: string
+                      digest:
+                        type: string
+                      mapping_sha256:
+                        type: string
+                      mapping_version:
+                        type: integer
+                        format: int64
+                      partitions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bytes:
+                              type: integer
+                              format: int64
+                            object_key:
+                              type: string
+                            sha256:
+                              type: string
+                            stats:
+                              type: object
+                              properties:
+                                identity:
+                                  type: object
+                                  description: 'Go type: NormalizedPartitionIdentity'
+                                  additionalProperties: true
+                                  nullable: true
+                                identity_version:
+                                  type: integer
+                                  format: int64
+                                kind:
+                                  type: string
+                                max_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                metric:
+                                  type: string
+                                  nullable: true
+                                min_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                missing:
+                                  type: integer
+                                  format: int64
+                                rows:
+                                  type: integer
+                                  format: int64
+                                schema_version:
+                                  type: string
+                                unit:
+                                  type: string
+                                valid:
+                                  type: integer
+                                  format: int64
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - identity_version
+                                - kind
+                                - missing
+                                - rows
+                                - schema_version
+                                - unit
+                                - valid
+                                - version
+                          required:
+                            - bytes
+                            - object_key
+                            - sha256
+                            - stats
+                      producer:
+                        type: string
+                      project_id:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - dataset_id
+                      - digest
+                      - mapping_sha256
+                      - mapping_version
+                      - partitions
+                      - producer
+                      - project_id
+                      - version
+                    nullable: true
+                  partition_manifest_version:
+                    type: integer
+                    format: int64
                   project_id:
                     type: string
                   rejected:
@@ -366731,298 +367987,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  annotations:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        created_at:
-                          type: string
-                          format: date-time
-                        created_by:
-                          type: string
-                        deleted_at:
-                          type: string
-                          format: date-time
-                          nullable: true
-                        deleted_by:
-                          type: string
-                        id:
-                          type: string
-                        label:
-                          type: string
-                        text:
-                          type: string
-                        timestamp:
-                          type: string
-                          format: date-time
-                      required:
-                        - created_at
-                        - created_by
-                        - id
-                        - label
-                        - timestamp
-                  correlation:
-                    type: object
-                    additionalProperties:
-                      type: array
-                      items:
-                        type: object
-                        properties:
-                          coefficient:
-                            type: number
-                            format: double
-                            nullable: true
-                          coverage:
-                            type: number
-                            format: double
-                          expected_buckets:
-                            type: integer
-                            format: int64
-                          lag_seconds:
-                            type: integer
-                            format: int64
-                          pairs:
-                            type: integer
-                            format: int64
-                        required:
-                          - coverage
-                          - expected_buckets
-                          - lag_seconds
-                          - pairs
-                  from:
-                    type: string
-                    format: date-time
-                  live_bucket_mode:
-                    type: string
-                  mode:
-                    type: string
-                  overlay:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        active_runtime_ms:
-                          type: integer
-                          format: int64
-                          nullable: true
-                        dataset_id:
-                          type: string
-                        derivation:
-                          type: array
-                          items:
-                            type: object
-                            properties:
-                              algorithm:
-                                type: string
-                              bucket_seconds:
-                                type: integer
-                                format: int64
-                              operation:
-                                type: string
-                            required:
-                              - algorithm
-                              - operation
-                        dimensions:
-                          type: object
-                          additionalProperties:
-                            type: string
-                        host:
-                          type: string
-                        input_kind:
-                          type: string
-                        kind:
-                          type: string
-                        metric_name:
-                          type: string
-                        metric_version:
-                          type: string
-                        population:
-                          type: string
-                        project_id:
-                          type: string
-                        provider:
-                          type: object
-                          properties:
-                            aggregation_eligible:
-                              type: boolean
-                            analysis_statistic:
-                              type: string
-                            backend:
-                              type: string
-                            backend_profile:
-                              type: string
-                            bucket_end:
-                              type: string
-                              format: date-time
-                            bucket_start:
-                              type: string
-                              format: date-time
-                            catalog_path:
-                              type: string
-                            count:
-                              type: number
-                              format: double
-                              nullable: true
-                            definition_hash:
-                              type: string
-                            display_labels:
-                              type: object
-                              additionalProperties:
-                                type: string
-                            entity_ids:
-                              type: object
-                              additionalProperties:
-                                type: string
-                            evaluation_step_seconds:
-                              type: integer
-                              format: int64
-                            freshness_known:
-                              type: boolean
-                            max:
-                              type: number
-                              format: double
-                              nullable: true
-                            metric_id:
-                              type: string
-                            min:
-                              type: number
-                              format: double
-                              nullable: true
-                            mode:
-                              type: string
-                            name:
-                              type: string
-                            query_id:
-                              type: string
-                            query_window:
-                              type: boolean
-                            resolution_seconds:
-                              type: integer
-                              format: int64
-                            settled:
-                              type: boolean
-                            statistic:
-                              type: string
-                            sum:
-                              type: number
-                              format: double
-                              nullable: true
-                            synthetic:
-                              type: boolean
-                            underlying_sample_time:
-                              type: string
-                              format: date-time
-                              nullable: true
-                          required:
-                            - aggregation_eligible
-                            - bucket_end
-                            - bucket_start
-                            - metric_id
-                            - name
-                            - resolution_seconds
-                            - settled
-                            - statistic
-                          nullable: true
-                        quality:
-                          type: string
-                        received_at:
-                          type: string
-                          format: date-time
-                        relative_time_ms:
-                          type: integer
-                          format: int64
-                          nullable: true
-                        run_id:
-                          type: string
-                        scenario_id:
-                          type: string
-                        schema_version:
-                          type: string
-                        service:
-                          type: string
-                        source:
-                          type: string
-                        timestamp_utc:
-                          type: string
-                          format: date-time
-                        unit:
-                          type: string
-                        value:
-                          type: number
-                          format: double
-                          nullable: true
-                      required:
-                        - kind
-                        - metric_name
-                        - project_id
-                        - quality
-                        - schema_version
-                        - source
-                        - timestamp_utc
-                  series:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        name:
-                          type: string
-                        points:
-                          type: array
-                          items:
-                            type: object
-                            properties:
-                              count:
-                                type: integer
-                                format: int64
-                              coverage:
-                                type: number
-                                format: double
-                                nullable: true
-                              from:
-                                type: string
-                                format: date-time
-                              offset_seconds:
-                                type: number
-                                format: double
-                              to:
-                                type: string
-                                format: date-time
-                              value:
-                                type: number
-                                format: double
-                                nullable: true
-                            required:
-                              - count
-                              - from
-                              - offset_seconds
-                              - to
-                              - value
-                        unit:
-                          type: string
-                      required:
-                        - name
-                        - points
-                        - unit
-                  start:
-                    type: string
-                    format: date-time
-                  to:
-                    type: string
-                    format: date-time
-                  warnings:
-                    type: array
-                    items:
-                      type: string
-                required:
-                  - from
-                  - mode
-                  - series
-                  - start
-                  - to
-                  - warnings
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:

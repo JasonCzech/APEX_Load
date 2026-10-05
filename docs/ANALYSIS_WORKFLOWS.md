@@ -157,6 +157,30 @@ an optional coefficient; constant or insufficient evidence stays unscored.
 Correlation is association, never proof of causation. Saved comparison
 definitions are revisioned and recheck ownership when used.
 
+New normalization attempts retain a versioned producer manifest in the existing
+import metadata and sealed publication receipt. Each normalized object has its
+verified hash, size, row/quality counts, UTC time range and any proven constant
+metric/full identity. Queries select objects from this immutable proof before
+artifact access. Mixed or unknown categories, and nonempty all-missing files,
+remain eligible for scanning; historical datasets without manifests use full
+scans. Present invalid manifests fail explicitly. File names and independently
+varying marginal dimensions do not establish a joint identity.
+
+Successful native query responses may include `artifact_selections`: exact
+selected/pruned object counts and staged/avoided artifact bytes, tied to the
+dataset revision and manifest digest. These are verified artifact geometry,
+not DuckDB physical scan bytes, memory consumption or elapsed performance.
+Selection never grants later read authority: scope, association, revision and
+deadline are checked again before response publication.
+
+Canonical Parquet timestamps use microseconds. Dataset queries, comparisons
+and overlays apply the same UTC microsecond window to both analytical sides
+and report requested and effective bounds in optional `time_window` metadata.
+Retained source timestamps and run start times remain unchanged. A window that
+collapses at this precision is refused at the API. Whole-publication rate
+coverage rules still apply: rounding a boundary cannot prorate a partial
+publication into a complete observed interval.
+
 Low-level CLI workflows support descriptors and JSON mappings without loading a
 whole Parquet file into memory:
 

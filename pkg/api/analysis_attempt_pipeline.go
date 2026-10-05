@@ -3,11 +3,13 @@ package api
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/analysis"
 	analytics "github.com/jasonczech/apexload/pkg/analysis/duckdb"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -88,6 +90,11 @@ func (s *Server) normalizeAnalysisImportOwned(parent context.Context, store stor
 		if err != nil {
 			return err
 		}
+		proofs, err := analysisNormalizedOutputProofs(in, result)
+		if err != nil {
+			return err
+		}
+		partitions := make([]analysis.NormalizedPartition, 0, len(result.Files))
 		in.Accepted, in.Rejected, in.Rejections = result.Accepted, result.Rejected, result.Rejections
 		in.NormalizedSHA256 = map[string]string{}
 		in.RejectionSHA256 = map[string]string{}
@@ -98,10 +105,23 @@ func (s *Server) normalizeAnalysisImportOwned(parent context.Context, store stor
 			if err != nil {
 				return err
 			}
-			digest, writeErr := analysisObjectWrite(ctx, key, reader)
+			proof, normalized := proofs[file]
+			copyReader := io.Reader(reader)
+			if normalized {
+				copyReader = io.LimitReader(reader, proof.Bytes+1)
+			}
+			counted := &analysisOutputCountingReader{reader: copyReader}
+			digest, writeErr := analysisObjectWrite(ctx, key, counted)
 			closeErr := reader.Close()
 			if err = errors.Join(writeErr, closeErr); err != nil {
 				return err
+			}
+			if normalized {
+				partition, err := analysisCopiedPartition(key, proof, counted.bytes, digest)
+				if err != nil {
+					return err
+				}
+				partitions = append(partitions, partition)
 			}
 			if strings.HasPrefix(filepath.Base(file), "reject-") {
 				in.RejectionArtifacts = append(in.RejectionArtifacts, key)
@@ -109,6 +129,17 @@ func (s *Server) normalizeAnalysisImportOwned(parent context.Context, store stor
 			} else {
 				in.NormalizedSHA256[key] = digest
 			}
+		}
+		if in.PartitionManifestVersion == analysis.PartitionManifestVersion {
+			in.PartitionManifest, err = analysis.NewNormalizedPartitionManifest(in.ProjectID, in.ID, *in.Mapping, partitions)
+			if err != nil {
+				return err
+			}
+			if err = validateAnalysisQueryManifest(&in); err != nil {
+				return err
+			}
+		} else if in.PartitionManifest != nil {
+			return analysis.ErrPartitionManifest
 		}
 		// No SQL receipt invents OS proof. These trusted calls are reachable only
 		// after the exact supervisor/result and every synchronous copy have closed.

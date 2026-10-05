@@ -1,0 +1,50 @@
+{
+  "reviewed_at": "2026-10-05T08:23:20.174570+00:00",
+  "reviewer": "script_revision_storage",
+  "worktree": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+  "scope": "Authorized native producer-proof regression fixtures and upload metadata refusal/seal fix",
+  "result": "Review/fix/review complete with no further actionable findings in the owned diff",
+  "files": {
+    "pkg/analysis/duckdb/worker_review_regression_test.go": "abfe2c0d8f56eaaf1f48c5d055cfef1a3c4c3ea2af5c4d1eef85b1812769f717",
+    "pkg/storage/analysis_upload_writers.go": "4d4a5b33daeca7ebb937927ea0ec37ac68542360a1e2bf26edbc9366ca65323d",
+    "pkg/storage/analysis_upload_writers_test.go": "24f406a5c79a510f6d499640040c2f6d25db0346134b626fe0f59c4a948cd871",
+    "pkg/storage/analysis_upload_writers_postgres_test.go": "8f58f75316481748c3e3c132c90d816da3ddc42cdd7cf354d6889e861e29fed9"
+  },
+  "evidence": {
+    "native-upload-worker-fixtures-default-parameterized": {
+      "duration_seconds": 12.892,
+      "log_sha256": "7156d1d28f5b01f5b6044bd45c8d4ea701aa463774680ab8f96e266ccebf198e",
+      "receipt_sha256": "e0033cfd786889ba68a990b6a9bd0fe546b98c0364503bde3d2b8012a4dcd998",
+      "owned_source_frozen": true
+    },
+    "native-upload-worker-fixtures-duckdb-parameterized": {
+      "duration_seconds": 42.339,
+      "log_sha256": "2fdaf9042b8469a9cb6c8a2032363b98d1ebd5d9a3e40c5e12903ee0518c17db",
+      "receipt_sha256": "09741082509138ee0298bbd8ca2533a62a5d7816df79a43542cca05b874d8c7c",
+      "owned_source_frozen": true
+    },
+    "native-upload-partitions-postgres-normal": {
+      "duration_seconds": 15.871,
+      "log_sha256": "cd0d2a7e42dba4eecd3121750af7947cf6cb5ba0c1549d5d5489757d965984cd",
+      "receipt_sha256": "2365884c69e906dc12644ef35ffbfcba5af605ee888c23bafe60554c5292e261",
+      "owned_source_frozen": true
+    },
+    "native-upload-partitions-postgres-race": {
+      "duration_seconds": 49.446,
+      "log_sha256": "171f745ca9b07cc7669bacd287a73f1d477d23dbabb7f2c318fbe8b393253fae",
+      "receipt_sha256": "12b94ecf1e916a3f8986827dcd59130e4e22674fb2624e366cdee5511669d774",
+      "owned_source_frozen": true
+    }
+  },
+  "retained_failed_attempts": [
+    "native-upload-bounded-seal-before-fix",
+    "native-upload-bounded-seal-before-fix-corrected"
+  ],
+  "notes": [
+    "First failed attempt retained a fixture sizing error; corrected pre-fix attempt reached the production raw-pass/bounded-fail seam and returned ErrAnalysisAuthority before sealing",
+    "Completion and durable metadata update now use the same bounded2MiB preflight; known metadata-limit refusal persists physical closure and exact output cleanup without cursor advance",
+    "Same exact and near-boundary exercise ran on SQLite and independently opened actual PostgreSQL16 stores; unique owned schemas were boundedly dropped and absence verified by their fixtures",
+    "Unknown-row worker regression maintains valid per-partition summaries so it still reaches per-measure population inference",
+    "No commit, all-suite or cache cleanup performed by this reviewer"
+  ]
+}

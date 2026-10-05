@@ -332,7 +332,12 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 				if err = syncNormalizedFile(out); err != nil {
 					return err
 				}
+				stats, err := nativePartitionStats(ctx, db, out, request, measure)
+				if err != nil {
+					return err
+				}
 				result.Files = append(result.Files, out)
+				result.Partitions = append(result.Partitions, NormalizedFilePartition{File: out, Stats: stats})
 			}
 		}
 		return nil
@@ -340,43 +345,53 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 	return result, err
 }
 
-func (e *Engine) childNativeSeries(ctx context.Context, files []string, q SeriesQuery) (points []analysis.MetricPoint, err error) {
+func (e *Engine) childNativeSeries(ctx context.Context, files []string, q SeriesQuery) ([]analysis.MetricPoint, error) {
+	points, _, err := e.childNativeSeriesBounds(ctx, files, q)
+	return points, err
+}
+func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q SeriesQuery) (points []analysis.MetricPoint, bounds workerSeriesBounds, err error) {
 	if err = q.Validate(); err != nil {
-		return nil, err
+		return nil, bounds, err
 	}
 	if len(files) == 0 || len(files) > 1024 {
-		return nil, errors.New("analytical file count exceeds limit")
+		return nil, bounds, errors.New("analytical file count exceeds limit")
 	}
 	paths := make([]string, len(files))
 	for i, p := range files {
 		path, err := e.authorizedPath(p)
 		if err != nil {
-			return nil, err
+			return nil, bounds, err
 		}
 		paths[i] = path
 	}
 	points = []analysis.MetricPoint{}
 	err = e.withDB(ctx, func(ctx context.Context, db *sql.DB) error {
+		// Gap filling uses the exact same approved native timestamp casts as
+		// the SQL filter and bucket origin, including pre-epoch instants.
+		if err := db.QueryRowContext(ctx, nativeSeriesBoundsSQL(q)).Scan(&bounds.From, &bounds.To); err != nil {
+			return err
+		}
+		bounds.From, bounds.To = bounds.From.UTC(), bounds.To.UTC()
+		if _, err := workerAdmitSeriesBounds(q, &bounds); err != nil {
+			return err
+		}
 		table, err := nativeIdentityTable(paths)
 		if err != nil {
 			return err
 		}
-		filter := "project_id=" + literal(q.ProjectID) + " AND dataset_id=" + literal(q.DatasetID) + " AND metric_name=" + literal(q.Metric) + " AND timestamp_utc >= TIMESTAMPTZ " + literal(q.From.UTC().Format(time.RFC3339Nano)) + " AND timestamp_utc < TIMESTAMPTZ " + literal(q.To.UTC().Format(time.RFC3339Nano))
-		filter += nativeIdentityFilter(q)
 		// Imported canonical artifacts currently support valid finite samples
 		// and explicit missing samples. Never silently discard other quality
 		// markers, or aggregate their values into a healthy-looking bucket.
 		// Admission covers the complete selected population before rates or
 		// any other aggregation; malformed and unsupported evidence fails.
 		var invalidQuality int64
-		qualityAdmission := "(quality='valid' AND value IS NOT NULL AND isfinite(value)) OR (quality='missing' AND value IS NULL)"
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM "+table+" WHERE "+filter+" AND NOT coalesce(("+qualityAdmission+"),false)").Scan(&invalidQuality); err != nil {
+		if err := db.QueryRowContext(ctx, nativeSeriesQualitySQL(table, q)).Scan(&invalidQuality); err != nil {
 			return err
 		}
 		if invalidQuality != 0 {
 			return fmt.Errorf("%w: selected canonical evidence has unsupported or inconsistent quality/value semantics", errWorkerProtocol)
 		}
-		rows, err := db.QueryContext(ctx, "SELECT DISTINCT schema_version,kind,unit,identity_version,source,host,service,dimensions_json FROM "+table+" WHERE "+filter+" LIMIT 2")
+		rows, err := db.QueryContext(ctx, nativeSeriesMetadataSQL(table, q))
 		if err != nil {
 			return err
 		}
@@ -426,26 +441,17 @@ func (e *Engine) childNativeSeries(ctx context.Context, files []string, q Series
 		if err != nil {
 			return err
 		}
-		origin := "TIMESTAMPTZ " + literal(q.From.UTC().Format(time.RFC3339Nano))
-		bucket := "(" + origin + " + floor(epoch(timestamp_utc-" + origin + ")/" + strconv.Itoa(q.BucketSeconds) + ")*" + strconv.Itoa(q.BucketSeconds) + "*INTERVAL '1 second')"
-		agg := map[string]string{"avg": "avg(value)", "min": "min(value)", "max": "max(value)", "sum": "sum(value)", "count": "count(value)", "p50": "quantile_cont(value,0.5)", "p95": "quantile_cont(value,0.95)", "p99": "quantile_cont(value,0.99)"}[q.Aggregation]
-		from := table + " WHERE " + filter
+		querySQL, err := nativeSeriesAggregationSQL(table, q, kind)
+		if err != nil {
+			return err
+		}
 		if q.Aggregation == "count" {
 			unit = "count"
 		}
 		if q.Aggregation == "rate" {
-			// Reset intervals and duplicate timestamps are explicitly missing.
-			// Collapse duplicate instants to missing before differencing. Missing
-			// samples break the chain, and any reset invalidates its entire bucket.
-			from = "(SELECT timestamp_utc, CASE WHEN value>=lag(value) OVER w AND timestamp_utc>lag(timestamp_utc) OVER w THEN (value-lag(value) OVER w)/epoch(timestamp_utc-lag(timestamp_utc) OVER w) ELSE NULL END AS value FROM (SELECT timestamp_utc, CASE WHEN count(*)=1 AND count(value)=1 THEN min(value) ELSE NULL END AS value FROM " + table + " WHERE " + filter + " GROUP BY timestamp_utc) WINDOW w AS (ORDER BY timestamp_utc))"
-			agg = "CASE WHEN count(value)=count(*) THEN avg(value) ELSE NULL END"
 			unit += "/s"
 		}
-		if q.Aggregation != "rate" {
-			// A partially missing bucket is incomplete evidence, including count.
-			agg = "CASE WHEN count(value)=count(*) THEN " + agg + " ELSE NULL END"
-		}
-		rows, err = db.QueryContext(ctx, "SELECT "+bucket+" AS bucket, "+agg+" FROM "+from+" GROUP BY bucket ORDER BY bucket LIMIT 10001")
+		rows, err = db.QueryContext(ctx, querySQL)
 		if err != nil {
 			return err
 		}
@@ -479,7 +485,10 @@ func (e *Engine) childNativeSeries(ctx context.Context, files []string, q Series
 			byTime[p.TimestampUTC] = p
 		}
 		points = points[:0]
-		for at := q.From.UTC(); at.Before(q.To); at = at.Add(time.Duration(q.BucketSeconds) * time.Second) {
+		for at := bounds.From; at.Before(bounds.To); at = at.Add(time.Duration(q.BucketSeconds) * time.Second) {
+			if len(points) >= analysis.MaxSeriesPoints {
+				return errors.New("analytical result exceeds point limit")
+			}
 			p, ok := byTime[at]
 			if !ok {
 				p = analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: source, Host: host, Service: service, Dimensions: maps.Clone(dimensions), TimestampUTC: at, MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Derivation: append([]analysis.DerivationStep(nil), lineage...), Unit: unit, Quality: analysis.QualityMissing}
@@ -488,5 +497,5 @@ func (e *Engine) childNativeSeries(ctx context.Context, files []string, q Series
 		}
 		return nil
 	})
-	return points, err
+	return points, bounds, err
 }

@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "label": "producer-initial",
+      "command": [
+        "go",
+        "test",
+        "-tags",
+        "analytics_duckdb",
+        "./pkg/analysis/duckdb",
+        "-run",
+        "^Test(NativePartitionProducer|WorkerPartitionMetadata)",
+        "-count=1"
+      ],
+      "original_path": "/private/tmp/apexload-native-pruning-producer-initial.log",
+      "retained_path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/owned-producer-initial-private.log",
+      "log_bytes": 63,
+      "log_sha256": "6171e607c2bdde74e73d84b9c137843cafa6bf4ccb963bf375633298ceefcb19",
+      "provenance": "Initial private gate. Before/after source inventory was not captured; this raw log does not certify the final frozen source."
+    },
+    {
+      "label": "storage-initial",
+      "command": [
+        "go",
+        "test",
+        "./pkg/storage",
+        "-run",
+        "^TestAnalysis(PartitionManifest|Native|Imports)",
+        "-count=1"
+      ],
+      "original_path": "/private/tmp/apexload-native-pruning-storage-initial.log",
+      "retained_path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/owned-storage-initial-private.log",
+      "log_bytes": 55,
+      "log_sha256": "1656a52064d78eea791f2399de8409ef13e5b2ae557fb5332a94dae77f0fb210",
+      "provenance": "Initial private gate. Before/after source inventory was not captured; this raw log does not certify the final frozen source."
+    },
+    {
+      "label": "metadata-repeat",
+      "command": [
+        "go",
+        "test",
+        "./pkg/analysis",
+        "./pkg/analysis/duckdb",
+        "./pkg/storage",
+        "-run",
+        "^Test(PartitionManifest|WorkerPartition|AnalysisPartitionManifest|AnalysisNative)",
+        "-count=1"
+      ],
+      "original_path": "/private/tmp/apexload-native-pruning-metadata-repeat.log",
+      "retained_path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/owned-metadata-repeat-private.log",
+      "log_bytes": 174,
+      "log_sha256": "8d09ae2293a6cdd7c28ba1460fa4cc57f4edfb8feb299dfd15032a79248e1378",
+      "provenance": "Initial private gate. Before/after source inventory was not captured; this raw log does not certify the final frozen source."
+    }
+  ]
+}

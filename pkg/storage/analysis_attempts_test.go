@@ -45,6 +45,27 @@ func nativeAttemptPublicationFixture(t *testing.T, in *AnalysisImport, a *Analys
 	value.RejectionArtifacts = nil
 	value.RejectionSHA256 = nil
 	value.Accepted = 3
+	if a.PartitionManifestVersion == analysis.PartitionManifestVersion {
+		at := time.Unix(1700000000, 0).UTC()
+		parts := make([]analysis.NormalizedPartition, len(value.Normalized))
+		for i, key := range value.Normalized {
+			rows := int64(0)
+			if i == 0 {
+				rows = value.Accepted
+			}
+			stats := analysis.NormalizedPartitionStats{Version: analysis.PartitionManifestVersion, SchemaVersion: analysis.SchemaVersion, IdentityVersion: value.Mapping.Version, Kind: value.Mapping.Measures[i%len(value.Mapping.Measures)].Kind, Unit: value.Mapping.Measures[i%len(value.Mapping.Measures)].Unit, Rows: rows, Valid: rows}
+			if rows > 0 {
+				stats.MinTime = &at
+				stats.MaxTime = &at
+			}
+			parts[i] = analysis.NormalizedPartition{ObjectKey: key, SHA256: value.NormalizedSHA256[key], Bytes: 100, Stats: stats}
+		}
+		var err error
+		value.PartitionManifest, err = analysis.NewNormalizedPartitionManifest(value.ProjectID, value.ID, *value.Mapping, parts)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	digest, err := AnalysisAttemptResultDigest(value)
 	if err != nil {
 		t.Fatal(err)
@@ -119,7 +140,7 @@ func exerciseAnalysisNativeAttemptAuthority(t *testing.T, first, second *SQLiteS
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ready.State != "ready" || ready.Owner != "" {
+	if ready.State != "ready" || ready.Owner != "" || ready.PartitionManifestVersion != analysis.PartitionManifestVersion || ready.PartitionManifest == nil || ready.PartitionManifest.Validate() != nil {
 		t.Fatal("publication did not clear active ownership")
 	}
 	ready.RunID = "monitor-run"
@@ -130,6 +151,25 @@ func exerciseAnalysisNativeAttemptAuthority(t *testing.T, first, second *SQLiteS
 	replay, err := second.PublishAnalysisImportAttempt(ctx, publication)
 	if err != nil || replay.Revision >= ready.Revision {
 		t.Fatal("matching lost-response publication did not reconcile original receipt", err)
+	}
+	proofReplay := publication
+	proofReplay.Import.PartitionManifest = publication.Import.PartitionManifest.Clone()
+	proofParts := proofReplay.Import.PartitionManifest.Partitions
+	future := proofParts[0].Stats.MaxTime.Add(time.Second)
+	proofParts[0].Stats.MaxTime = &future
+	proofReplay.Import.PartitionManifest, err = analysis.NewNormalizedPartitionManifest(in.ProjectID, in.ID, *in.Mapping, proofParts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proofReplay.Digest, err = AnalysisAttemptResultDigest(proofReplay.Import)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = second.PublishAnalysisImportAttempt(ctx, proofReplay); !errors.Is(err, ErrAnalysisAuthority) {
+		t.Fatal("different pruning proof reused a published receipt", err)
+	}
+	if !reflect.DeepEqual(replay.PartitionManifest, publication.Import.PartitionManifest) {
+		t.Fatal("publication reconciliation changed immutable proof")
 	}
 	resolution, err := second.ResolveAnalysisAttemptPublication(ctx, in.ID, in.ProjectID, winner.attempt.ID, publication.Digest)
 	if err != nil || !resolution.Published {

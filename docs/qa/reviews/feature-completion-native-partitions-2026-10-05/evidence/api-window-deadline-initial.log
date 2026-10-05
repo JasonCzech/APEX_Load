@@ -1,0 +1,15 @@
+2026/10/05 03:50:44 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 03:50:44 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 03:50:44 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 03:50:44 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 03:50:44 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 03:50:44 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 03:50:44 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 03:50:44 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 03:50:44 ERROR internal server error ref=a5373669bfe122c9 status=501 detail="native analytics unavailable: build controller with CGO and analytics_duckdb"
+--- FAIL: TestNativeDatasetSeriesHandlerRefusesLateInitialMetadataReply (0.15s)
+    analysis_time_window_test.go:96: late metadata admitted to native work 501 {"error":"internal server error","ref":"a5373669bfe122c9"}
+        
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/api	2.095s
+FAIL

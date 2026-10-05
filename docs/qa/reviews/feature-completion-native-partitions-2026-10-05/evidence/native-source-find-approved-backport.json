@@ -1,0 +1,42 @@
+{
+  "applied_utc": "2026-10-05T10:00:02.290615+00:00",
+  "scope": "Only reviewed stable CodeMirror setup/current-owner callback, exact assist function dependency, meaningful adjacent component regression, and held real metadata Find browser regression; no authoring CAS/revision changes.",
+  "before": [
+    {
+      "path": "dashboard/src/components/ScriptJsonAuthoringView.tsx",
+      "sha256": "1c632faa33bbd085ebd90215211136c9f88fc21cebba90c3d9020a89176be0b8"
+    },
+    {
+      "path": "dashboard/src/components/ScriptEditor.tsx",
+      "sha256": "dc9cfca1d3e24c7352f1d3a54b377f31d8e00d8a1585427ddfca98752f675085"
+    },
+    {
+      "path": "dashboard/e2e/workflow-script-editor.spec.ts",
+      "sha256": "e32f5129302bd10112e251dd2b3d1521e1f52e554f8cbce2562988484c9c3f5e"
+    }
+  ],
+  "after": [
+    {
+      "path": "dashboard/src/components/ScriptJsonAuthoringView.tsx",
+      "sha256": "ea54c1441babb42a5c37aa9a41fd944b94c6ff1fcce6297d2ab1f7aec8542fa0"
+    },
+    {
+      "path": "dashboard/src/components/ScriptEditor.tsx",
+      "sha256": "c2b82fcd0d32d8e96ce47e0163cb0cc45358f4ef0c2826f7ed759a24fa8952ca"
+    },
+    {
+      "path": "dashboard/e2e/workflow-script-editor.spec.ts",
+      "sha256": "d4664761405f20bd4402b0003981926b496b86ac6f00165651bd3eb12998d5f6"
+    },
+    {
+      "path": "dashboard/src/components/ScriptJsonAuthoringView.test.tsx",
+      "sha256": "62dc5af20dad0bc437ad4f0b1469f7a31bd8dd426d798340ecf68bf9aafcf959"
+    }
+  ],
+  "failed_cycle": {
+    "receipt_sha256": "245407ab1778cffc588a425a4bff377a15ee5b02371c04bb08607de6546e1326",
+    "raw_sha256": "c3a7422279036c5a6e7b6021267ab5265bc213bc6c8b1d05a89869d4760bf2e0",
+    "duration_seconds": 2265.696
+  },
+  "prior_embed_unchanged_before_backport": true
+}

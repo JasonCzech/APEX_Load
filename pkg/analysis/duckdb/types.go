@@ -31,13 +31,23 @@ type NormalizeRequest struct {
 	Mapping       Mapping
 	AllowRejected bool
 }
+
+// NormalizedFilePartition binds a bounded producer summary to its physical output.
+// File is an owned local output, never a durable artifact key.
+type NormalizedFilePartition struct {
+	File   string                            `json:"file"`
+	Bytes  int64                             `json:"bytes"`
+	SHA256 string                            `json:"sha256"`
+	Stats  analysis.NormalizedPartitionStats `json:"stats"`
+}
 type NormalizeResult struct {
-	Files          []string           `json:"files"`
-	RejectionFiles []string           `json:"rejection_files,omitempty"`
-	Rejections     []RejectionSummary `json:"rejections,omitempty"`
-	Accepted       int64              `json:"accepted"`
-	Rejected       int64              `json:"rejected"`
-	InputRows      int64              `json:"input_rows"`
+	Partitions     []NormalizedFilePartition `json:"partitions"`
+	Files          []string                  `json:"files"`
+	RejectionFiles []string                  `json:"rejection_files,omitempty"`
+	Rejections     []RejectionSummary        `json:"rejections,omitempty"`
+	Accepted       int64                     `json:"accepted"`
+	Rejected       int64                     `json:"rejected"`
+	InputRows      int64                     `json:"input_rows"`
 }
 type RejectionSummary = analysis.ParquetRejectionSummary
 type SeriesQuery struct {

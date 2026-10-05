@@ -1,0 +1,2245 @@
+{
+  "captured_utc": "2026-10-05T10:01:16.632158+00:00",
+  "scope": "Complete failed native dashboard cycle retained before authorized Source Find backport. All source and embed stayed unchanged during both browser profiles.",
+  "result": {
+    "types_lint_units_build": "passed",
+    "unit_files": 508,
+    "unit_tests": 5545,
+    "dev_admin": {
+      "passed": 232,
+      "skipped": 5,
+      "failed": 1,
+      "failure": "Existing authored script goals Source Find loses detached textbox during metadata refresh"
+    },
+    "local_auth": {
+      "passed": 164,
+      "skipped": 1,
+      "failed": 0
+    }
+  },
+  "raw_log_sha256": "c3a7422279036c5a6e7b6021267ab5265bc213bc6c8b1d05a89869d4760bf2e0",
+  "receipt_sha256": "245407ab1778cffc588a425a4bff377a15ee5b02371c04bb08607de6546e1326",
+  "artifacts": [
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/.last-run.json",
+      "bytes": 96,
+      "sha256": "1fac42626b7a982fef5177435bb2e1bc9878d9475192de7001ce249771de73ce"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/command-center-details-run-b0569-ettings-in-an-opaque-drawer/graph-configuration.png",
+      "bytes": 238957,
+      "sha256": "edea29e2b2f9b8ce586a61d87c68de0ae546844a26d5c7d8365a9373c1f1f403"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/command-center-details-run-b0569-ettings-in-an-opaque-drawer/operations-desktop.png",
+      "bytes": 235047,
+      "sha256": "de2ba322bbcb2d7c8be2c6d0694c16474b3ee9d8d257c0a0da58d1dea6f91dc0"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/command-center-details-run-b0569-ettings-in-an-opaque-drawer/operations-narrow.png",
+      "bytes": 157918,
+      "sha256": "ac4d3c0cb371994989d63ecfbce780219810f7217cc5e05d95217b8382655e54"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/tier0-bruno-import--U23-Br-af0c0-e-work-on-the-host-platform/bruno-issue-workspace.png",
+      "bytes": 228202,
+      "sha256": "43c59daa5c53f3585c81f35202e3a357e34b0a80f27ebe9e69d22dfdbc16cebd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/tier0-report-results--U16--61a80-d-stays-findable-in-results/executive-html-contents.png",
+      "bytes": 30336,
+      "sha256": "e3a7e8e3e11875661cf7c5d812c2e4f4a8e4557ceb790d20ceca9bb5731ce5fa"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/tier0-report-results--U16--61a80-d-stays-findable-in-results/executive-html-export.png",
+      "bytes": 94202,
+      "sha256": "1e38d9365342e81bf98e2bb3a4eb4934c1e72423e5548049b72a670dc7a1012e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-analysis-preparat-0fe44-tors-across-save-and-reopen/imported-identity-comparison-left.png",
+      "bytes": 60815,
+      "sha256": "4a430d2de693929e27145f69516032ea863b55ba6904cb82ac8d96ec377d2b57"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-analysis-preparat-0fe44-tors-across-save-and-reopen/imported-identity-comparison-right.png",
+      "bytes": 47425,
+      "sha256": "29f8a395b26174f3f95cdc110cdf93a7ababc71b1f83cd21113ea0eb219e7d21"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-analysis-preparat-4c6ae-nspect-an-exact-time-bucket/filtered-native-panel.png",
+      "bytes": 122515,
+      "sha256": "ecaf1e0a46d1e6f80be19edb26a0870ef80785389e7bb6c6781ba3f57856878f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-analysis-preparat-77b1a-ough-the-real-dashboard-API/native-project-panel.png",
+      "bytes": 26223,
+      "sha256": "587a2e9f25ee34212c52984fb9453aa045ae04b77c1e3a23f32771974461bee4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-analysis-preparat-a2463--denied-coverage-and-reload/management-exact-values.png",
+      "bytes": 150921,
+      "sha256": "6ecc778095a6eaa383bcbe0aeb57d6a5d68a5ab85b82a91c95b66b39db3a2134"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-analysis-preparat-a2463--denied-coverage-and-reload/management-narrow-context.png",
+      "bytes": 118384,
+      "sha256": "0f68afa8f384b4af339db99fbe0e2e6c488a54824153f478654b118f41ca1489"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-analysis-preparat-a2463--denied-coverage-and-reload/management-narrow-values.png",
+      "bytes": 26455,
+      "sha256": "048d83cc8ea32ad504ce09a8567f44f79b915a1c244a7d83be6f54070bf0e4cd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-analysis-preparat-a769c-ion-remain-in-project-scope/parquet-query.png",
+      "bytes": 38448,
+      "sha256": "b157f02093d78a3f1faa8d74d77314c941c2e325f84e0554d54a40d5d89c16c5"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-analysis-preparat-a769c-ion-remain-in-project-scope/parquet-series.png",
+      "bytes": 8218,
+      "sha256": "614e6cdc0805843134513c9645eb055c22e63b9722e3918cc1ec2a6f787d7878"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-analysis-preparat-c6846--selections-save-and-reopen/dimension-waterfall.png",
+      "bytes": 121736,
+      "sha256": "7ac6cdfd32fd906576185449342c9bd91d1999eb305390e7e021e081a047b19e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-analysis-preparat-c6846--selections-save-and-reopen/grouped-overlay-panel.png",
+      "bytes": 132373,
+      "sha256": "eaa40f2ceb2944edc1cf4ebb28e70d50e7e3ebbfee58d81500cad7c055242107"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-aura-outcomes-Aur-a591b-ing-repeated-sibling-values/aura-nested-parameter-narrow.png",
+      "bytes": 13198,
+      "sha256": "e0967dec6efd39356a0098649f3fd51e7566ec58f8efaa5bd42e0dbb9721fe37"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-aura-outcomes-Aur-a591b-ing-repeated-sibling-values/aura-nested-parameter-preview.png",
+      "bytes": 31180,
+      "sha256": "9cbe7e5fc565c3808b301c577046f73eab0081a8c189ce430d0df386b9384767"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-aura-outcomes-Aur-d731e-with-safe-source-navigation/aura-outcomes-desktop.png",
+      "bytes": 210268,
+      "sha256": "710352b9bf5e0d0a1f4d28499931c0e6423578a94a474abd52786a8b50a0da4b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-aura-outcomes-Aur-d731e-with-safe-source-navigation/aura-outcomes-narrow.png",
+      "bytes": 180714,
+      "sha256": "2c845f199fc40257707ff237b0e96011535af0ce07816e0da1162b5bd559cfe4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-aura-outcomes-cor-c95b6-ndependent-HTTP200-failures/correlation-diagnosis-desktop.png",
+      "bytes": 357571,
+      "sha256": "04e7c927727a098bdf03cbf26a7007649f51fbebc24f43812c148105cf00d78c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-aura-outcomes-cor-c95b6-ndependent-HTTP200-failures/correlation-diagnosis-narrow.png",
+      "bytes": 202122,
+      "sha256": "e72d10cbc89463fab82832c9d99057d87793150c2eeb453415f9b8cba24563a7"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-aura-outcomes-nat-f7f7b-ion-through-save-and-reopen/correlation-original-source-desktop.png",
+      "bytes": 233828,
+      "sha256": "7619f999337d9c428113d71fff15d2f0eb16454ed7c1206635b974152c1885e7"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-aura-outcomes-nat-f7f7b-ion-through-save-and-reopen/correlation-original-source-narrow.png",
+      "bytes": 170425,
+      "sha256": "20a1d8fd25debff5bf9265bb6eee0fa3802dbbf3ecb7d57a33bb00d7c2e73cb4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-aura-outcomes-nat-f7f7b-ion-through-save-and-reopen/correlation-review-desktop.png",
+      "bytes": 229288,
+      "sha256": "735bfd9dbcc1db2e23b9eea2aa5608f2d483034cd50f64defe1c4b50f4932eec"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-aura-outcomes-nat-f7f7b-ion-through-save-and-reopen/correlation-review-narrow.png",
+      "bytes": 200629,
+      "sha256": "7cd394b2a21a649bcf9439dedc8cd9b27ce889b3f8dcbafcca8bca45440632f9"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-author-experience-50289-aves-without-losing-context/author-operator-experience.png",
+      "bytes": 176454,
+      "sha256": "fd53fe6230aa21cdb0673f19e8db27cf91a92cc54d0baac40e0877817ca2e0dc"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-baseline-comparis-3896f-reserves-comparison-context/baseline-comparison-narrow.png",
+      "bytes": 169225,
+      "sha256": "ff3cbc8733e3bab4f3b96ce7bc1d9c3019a5bfa12e77aa9687de919c46832017"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-baseline-comparis-3896f-reserves-comparison-context/baseline-comparison-wide.png",
+      "bytes": 228847,
+      "sha256": "a80a988dc49ef16ab87ef1069cfdef616f439bd6759e0d853c1c227af1dd91bc"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-baseline-comparis-3896f-reserves-comparison-context/baseline-resource-detail.png",
+      "bytes": 120079,
+      "sha256": "3ab77ee4a3a66046c1f95c6b60261f406158a5b53975747d59a0865d534bc4c1"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-browser-resource--4da8b-inspects-action-attribution/resource-evidence.png",
+      "bytes": 55106,
+      "sha256": "c6117df9054c066ebff2d0a7edb551ad13d291883cf93717d90e99780988f06a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-command-center-Co-ab432-tching-and-catalog-recovery/command-center-overview.png",
+      "bytes": 203579,
+      "sha256": "144ddaeb8aeda40a39333dae582438c4393acc589cbab922827a1384337ada93"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-command-center-ac-121c7-elemetry-clears-the-warning/active-observation-stale.png",
+      "bytes": 221598,
+      "sha256": "c3871d1a0299bf848ddce7f2b445f87592bfbe5c03d6737273b9933c6e205ba3"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-command-center-pa-d47b0-tate-when-proof-is-rejected/acknowledged-pause.png",
+      "bytes": 158515,
+      "sha256": "7f778724b0fa8413345332e88c4dd3c23142c176716303a70e75c5562e9eb840"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-dashboard-Dashboa-739df-ters-and-narrow-run-details/dashboard-narrow-details.png",
+      "bytes": 188776,
+      "sha256": "4f0b483144720133c126d05e589f9dbd12f7834a5fed62e50a34a3a30699481a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-dashboard-analysi-23779--and-refreshes-availability/archive-collection-failure.png",
+      "bytes": 193621,
+      "sha256": "b7d79aa9d08cb7d41cca604f07ab923c8ffc59e4bcad0f80ea55f1360e7a9f44"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-dashboard-analysi-23779--and-refreshes-availability/archive-recovery-pending.png",
+      "bytes": 220196,
+      "sha256": "7921830c79d14e71baee67e846cceb564d8d5c58efbe5fbf6d896721fca74895"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-dashboard-analysi-8b1d1-ements-and-terminal-outcome/partial-archive-coverage.png",
+      "bytes": 210859,
+      "sha256": "192e7d7fd7ae5dbc835b072492aeee1639775f8f9345f20192f30197738e06f2"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-dashboard-analysi-bb3e5-ples-as-historical-evidence/terminal-observation.png",
+      "bytes": 239119,
+      "sha256": "a2f514cae72b84bfe8c59fa7942bc236f8499b460109761f0c7fa5898f9c6f57"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-dashboard-analysi-cef7c-d-deltas-and-report-context/load-comparison-desktop.png",
+      "bytes": 258519,
+      "sha256": "1c684cd4c079cb8a3e33a3594c34b5ae1865b9b2ecad929b42a84fcbffe4ede6"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-dashboard-analysi-cef7c-d-deltas-and-report-context/release-trend-narrow.png",
+      "bytes": 112587,
+      "sha256": "1b62b07fa57e91071e38abd06c3c1ffd78d78c8c5d09bb56519de1c173180e33"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-debugger-experien-7c17e-s-fetched-resource-evidence/failure-resource-evidence.png",
+      "bytes": 215477,
+      "sha256": "59187d6a21c20a8f178028f726a15f82d7463eeaf9c3e1245c66fbe9e3c03400"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-debugger-experien-f468e-ns-protocol-correct-history/debugger-operator-experience.png",
+      "bytes": 213016,
+      "sha256": "9d4203026d143b7ee596b49c00a3b3438b7b4e631dadeea1dd7a3111ad20b934"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-execution-results-af193-vigation-without-an-archive/execution-narrow.png",
+      "bytes": 165294,
+      "sha256": "c0f34c01b2679e0baa09d186e1f9a1ec1b99ccd5e2a400182c05845016a74cca"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-execution-results-c9284-vigation-without-an-archive/execution-narrow.png",
+      "bytes": 168074,
+      "sha256": "0c0a92b039e12a22400e757e0db0784d1c16047bd24ddfabd7953d22a5c65895"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-execution-results-f9b60-vigation-without-an-archive/execution-narrow.png",
+      "bytes": 166007,
+      "sha256": "919c67d953f2461b7aa7cace27e43e7b1760105ef7103c4ecc1d0c6d3fb0e4db"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-help-DSL-operator-4f826--and-follow-reference-links/dsl-operator-guide-narrow.png",
+      "bytes": 206562,
+      "sha256": "f7936e21bef56bcbec934ee190655e9cac4d28b6463751de6f11e13ea2234357"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-help-DSL-operator-4f826--and-follow-reference-links/dsl-operator-guide-wide.png",
+      "bytes": 269164,
+      "sha256": "df5f373dd8e9a8eecff553541e1d7c61370906dc58f1c5259fbb8e2c35f964dd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-help-Help-is-read-88ce3-poses-accessible-navigation/help-desktop.png",
+      "bytes": 236393,
+      "sha256": "d0fac21717a9d3c93fdf149948aca450e7050b4edce0b3f303e7e1d786a7b297"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-help-Help-is-read-88ce3-poses-accessible-navigation/help-narrow.png",
+      "bytes": 192371,
+      "sha256": "37c60cce6f2a5adb9009e36595b1284a02dde1f6de34a31dac47f0dca266f9ab"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-http-concurrent-H-8c030-up-through-its-join-barrier/concurrent-group-desktop.png",
+      "bytes": 307122,
+      "sha256": "9615c5b07da278b5cc18ff4e4ba2493e5132d49fe379b546e2ae1b15d13b5f59"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-http-concurrent-H-8c030-up-through-its-join-barrier/concurrent-group-narrow.png",
+      "bytes": 171821,
+      "sha256": "af2c6fb4e33a4dd26ceb3afb2584a408a5751b39d4b6677fd65f703952fc8edd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-http-version-mixe-2773c-se-measured-replay-versions/http-version-desktop.png",
+      "bytes": 279238,
+      "sha256": "d8320ab698c7baed5e98fc0fd8fedc6a3d8ad2693612fc18a11c53b03b15d395"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-http-version-mixe-2773c-se-measured-replay-versions/http-version-narrow.png",
+      "bytes": 141886,
+      "sha256": "71d21ca55a784324c31372a82bbe2a6878464d2fa1949af7c7fe18862763dcf2"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-http-version-mixe-2773c-se-measured-replay-versions/http-version-replay-desktop.png",
+      "bytes": 332449,
+      "sha256": "8b5cf845f698e7c4675294c633867cd8ff795c85f64e2887932ed649d8ddd1ca"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-import-labels-tra-2a908-t-requiring-secret-bindings/imported-transaction-names.png",
+      "bytes": 202100,
+      "sha256": "a60c9ee75ac2224068234f799076d7b9efcaf25bd847adc71407bd2a241d3518"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-data-review-narrow.png",
+      "bytes": 119216,
+      "sha256": "0a0ce68f63daebd6be264a5c5c1d3c8bab5c97258bd7a522b95f72fb28d23a96"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-narrow-review.png",
+      "bytes": 162688,
+      "sha256": "068a0e7eff543c879c382ae803bea7902e64a8bcd295b1563e268fa344f49600"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-runtime-review-narrow.png",
+      "bytes": 104778,
+      "sha256": "4d9d6c4325dfec9c3c133e0a0d1c6db24aee199d3b7cb9665c41a2db8c7ccdcb"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-runtime-review-wide.png",
+      "bytes": 176871,
+      "sha256": "2416f964f21673da2d05770c811d0d010acb8abbee91109d594c8d4afa61b0c9"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-six-tab-review.png",
+      "bytes": 219541,
+      "sha256": "e87144f226b48147f9b2836e5a1b52cdc6e3715083278d66cb1c313f119f852b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-import-source-Ora-4a93d-offers-a-script-destination/oracle-current-source.png",
+      "bytes": 193734,
+      "sha256": "c66f30bccccd25ba0251420598833b5e74edefe0f6c4b86586e29d1fbd03ae8b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-jmeter-fidelity-J-720e8--drafts-and-workload-curves/messaging-fidelity.png",
+      "bytes": 167155,
+      "sha256": "a4e72e4594693bada47b0f308454959ea3311b30caef28c710b04bafb30ee881"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-library-assignmen-9a943-require-an-explicit-release/library-assignment-dialog.png",
+      "bytes": 119216,
+      "sha256": "491cb4fc245c741b3a76fc561e148ae91eac902aa9d04ddcfa9d4b864ec1b199"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-after-code-narrow.png",
+      "bytes": 21751,
+      "sha256": "c63b76c5cc6460cfd292a8df9ce1a247f993f9fe36fa9249e52029c9b8401a03"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-preview-code.png",
+      "bytes": 46454,
+      "sha256": "4a9a5a2b8aaa776315bd36119305f8d202ada5df22f7c87778504f431b86bcbd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-preview-narrow.png",
+      "bytes": 75951,
+      "sha256": "6fb68f03f70ac0b7441ac18bcb43d97b2ea84a99b7bd39c3ed1576b49fbf43de"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-preview.png",
+      "bytes": 43041,
+      "sha256": "8aed92fb9fc19a8c7cc72fe6bdd9b9d4ae3506aca0e28e6bfbf9a0104108931a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-30e50-s-an-oversized-idle-timeout/runtime-context.png",
+      "bytes": 163569,
+      "sha256": "6759d7370e7c38e3b55e25b8372c574bc8d8bd67411bc5dcf576349df0956f39"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-3266b-java-lifecycle-zip-response/loadrunner-review.png",
+      "bytes": 206230,
+      "sha256": "3e6054123cea354bdcd8fe0b2adb93d4451cc675d47e4651a7c4b7835878002d"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-37eaf-dential-groups-zip-response/credential-groups.png",
+      "bytes": 191397,
+      "sha256": "94f28c18679fc3c690d72e656a408e7e12bb392fdaee16ef191b2498b0c80a74"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-37eaf-dential-groups-zip-response/loadrunner-review.png",
+      "bytes": 177421,
+      "sha256": "2cca1facd61aee0d6779031e7dfa6aad72a1a5391b8aa2a7210ef7e71b7d416c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/conversion-reference-desktop.png",
+      "bytes": 187455,
+      "sha256": "40ebb1e15f354a28370690258778a390204105883deb5591e5f27128fab6cbb3"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/conversion-reference-narrow.png",
+      "bytes": 151729,
+      "sha256": "9ddeb27e3bc4515561e58838f510990966b4ca7a548957114ccc7344e18bb9a6"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/loadrunner-review.png",
+      "bytes": 134509,
+      "sha256": "af529519a06a7313d3223b81e37d294ca283c9fbfd54b8119b8e6e7c351ae04e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-data.png",
+      "bytes": 179892,
+      "sha256": "17873d9e962b7e5a845f697af906a4488b9454ef1cb3c8e932b9bc3150d3494e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-dsl.png",
+      "bytes": 185482,
+      "sha256": "9f33ce2d8ad97f95005f341c806c21bc6665aee1465c60135ceb7814d37a10a3"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-runtime.png",
+      "bytes": 170516,
+      "sha256": "fe3de2fea1e196166b7347a337171d524c66ac40e66dbe23e5c3c3157a0edaf1"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-source.png",
+      "bytes": 163195,
+      "sha256": "97d999892df98fe0f3b49870848fd22d179154ab42676e07014d61289d235a88"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-8bfd9-nges-without-leaving-Review/issue-narrow.png",
+      "bytes": 136812,
+      "sha256": "3d1d194080f83242a48c5a9dcbeb8bee5547a6395490b27a9a8f1d971afc43e6"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-8bfd9-nges-without-leaving-Review/issue-runtime.png",
+      "bytes": 196412,
+      "sha256": "27d85afa7fa726c4cee79e2597eb74cfd74affaf1bdd7bd4cb2c709d84865f9e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-8bfd9-nges-without-leaving-Review/issue-warning.png",
+      "bytes": 194792,
+      "sha256": "fb1cd041b60ca7d8f75ec6c2dd878db27053b68d7fd6ff1291086830ff21a1c9"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-bbda9-uclient-review-zip-response/loadrunner-review.png",
+      "bytes": 174771,
+      "sha256": "ccadd3902f43505c9a3926ae3b408380c5d17acd9dac49c5607525bf6495d5c3"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-c0c2f-ence-and-survive-draft-save/data-settings-narrow.png",
+      "bytes": 142544,
+      "sha256": "74796d8d3ecaaf3202c224cec926b50c330c7dabae304bb2bdf0fff43215248b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-c0c2f-ence-and-survive-draft-save/runtime-settings-desktop.png",
+      "bytes": 173601,
+      "sha256": "3083de7227ad227bcb646a931ec34aff91365e4511e34252b289a697c44df675"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-d220e-preserving-protected-values/credentials-inline-edit.png",
+      "bytes": 199805,
+      "sha256": "10e7cab51aa62d9e85a1db0317c6c079f9421026f68f6fb1fd3a4d231fdb14d1"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-daf3d-ort-and-accepts-another-ZIP/batch-import-saved.png",
+      "bytes": 208834,
+      "sha256": "528a3373b19d5f847fd550119f23f8aa69ae7aa8d1d4040946ebc5ae9d5e8630"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-ddf3d-eal-sap-review-zip-response/loadrunner-review.png",
+      "bytes": 168171,
+      "sha256": "dfa42bd47d18e4ad6b80aadbd75d06439b086582118edb0d84f2e9442ccee89f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-eb5a1--from-dormant-source-values/runtime-diagnostic-classification.png",
+      "bytes": 186521,
+      "sha256": "1b5c01566fef1ca722a6997e2cff298cd34866b5e27ac1c68ce771ac1280a4a6"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-eb5a1--from-dormant-source-values/runtime-diagnostic-mapping.png",
+      "bytes": 185119,
+      "sha256": "a9a69ad7730ea962b575a71863d8dcd8c4aedd052e5fd3faa33dda88e651993c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-eb5a1--from-dormant-source-values/runtime-dormant-explanation.png",
+      "bytes": 190267,
+      "sha256": "5b5f99cda98b29e7b5fb724a4a2e5d8b91897c261ab0e33e722dfd152249952f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-loadrunner-review-fbc64-nd-saves-edited-percentages/percentage-runtime-settings.png",
+      "bytes": 174967,
+      "sha256": "6a57393b89ef729f39898c5e9ee63922c25bc2b446c1c795e495d7bca4be8eb0"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-local-archive-fai-ad13f-and-survives-checking-again/local-archive-failure.png",
+      "bytes": 215528,
+      "sha256": "e24a106657de037650df5530327e48a6e977fe9895fd66ff4a03a4a5a0fc781c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-monitoring-Kafka--30808-on-conflicts-through-reload/kafka-management-approval-narrow.png",
+      "bytes": 98733,
+      "sha256": "5495e1741b0e3d27d621e3e7b00a69cb3db10ad9abac09adcc3ba0c65b98337b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-monitoring-Kafka--30808-on-conflicts-through-reload/kafka-management-source-narrow.png",
+      "bytes": 106110,
+      "sha256": "7c3e1a89e8699641dfb48dd56d27b31a0ed3670606533ba6c8cd676ba84a6a9e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-monitoring-Kafka--30808-on-conflicts-through-reload/kafka-management-source.png",
+      "bytes": 216710,
+      "sha256": "6865d1d6b2c52236cc766e3707a5dae941c9211933e118d7b06b81bf73117f04"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-monitoring-Servic-b3266-revisions-and-narrow-layout/servicebus-management-approval-narrow.png",
+      "bytes": 102674,
+      "sha256": "1167c7f4aa5bf63f39c80c27842aebfd1b5169b6396a15466feb57364771d00c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-monitoring-Servic-b3266-revisions-and-narrow-layout/servicebus-management-source-narrow.png",
+      "bytes": 114034,
+      "sha256": "e77a4e7d6d6bff53633f2ccb5f0e0a0e137855dbecc7606d52b39b24f8d50a04"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-monitoring-Servic-b3266-revisions-and-narrow-layout/servicebus-management-source.png",
+      "bytes": 220263,
+      "sha256": "6b0173d01e5dae30b6a4fa6d3f11c79082eacfc47cb28364a0d5f8911920b8a1"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-monitoring-Solace-57e07-revisions-and-narrow-layout/solace-management-approval-narrow.png",
+      "bytes": 123906,
+      "sha256": "cc72b760b987e9db2e40a82550ea192ba0c49f851f57c6561008d67715085998"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-monitoring-Solace-57e07-revisions-and-narrow-layout/solace-management-source-narrow.png",
+      "bytes": 108565,
+      "sha256": "1b9f32b2cb6ee50908e858f159c6364ce25fcedbc66b11328760ae52376934b9"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-monitoring-Solace-57e07-revisions-and-narrow-layout/solace-management-source.png",
+      "bytes": 227441,
+      "sha256": "eddec2efca7613b60789493067050430d435ff180bcc8e769421d1cec05529fa"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-new-test-Java-gro-0c281-istence-facade-ledger-true-/java-profile-placement.png",
+      "bytes": 171310,
+      "sha256": "97da798c62129268a1ce734288d1405da3dc8ffd84ef5cf44eac0cf572792e89"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-new-test-Java-gro-1fb68-stence-facade-ledger-false-/java-profile-placement.png",
+      "bytes": 171237,
+      "sha256": "504cef8d9517c895f80681bd62a19a9da6c01fd51178bcb48c67fc3ef49e094d"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-new-test-Live-con-1955a-ns-without-opening-raw-JSON/java-reservations.png",
+      "bytes": 199800,
+      "sha256": "6e78d365748d31fbd6897f4d2e20ac13b50ad6b1b6fa237afcf3fdff0c13de62"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-new-test-New-Test-a4e1f-edule-with-visible-policies/new-test-schedules-narrow.png",
+      "bytes": 177608,
+      "sha256": "4862a4c33fe1edb8f98134d13789e0931c8bbfee22f9baecec03bd2803b8d3be"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-new-test-Scenario-03ef7-d-the-recovery-spare-budget/controller-continuity.png",
+      "bytes": 192422,
+      "sha256": "a568eb871efd87b0ae661e6de95432b5f408af9efdd41e0dd0488f6266893e9c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-new-test-Scenario-2ede1-multi-region-infrastructure/weighted-placement-multi-region.png",
+      "bytes": 57771,
+      "sha256": "5a309eb55832a51fc5affeef3246f26fd20db4cd9e798733df500cb5c7a2d189"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-new-test-Scenario-54f4c-ingle-region-infrastructure/weighted-placement-single-region.png",
+      "bytes": 48940,
+      "sha256": "a447452f0629486b4f1a6b534120fa79342facf10b8db887f524997b7c899191"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-new-test-Scenario-8f139--for-missing-infrastructure/weighted-placement-missing.png",
+      "bytes": 48940,
+      "sha256": "a447452f0629486b4f1a6b534120fa79342facf10b8db887f524997b7c899191"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-new-test-Scenario-d6313-r-multi-zone-infrastructure/weighted-placement-multi-zone.png",
+      "bytes": 46198,
+      "sha256": "56b663d010577b0fd427309d43f0ebdd9971594060423ed051b9429b84d1f9f6"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-new-test-prepared-275a7-ts-with-the-pinned-revision/eventhubs-preparation-resources.png",
+      "bytes": 185869,
+      "sha256": "ab2b3383d684754aa5960ee362aab740a9e73698ca6a84228ace99f0d57ff9f1"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-object-activity-a-f9b62-nd-retained-deleted-history/deleted-object-history.png",
+      "bytes": 250749,
+      "sha256": "d277fef34b067671c40c10e2045e238395ea74210d2653bdeca0618f4246b14b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-pod-capacity-peak-17207-m-live-utilization-at-390px/pod-capacity-390.png",
+      "bytes": 74404,
+      "sha256": "b276cef174d2d65442fb1881859d2fd5ade06c11ec961d40618afcc525178e7e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-pod-capacity-peak-4cdbb--live-utilization-at-1440px/pod-capacity-1440.png",
+      "bytes": 139326,
+      "sha256": "252788eff3a7da1cf38106fc5621440a63a7ca134b0d8453633edec9f5b23508"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-protocol-diagnost-220cb-nses-in-the-active-run-view/grpc-diagnostics.png",
+      "bytes": 164352,
+      "sha256": "36876af7e5c847c51f65f0d7992b2b71053f85e2f77720a252c0756d8bf9c48a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-protocol-diagnost-4cabc-ng-RTT-and-matched-zero-RTT/websocket-diagnostics.png",
+      "bytes": 121629,
+      "sha256": "77b33cd95fa589c71b2c89d99581a62a51ffab0e3a7cdd747d0839c028f1e7fd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-protocol-diagnost-d8a15-ble-lag-during-idle-windows/eventhubs-progress.png",
+      "bytes": 110724,
+      "sha256": "45cc50e6cafb9541a56a780c4913a64e099f489b3ded77f57eb995003aaf28c9"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-recording-review--0527c--captured-viewport-readable/browser-evidence-narrow.png",
+      "bytes": 185117,
+      "sha256": "f84f88328100554f73e299e680434f081da879f1507e87e663b6fb48e12335e1"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-recording-review--a6696-lidates-changed-conversions/recording-output-review.png",
+      "bytes": 275829,
+      "sha256": "eb64107b1ccf775f6e5701510740b1529355c1642e87bc8c77370f49c5369c90"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-response-content--19605-ker-through-save-and-reopen/response-content-blocker-narrow-focused.png",
+      "bytes": 50326,
+      "sha256": "666cbbb773935b294cfba902ae87f1c221fb5d59fbe6dfefb9c3088ee4db6e76"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-response-content--19605-ker-through-save-and-reopen/response-content-blocker-narrow.png",
+      "bytes": 92940,
+      "sha256": "4bc4d728bb0cd33575545343898e60675a1d31ea2a7f07e7f53fcca2f9a66e7f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-response-content--19605-ker-through-save-and-reopen/response-content-blocker.png",
+      "bytes": 186951,
+      "sha256": "bcac92a504f79707af0bcdc346ffba5ccadcaa18d4c80c15ba54a2d7c16b4c1c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-response-content--19605-ker-through-save-and-reopen/response-content-reopened-blocker.png",
+      "bytes": 199365,
+      "sha256": "98e70510cdca52ad8ada4ca8f5b60cf14ed7629afa3746019a9c18a287c1998d"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-response-content--19605-ker-through-save-and-reopen/response-content-retained-source.png",
+      "bytes": 187923,
+      "sha256": "8996302c899a21c1b028e8961a1316b30e7e420dce6d1a63580fd020bc0c45ad"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-response-content--4ccf9-play-extracts-a-fresh-value/response-content-gzip-replay-narrow-focused.png",
+      "bytes": 12831,
+      "sha256": "f80d67e971b476cffc9278558484f8491d3a95b17b452e64ee38715ad8b7d737"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-response-content--4ccf9-play-extracts-a-fresh-value/response-content-gzip-replay-narrow.png",
+      "bytes": 156316,
+      "sha256": "06ec686930f6dd4e4486c5d4e5204ae8d07a5c73b1c2f7e2756e52da48e8a8b3"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-response-content--4ccf9-play-extracts-a-fresh-value/response-content-gzip-replay.png",
+      "bytes": 223530,
+      "sha256": "be781fed83930cbfaff904e99c6146aac1e536c1c5b908fb86b30ece90f8247c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-response-content--4ccf9-play-extracts-a-fresh-value/response-content-har-review.png",
+      "bytes": 223006,
+      "sha256": "6f7aaffc9773e1826b2f1f2d181ecdf486f510dbcd2cfc829ce7c00dc7347e06"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-response-content--65ba2-lifies-the-partial-response/response-content-partial-stream-narrow-focused.png",
+      "bytes": 17651,
+      "sha256": "0527d747bef62431b85e3bffc3112f53c709a9918aeea446cd3bafd615defbc4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-response-content--65ba2-lifies-the-partial-response/response-content-partial-stream-narrow.png",
+      "bytes": 155767,
+      "sha256": "56b4098558e462a7ee5ede82a95aa83adff9cb4550352e539604f9b0a935f670"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-response-content--65ba2-lifies-the-partial-response/response-content-partial-stream.png",
+      "bytes": 213159,
+      "sha256": "2a91a67cf6cafb1dde53de0cd974eeb898e2f091689d15bc68e261020cce811c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/active-frames-narrow-focused.png",
+      "bytes": 5602,
+      "sha256": "328303997b99d318cce81af77594f5bc4d3bb062c4e7196de42c2265b3a942ad"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/active-frames-narrow.png",
+      "bytes": 161931,
+      "sha256": "709601cc09e9b3a901cb61b14d932553d287b1bf27f699a8ca1a6cd1fa5bf2a8"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/current-binding-1-narrow-focused.png",
+      "bytes": 8271,
+      "sha256": "320f6bfc707df7cf5b5ae6e275698612666955900c7f338e15f2d27729279cb6"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/current-binding-1-narrow.png",
+      "bytes": 161497,
+      "sha256": "71693c004ba9ba81e11da4fb95baa42813e1fabc5ce3f981d1394cc983daf241"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/current-binding-2-narrow-focused.png",
+      "bytes": 8239,
+      "sha256": "f55d2de2d36bcf5f16905df23b3fa21e185af548c7ea48cd7feddd6f5e60bc13"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/current-binding-2-narrow.png",
+      "bytes": 160339,
+      "sha256": "59cfcaa825e06608a4577e20cb3a48f3f4da1c163d121006a579b2c5314f5207"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-1-narrow-focused.png",
+      "bytes": 22962,
+      "sha256": "bc9da82133d9384d614e8c3461688ee8fd7e3f2081523c9e3a77dcc1882614dd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-1-narrow.png",
+      "bytes": 163090,
+      "sha256": "6202471a2a7afab251e7fd378c1d9b23871e8d177e21a2e31c049fb016a724ca"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-2-narrow-focused.png",
+      "bytes": 21230,
+      "sha256": "86ab7a3ab444c1539eae614ac1dca5959a18d917dbe6fffe71b370040e18af2f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-2-narrow.png",
+      "bytes": 159085,
+      "sha256": "e3f131c47a4c75a7511cf3beb38a69b33bb81082554f561b6188b7f7fa270ec1"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-3-narrow-focused.png",
+      "bytes": 23181,
+      "sha256": "7bd393f2c932d05e0aada0b2d0ee95b2c940ed013f7361497c0f5b7443cdb448"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-3-narrow.png",
+      "bytes": 162654,
+      "sha256": "004ed15c462082efe92966ba0bcb110fe8e66c8429d9fafa434b21f3aaf96468"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/paused-runtime-receipts.png",
+      "bytes": 350980,
+      "sha256": "1682cfe05e28a977f8eaa3d090ede0828e939fbd0984214b08d409b9dad239fa"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/row-receipt-1-narrow-focused.png",
+      "bytes": 13438,
+      "sha256": "0acfebac44b0549d0b2947c02650d8d0cedcec2e7822620505a5e8932c14ec9e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/row-receipt-1-narrow.png",
+      "bytes": 158909,
+      "sha256": "eb409c6291cb1e6f44a6508b8c9d8d0cd68a30e602963246cb42d1c3b0bbc609"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/row-receipt-2-narrow-focused.png",
+      "bytes": 20695,
+      "sha256": "49b1713bafbdc9b5eca1edfd0a7009e23b04dbad894ce1f7b7d2dad09d79d99e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-cur-ef331-ithout-consuming-references/row-receipt-2-narrow.png",
+      "bytes": 160623,
+      "sha256": "39a68bcb39f7b7a9d279e6405f806a7905f7fc5d1cf02f4a901439e83e9202c5"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-runtime-state-for-9220c-ing-bindings-after-stepping/foreach-frame-source.png",
+      "bytes": 356403,
+      "sha256": "6b9a0f4bb98b8a56eadeef8614c90565ce3ba29e292149666adecde7b9127095"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-scenario-composit-6ecc2-editing-with-a-live-preview/scenario-composition-desktop.png",
+      "bytes": 265701,
+      "sha256": "0a34950b7847436c1d434da3f74366588a5e09a77abca1941c2f19da6a01c110"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-scenario-composit-6ecc2-editing-with-a-live-preview/scenario-composition-narrow.png",
+      "bytes": 135941,
+      "sha256": "e62fd840b266a9791d484bea0d6e8f782fc0867ee96175dc62cd5383e05d9049"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-scenario-data-sce-d59d0-fter-removing-a-shared-pool/scenario-script-data-desktop.png",
+      "bytes": 329760,
+      "sha256": "a24c82eb48f90ed05a6f5ec4a24048b7374c2683e15a9736d1ee7c0e32b230f5"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-scenario-data-sce-d59d0-fter-removing-a-shared-pool/scenario-script-data-narrow.png",
+      "bytes": 149090,
+      "sha256": "2d6d87eef973a2e7289cf50cb53da4e1d189efb333c68fe885f80ba9812f0776"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-script-editor-aut-7060d-r-save-and-canonical-reopen/error-context.md",
+      "bytes": 23051,
+      "sha256": "3a9f3b8a78da7101f0551a1da813e79d11159a7268656bad1f423eb37b4bfe3b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-script-editor-aut-7060d-r-save-and-canonical-reopen/test-failed-1.png",
+      "bytes": 189058,
+      "sha256": "1a1560a7ee57ac13d6d04f5d0bfe9077a1eaa13274f6b81f1afefdceda0f79ad"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-script-editor-aut-7060d-r-save-and-canonical-reopen/trace.zip",
+      "bytes": 6127462,
+      "sha256": "9461b4b334b45fe60234e1c4d4d8af9a66e49cfc3dfff526cfaee5aef730e6e7"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-script-editor-ope-64e79-ithout-losing-source-fields/script-debug-evidence.png",
+      "bytes": 274635,
+      "sha256": "59413ddb376be9b3568ea173d69d8f8d1f3afb383a55108423a21445c954e756"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-script-folders-Op-2bffa-in-assignments-after-reload/move-scripts-dialog.png",
+      "bytes": 101977,
+      "sha256": "bcd3f82896c1e065ec5bcd34e5b7762e5a343d0da151ec49d47da6eb4e1b6457"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-script-settings-o-5529c-ssification-until-re-import/legacy-runtime-classification.png",
+      "bytes": 240756,
+      "sha256": "f0765f2b406a0cca46691c3155a142fdee3e0073951550b7998f5f80945239ab"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/imported-source-runtime-narrow.png",
+      "bytes": 162378,
+      "sha256": "845cfeda67d911e38f2f7475e96b61912466b2a97228cc86393cad9503e12467"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/imported-source-runtime-reference.png",
+      "bytes": 250849,
+      "sha256": "1974063b3960574351e96b452f53a5f02e8bb94d97981bef6d7e525483ea7571"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/runtime-checkbox-narrow.png",
+      "bytes": 172701,
+      "sha256": "5b62d1744d8d2c3090f4ac5f052b151a6959a6e199556ebdccdf60e87b310d5f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/runtime-evidence-narrow.png",
+      "bytes": 161781,
+      "sha256": "f13d67163d26ef4565354e70e8f93d1afe96ac35a17e76970c93a9ed1f822eab"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/runtime-evidence-wide.png",
+      "bytes": 279841,
+      "sha256": "41baedf1ecb379ab69f4e99d17f8ae8b2104bab6855c78a0e322a04422af703a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-theme-controls-sh-1cb34-rk-including-focus-and-help/dark-audit-controls.png",
+      "bytes": 295858,
+      "sha256": "3ac71c5790cf70215c34b8220cdd3a6d61e7379223846aa81904f52df585548a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-theme-controls-sh-3e1d7-ht-including-focus-and-help/solarized-light-audit-controls.png",
+      "bytes": 288598,
+      "sha256": "63401ae84f94419a7607ac9603f3bdcfe9238863404b255f670e121d0f125df5"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-theme-controls-sh-66ab6-ed-including-focus-and-help/monokai-dimmed-audit-controls.png",
+      "bytes": 276511,
+      "sha256": "e7bb8708ced8250a18c2ba6d8df7bc105db99fa1f13b872c7cf12d10e1205e7b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-theme-controls-sh-857b6-ht-including-focus-and-help/light-audit-controls.png",
+      "bytes": 279997,
+      "sha256": "2ea917cdd8914cd95fcea676f48f8867d64249e18a00c97d65d57fa249ff85cc"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-theme-controls-sh-eea9c-rk-including-focus-and-help/solarized-dark-audit-controls.png",
+      "bytes": 276614,
+      "sha256": "86ca246d03e31b1a0c0be15a39baafcf2c30e3a9695da1a2ae977987937ddc3b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-0c825--in-monokai-dimmed-at-923px/monokai-dimmed-923-access.png",
+      "bytes": 175948,
+      "sha256": "c28ceba468113c1fbd22a4bf18130f2d5c76f9e2da21a7a2bfae6d2a95bc70bc"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-0c825--in-monokai-dimmed-at-923px/monokai-dimmed-923-command-center.png",
+      "bytes": 154120,
+      "sha256": "b9e9a6e555f9d055a6a229db058d26ef2a8359ca2b48412fa11ed9fdfc7a57b9"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-0c825--in-monokai-dimmed-at-923px/monokai-dimmed-923-dashboard.png",
+      "bytes": 201912,
+      "sha256": "6828ecd81958f3b756d156a4fb7fad4e60e66a92d74d7fe3d86da417fd1dd13e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-0c825--in-monokai-dimmed-at-923px/monokai-dimmed-923-docs.png",
+      "bytes": 236964,
+      "sha256": "42fc597b8b68e1a38e627eae5c6e9240f9c15900a53a31da1c15e498c9bb8d8b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-0c825--in-monokai-dimmed-at-923px/monokai-dimmed-923-monitoring.png",
+      "bytes": 174287,
+      "sha256": "862a09484b14422cab9d339dec54364a5bae16a2da1058c2df469d18995745ac"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-0c825--in-monokai-dimmed-at-923px/monokai-dimmed-923-new-test.png",
+      "bytes": 172236,
+      "sha256": "1efedc9f750da93bc5414a0d093f9ec0037819a71d0bbf6d7dd41a4d82a88477"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-0c825--in-monokai-dimmed-at-923px/monokai-dimmed-923-repository.png",
+      "bytes": 211271,
+      "sha256": "6e98195967c68b8d9992d75067e73b7edfbd32d4c06f35917439a3938786fe28"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-0c825--in-monokai-dimmed-at-923px/monokai-dimmed-923-results.png",
+      "bytes": 125420,
+      "sha256": "c265f2d6628d701bc8fef67c76c46cd361b20274028e079e48d83d079a838866"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-0c825--in-monokai-dimmed-at-923px/monokai-dimmed-923-scripts.png",
+      "bytes": 196208,
+      "sha256": "a1ca103575142e6d0a4ea8cf6635f05662364ce83784498d451f3a9b9c074514"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-0c825--in-monokai-dimmed-at-923px/monokai-dimmed-923-settings.png",
+      "bytes": 172111,
+      "sha256": "468109aebf33e8261d74cf63fcb0a75314231ee925c9345e20626337e12fb49f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-0c825--in-monokai-dimmed-at-923px/monokai-dimmed-923-tests.png",
+      "bytes": 170985,
+      "sha256": "dcad6af5d403dad0eeafbc1b932ddd122beff93c0e0027fbee2b0e60bdc09411"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-1374c-in-solarized-light-at-923px/solarized-light-923-access.png",
+      "bytes": 185064,
+      "sha256": "1cf12cb36cfb27be54b3b132ccf4c58844d368492985492aac0f075095b3e5dd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-1374c-in-solarized-light-at-923px/solarized-light-923-command-center.png",
+      "bytes": 160443,
+      "sha256": "1265802ec80b189f6a80bc1013cb2ac3ff38bb6737a002199279476d86463ee2"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-1374c-in-solarized-light-at-923px/solarized-light-923-dashboard.png",
+      "bytes": 213860,
+      "sha256": "038cda94c4518b3b113ad3116c0bcccea80996a97d1a34911877e7f2159d5b77"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-1374c-in-solarized-light-at-923px/solarized-light-923-docs.png",
+      "bytes": 246896,
+      "sha256": "c874d4d2ae12d8da1a5bc9b992dea1776c962000e4cf61d0501cfac3c9585221"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-1374c-in-solarized-light-at-923px/solarized-light-923-monitoring.png",
+      "bytes": 185084,
+      "sha256": "b1eb85e2b28e616d44de0a3ae69eeaafdcb13baa90a8646949c14e9d66b000c4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-1374c-in-solarized-light-at-923px/solarized-light-923-new-test.png",
+      "bytes": 182342,
+      "sha256": "be07e8831d01bb2109cd78cb801bec5243703040fa182c74db1632161093b059"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-1374c-in-solarized-light-at-923px/solarized-light-923-repository.png",
+      "bytes": 220941,
+      "sha256": "33c2fbff75f15319f18dc3c55b621d2c0bd6bc872d2a2bfb2867206de80caa4e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-1374c-in-solarized-light-at-923px/solarized-light-923-results.png",
+      "bytes": 134298,
+      "sha256": "e9c1bd136017ad9fefd87af68fdbb6771a7141789b7fec0a34ad28c72576a1d0"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-1374c-in-solarized-light-at-923px/solarized-light-923-scripts.png",
+      "bytes": 205944,
+      "sha256": "335506fe3a1fc65604e6a657f493aea3434a66896de2d4904ac3d5475ef7c2cf"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-1374c-in-solarized-light-at-923px/solarized-light-923-settings.png",
+      "bytes": 180138,
+      "sha256": "1f17dd1f1e145992e1eb05b7cdfb0b83f09ebc36f394460b78a18190904139cc"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-1374c-in-solarized-light-at-923px/solarized-light-923-tests.png",
+      "bytes": 179674,
+      "sha256": "d39580c160971475994261747b3b946b7272bdd1f2fca21d38f5381ccd2661f6"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-3e039-in-solarized-dark-at-1440px/solarized-dark-1440-access.png",
+      "bytes": 238864,
+      "sha256": "fb9a8be9773540906ddef21490f0961c35a06778078f4ff10535b3bb9198c58c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-3e039-in-solarized-dark-at-1440px/solarized-dark-1440-command-center.png",
+      "bytes": 200218,
+      "sha256": "431f92b3ae09dd35b212edd97588a4325997e43cdef185709b23716286e2d4a9"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-3e039-in-solarized-dark-at-1440px/solarized-dark-1440-dashboard.png",
+      "bytes": 251015,
+      "sha256": "3f40b52a126a958a9ef39c1d598a5b5bb5559caef503bad5171ba245df22f3f7"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-3e039-in-solarized-dark-at-1440px/solarized-dark-1440-docs.png",
+      "bytes": 330255,
+      "sha256": "51b3fb5cf97278b35ac8bf655e3d50475587240031a9fbd0e1f7a15e96f52aa5"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-3e039-in-solarized-dark-at-1440px/solarized-dark-1440-monitoring.png",
+      "bytes": 300785,
+      "sha256": "557d6a8250015622250b3986dcb6e923901dc39568f40b7aeb69d355540be1a1"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-3e039-in-solarized-dark-at-1440px/solarized-dark-1440-new-test.png",
+      "bytes": 279284,
+      "sha256": "dab9756ed6d3c28199d1475c1f86d266f215720469dac1ed03c3ac2a3585dacc"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-3e039-in-solarized-dark-at-1440px/solarized-dark-1440-repository.png",
+      "bytes": 314075,
+      "sha256": "337cfa376dca18b16be9844634699f4c47e567a04aa4e73a36ac1fc3cc47c5bb"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-3e039-in-solarized-dark-at-1440px/solarized-dark-1440-results.png",
+      "bytes": 152043,
+      "sha256": "b9e5495b6ecf235448ff6bbc3cc6e694fb412d56a5b7830c384d7df07b15b14a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-3e039-in-solarized-dark-at-1440px/solarized-dark-1440-scripts.png",
+      "bytes": 247991,
+      "sha256": "49532dbad07ea3e50d47cfcffa23b8e41a9b2dbe08f1dd0672fa9f09c7ceb97c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-3e039-in-solarized-dark-at-1440px/solarized-dark-1440-settings.png",
+      "bytes": 282303,
+      "sha256": "03ba7eafcbaeecc6f55273e798aa91d3abe1c57ea0d8c0a1c354e7d7736cd923"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-3e039-in-solarized-dark-at-1440px/solarized-dark-1440-tests.png",
+      "bytes": 222443,
+      "sha256": "8a1d30173321e970edcc06dbf50c244ae0b29d6b8cc1b7a39f012c85fb05c038"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-44277-ns-usable-in-light-at-923px/light-923-access.png",
+      "bytes": 176524,
+      "sha256": "f719d31243ffc4544d4e326c513e54c1f1d882a258043f32be71a534343c9037"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-44277-ns-usable-in-light-at-923px/light-923-command-center.png",
+      "bytes": 147741,
+      "sha256": "3b065e6db82200b77484b70bbf63d60c656d9ded7b3f04fb4a4b8e4b47593107"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-44277-ns-usable-in-light-at-923px/light-923-dashboard.png",
+      "bytes": 199647,
+      "sha256": "64d7b58876f5264adb0fdddad89b51b124b38faa24802b895e2fc039057ae171"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-44277-ns-usable-in-light-at-923px/light-923-docs.png",
+      "bytes": 231039,
+      "sha256": "853bf7ddf8d711422c64e0275e69bcbd919455fff94a3255eb166b237d80321f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-44277-ns-usable-in-light-at-923px/light-923-monitoring.png",
+      "bytes": 171912,
+      "sha256": "335a5b97a53fa6ab977f8c5db11c4de95e40702e2acac696ebb6122eda2971ee"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-44277-ns-usable-in-light-at-923px/light-923-new-test.png",
+      "bytes": 171631,
+      "sha256": "d4541ee7f4ebd37682ee096e7a20b32f74afac12fe0e91a7c9ef3f56971f8eef"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-44277-ns-usable-in-light-at-923px/light-923-repository.png",
+      "bytes": 210714,
+      "sha256": "f1f920f0a9c2acc087ac1bf03491df751cebbb3b33d5a7a3e478fe224ebc3fe4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-44277-ns-usable-in-light-at-923px/light-923-results.png",
+      "bytes": 128606,
+      "sha256": "6b4a878fd6da7036f09afed1ee02cb402de08ae66a3d8876f7c52a222143f770"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-44277-ns-usable-in-light-at-923px/light-923-scripts.png",
+      "bytes": 193082,
+      "sha256": "e4bc7f5455713ebd54d043d2e1e7a25da8ec3174fcadd2605bb0a07732f03a1d"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-44277-ns-usable-in-light-at-923px/light-923-settings.png",
+      "bytes": 172316,
+      "sha256": "fe18ab61da84d8a9d66c522178349d0b2b069e566163d6ec754e7a08eb313f00"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-44277-ns-usable-in-light-at-923px/light-923-tests.png",
+      "bytes": 168098,
+      "sha256": "c7a5969ca41806d1cd71edbd68e1d4634a73b880ab60f49c565237cfdcd00b22"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-601e4-s-usable-in-light-at-1440px/light-1440-access.png",
+      "bytes": 236430,
+      "sha256": "1d28a4cfd0220cddf8c9bf079f9dc496e4af4d9d978db07a5aa63fb2f8317572"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-601e4-s-usable-in-light-at-1440px/light-1440-command-center.png",
+      "bytes": 190811,
+      "sha256": "be8cda8da64005967c783bf848d171b82f3825b5eef70d4a21042eab85724344"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-601e4-s-usable-in-light-at-1440px/light-1440-dashboard.png",
+      "bytes": 251066,
+      "sha256": "313a740696f72c863247580adc01fbf485f3c9c4c40e13930759bbd2495c8910"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-601e4-s-usable-in-light-at-1440px/light-1440-docs.png",
+      "bytes": 316066,
+      "sha256": "86f108301b10ddf1b42918e56e7e13c4287cb23939190e1395aec4bea6638969"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-601e4-s-usable-in-light-at-1440px/light-1440-monitoring.png",
+      "bytes": 304039,
+      "sha256": "28a563ba113428443cfa422432589d7a20d9a029ea6a5ca63ed7f62ab0e29b4f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-601e4-s-usable-in-light-at-1440px/light-1440-new-test.png",
+      "bytes": 273892,
+      "sha256": "33484f9b647b4b459a833b1141f70df44a6a5e2551905283defe53dc2076b2dc"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-601e4-s-usable-in-light-at-1440px/light-1440-repository.png",
+      "bytes": 301961,
+      "sha256": "33ad9300a35f1cdc0ab5f538f511b719499a86eb68250962fea15ea03a14213a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-601e4-s-usable-in-light-at-1440px/light-1440-results.png",
+      "bytes": 147813,
+      "sha256": "0ddb09551e8e1bc2c96f5f2d2605a9c75fed0910f90fa7f090a298e6fd4586c7"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-601e4-s-usable-in-light-at-1440px/light-1440-scripts.png",
+      "bytes": 242031,
+      "sha256": "e74c4ffc662105877bb778a69176ccfe4e4bfad58594a4ac5b5ac39007fb8552"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-601e4-s-usable-in-light-at-1440px/light-1440-settings.png",
+      "bytes": 274147,
+      "sha256": "febfcd7ea170c48ffae5a79aa73a66d83125597f8c62a147b646011ee4736394"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-601e4-s-usable-in-light-at-1440px/light-1440-tests.png",
+      "bytes": 213490,
+      "sha256": "0c01b490e615d2f4c6df0d7392e4a33aab9eaf500b2760ac522faa845aa79d3c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-6e26d-n-solarized-light-at-1440px/solarized-light-1440-access.png",
+      "bytes": 241978,
+      "sha256": "e33e0b8e0b0ae57b1d4beee15f3c8cdf15552b20f181b2a5e9c3c480db11a1fb"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-6e26d-n-solarized-light-at-1440px/solarized-light-1440-command-center.png",
+      "bytes": 208992,
+      "sha256": "2cb5a6c79ca7509df350cf3a6c85ba1575e6bd3b051bdc3614201d296ebdd713"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-6e26d-n-solarized-light-at-1440px/solarized-light-1440-dashboard.png",
+      "bytes": 263829,
+      "sha256": "2b42563159f99b70a4d5ba18f3691dadd6021977010aa5256256a40e342aedfa"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-6e26d-n-solarized-light-at-1440px/solarized-light-1440-docs.png",
+      "bytes": 337486,
+      "sha256": "6d1084baadacd8fff16b8415388b95e55636ec3f749d5cf1b3cbca411f35558a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-6e26d-n-solarized-light-at-1440px/solarized-light-1440-monitoring.png",
+      "bytes": 316893,
+      "sha256": "3a144362d8fda2e54712e8c77bdfe6d6cd8ea48d3243a7f01540aba11e5b0789"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-6e26d-n-solarized-light-at-1440px/solarized-light-1440-new-test.png",
+      "bytes": 289256,
+      "sha256": "7b5f3d2bdca175cf931a14fb5859c0dfebe09f2e8236d9182e01e5b9de8042a5"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-6e26d-n-solarized-light-at-1440px/solarized-light-1440-repository.png",
+      "bytes": 320041,
+      "sha256": "b3c2f7513291d3c8221fe8643e46ff3a9813ded22a691afd3bcc6f7574b112a9"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-6e26d-n-solarized-light-at-1440px/solarized-light-1440-results.png",
+      "bytes": 155196,
+      "sha256": "b4920431f7567d806a86b1b1f5ab6e1a948b98fc561a9e0dc5d77877d2aa21aa"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-6e26d-n-solarized-light-at-1440px/solarized-light-1440-scripts.png",
+      "bytes": 257934,
+      "sha256": "86b12d0a4dfd82a2db41a78aecf9ec25278a2773ea4d9be1aa3c9e64b5b9b8bd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-6e26d-n-solarized-light-at-1440px/solarized-light-1440-settings.png",
+      "bytes": 288465,
+      "sha256": "776e38ef7da8dc4fddeb4ed7458c80793df4b454e08d69c594c35da412ca4bb4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-6e26d-n-solarized-light-at-1440px/solarized-light-1440-tests.png",
+      "bytes": 229931,
+      "sha256": "3f387020813cecc3d16ed39188442b9d5ec8efb9280ad02346b253d7e351bc26"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-77b2e-ins-usable-in-dark-at-923px/dark-923-access.png",
+      "bytes": 178994,
+      "sha256": "f99fb2e1e4e32520ce5d81c7c992b7f22f03d4fa1498eaabbaa1d1d7102853b6"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-77b2e-ins-usable-in-dark-at-923px/dark-923-command-center.png",
+      "bytes": 158499,
+      "sha256": "cf9e99904bb6ce2f84d79d0d098f2dfbc31e51f2ecd3e6938284c60e422ebafe"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-77b2e-ins-usable-in-dark-at-923px/dark-923-dashboard.png",
+      "bytes": 205718,
+      "sha256": "90d2beb533d68e42f558fced638a4b5983130f4c9bf5d6fca0a9234c3f711db7"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-77b2e-ins-usable-in-dark-at-923px/dark-923-docs.png",
+      "bytes": 240371,
+      "sha256": "03a3a62ea57c85c163a88b55de969b3634e21627a8e7a051442facd365a780d8"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-77b2e-ins-usable-in-dark-at-923px/dark-923-monitoring.png",
+      "bytes": 177536,
+      "sha256": "e403a66e2a2587fe9a2a79ff1d411bd79ba64d5da8d5607cbf9a29ba6dffad2e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-77b2e-ins-usable-in-dark-at-923px/dark-923-new-test.png",
+      "bytes": 172884,
+      "sha256": "5c5560e566c15d78707a4f8e3aab1f2b21107be13b7e9535a5de752cc21fbbf6"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-77b2e-ins-usable-in-dark-at-923px/dark-923-repository.png",
+      "bytes": 214450,
+      "sha256": "daa84504d597b0adf290972d5faa5b9008c18a58d9c0a4b19428ea924391f083"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-77b2e-ins-usable-in-dark-at-923px/dark-923-results.png",
+      "bytes": 126608,
+      "sha256": "1380d7823596f19a7d932e749cce183dcced0345dd2015f0bbfe6e916b3f8505"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-77b2e-ins-usable-in-dark-at-923px/dark-923-scripts.png",
+      "bytes": 197655,
+      "sha256": "c695cc0740004df7ace70089f6cd6ee5de965d1b879a4bd0d8093ea173d2789a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-77b2e-ins-usable-in-dark-at-923px/dark-923-settings.png",
+      "bytes": 175684,
+      "sha256": "0c1dc1f75c95d98ae478c696be734ac335f862b6ab0e51e140e0b4f88b18a5c2"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-77b2e-ins-usable-in-dark-at-923px/dark-923-tests.png",
+      "bytes": 173129,
+      "sha256": "41e6872397f918416b3ed72ca0214662d615a0137f3ca76312fc03f0969557dc"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-8d0e5--in-solarized-dark-at-923px/solarized-dark-923-access.png",
+      "bytes": 178986,
+      "sha256": "71349c6a14da2ec2fd1503a4e059f69de3ed9893eb487e1fb1c5e8918edb607d"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-8d0e5--in-solarized-dark-at-923px/solarized-dark-923-command-center.png",
+      "bytes": 155448,
+      "sha256": "0d3be4b203047ce059b065d1a1a6f5f2d8577dd6d0dfb5a398ee736608179267"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-8d0e5--in-solarized-dark-at-923px/solarized-dark-923-dashboard.png",
+      "bytes": 201002,
+      "sha256": "73be948c5de0d0dc85f01e85f3f13a969f5fb09299ea5e021d4f60f9d03b48fd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-8d0e5--in-solarized-dark-at-923px/solarized-dark-923-docs.png",
+      "bytes": 240763,
+      "sha256": "a450e418b580ae8ee12180ec700ac98ae0c92098603714069a1cc14d95bead93"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-8d0e5--in-solarized-dark-at-923px/solarized-dark-923-monitoring.png",
+      "bytes": 175741,
+      "sha256": "39430b94837dd744024b892e9129743981811efd6e6ad55a8cb7811b76a9ef34"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-8d0e5--in-solarized-dark-at-923px/solarized-dark-923-new-test.png",
+      "bytes": 176005,
+      "sha256": "c3ed76f6476f00aacf2037ff347191a81946820f0de0298485f3487f9f9a4494"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-8d0e5--in-solarized-dark-at-923px/solarized-dark-923-repository.png",
+      "bytes": 214944,
+      "sha256": "8a3914e72a4b7f8e3cab2fb532adc24a4c53570b739562dca2a4ca613015b925"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-8d0e5--in-solarized-dark-at-923px/solarized-dark-923-results.png",
+      "bytes": 129797,
+      "sha256": "4da5d49d252b61015345a4f5de09e30ae85490e8cd5b9e4e0855737ac15fd94a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-8d0e5--in-solarized-dark-at-923px/solarized-dark-923-scripts.png",
+      "bytes": 200986,
+      "sha256": "0ef916a1a36be4694076c28f57320f47a0c89b48ff46c7450632d498f302ce69"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-8d0e5--in-solarized-dark-at-923px/solarized-dark-923-settings.png",
+      "bytes": 174594,
+      "sha256": "236075d7bdc8a684f60fdcbbd45086c9fa1b54a9448e5e6cab4b60da54df4699"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-8d0e5--in-solarized-dark-at-923px/solarized-dark-923-tests.png",
+      "bytes": 175341,
+      "sha256": "2a8852c07b688994abc9e78eeef3b356a91a6fd646bfc746d4118fd34866e1dd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bf748-ns-usable-in-dark-at-1440px/dark-1440-access.png",
+      "bytes": 241940,
+      "sha256": "e80a9dde46a67034a157243a2d5cc10bef67239816e958e1316b8d3583175ca0"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bf748-ns-usable-in-dark-at-1440px/dark-1440-command-center.png",
+      "bytes": 212427,
+      "sha256": "5ef33ddfdf409e1a64995e6695c8ce05280da9e213aadb177bc07a655fb907f2"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bf748-ns-usable-in-dark-at-1440px/dark-1440-dashboard.png",
+      "bytes": 268176,
+      "sha256": "d176492b19fe9ded5b422f89900f89a5a769f9e40903b17f2f578bc4a6b8338f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bf748-ns-usable-in-dark-at-1440px/dark-1440-docs.png",
+      "bytes": 339968,
+      "sha256": "baf6d4e1fed984e5d04bc14816747bba6c831028bb96cd9fc9351d8f4045b105"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bf748-ns-usable-in-dark-at-1440px/dark-1440-monitoring.png",
+      "bytes": 317993,
+      "sha256": "ca8ca70740b515541efa6df055c7c534040e2f687d0fb3a762f7eba0e5f9feff"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bf748-ns-usable-in-dark-at-1440px/dark-1440-new-test.png",
+      "bytes": 284159,
+      "sha256": "600747b5021488bbae9ce552762934f8b170a84a3da3ffa27e5dd57929f56bd9"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bf748-ns-usable-in-dark-at-1440px/dark-1440-repository.png",
+      "bytes": 324874,
+      "sha256": "73d813bf5c5cb1f2adecac207e01e1aa092bb82a1e47a3747596fa3f96d7a841"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bf748-ns-usable-in-dark-at-1440px/dark-1440-results.png",
+      "bytes": 152342,
+      "sha256": "93dbeb1d3f888e99b6f456cca769497bccb3024c9d3d081ddab19864aa2bb624"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bf748-ns-usable-in-dark-at-1440px/dark-1440-scripts.png",
+      "bytes": 255136,
+      "sha256": "7978d32aad4e59608b5296cb916be3ce50b7a6877fc6cb55b63b72d748021e29"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bf748-ns-usable-in-dark-at-1440px/dark-1440-settings.png",
+      "bytes": 291686,
+      "sha256": "dfde2a13a3342c722f882f461ffb8791f221f1f540846facf3c287aa21f397d5"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bf748-ns-usable-in-dark-at-1440px/dark-1440-tests.png",
+      "bytes": 232539,
+      "sha256": "305ec66e247630090c6de20f2d255a39904b751301251719dedf8869244f4130"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bfdf9-in-monokai-dimmed-at-1440px/monokai-dimmed-1440-access.png",
+      "bytes": 235802,
+      "sha256": "1db946a491bab63dd8d2ebbcc00e881681f3ffee460768d2093ced718e8cebe7"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bfdf9-in-monokai-dimmed-at-1440px/monokai-dimmed-1440-command-center.png",
+      "bytes": 197344,
+      "sha256": "a1b8136d53e5db22111a89d9f6427e7b7ea8ece54435d76d3d8435b8aca63d1b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bfdf9-in-monokai-dimmed-at-1440px/monokai-dimmed-1440-dashboard.png",
+      "bytes": 250706,
+      "sha256": "93951fc328650dbff513981c5238db7f4307869a0412d6719821bf7ea3e44a0f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bfdf9-in-monokai-dimmed-at-1440px/monokai-dimmed-1440-docs.png",
+      "bytes": 324635,
+      "sha256": "caaf87c2145e3348e7e80b815e8ce66864a6ddebd737768a3c67a16559a9921c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bfdf9-in-monokai-dimmed-at-1440px/monokai-dimmed-1440-monitoring.png",
+      "bytes": 301901,
+      "sha256": "51adc2ed0e667e99f20b291fafb86bc2eb6fac963ef1abaf81f22880b0c75bb1"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bfdf9-in-monokai-dimmed-at-1440px/monokai-dimmed-1440-new-test.png",
+      "bytes": 273959,
+      "sha256": "4b8236bbfa76b2d9daea965c7a8a05014a926485694682899f32085ff2e73658"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bfdf9-in-monokai-dimmed-at-1440px/monokai-dimmed-1440-repository.png",
+      "bytes": 309518,
+      "sha256": "6549085aec8125f9cc78b8dc56747b9b98795f13df0f9f121748e0b37892f809"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bfdf9-in-monokai-dimmed-at-1440px/monokai-dimmed-1440-results.png",
+      "bytes": 147001,
+      "sha256": "319574535caddc65dac6d87cc820bf8cc201fda5064221941bce927b292d7ee4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bfdf9-in-monokai-dimmed-at-1440px/monokai-dimmed-1440-scripts.png",
+      "bytes": 244472,
+      "sha256": "b0ce4a635272005e9a830edab7b3d97bc4bffe904879d61b53874126da8ff01a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bfdf9-in-monokai-dimmed-at-1440px/monokai-dimmed-1440-settings.png",
+      "bytes": 276428,
+      "sha256": "34e583801337f38bd95986fb06f92adc26d8659b1e8ecfd5a211db2cbd3a92ca"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/dev-admin/workflow-ux-consistency-UX-bfdf9-in-monokai-dimmed-at-1440px/monokai-dimmed-1440-tests.png",
+      "bytes": 219851,
+      "sha256": "0f18ab7a5dfe4e756605560e8b59aee2d993b1ca90abb228913faa320d37b466"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/.last-run.json",
+      "bytes": 45,
+      "sha256": "91d1c43004802cd49950d78eb11c8fa7d05da8ffffe219a8b13b2f561bc00903"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/tier0-bruno-import--U23-Br-af0c0-e-work-on-the-host-platform/bruno-issue-workspace.png",
+      "bytes": 229847,
+      "sha256": "cedd125129fde04982dbed9f52bc22e5a4e83206ff8c84a79367f3398228dfa5"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-analysis-preparat-0fe44-tors-across-save-and-reopen/imported-identity-comparison-left.png",
+      "bytes": 60567,
+      "sha256": "0e24ea05be491627d9d20b545d2da2619d5433fcc79b18ed039077419b9b7672"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-analysis-preparat-0fe44-tors-across-save-and-reopen/imported-identity-comparison-right.png",
+      "bytes": 47138,
+      "sha256": "d653f615eae8cc2c4f4e3e5888cfac93a3cd25002ca7f1273535a4a92d6ef337"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-analysis-preparat-4c6ae-nspect-an-exact-time-bucket/filtered-native-panel.png",
+      "bytes": 122569,
+      "sha256": "14e5dd9dea79d7a83dd5ad24239f1bb98db8ee123a22877a7040802b4d00d723"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-analysis-preparat-77b1a-ough-the-real-dashboard-API/native-project-panel.png",
+      "bytes": 26223,
+      "sha256": "587a2e9f25ee34212c52984fb9453aa045ae04b77c1e3a23f32771974461bee4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-analysis-preparat-a2463--denied-coverage-and-reload/management-exact-values.png",
+      "bytes": 150921,
+      "sha256": "6ecc778095a6eaa383bcbe0aeb57d6a5d68a5ab85b82a91c95b66b39db3a2134"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-analysis-preparat-a2463--denied-coverage-and-reload/management-narrow-context.png",
+      "bytes": 118346,
+      "sha256": "b0d73b232b0b4875a9c9b683a63f7f294b30b31450a066b210cbaf82f9d6af5e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-analysis-preparat-a2463--denied-coverage-and-reload/management-narrow-values.png",
+      "bytes": 26455,
+      "sha256": "048d83cc8ea32ad504ce09a8567f44f79b915a1c244a7d83be6f54070bf0e4cd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-analysis-preparat-a769c-ion-remain-in-project-scope/parquet-query.png",
+      "bytes": 37118,
+      "sha256": "de35eeedf7ff1ce0f41bbf3502437dc531ec3e6a4b3bbf6c862858746405cc5f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-analysis-preparat-a769c-ion-remain-in-project-scope/parquet-series.png",
+      "bytes": 8242,
+      "sha256": "afdbe2f5bdf93ba9e995cf664e212cdc440af9bd4c38bf9fefd9cbb134ba49cc"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-analysis-preparat-c6846--selections-save-and-reopen/dimension-waterfall.png",
+      "bytes": 121736,
+      "sha256": "7ac6cdfd32fd906576185449342c9bd91d1999eb305390e7e021e081a047b19e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-analysis-preparat-c6846--selections-save-and-reopen/grouped-overlay-panel.png",
+      "bytes": 132373,
+      "sha256": "eaa40f2ceb2944edc1cf4ebb28e70d50e7e3ebbfee58d81500cad7c055242107"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-aura-outcomes-Aur-a591b-ing-repeated-sibling-values/aura-nested-parameter-narrow.png",
+      "bytes": 13246,
+      "sha256": "19673d99d26e6025a3004056e8fd84f4d2e72c9189c7204acc38905cdfc4b10a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-aura-outcomes-Aur-a591b-ing-repeated-sibling-values/aura-nested-parameter-preview.png",
+      "bytes": 31686,
+      "sha256": "9489c7f45afcbaef35a6a1384bad0d75e175fc0514942a91ca31d231bdc805d4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-aura-outcomes-Aur-d731e-with-safe-source-navigation/aura-outcomes-desktop.png",
+      "bytes": 215814,
+      "sha256": "50d1adaacaad6cb57cdfaf8a17b70f55de7d1076c85b1aaa49e1cb7399879b21"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-aura-outcomes-Aur-d731e-with-safe-source-navigation/aura-outcomes-narrow.png",
+      "bytes": 218886,
+      "sha256": "7a0d76982b1d26efa626ab515c036d62bd6a1f85ca6270127a8fe37b571522a5"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-aura-outcomes-cor-c95b6-ndependent-HTTP200-failures/correlation-diagnosis-desktop.png",
+      "bytes": 361352,
+      "sha256": "78809f29f55c715eb57bcf73355400e3021b97e8ab69a6c0295f65ea2283304e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-aura-outcomes-cor-c95b6-ndependent-HTTP200-failures/correlation-diagnosis-narrow.png",
+      "bytes": 199347,
+      "sha256": "d3740639d6f015e97984c48926f2340026b1c4da6f7d8b9c28547c982528d569"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-aura-outcomes-nat-f7f7b-ion-through-save-and-reopen/correlation-original-source-desktop.png",
+      "bytes": 237008,
+      "sha256": "5fa1364e3ea2e65cbf4dce6e080ed82f3f62b09853ea6224f193e8231f7bf50b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-aura-outcomes-nat-f7f7b-ion-through-save-and-reopen/correlation-original-source-narrow.png",
+      "bytes": 162003,
+      "sha256": "84c33451867756b64708b3c5a44dae7fe4150de68e50d0694ce48ca97e56818c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-aura-outcomes-nat-f7f7b-ion-through-save-and-reopen/correlation-review-desktop.png",
+      "bytes": 233360,
+      "sha256": "bfc1f2662f9d19d99045cce01d41b3ca4a00e94db32a7bd0d701eedd9eff80dc"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-aura-outcomes-nat-f7f7b-ion-through-save-and-reopen/correlation-review-narrow.png",
+      "bytes": 192284,
+      "sha256": "909225bcb0aae6285a2f0aa0a2886158c6f0bbb2946eed1db5f92398d86ea71f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-author-experience-50289-aves-without-losing-context/author-operator-experience.png",
+      "bytes": 180769,
+      "sha256": "5ae6b38db555e55af1063af6446b88965cfddbc62769f00cf8fbb1b76a555109"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-baseline-comparis-3896f-reserves-comparison-context/baseline-comparison-narrow.png",
+      "bytes": 172635,
+      "sha256": "feda2f51cb46d00a938e90a262640874476338ecdbbf113b767ce25b9e83677d"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-baseline-comparis-3896f-reserves-comparison-context/baseline-comparison-wide.png",
+      "bytes": 231956,
+      "sha256": "94e20484644c729d847d789ccd1a7cd94946cafc178b0c625a9a5871315a13bf"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-baseline-comparis-3896f-reserves-comparison-context/baseline-resource-detail.png",
+      "bytes": 120595,
+      "sha256": "d8f10f556396d0f9985df3e0a0b1e31b0dd22df60206d12d175ccc8712e01b2f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-browser-resource--4da8b-inspects-action-attribution/resource-evidence.png",
+      "bytes": 55106,
+      "sha256": "c6117df9054c066ebff2d0a7edb551ad13d291883cf93717d90e99780988f06a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-command-center-Co-ab432-tching-and-catalog-recovery/command-center-overview.png",
+      "bytes": 205638,
+      "sha256": "b71cf26f2cc5f38fd516e80ded370addfb24d875e2893efebf44f467709109d5"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-command-center-ac-121c7-elemetry-clears-the-warning/active-observation-stale.png",
+      "bytes": 244223,
+      "sha256": "f4168f9535370d9601ba47f55e822e7ef52e8d5292dd544e8266e59db31c2cd7"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-command-center-pa-d47b0-tate-when-proof-is-rejected/acknowledged-pause.png",
+      "bytes": 159653,
+      "sha256": "64da0efda3410f1ede70997eec78ec3b3e274a50a13b8cadfaa96929294b621f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-dashboard-Dashboa-739df-ters-and-narrow-run-details/dashboard-narrow-details.png",
+      "bytes": 198349,
+      "sha256": "2d27169db10075a132a5975365f095dc16fe1e9cb317d8cbafbcb2bf79700de3"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-dashboard-analysi-23779--and-refreshes-availability/archive-collection-failure.png",
+      "bytes": 223579,
+      "sha256": "1316144501a3f329a08b0af2c8b47dd72b744f720225eb29a3b1eca9c8480a5c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-dashboard-analysi-23779--and-refreshes-availability/archive-recovery-pending.png",
+      "bytes": 224117,
+      "sha256": "a76792253e162388bbf340db2de541781f440611fd841f07eaf438bea89f90e1"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-dashboard-analysi-8b1d1-ements-and-terminal-outcome/partial-archive-coverage.png",
+      "bytes": 230326,
+      "sha256": "a8fcb43c248b780bea478e5cff93c926b324d433dde16c0eb20aadb738d2c870"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-dashboard-analysi-bb3e5-ples-as-historical-evidence/terminal-observation.png",
+      "bytes": 248621,
+      "sha256": "8d563cfb8fbf45e94c003b27851663e72e329a9d199f2157fad7c96d771a5f82"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-dashboard-analysi-cef7c-d-deltas-and-report-context/load-comparison-desktop.png",
+      "bytes": 262212,
+      "sha256": "dc1158f40a96f37b03bffff1cf9abba1f7bd67988559d7959dbba0f1cd3c9e58"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-dashboard-analysi-cef7c-d-deltas-and-report-context/release-trend-narrow.png",
+      "bytes": 117775,
+      "sha256": "097b42a67da82edfbe5258d68d876ff2beb1c71414e9eed5504f9808b29ead38"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-debugger-experien-7c17e-s-fetched-resource-evidence/failure-resource-evidence.png",
+      "bytes": 217411,
+      "sha256": "b52641c10c857053b8e1febf4e656ee6fd47e5d31ed07bd906ea4d9384fd0ccd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-debugger-experien-f468e-ns-protocol-correct-history/debugger-operator-experience.png",
+      "bytes": 216552,
+      "sha256": "be921a1534cf83f3d21469c92ac5d8c186ac8b1361ea41a19f385cd95873eb03"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-help-DSL-operator-4f826--and-follow-reference-links/dsl-operator-guide-narrow.png",
+      "bytes": 206928,
+      "sha256": "52d17847a73ec078df86f6c35465fab42225fa148e1b6b61321f7dcbef980c6e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-help-DSL-operator-4f826--and-follow-reference-links/dsl-operator-guide-wide.png",
+      "bytes": 271009,
+      "sha256": "30433a4ede36e762fccb44cf9a07a8399d5e93ee225d4c3c93322206a6b79e60"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-help-Help-is-read-88ce3-poses-accessible-navigation/help-desktop.png",
+      "bytes": 239484,
+      "sha256": "d76792d33dec4622437ef152e9af73e4e209ba61a3232ebd4894da7e7494ce3e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-help-Help-is-read-88ce3-poses-accessible-navigation/help-narrow.png",
+      "bytes": 195904,
+      "sha256": "057ca02e396b5a5839e0dd2c64bda68902a74abb6dc2cb0e52565e03e448f696"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-http-concurrent-H-8c030-up-through-its-join-barrier/concurrent-group-desktop.png",
+      "bytes": 321278,
+      "sha256": "a504286e5031790cc0f8f0f3bee97c2f64b34bbe09aad4e2e4a37ea76f63bcd8"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-http-concurrent-H-8c030-up-through-its-join-barrier/concurrent-group-narrow.png",
+      "bytes": 174400,
+      "sha256": "a27f4dfd1855780ff9d65b390f7f29eec3ffbf9c077fcf4f7d8d77343ac6329b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-http-version-mixe-2773c-se-measured-replay-versions/http-version-desktop.png",
+      "bytes": 282338,
+      "sha256": "c1640e17299794abbe884c29b7aecc4ebc3240f25b07d833386226442e89a024"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-http-version-mixe-2773c-se-measured-replay-versions/http-version-narrow.png",
+      "bytes": 146732,
+      "sha256": "2abf247ab6499ee13ecaae14ec58e0c9b8766abb68a5baace24f995696ac91dc"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-http-version-mixe-2773c-se-measured-replay-versions/http-version-replay-desktop.png",
+      "bytes": 333380,
+      "sha256": "61d474b30cedeac4bd24b605ba69381d9aa5cd8a2bf3621e12b8dfa1febe461b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-data-review-narrow.png",
+      "bytes": 126123,
+      "sha256": "5d890c55192aa08ddc81269e3e642ad404a1366e9ca8bd226a35d5f5ffb283c0"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-narrow-review.png",
+      "bytes": 160717,
+      "sha256": "b22b2c103eeedbba6955d80e1f6550cdb6d9a2d6d10308da47967be906090134"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-runtime-review-narrow.png",
+      "bytes": 118255,
+      "sha256": "ab712d8231b651eb28ca78cccd62d372e47ac1868a8e95cea77bbb4a67e43649"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-runtime-review-wide.png",
+      "bytes": 178151,
+      "sha256": "72c7332c11c168c44d08deedd781df92eb64f7ce5b7da4d1a6b93357fbaf57e7"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-six-tab-review.png",
+      "bytes": 222225,
+      "sha256": "e03e0bf3ebd6c2aeac73df75a539474aaab15eea92f995617c2473429772a1f4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-import-source-Ora-4a93d-offers-a-script-destination/oracle-current-source.png",
+      "bytes": 196332,
+      "sha256": "1c8f46b9d8f71b8a109c88a0e6bed8dc07c28374ca840256e6d65ff85f3a9ea1"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-jmeter-fidelity-J-720e8--drafts-and-workload-curves/messaging-fidelity.png",
+      "bytes": 167155,
+      "sha256": "a4e72e4594693bada47b0f308454959ea3311b30caef28c710b04bafb30ee881"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-library-assignmen-9a943-require-an-explicit-release/library-assignment-dialog.png",
+      "bytes": 120855,
+      "sha256": "6a2450234420943365f5f194ab3c5f6e7fe6c0f566291943a3d35bb99197216a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-after-code-narrow.png",
+      "bytes": 21860,
+      "sha256": "53ba730d685ecee749f1bc2b1e790081538939607e9c7552a581d1220335e9c2"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-preview-code.png",
+      "bytes": 46454,
+      "sha256": "4a9a5a2b8aaa776315bd36119305f8d202ada5df22f7c87778504f431b86bcbd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-preview-narrow.png",
+      "bytes": 78367,
+      "sha256": "36cefe6e7dce68a9efddbffe219a4729ce8f57efca0ffe3920cacea7af7a306e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-preview.png",
+      "bytes": 43041,
+      "sha256": "8aed92fb9fc19a8c7cc72fe6bdd9b9d4ae3506aca0e28e6bfbf9a0104108931a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-30e50-s-an-oversized-idle-timeout/runtime-context.png",
+      "bytes": 164845,
+      "sha256": "315b70eb2b028a610ce8b959049d4659de2952072ab2bccadf2a54d57227a972"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-3266b-java-lifecycle-zip-response/loadrunner-review.png",
+      "bytes": 208149,
+      "sha256": "470c3a1333e6252294b5fb8f737d6e098b6e3cafa0f3e9af8014e79123817933"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-37eaf-dential-groups-zip-response/credential-groups.png",
+      "bytes": 192245,
+      "sha256": "5a8b7d5edff88802559ac5f583c8a606d3919e122b8839df691450652d8110c4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-37eaf-dential-groups-zip-response/loadrunner-review.png",
+      "bytes": 178717,
+      "sha256": "e087da7adda6877a52e72336d805399ffe4c85d53c6b1680e234e569f4f6fd3d"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/conversion-reference-desktop.png",
+      "bytes": 188625,
+      "sha256": "684dba6c34730c221c7f5d83bccfafb2dec298da2d55a4b6504e4858c5a6ab48"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/conversion-reference-narrow.png",
+      "bytes": 152957,
+      "sha256": "fdb1fedca2d1b185a93380dd7925e3a04362ec955932c66fd3603f572eeabd98"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/loadrunner-review.png",
+      "bytes": 135614,
+      "sha256": "98eeb819f1ecace0dc6d03ea31d48067e091385654b695ba6c7a71139704e83d"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-data.png",
+      "bytes": 180852,
+      "sha256": "a8931f8e665c2f745a3ca782b3d356d440059ffe231176133aa324fdf3ea1675"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-dsl.png",
+      "bytes": 186269,
+      "sha256": "855ca39c0e32f4de34b5e899a53cf4a0c246bd25f84a59bc1799f7189832d70a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-runtime.png",
+      "bytes": 171743,
+      "sha256": "105455185636768a2cdeb7bd7d77d7f1114d06169fcab22e7b3c92a34a490fe8"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-source.png",
+      "bytes": 164323,
+      "sha256": "f5457aa727e1737fd1629bf8dd2c69bd3f9a684fdcfd15112a3b16db1adfed23"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-8bfd9-nges-without-leaving-Review/issue-narrow.png",
+      "bytes": 136909,
+      "sha256": "0d29c5ec0c04abea131a3d4e9cedd695acac4ed4b915499df926a2c2b4f77801"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-8bfd9-nges-without-leaving-Review/issue-runtime.png",
+      "bytes": 197628,
+      "sha256": "57cf85269f91d7f3f97d5fbc1aafa242e06f7114b4ca74063ce7a3d5dd99b548"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-8bfd9-nges-without-leaving-Review/issue-warning.png",
+      "bytes": 196035,
+      "sha256": "e670ed4edddb332cfcf5864509ccd96827b6ef2d82a36f1d08707e22a7fec2cc"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-bbda9-uclient-review-zip-response/loadrunner-review.png",
+      "bytes": 176600,
+      "sha256": "2c9a75ee4c63212b4e5ecdf67ec925e9fdb6ca1205b3ec119392154bbee54230"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-c0c2f-ence-and-survive-draft-save/data-settings-narrow.png",
+      "bytes": 144002,
+      "sha256": "398358ec5e35b23c03844329da3ea0fd0c348d1c5e3d9d7334b8682d36f8287b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-c0c2f-ence-and-survive-draft-save/runtime-settings-desktop.png",
+      "bytes": 174854,
+      "sha256": "5976d6ce8376509fcc83d95146dbd0f8abcf03a1b60d60071662e70669aee976"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-d220e-preserving-protected-values/credentials-inline-edit.png",
+      "bytes": 201125,
+      "sha256": "93d495f9d6f5835a9d720104b1da735f094c499a1440eeda5ba6f495144e0d42"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-daf3d-ort-and-accepts-another-ZIP/batch-import-saved.png",
+      "bytes": 210050,
+      "sha256": "ea54a88201dffd78c4eae11275e874d9922371e0289090f1dee742c8c76d5890"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-ddf3d-eal-sap-review-zip-response/loadrunner-review.png",
+      "bytes": 169500,
+      "sha256": "57bac4cba0910f240ae641be58c7caf258d37e1ee1db7977eeab1c4ba76e197e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-eb5a1--from-dormant-source-values/runtime-diagnostic-classification.png",
+      "bytes": 197015,
+      "sha256": "0a99fb95ba43d6ec8b7d48f6d23df087bf556aed2747f9f13a3d9340c1454968"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-eb5a1--from-dormant-source-values/runtime-diagnostic-mapping.png",
+      "bytes": 197296,
+      "sha256": "f32e8660261f522cb00b67275adb49dd192e8562edbe423b089738d6f2a098c4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-eb5a1--from-dormant-source-values/runtime-dormant-explanation.png",
+      "bytes": 198328,
+      "sha256": "04dbad4a6841b19003294d8c7090a07f3439fb6eb756107ac88497d9e070dcd3"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-loadrunner-review-fbc64-nd-saves-edited-percentages/percentage-runtime-settings.png",
+      "bytes": 176317,
+      "sha256": "2d7a90fc1d45c456d208d8242dff9b76535076fa9233cb2e1996b6c40c8e60a0"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-local-archive-fai-ad13f-and-survives-checking-again/local-archive-failure.png",
+      "bytes": 217755,
+      "sha256": "754abfc6a3931fd4a6499f5ff763f4a8e028c09cfa67fb17ab6cdf45b8996f35"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-monitoring-Kafka--30808-on-conflicts-through-reload/kafka-management-approval-narrow.png",
+      "bytes": 98825,
+      "sha256": "3faa78d24bca4700567d5fa13c63f577eb33e4b491c2f1c7b41874b86f613f2e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-monitoring-Kafka--30808-on-conflicts-through-reload/kafka-management-source-narrow.png",
+      "bytes": 110086,
+      "sha256": "e02479199a0d819408fbcd1ee48fc279a39e8a289ed2e76b4405a9ef3592cc68"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-monitoring-Kafka--30808-on-conflicts-through-reload/kafka-management-source.png",
+      "bytes": 218279,
+      "sha256": "3063ac53483e7326b68875b1bb0c348b8fc76ad4aaaa25552d175068f164ba28"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-monitoring-Servic-b3266-revisions-and-narrow-layout/servicebus-management-approval-narrow.png",
+      "bytes": 102757,
+      "sha256": "fff44b6b38c69cf1cbd857a649be8ebf9edbe799996acfaf42301a2fb0db07c9"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-monitoring-Servic-b3266-revisions-and-narrow-layout/servicebus-management-source-narrow.png",
+      "bytes": 116766,
+      "sha256": "6bed566f7a023c9e9f234d605a717c534384c29d7c684258c443ee03b807a05e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-monitoring-Servic-b3266-revisions-and-narrow-layout/servicebus-management-source.png",
+      "bytes": 228914,
+      "sha256": "e9ffacb98d6cd02e3adcccbe74de5c2040cbb1daa23dc8279d570178d457a109"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-monitoring-Solace-57e07-revisions-and-narrow-layout/solace-management-approval-narrow.png",
+      "bytes": 124106,
+      "sha256": "47a2bc3e12b45778b0c480792aeb5a3263177139491bda1f1d59dc80442982da"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-monitoring-Solace-57e07-revisions-and-narrow-layout/solace-management-source-narrow.png",
+      "bytes": 118002,
+      "sha256": "1543c57a91f44b0402dd7a251fbe6f32d98e300fed00f46924a5d2c2e2f01a15"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-monitoring-Solace-57e07-revisions-and-narrow-layout/solace-management-source.png",
+      "bytes": 228958,
+      "sha256": "71a2c2ff4d7b234587a27a087b147495d19911cabf2723becfe09966c654f650"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-new-test-Java-gro-0c281-istence-facade-ledger-true-/java-profile-placement.png",
+      "bytes": 174454,
+      "sha256": "d8ae8a68dae7fc01613f0421150cd67e04b3681f434eb3b89b4b76c07c3bb5a6"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-new-test-Java-gro-1fb68-stence-facade-ledger-false-/java-profile-placement.png",
+      "bytes": 174498,
+      "sha256": "5c0da29e6052190fdf8ece7e047c35cd8a27f320e5da279cde83b824d2bdd98c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-new-test-Live-con-1955a-ns-without-opening-raw-JSON/java-reservations.png",
+      "bytes": 204208,
+      "sha256": "f6330e33ffb85fbf2e091d23e30b91c9cce27129383af2e0a916d1669b8c9d41"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-new-test-New-Test-a4e1f-edule-with-visible-policies/new-test-schedules-narrow.png",
+      "bytes": 180662,
+      "sha256": "43b5a8a6aa4505b0faf125d1038e8a8b95354db545bd89e86f4599e155530794"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-new-test-Scenario-03ef7-d-the-recovery-spare-budget/controller-continuity.png",
+      "bytes": 195981,
+      "sha256": "b20665d0f0dcf7fc95e505424624a10dfd2435693655d6e47f4009184e8070dc"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-new-test-Scenario-2ede1-multi-region-infrastructure/weighted-placement-multi-region.png",
+      "bytes": 57784,
+      "sha256": "cc82f105f39b219144c2c48ea65b0833f34ec81d4f9a04ba3d1f6928c5e4ee6e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-new-test-Scenario-54f4c-ingle-region-infrastructure/weighted-placement-single-region.png",
+      "bytes": 46128,
+      "sha256": "3af9cf94c7fb1af0422f315495f6378a74e4b0903e2d597f11facc3f9da75440"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-new-test-Scenario-8f139--for-missing-infrastructure/weighted-placement-missing.png",
+      "bytes": 46128,
+      "sha256": "3af9cf94c7fb1af0422f315495f6378a74e4b0903e2d597f11facc3f9da75440"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-new-test-Scenario-d6313-r-multi-zone-infrastructure/weighted-placement-multi-zone.png",
+      "bytes": 46128,
+      "sha256": "3af9cf94c7fb1af0422f315495f6378a74e4b0903e2d597f11facc3f9da75440"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-new-test-prepared-275a7-ts-with-the-pinned-revision/eventhubs-preparation-resources.png",
+      "bytes": 190062,
+      "sha256": "381a770c2250c3be094bcf6510f95374ec6977a231b6ce0683fafc215cf6bffd"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-object-activity-a-f9b62-nd-retained-deleted-history/deleted-object-history.png",
+      "bytes": 254859,
+      "sha256": "4164ca63089051b8e91222c9737737cf6b3a5a5f9e81c15c8e296b66a742df1b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-protocol-diagnost-220cb-nses-in-the-active-run-view/grpc-diagnostics.png",
+      "bytes": 164352,
+      "sha256": "36876af7e5c847c51f65f0d7992b2b71053f85e2f77720a252c0756d8bf9c48a"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-protocol-diagnost-4cabc-ng-RTT-and-matched-zero-RTT/websocket-diagnostics.png",
+      "bytes": 107526,
+      "sha256": "fef40fba386daaa31abb0ce8e589d4cc7db8372014a0f7757e354b42ca5edc53"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-protocol-diagnost-d8a15-ble-lag-during-idle-windows/eventhubs-progress.png",
+      "bytes": 116880,
+      "sha256": "207066e60a16bb958839ae71fa8ab1b60ece715d6e21f8b40a5f05d6910f37da"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-recording-review--0527c--captured-viewport-readable/browser-evidence-narrow.png",
+      "bytes": 192357,
+      "sha256": "cb5a07f9b1aae3fac76af3e0120d01555afb8e4790b3a8275349ec8bb91eca47"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-recording-review--a6696-lidates-changed-conversions/recording-output-review.png",
+      "bytes": 275738,
+      "sha256": "4d0a99e68482f2cb1341b542edb991b5dfc060b2e569c67ee8ad5a5b603a79db"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-response-content--19605-ker-through-save-and-reopen/response-content-blocker-narrow-focused.png",
+      "bytes": 50326,
+      "sha256": "666cbbb773935b294cfba902ae87f1c221fb5d59fbe6dfefb9c3088ee4db6e76"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-response-content--19605-ker-through-save-and-reopen/response-content-blocker-narrow.png",
+      "bytes": 93172,
+      "sha256": "df043ae8a8ce81e41487735baa128efe5e0f49201b8cb353ab7317138573b074"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-response-content--19605-ker-through-save-and-reopen/response-content-blocker.png",
+      "bytes": 190010,
+      "sha256": "c80bf132a21ef4b12e8ffae8443a8e85a827317b33ae128f806e6f6dc4a2246e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-response-content--19605-ker-through-save-and-reopen/response-content-reopened-blocker.png",
+      "bytes": 211654,
+      "sha256": "e6884b103631db833b6773048db90cf2725949da873541bfe482d9a69a6b849f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-response-content--19605-ker-through-save-and-reopen/response-content-retained-source.png",
+      "bytes": 189499,
+      "sha256": "67ff6f3e4c2d7c016c8abb9a49c591c0b40a7c93b5ce0f38f7a59d7ba485c284"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-response-content--4ccf9-play-extracts-a-fresh-value/response-content-gzip-replay-narrow-focused.png",
+      "bytes": 12831,
+      "sha256": "f80d67e971b476cffc9278558484f8491d3a95b17b452e64ee38715ad8b7d737"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-response-content--4ccf9-play-extracts-a-fresh-value/response-content-gzip-replay-narrow.png",
+      "bytes": 155976,
+      "sha256": "2100f546f328d70ad2dca46b3c94efdcdd2c9691847b01db43396b56601937c7"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-response-content--4ccf9-play-extracts-a-fresh-value/response-content-gzip-replay.png",
+      "bytes": 225635,
+      "sha256": "4d3d6d45d9c7d01e07464c41546ac6424aeb2f6c25551ae812536ad0725905e4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-response-content--4ccf9-play-extracts-a-fresh-value/response-content-har-review.png",
+      "bytes": 228251,
+      "sha256": "6591b9755d4b23c96d21268ffa0369098cd1e362cd7b8ef91aa63e2d29542b38"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-response-content--65ba2-lifies-the-partial-response/response-content-partial-stream-narrow-focused.png",
+      "bytes": 17651,
+      "sha256": "0527d747bef62431b85e3bffc3112f53c709a9918aeea446cd3bafd615defbc4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-response-content--65ba2-lifies-the-partial-response/response-content-partial-stream-narrow.png",
+      "bytes": 155590,
+      "sha256": "404ec7197c08daa8ac2cfea0b28b133ab197133436fab16da3784b47c32ed328"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-response-content--65ba2-lifies-the-partial-response/response-content-partial-stream.png",
+      "bytes": 217242,
+      "sha256": "5b1a606b4e83d842a309b0257f485d6924815a7b6c6b37d494dc53523befdec9"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/active-frames-narrow-focused.png",
+      "bytes": 5602,
+      "sha256": "328303997b99d318cce81af77594f5bc4d3bb062c4e7196de42c2265b3a942ad"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/active-frames-narrow.png",
+      "bytes": 161594,
+      "sha256": "2abd485c2f0f558efe1ebbe0b2321c6c483e8ef464c85b52b1c9aeee867da905"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/current-binding-1-narrow-focused.png",
+      "bytes": 8271,
+      "sha256": "320f6bfc707df7cf5b5ae6e275698612666955900c7f338e15f2d27729279cb6"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/current-binding-1-narrow.png",
+      "bytes": 161375,
+      "sha256": "52a143747369d1a0fbd2e8bf68ba4047d675c391ddf9d6e942c39d1cbd03c62e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/current-binding-2-narrow-focused.png",
+      "bytes": 8239,
+      "sha256": "f55d2de2d36bcf5f16905df23b3fa21e185af548c7ea48cd7feddd6f5e60bc13"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/current-binding-2-narrow.png",
+      "bytes": 160144,
+      "sha256": "1352e49239a6a9567b3d3947e82769ee9fd37578bb3dcccac11bf91a4f132d71"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-1-narrow-focused.png",
+      "bytes": 21608,
+      "sha256": "7a90932c8fefc07959f796a17394763ce82410e6b9343ddeb2daa80eae26de20"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-1-narrow.png",
+      "bytes": 161802,
+      "sha256": "7c114a66393da6437965ed6008641161f7353ee9692ff2cc4f10c36ac1724b72"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-2-narrow-focused.png",
+      "bytes": 19853,
+      "sha256": "4c03553202cbb14f40eac00400f050b51e341f2dfbe21e896a57f8aef8c53a7e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-2-narrow.png",
+      "bytes": 157784,
+      "sha256": "91feb102d7c5703056a58a2eb153c37bb4795b28bd47a03595071751021048aa"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-3-narrow-focused.png",
+      "bytes": 21828,
+      "sha256": "824a97e9c7788071a44e4b6a55436bdd9f8e1906151c8f3b8d7446a245e822fc"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-3-narrow.png",
+      "bytes": 161392,
+      "sha256": "3b2a964c4f8b1726e4074422325b0af9abf142d3c8e94e198d0167f473552c50"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/paused-runtime-receipts.png",
+      "bytes": 354304,
+      "sha256": "7456fff931beb60ae718ce80005c69ce5e083d41229e3b439edc774d994d1ff5"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/row-receipt-1-narrow-focused.png",
+      "bytes": 13438,
+      "sha256": "0acfebac44b0549d0b2947c02650d8d0cedcec2e7822620505a5e8932c14ec9e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/row-receipt-1-narrow.png",
+      "bytes": 158846,
+      "sha256": "403be6c6c2b9ece06851e6420d11b02ca421f44cccd5eef5f57d0527192d6d1c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/row-receipt-2-narrow-focused.png",
+      "bytes": 20078,
+      "sha256": "480d7882ffddc1c56bdfa85b600f702c363d5bd4de8ad1fea3755c8146419e46"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/row-receipt-2-narrow.png",
+      "bytes": 160255,
+      "sha256": "19a4a0ebbdaf74b786302e59dd8d10ca81631705235b676a3cf39008faa7b78b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-runtime-state-for-9220c-ing-bindings-after-stepping/foreach-frame-source.png",
+      "bytes": 359288,
+      "sha256": "ea72ad2a8834e743cc3d5ba63ff57eb5efa65109e899d83322c3407da5e4e0e9"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-scenario-composit-6ecc2-editing-with-a-live-preview/scenario-composition-desktop.png",
+      "bytes": 268594,
+      "sha256": "7fe754c46f7ee8c7d140843ad43a78384a4c9acb84451e842536964573bc7424"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-scenario-composit-6ecc2-editing-with-a-live-preview/scenario-composition-narrow.png",
+      "bytes": 130629,
+      "sha256": "33ef01d8411ef1ca8d1540b0e058124d5af82fc5fdde15459409a853cd8aa014"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-scenario-data-sce-d59d0-fter-removing-a-shared-pool/scenario-script-data-desktop.png",
+      "bytes": 332469,
+      "sha256": "281e2a1be7fe297f88a734d2f201fffc75f16558babd5c378f50c4f737c8a731"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-scenario-data-sce-d59d0-fter-removing-a-shared-pool/scenario-script-data-narrow.png",
+      "bytes": 138997,
+      "sha256": "ded62e74cbd3ec0627ccb01d805c2a364142f67066d3062204b06b0ae75224ec"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-script-editor-aut-7060d-r-save-and-canonical-reopen/canonical-goals-reopen.png",
+      "bytes": 214142,
+      "sha256": "c239ca56047d50a13d828ada33aeca842b8d74bec7cea2adc7c9f13d151d547c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-script-editor-ope-64e79-ithout-losing-source-fields/script-debug-evidence.png",
+      "bytes": 279337,
+      "sha256": "529cd8ecb1c5fe827678b9a74964e1a5aa7a1b5d2aac4c19252113b1bcf4769c"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-script-folders-Op-2bffa-in-assignments-after-reload/move-scripts-dialog.png",
+      "bytes": 103426,
+      "sha256": "64d1e5d9d6939a0fdb0b02d0aa6ca1f3bd623f94a12f74bece7fbb270a9cf60e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-script-settings-o-5529c-ssification-until-re-import/legacy-runtime-classification.png",
+      "bytes": 242700,
+      "sha256": "965fffed1818f7fe72c46359747638fefa75b5c68847206f35d9ce2a69f71cb8"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/imported-source-runtime-narrow.png",
+      "bytes": 165544,
+      "sha256": "02b35bee1d0e6c09bf2ed1afdd789ce5613082ecaa1e23c1a04d538bea3d8c14"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/imported-source-runtime-reference.png",
+      "bytes": 254351,
+      "sha256": "c621257fc30b424c5d346113a823ff5a9d96ddfdf7ceb4967e3a47fcd2512392"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/runtime-checkbox-narrow.png",
+      "bytes": 175963,
+      "sha256": "e660ca357ed7ba7430572da22f75f0ec7f55ca93a5042518be20d868bdf91ce0"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/runtime-evidence-narrow.png",
+      "bytes": 164966,
+      "sha256": "88e5c1d49ff5fb6a46fb2f7f588f9b44ab024c4ed6538b0bd1e8ac03acacbc25"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/runtime-evidence-wide.png",
+      "bytes": 283487,
+      "sha256": "5244581c5195597e8f6540b9cf623e574fe322efc497dc3ba4053b0932fde984"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-theme-controls-sh-1cb34-rk-including-focus-and-help/dark-audit-controls.png",
+      "bytes": 295977,
+      "sha256": "4be1b053eb344157079dd68e8c983316e697a6abfe4893c313768089d846d8e6"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-theme-controls-sh-3e1d7-ht-including-focus-and-help/solarized-light-audit-controls.png",
+      "bytes": 299450,
+      "sha256": "fcfa0bcf79de0794f873f9915bd156877f77c478d0291db67292580b3a6ea89b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-theme-controls-sh-66ab6-ed-including-focus-and-help/monokai-dimmed-audit-controls.png",
+      "bytes": 286598,
+      "sha256": "3173caba4f5c4cfab9da16b84ffab5d4a4e296bbc0348ebc3440ed2d25810a56"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-theme-controls-sh-857b6-ht-including-focus-and-help/light-audit-controls.png",
+      "bytes": 288660,
+      "sha256": "ee9baf39bd4d5518c6bcbb6218f72d1151efc0020223e63902b0de432577503e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-partitions-2026-10-05/evidence/browser-native-full-cycle/local-auth/workflow-theme-controls-sh-eea9c-rk-including-focus-and-help/solarized-dark-audit-controls.png",
+      "bytes": 287876,
+      "sha256": "2c4379fdad4fa5d94127593d2675e7c90c7aa6282f8302d56535875f8be4823c"
+    }
+  ],
+  "owned_runner_cleanup": [
+    {
+      "path": "/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.ECKEltSYoR",
+      "removed": true
+    },
+    {
+      "path": "/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.PdYUT3MbID",
+      "removed": true
+    }
+  ],
+  "limits": [
+    "This cycle is a failed qualification, not a final merge pass.",
+    "Chart/Analysis focused both-profile gates passed separately.",
+    "Prior root full Go chart-bundle pass is historical after Source Find correction.",
+    "Shared caches remain retained for dependent fixes/tests."
+  ]
+}

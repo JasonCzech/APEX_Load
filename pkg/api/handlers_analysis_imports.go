@@ -137,6 +137,8 @@ type AnalysisCapabilitiesResponse struct {
 	MonitoringEnabled             bool                   `json:"monitoring_enabled"`
 	PreparationEnabled            bool                   `json:"preparation_enabled"`
 	NativeParquet                 bool                   `json:"native_parquet"`
+	PartitionManifestVersion      uint32                 `json:"partition_manifest_version"`
+	PartitionPruningAvailable     bool                   `json:"partition_pruning_available"`
 	ImportedIdentityVersion       uint32                 `json:"imported_identity_version"`
 	Enabled                       bool                   `json:"enabled"`
 	ChunkBytes                    int64                  `json:"chunk_bytes"`
@@ -155,7 +157,7 @@ func (s *Server) handleAnalysisCapabilities(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, 200, AnalysisCapabilitiesResponse{
 		MessagingManagementEnabled: messagingManagementEnabled(project), MessagingManagementVersion: analysis.MessagingManagementVersion, MessagingManagementPacks: collectoragent.ManagementPacks(),
 		DiagnosticsEnabled: diagnosticsProjectEnabled(project), MonitoringEnabled: runMonitoringEnabled(project), PreparationEnabled: preparationProjectEnabled(project),
-		NativeParquet: analytics.Available(), ImportedIdentityVersion: analysisImportedIdentityVersion, Enabled: analysisProjectEnabled(project), ChunkBytes: analysisUploadChunk, MaxImportBytes: analysisImportMaxBytes,
+		NativeParquet: analytics.Available(), PartitionManifestVersion: analysis.PartitionManifestVersion, PartitionPruningAvailable: analytics.Available(), ImportedIdentityVersion: analysisImportedIdentityVersion, Enabled: analysisProjectEnabled(project), ChunkBytes: analysisUploadChunk, MaxImportBytes: analysisImportMaxBytes,
 		HeavyJobs: 1, Threads: 2, MemoryLimit: memory, SpillLimit: spill, ResourceConfigurationAccepted: accepted, MetricCatalog: analysis.Catalog(),
 	})
 }
@@ -757,12 +759,22 @@ func deleteAnalysisObjects(ctx context.Context, in *storage.AnalysisImport) erro
 }
 
 func (s *Server) handleAnalysisDatasetSeries(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(withAnalysisArtifactSelections(r.Context()), time.Minute)
+	defer cancel()
+	r = r.WithContext(ctx)
 	if !admitAnalysisPipeline(w) {
 		return
 	}
 	defer func() { <-analysisPipelineJobs }()
-	_, in := s.loadAnalysisImport(w, r)
+	_, in := s.loadAnalysisImportMetadata(w, r)
 	if in == nil {
+		return
+	}
+	if !analysisQueryContextLive(r.Context()) {
+		writeError(w, 409, "analytical query authority expired")
+		return
+	}
+	if s.analysisImportStore(w, in.ProjectID) == nil {
 		return
 	}
 	if in.State != "ready" {
@@ -778,6 +790,18 @@ func (s *Server) handleAnalysisDatasetSeries(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	query.ProjectID, query.DatasetID = in.ProjectID, in.ID
+	query, err := bindImportedNativeSeriesQuery(in, query)
+	if err != nil {
+		writeError(w, 422, err.Error())
+		return
+	}
+	window := nativeAnalysisTimeWindow(query.From, query.To)
+	query.From, query.To = window.From, window.To
+	if err := query.Validate(); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	r = r.WithContext(withAnalysisTimeWindow(r.Context(), window))
 	points, err := queryAnalysisDataset(r.Context(), in, query)
 	if err != nil {
 		writeError(w, 422, err.Error())

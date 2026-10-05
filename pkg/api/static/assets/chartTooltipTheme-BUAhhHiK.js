@@ -1,0 +1,1 @@
+var e={background:`var(--bg-elevated)`,border:`1px solid var(--border)`,borderRadius:10,color:`var(--text-primary)`,boxShadow:`var(--shadow-sm)`},t={color:`var(--text-primary)`,fontWeight:700},n=()=>0;export{t as n,n as r,e as t};

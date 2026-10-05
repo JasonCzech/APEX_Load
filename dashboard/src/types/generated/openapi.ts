@@ -7385,6 +7385,8 @@ export interface operations {
             };
             "monitoring_enabled": boolean;
             "native_parquet": boolean;
+            "partition_manifest_version": number;
+            "partition_pruning_available": boolean;
             "preparation_enabled": boolean;
             "resource_configuration_accepted": boolean;
             "spill_limit": string;
@@ -7464,6 +7466,35 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "partition_manifest"?: ({
+              "dataset_id": string;
+              "digest": string;
+              "mapping_sha256": string;
+              "mapping_version": number;
+              "partitions": Array<{
+                "bytes": number;
+                "object_key": string;
+                "sha256": string;
+                "stats": {
+                  "identity"?: (Record<string, unknown>) | null;
+                  "identity_version": number;
+                  "kind": string;
+                  "max_time"?: (string) | null;
+                  "metric"?: (string) | null;
+                  "min_time"?: (string) | null;
+                  "missing": number;
+                  "rows": number;
+                  "schema_version": string;
+                  "unit": string;
+                  "valid": number;
+                  "version": number;
+                };
+              }>;
+              "producer": string;
+              "project_id": string;
+              "version": number;
+            }) | null;
+            "partition_manifest_version"?: number;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -7531,6 +7562,35 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "partition_manifest"?: ({
+              "dataset_id": string;
+              "digest": string;
+              "mapping_sha256": string;
+              "mapping_version": number;
+              "partitions": Array<{
+                "bytes": number;
+                "object_key": string;
+                "sha256": string;
+                "stats": {
+                  "identity"?: (Record<string, unknown>) | null;
+                  "identity_version": number;
+                  "kind": string;
+                  "max_time"?: (string) | null;
+                  "metric"?: (string) | null;
+                  "min_time"?: (string) | null;
+                  "missing": number;
+                  "rows": number;
+                  "schema_version": string;
+                  "unit": string;
+                  "valid": number;
+                  "version": number;
+                };
+              }>;
+              "producer": string;
+              "project_id": string;
+              "version": number;
+            }) | null;
+            "partition_manifest_version"?: number;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -7625,7 +7685,182 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "advisory": boolean;
+            "artifact_selections"?: Array<{
+              "avoided_artifact_bytes": number;
+              "dataset_id": string;
+              "dataset_revision": number;
+              "manifest_digest"?: string;
+              "manifest_version": number;
+              "mode": string;
+              "pruned_objects": number;
+              "selected_objects": number;
+              "staged_artifact_bytes": number;
+              "total_artifact_bytes": number;
+              "total_objects": number;
+            }>;
+            "correlation"?: Array<{
+              "coefficient"?: (number) | null;
+              "coverage": number;
+              "expected_buckets": number;
+              "lag_seconds": number;
+              "pairs": number;
+            }>;
+            "interpretation": string;
+            "left": Array<{
+              "active_runtime_ms"?: (number) | null;
+              "dataset_id"?: string;
+              "derivation"?: Array<{
+                "algorithm": string;
+                "bucket_seconds"?: number;
+                "operation": string;
+              }>;
+              "dimensions"?: Record<string, string>;
+              "host"?: string;
+              "input_kind"?: string;
+              "kind": string;
+              "metric_name": string;
+              "metric_version"?: string;
+              "population"?: string;
+              "project_id": string;
+              "provider"?: ({
+                "aggregation_eligible": boolean;
+                "analysis_statistic"?: string;
+                "backend"?: string;
+                "backend_profile"?: string;
+                "bucket_end": string;
+                "bucket_start": string;
+                "catalog_path"?: string;
+                "count"?: (number) | null;
+                "definition_hash"?: string;
+                "display_labels"?: Record<string, string>;
+                "entity_ids"?: Record<string, string>;
+                "evaluation_step_seconds"?: number;
+                "freshness_known"?: boolean;
+                "max"?: (number) | null;
+                "metric_id": string;
+                "min"?: (number) | null;
+                "mode"?: string;
+                "name": string;
+                "query_id"?: string;
+                "query_window"?: boolean;
+                "resolution_seconds": number;
+                "settled": boolean;
+                "statistic": string;
+                "sum"?: (number) | null;
+                "synthetic"?: boolean;
+                "underlying_sample_time"?: (string) | null;
+              }) | null;
+              "quality": string;
+              "received_at"?: string;
+              "relative_time_ms"?: (number) | null;
+              "run_id"?: string;
+              "scenario_id"?: string;
+              "schema_version": string;
+              "service"?: string;
+              "source": string;
+              "timestamp_utc": string;
+              "unit"?: string;
+              "value"?: (number) | null;
+            }>;
+            "request": {
+              "bucket_seconds": number;
+              "from": string;
+              "left": {
+                "aggregation": string;
+                "dataset_id"?: string;
+                "dimensions"?: Record<string, string>;
+                "group"?: string;
+                "host"?: string;
+                "metric": string;
+                "protocol"?: string;
+                "run_id"?: string;
+                "service"?: string;
+                "source_id"?: string;
+                "transaction"?: string;
+              };
+              "max_lag_seconds": number;
+              "mode": string;
+              "right": {
+                "aggregation": string;
+                "dataset_id"?: string;
+                "dimensions"?: Record<string, string>;
+                "group"?: string;
+                "host"?: string;
+                "metric": string;
+                "protocol"?: string;
+                "run_id"?: string;
+                "service"?: string;
+                "source_id"?: string;
+                "transaction"?: string;
+              };
+              "to": string;
+            };
+            "right": Array<{
+              "active_runtime_ms"?: (number) | null;
+              "dataset_id"?: string;
+              "derivation"?: Array<{
+                "algorithm": string;
+                "bucket_seconds"?: number;
+                "operation": string;
+              }>;
+              "dimensions"?: Record<string, string>;
+              "host"?: string;
+              "input_kind"?: string;
+              "kind": string;
+              "metric_name": string;
+              "metric_version"?: string;
+              "population"?: string;
+              "project_id": string;
+              "provider"?: ({
+                "aggregation_eligible": boolean;
+                "analysis_statistic"?: string;
+                "backend"?: string;
+                "backend_profile"?: string;
+                "bucket_end": string;
+                "bucket_start": string;
+                "catalog_path"?: string;
+                "count"?: (number) | null;
+                "definition_hash"?: string;
+                "display_labels"?: Record<string, string>;
+                "entity_ids"?: Record<string, string>;
+                "evaluation_step_seconds"?: number;
+                "freshness_known"?: boolean;
+                "max"?: (number) | null;
+                "metric_id": string;
+                "min"?: (number) | null;
+                "mode"?: string;
+                "name": string;
+                "query_id"?: string;
+                "query_window"?: boolean;
+                "resolution_seconds": number;
+                "settled": boolean;
+                "statistic": string;
+                "sum"?: (number) | null;
+                "synthetic"?: boolean;
+                "underlying_sample_time"?: (string) | null;
+              }) | null;
+              "quality": string;
+              "received_at"?: string;
+              "relative_time_ms"?: (number) | null;
+              "run_id"?: string;
+              "scenario_id"?: string;
+              "schema_version": string;
+              "service"?: string;
+              "source": string;
+              "timestamp_utc": string;
+              "unit"?: string;
+              "value"?: (number) | null;
+            }>;
+            "time_window"?: ({
+              "from": string;
+              "requested_from": string;
+              "requested_to": string;
+              "resolution": string;
+              "to": string;
+            }) | null;
+          };
         };
       };
       "400": {
@@ -7690,7 +7925,86 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "artifact_selections"?: Array<{
+              "avoided_artifact_bytes": number;
+              "dataset_id": string;
+              "dataset_revision": number;
+              "manifest_digest"?: string;
+              "manifest_version": number;
+              "mode": string;
+              "pruned_objects": number;
+              "selected_objects": number;
+              "staged_artifact_bytes": number;
+              "total_artifact_bytes": number;
+              "total_objects": number;
+            }>;
+            "dataset_id": string;
+            "points": Array<{
+              "active_runtime_ms"?: (number) | null;
+              "dataset_id"?: string;
+              "derivation"?: Array<{
+                "algorithm": string;
+                "bucket_seconds"?: number;
+                "operation": string;
+              }>;
+              "dimensions"?: Record<string, string>;
+              "host"?: string;
+              "input_kind"?: string;
+              "kind": string;
+              "metric_name": string;
+              "metric_version"?: string;
+              "population"?: string;
+              "project_id": string;
+              "provider"?: ({
+                "aggregation_eligible": boolean;
+                "analysis_statistic"?: string;
+                "backend"?: string;
+                "backend_profile"?: string;
+                "bucket_end": string;
+                "bucket_start": string;
+                "catalog_path"?: string;
+                "count"?: (number) | null;
+                "definition_hash"?: string;
+                "display_labels"?: Record<string, string>;
+                "entity_ids"?: Record<string, string>;
+                "evaluation_step_seconds"?: number;
+                "freshness_known"?: boolean;
+                "max"?: (number) | null;
+                "metric_id": string;
+                "min"?: (number) | null;
+                "mode"?: string;
+                "name": string;
+                "query_id"?: string;
+                "query_window"?: boolean;
+                "resolution_seconds": number;
+                "settled": boolean;
+                "statistic": string;
+                "sum"?: (number) | null;
+                "synthetic"?: boolean;
+                "underlying_sample_time"?: (string) | null;
+              }) | null;
+              "quality": string;
+              "received_at"?: string;
+              "relative_time_ms"?: (number) | null;
+              "run_id"?: string;
+              "scenario_id"?: string;
+              "schema_version": string;
+              "service"?: string;
+              "source": string;
+              "timestamp_utc": string;
+              "unit"?: string;
+              "value"?: (number) | null;
+            }>;
+            "rejected_rows": number;
+            "time_window"?: ({
+              "from": string;
+              "requested_from": string;
+              "requested_to": string;
+              "resolution": string;
+              "to": string;
+            }) | null;
+          };
         };
       };
       "400": {
@@ -8687,6 +9001,35 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "partition_manifest"?: ({
+              "dataset_id": string;
+              "digest": string;
+              "mapping_sha256": string;
+              "mapping_version": number;
+              "partitions": Array<{
+                "bytes": number;
+                "object_key": string;
+                "sha256": string;
+                "stats": {
+                  "identity"?: (Record<string, unknown>) | null;
+                  "identity_version": number;
+                  "kind": string;
+                  "max_time"?: (string) | null;
+                  "metric"?: (string) | null;
+                  "min_time"?: (string) | null;
+                  "missing": number;
+                  "rows": number;
+                  "schema_version": string;
+                  "unit": string;
+                  "valid": number;
+                  "version": number;
+                };
+              }>;
+              "producer": string;
+              "project_id": string;
+              "version": number;
+            }) | null;
+            "partition_manifest_version"?: number;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -8795,6 +9138,35 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "partition_manifest"?: ({
+              "dataset_id": string;
+              "digest": string;
+              "mapping_sha256": string;
+              "mapping_version": number;
+              "partitions": Array<{
+                "bytes": number;
+                "object_key": string;
+                "sha256": string;
+                "stats": {
+                  "identity"?: (Record<string, unknown>) | null;
+                  "identity_version": number;
+                  "kind": string;
+                  "max_time"?: (string) | null;
+                  "metric"?: (string) | null;
+                  "min_time"?: (string) | null;
+                  "missing": number;
+                  "rows": number;
+                  "schema_version": string;
+                  "unit": string;
+                  "valid": number;
+                  "version": number;
+                };
+              }>;
+              "producer": string;
+              "project_id": string;
+              "version": number;
+            }) | null;
+            "partition_manifest_version"?: number;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -8903,6 +9275,35 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "partition_manifest"?: ({
+              "dataset_id": string;
+              "digest": string;
+              "mapping_sha256": string;
+              "mapping_version": number;
+              "partitions": Array<{
+                "bytes": number;
+                "object_key": string;
+                "sha256": string;
+                "stats": {
+                  "identity"?: (Record<string, unknown>) | null;
+                  "identity_version": number;
+                  "kind": string;
+                  "max_time"?: (string) | null;
+                  "metric"?: (string) | null;
+                  "min_time"?: (string) | null;
+                  "missing": number;
+                  "rows": number;
+                  "schema_version": string;
+                  "unit": string;
+                  "valid": number;
+                  "version": number;
+                };
+              }>;
+              "producer": string;
+              "project_id": string;
+              "version": number;
+            }) | null;
+            "partition_manifest_version"?: number;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -82930,99 +83331,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": {
-            "annotations"?: Array<{
-              "created_at": string;
-              "created_by": string;
-              "deleted_at"?: (string) | null;
-              "deleted_by"?: string;
-              "id": string;
-              "label": string;
-              "text"?: string;
-              "timestamp": string;
-            }>;
-            "correlation"?: Record<string, Array<{
-              "coefficient"?: (number) | null;
-              "coverage": number;
-              "expected_buckets": number;
-              "lag_seconds": number;
-              "pairs": number;
-            }>>;
-            "from": string;
-            "live_bucket_mode"?: string;
-            "mode": string;
-            "overlay"?: Array<{
-              "active_runtime_ms"?: (number) | null;
-              "dataset_id"?: string;
-              "derivation"?: Array<{
-                "algorithm": string;
-                "bucket_seconds"?: number;
-                "operation": string;
-              }>;
-              "dimensions"?: Record<string, string>;
-              "host"?: string;
-              "input_kind"?: string;
-              "kind": string;
-              "metric_name": string;
-              "metric_version"?: string;
-              "population"?: string;
-              "project_id": string;
-              "provider"?: ({
-                "aggregation_eligible": boolean;
-                "analysis_statistic"?: string;
-                "backend"?: string;
-                "backend_profile"?: string;
-                "bucket_end": string;
-                "bucket_start": string;
-                "catalog_path"?: string;
-                "count"?: (number) | null;
-                "definition_hash"?: string;
-                "display_labels"?: Record<string, string>;
-                "entity_ids"?: Record<string, string>;
-                "evaluation_step_seconds"?: number;
-                "freshness_known"?: boolean;
-                "max"?: (number) | null;
-                "metric_id": string;
-                "min"?: (number) | null;
-                "mode"?: string;
-                "name": string;
-                "query_id"?: string;
-                "query_window"?: boolean;
-                "resolution_seconds": number;
-                "settled": boolean;
-                "statistic": string;
-                "sum"?: (number) | null;
-                "synthetic"?: boolean;
-                "underlying_sample_time"?: (string) | null;
-              }) | null;
-              "quality": string;
-              "received_at"?: string;
-              "relative_time_ms"?: (number) | null;
-              "run_id"?: string;
-              "scenario_id"?: string;
-              "schema_version": string;
-              "service"?: string;
-              "source": string;
-              "timestamp_utc": string;
-              "unit"?: string;
-              "value"?: (number) | null;
-            }>;
-            "series": Array<{
-              "name": string;
-              "points": Array<{
-                "count": number;
-                "coverage"?: (number) | null;
-                "from": string;
-                "offset_seconds": number;
-                "to": string;
-                "value": (number) | null;
-              }>;
-              "unit": string;
-            }>;
-            "start": string;
-            "to": string;
-            "warnings": Array<string>;
-          };
+          "application/json": unknown;
         };
       };
       "400": {

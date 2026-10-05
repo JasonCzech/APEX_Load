@@ -58,6 +58,42 @@ describe('ExportableChart', () => {
 		expect(() => buildChartSVG(svg, 'Latency', 'P95 latency over time', 8)).toThrow('byte limit')
   })
 
+  it('owns screen-reader description styling without a report stylesheet or a global hiding rule', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const stylesheet = document.createElement('style')
+    stylesheet.textContent = readFileSync(`${cwd}/src/components/ExportableChart.css`, 'utf8') as string
+    document.head.appendChild(stylesheet)
+    const unrelated = document.createElement('p')
+    unrelated.className = 'sr-only'
+    document.body.appendChild(unrelated)
+    const description = `Dataset comparison. ${JSON.stringify({ selection: 'x'.repeat(2048) })}`
+    try {
+      await act(async () => root.render(
+        <ExportableChart hideCaption definitionId="comparison" title="Dataset comparison" description={description} rows={[]} columns={columns}>
+          <svg width="640" height="320" />
+        </ExportableChart>,
+      ))
+      const figure = container.querySelector('figure')!
+      const retainedDescription = figure.querySelector<HTMLElement>(':scope > .sr-only')!
+      expect(retainedDescription.textContent).toBe(description)
+      expect(figure.getAttribute('aria-label')).toBe(description)
+      expect(retainedDescription.getAttribute('aria-hidden')).not.toBe('true')
+      const style = getComputedStyle(retainedDescription)
+      expect(style.position).toBe('absolute')
+      expect(style.width).toBe('1px')
+      expect(style.height).toBe('1px')
+      expect(style.overflow).toBe('hidden')
+      expect(style.clip).toBe('rect(0px, 0px, 0px, 0px)')
+      expect(getComputedStyle(unrelated).position).not.toBe('absolute')
+      expect(getComputedStyle(unrelated).width).not.toBe('1px')
+    } finally {
+      unrelated.remove()
+      stylesheet.remove()
+    }
+  })
+
   it('downloads definition-derived CSV and SVG filenames', async () => {
     const rows = [{ time: '12:00', value: 5.5, note: 'tail' }]
     await act(async () => {

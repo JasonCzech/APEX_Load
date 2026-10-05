@@ -138,8 +138,18 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer func() { <-analysisPipelineJobs }()
-	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
+	ctx, cancel := context.WithTimeout(withAnalysisArtifactSelections(r.Context()), time.Minute)
 	defer cancel()
+	requested := q
+	if q.Left.DatasetID != "" || q.Right.DatasetID != "" {
+		window := nativeAnalysisTimeWindow(q.From, q.To)
+		q.From, q.To = window.From, window.To
+		if err := q.validate(); err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		ctx = withAnalysisTimeWindow(ctx, window)
+	}
 	ctx, pipeline, dir, err := s.prepareNativeAnalysisComparison(ctx, project, q)
 	if err != nil {
 		writeError(w, 422, err.Error())
@@ -163,7 +173,7 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 		writeError(w, 409, "associate the external dataset with this run before comparison")
 		return
 	}
-	response := map[string]any{"left": left, "right": right, "request": q, "advisory": true, "interpretation": "Correlation is association, not proof of causation."}
+	response := AnalysisComparisonResponse{Left: left, Right: right, Request: requested, TimeWindow: completedAnalysisTimeWindow(ctx), Advisory: true, Interpretation: "Correlation is association, not proof of causation.", ArtifactSelections: completedAnalysisArtifactSelections(ctx)}
 	if q.Mode == "overlay" {
 		leftProvider, leftNative := q.providerSeries[analysisSelectionKey(q.Left)]
 		rightProvider, rightNative := q.providerSeries[analysisSelectionKey(q.Right)]
@@ -192,7 +202,7 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 			writeError(w, 422, err.Error())
 			return
 		}
-		response["correlation"] = scores
+		response.Correlation = scores
 	}
 	if err := s.verifyNativeAnalysisComparison(ctx, project); err != nil {
 		writeError(w, 409, err.Error())
@@ -222,13 +232,31 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 	}
 	if selection.DatasetID != "" {
 		if shared, _ := ctx.Value(analysisComparisonPipelineKey{}).(*analysisComparisonPipeline); shared != nil {
-			plan, exists := shared.plans[analysisDatasetQueryIdentity{selection.DatasetID, selection.Metric}]
-			if !exists || plan.dataset.ProjectID != project {
-				return nil, "", errors.New("dataset selection is outside comparison plan")
+			if len(shared.plans) > 2 {
+				return nil, "", errors.New("comparison plan exceeds admitted population")
 			}
-			nativeQuery, err := importedNativeSeriesQuery(project, plan.dataset, selection, q)
-			if err != nil {
-				return nil, "", err
+			var plan analysisDatasetQueryPlan
+			var nativeQuery analytics.SeriesQuery
+			found := false
+			for _, candidate := range shared.plans {
+				if candidate.dataset == nil || candidate.dataset.ID != selection.DatasetID || candidate.dataset.ProjectID != project {
+					continue
+				}
+				query, err := importedNativeSeriesQuery(project, candidate.dataset, selection, q)
+				if err != nil {
+					return nil, "", err
+				}
+				identity, err := analysisNativeQueryIdentity(candidate.dataset, query)
+				if err != nil {
+					return nil, "", err
+				}
+				if exact, exists := shared.plans[identity]; exists {
+					plan, nativeQuery, found = exact, query, true
+					break
+				}
+			}
+			if !found {
+				return nil, "", errors.New("dataset selection is outside comparison plan")
 			}
 			points, err := queryAnalysisDataset(ctx, plan.dataset, nativeQuery)
 			return points, plan.dataset.RunID, err
@@ -238,7 +266,7 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 			return nil, "", errors.New("dataset storage unavailable")
 		}
 		in, err := store.GetAnalysisImport(selection.DatasetID)
-		if err != nil || in.ProjectID != project || in.State != "ready" {
+		if err != nil || in == nil || in.ProjectID != project || in.State != "ready" {
 			return nil, "", errors.New("committed dataset not found in project")
 		}
 		if !analysisProjectEnabled(project) {
@@ -248,8 +276,18 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 		if err != nil {
 			return nil, "", err
 		}
-		points, err := queryAnalysisDataset(ctx, in, nativeQuery)
-		return points, in.RunID, err
+		snapshot, err := snapshotAnalysisQueryDataset(in)
+		if err != nil {
+			return nil, "", err
+		}
+		points, err := queryAnalysisDataset(ctx, snapshot, nativeQuery)
+		if err != nil {
+			return nil, "", err
+		}
+		if err := s.verifyNativeDatasetQuery(ctx, project, snapshot); err != nil {
+			return nil, "", err
+		}
+		return points, snapshot.RunID, nil
 	}
 	run, err := s.store.GetTest(selection.RunID)
 	if err != nil || run.ProjectID != project {
@@ -415,6 +453,9 @@ func (w *analysisStagingWriter) Write(p []byte) (int, error) {
 }
 
 func queryAnalysisDataset(ctx context.Context, in *storage.AnalysisImport, query analytics.SeriesQuery) ([]analysis.MetricPoint, error) {
+	if !analysisQueryContextLive(ctx) {
+		return nil, errors.New("analysis deadline or cancellation reached")
+	}
 	var queryErr error
 	query, queryErr = bindImportedNativeSeriesQuery(in, query)
 	if queryErr != nil {
@@ -425,15 +466,21 @@ func queryAnalysisDataset(ctx context.Context, in *storage.AnalysisImport, query
 	var selected []analysisDatasetQueryPart
 	var total int64
 	if shared, _ := ctx.Value(analysisComparisonPipelineKey{}).(*analysisComparisonPipeline); shared != nil {
-		plan, exists := shared.plans[analysisDatasetQueryIdentity{in.ID, query.Metric}]
-		if !exists || plan.dataset.ProjectID != in.ProjectID || plan.dataset.Revision != in.Revision {
+		identity, err := analysisNativeQueryIdentity(in, query)
+		if err != nil {
+			return nil, err
+		}
+		plan, exists := shared.plans[identity]
+		if !exists || shared.pipeline == nil || len(shared.plans) > 2 || plan.dataset == nil || plan.dataset.ProjectID != in.ProjectID || plan.dataset.Revision != in.Revision {
 			return nil, errors.New("dataset query is outside reserved comparison")
 		}
 		in, selected, total, pipeline = plan.dataset, plan.parts, plan.bytes, shared.pipeline
 		if len(selected) == 0 {
+			if err := recordAnalysisArtifactSelection(ctx, in, selected, total); err != nil {
+				return nil, err
+			}
 			return []analysis.MetricPoint{}, nil
 		}
-		var err error
 		dir, err = pipeline.CreateStagingDirectory(shared.root)
 		if err != nil {
 			return nil, errors.New("comparison staging ownership unavailable")
@@ -451,11 +498,14 @@ func queryAnalysisDataset(ctx context.Context, in *storage.AnalysisImport, query
 			return nil, errors.New("analytical admission unavailable")
 		}
 		defer closeNativeAnalysisPipeline(pipeline, dir)
-		selected, total, err = selectAnalysisDatasetParts(ctx, in, query.Metric)
+		selected, total, err = selectAnalysisDatasetParts(ctx, in, query)
 		if err != nil {
 			return nil, err
 		}
 		if len(selected) == 0 {
+			if err := recordAnalysisArtifactSelection(ctx, in, selected, total); err != nil {
+				return nil, err
+			}
 			return []analysis.MetricPoint{}, nil
 		}
 		if err = pipeline.AdmitGeometry(filepath.Dir(dir), total, 12, total); err != nil {
@@ -476,10 +526,11 @@ func queryAnalysisDataset(ctx context.Context, in *storage.AnalysisImport, query
 			return nil, errors.New("cannot stage dataset")
 		}
 		ioLease.TrackOwner(out)
+		before := remaining
 		digest, readErr := analysisObjectRead(ctx, part.key, &analysisStagingWriter{out: out, dir: dir, remaining: &remaining}, part.size)
 		syncErr, closeErr := out.Sync(), ioLease.CloseOwner(out)
 		ioLease.Joined()
-		if errors.Join(readErr, syncErr, closeErr) != nil || in.NormalizedSHA256[part.key] == "" || digest != in.NormalizedSHA256[part.key] {
+		if errors.Join(readErr, syncErr, closeErr) != nil || before-remaining != part.size || in.NormalizedSHA256[part.key] == "" || digest != in.NormalizedSHA256[part.key] {
 			return nil, errors.New("dataset artifact unavailable, corrupt, or exceeds staging quota")
 		}
 		files = append(files, file)
@@ -491,6 +542,9 @@ func queryAnalysisDataset(ctx context.Context, in *storage.AnalysisImport, query
 	points, err := engine.Series(ctx, files, query)
 	if err != nil {
 		return nil, errors.New("analytical query failed: verify measurement semantics, time bounds, and resource limits")
+	}
+	if err := recordAnalysisArtifactSelection(ctx, in, selected, total); err != nil {
+		return nil, err
 	}
 	return points, nil
 }
