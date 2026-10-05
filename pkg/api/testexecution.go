@@ -1794,6 +1794,16 @@ func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest
 		return true, fmt.Errorf("unsupported durable start status %q", durableStatus)
 	}
 	snapshot := newManagedTestStartPersistenceSnapshot(test)
+	if durableStatus == "INITIALIZING" {
+		initial, err := tr.telemetryAdmissionProvenanceLocked(test)
+		if err != nil {
+			return true, err
+		}
+		// Keep the candidate exclusively in the private persistence projection.
+		// Concurrent manifest readers must never see a receipt that has not won
+		// the durable write, even while SQL waits outside the runner lock.
+		snapshot.record.InitialProvenance = initialProvenanceForStorage(initial)
+	}
 	operationToken := test.passiveOperationToken
 	executionFence := test.executionFence
 	executionGeneration := test.executionGeneration
@@ -1850,6 +1860,12 @@ func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest
 		retireCommittedStagedStartLocked(test, durableStatus)
 		tr.schedulePassiveTransitionRescanAfterTermChangeLocked(test.ID, operationIdentity, executionFence, executionGeneration)
 		return false, errNotExecutionLeader
+	}
+	if durableStatus == "INITIALIZING" {
+		// SQL Start commits return the write-once winner through the owned
+		// persistence record. Adopt only after exact pointer/token/term checks,
+		// before publishing or dispatching the asynchronous execution backend.
+		test.initialArchiveProvenance = decodeStoredInitialProvenance(snapshot.record.InitialProvenance)
 	}
 	test.Status = durableStatus
 	return true, nil

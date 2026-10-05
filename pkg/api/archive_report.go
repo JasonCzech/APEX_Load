@@ -57,6 +57,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 
 	report := &RunArchiveReport{
+		TelemetryPolicy:     telemetryPolicyEvidenceFromProvenance(manifest.InitialProvenance),
 		SchemaVersion:       runArchiveReportSchemaVersion,
 		Manifest:            maskRunArchiveManifest(manifest),
 		ByAction:            make(map[string]RunArchiveActionStats),

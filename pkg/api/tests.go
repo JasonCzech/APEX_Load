@@ -1107,6 +1107,7 @@ func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {
 	cloned.BrowserByDevice = cloneBrowserByDeviceMetrics(metrics.BrowserByDevice)
 	cloned.GoalStatus = cloneGoalStatus(metrics.GoalStatus)
 	cloned.CapacityStatus = cloneLiveCapacityStatus(metrics.CapacityStatus)
+	cloned.TelemetryPolicy = cloneTelemetryPolicyEvidence(metrics.TelemetryPolicy)
 	cloned.TelemetryStatus = cloneTelemetryRunHealth(metrics.TelemetryStatus)
 	cloned.Telemetry = cloneTelemetryHealth(metrics.Telemetry)
 	cloned.Resources = cloneSystemResources(metrics.Resources)

@@ -513,7 +513,9 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	live.Telemetry.WebsocketDroppedMessages = hubStats.DroppedClientMessages
 	live.Telemetry.WebsocketDroppedEvents = hubStats.DroppedBroadcasts
 	artifacts.enrichLiveMetrics(test, live)
-	diagnostic, diagnosticSignature := buildTelemetryDiagnostic(test, live, tr.GetSystemSettings().Thresholds)
+	policyEvidence, policyThresholds := tr.runTelemetryPolicy(test)
+	live.TelemetryPolicy = policyEvidence
+	diagnostic, diagnosticSignature := buildTelemetryDiagnostic(test, live, policyThresholds)
 	publishDiagnostic := false
 	var telemetryRunHealth *TelemetryRunHealth
 	var previousTelemetryRunHealth *TelemetryRunHealth
@@ -867,7 +869,11 @@ func (tr *TestRunner) forgetRunSnapshotWriteStateLocked(testID string) {
 }
 
 func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts, done chan struct{}) time.Time {
+	policyEvidence, _ := tr.runTelemetryPolicy(test)
 	intervalSec := tr.GetSystemSettings().General.MetricsIntervalSeconds
+	if policyEvidence.Policy != nil {
+		intervalSec = int(policyEvidence.Policy.ExpectedControllerPublicationIntervalMs / 1000)
+	}
 	interval, ok := checkedDuration(intervalSec, time.Second)
 	if !ok || interval <= 0 {
 		interval = time.Second

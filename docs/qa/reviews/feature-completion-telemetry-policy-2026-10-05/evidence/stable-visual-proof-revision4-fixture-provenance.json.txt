@@ -1,0 +1,16 @@
+{
+  "original_test_path": "/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/e2e/workflow-telemetry-policy.spec.ts",
+  "original_test_sha256": "e7575b817b8fbbade950e2f4b6448907e974c3f0712ecf91c821ba2f27f779cb",
+  "fixture_scope": "Same genuine workflow first case only, with external stable screenshot/geometry/contrast checks; no tracked source or bundle modifications.",
+  "files": [
+    {
+      "path": "/private/tmp/apexload-telemetry-stable-capture/workflow-telemetry-policy-stable.spec.ts",
+      "sha256": "352c0583ca82bfb4eb35ffb16b01c055695c0e0f3b82cabe9730e4c08f464ad6"
+    },
+    {
+      "path": "/private/tmp/apexload-telemetry-stable-capture/fixture.config.ts",
+      "sha256": "befef7430cc885b6f21c88c55702daa4c3ee5642897dfe6ec8472a8aa2832880"
+    }
+  ],
+  "diagnostic_revision": 4
+}

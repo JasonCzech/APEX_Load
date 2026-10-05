@@ -102,7 +102,7 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).not.toContain('Dead-letter rate')
   })
 
-  it('renders telemetry freshness and websocket health details when available', async () => {
+  it('renders telemetry ages and separate observed websocket drop counts when available', async () => {
     await act(async () => {
       root.render(
         <TestExecutionStatusPanels
@@ -145,7 +145,7 @@ describe('TestExecutionStatusPanels', () => {
       )
     })
 
-    expect(container.textContent).toContain('Telemetry Health')
+    expect(container.textContent).toContain('Telemetry observations')
     expect(container.textContent).toContain('Sample Age')
     expect(container.textContent).toContain('1250 ms')
     expect(container.textContent).toContain('Generator Lag')
@@ -158,12 +158,12 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('End-to-End Age')
     expect(container.textContent).toContain('Generator Publish')
     expect(container.textContent).toContain('Controller Receive')
-    expect(container.textContent).toContain('History Window')
+    expect(container.textContent).toContain('Retained history points')
     expect(container.textContent).toContain('75')
-    expect(container.textContent).toContain('WS Clients')
+    expect(container.textContent).toContain('Observed WS clients')
     expect(container.textContent).toContain('3')
-    expect(container.textContent).toContain('WS Drops')
-    expect(container.textContent).toContain('Degraded')
+    expect(container.textContent).toContain('Observed WS message drops')
+    expect(container.textContent).toContain('Observed drop evidence')
   })
 
   it('renders browser UX signals and per-device summaries when available', async () => {
@@ -462,4 +462,26 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).not.toContain('[object Object]')
     expect(container.textContent).toContain('Unscored')
   })
+  it.each([
+    ['missing observations', {}, 'Unknown', 'unknown'],
+    ['observed zero age', { sample_age_ms: 0 }, 'Age observed', '0 ms'],
+    ['observed old age', { sample_age_ms: 9999 }, 'Age observed', '10.00 s'],
+    ['NaN is unknown', { sample_age_ms: NaN }, 'Unknown', 'unknown'],
+    ['negative age is unknown', { sample_age_ms: -1 }, 'Unknown', 'unknown'],
+    ['negative drops are unknown', { websocket_dropped_messages: -1 }, 'Unknown', 'unknown'],
+    ['observed drop without age', { websocket_dropped_events: 2 }, 'Observed drop evidence', 'unknown'],
+  ])('does not derive health from %s', async (_, telemetry, badge, age) => {
+    await act(async () => root.render(<TestExecutionStatusPanels isGoalOriented={false} goalDescription="" test={{ id: 'run', status: 'RUNNING', groups: [], total_vusers: 1 } as never} metrics={{ telemetry }} isMultiGroup={false} groupMetrics={[]} groupColors={[]} />))
+    const card = container.querySelector('.telemetry-status-card')
+    expect(card?.querySelector('.goal-status-badge')?.textContent).toBe(badge)
+    expect(card?.querySelector('.goal-status-badge')?.className).toContain('neutral')
+    const sampleAge = Array.from(card?.querySelectorAll('.goal-status-metric') ?? []).find(node => node.textContent?.startsWith('Sample Age'))
+    expect(sampleAge?.textContent).toContain(age)
+    expect(card?.textContent).not.toContain('Healthy')
+    expect(card?.textContent).not.toContain('Stale')
+    expect(card?.textContent).toContain('not an exact run loss total')
+    expect(card?.textContent).toContain('do not establish synchronized clocks')
+  })
+
+
 })

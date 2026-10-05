@@ -1,0 +1,29 @@
+{
+  "schema": "apexload.qa.telemetry-chart-correction.v1",
+  "created_at": "2026-10-05T12:00:06.466129+00:00",
+  "canonical_commit": "9afe2f78d43b30147f3c989c71d7238f9365a858",
+  "canonical_files": [
+    {
+      "path": "dashboard/src/components/ExportableChart.css",
+      "sha256": "370b2e78b99d0099371ddbb11c745d28954845151b36c3f76e0a72911eec875b"
+    },
+    {
+      "path": "dashboard/src/components/ExportableChart.test.tsx",
+      "sha256": "17a454d3cab6204cc81b17daf4fa900e1e5bd7658e373b048ceacdf97d9f04b8"
+    },
+    {
+      "path": "dashboard/e2e/workflow-analysis-preparation.spec.ts",
+      "sha256": "eee5bfbad385c15114d2a6b4dbc69547c2d66b1a6f1e56afa866d525b8759374"
+    }
+  ],
+  "interrupted_cycle": {
+    "receipt": "telemetry-dashboard-full-cycle-initial.json",
+    "raw_log_sha256": "9d03d4c2fc85159b18dbbab7e79c2e95869d520f656c147a2e6eee1b34939a9f",
+    "source_unchanged": true,
+    "unit_files_passed": 514,
+    "unit_tests_passed": 5737,
+    "scope": "Interrupted after units, before Vite build/browser qualification; not full-cycle acceptance.",
+    "reason": "Known shared chart sr-only layout bug would fail comparison-control geometry; retain this historical interrupted receipt."
+  },
+  "review": "Component-local screen-reader styling remains accessible; browser geometry verifies no card overflow and existing control hit-testing. Exact canonical file comparison is not browser acceptance."
+}

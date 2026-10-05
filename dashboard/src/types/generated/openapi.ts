@@ -3108,6 +3108,24 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "telemetry_policy"?: ({
+                  "budgets"?: Array<{
+                    "enabled"?: boolean;
+                    "limit_ms"?: number;
+                    "stage"?: string;
+                  }>;
+                  "cadence_scope"?: string;
+                  "capture_boundary"?: string;
+                  "captured_at"?: string;
+                  "classification_algorithm"?: string;
+                  "coverage_rule"?: string;
+                  "expected_controller_publication_interval_ms"?: number;
+                  "hash"?: string;
+                  "policy_id"?: string;
+                  "revision"?: number;
+                  "schema_version"?: string;
+                  "sustained_breach_window_ms"?: number;
+                }) | null;
                 "termination_mode"?: string;
                 "total_vusers"?: number;
                 "traffic_profile"?: (Record<string, unknown>) | null;
@@ -3195,6 +3213,24 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "telemetry_policy"?: ({
+                  "budgets"?: Array<{
+                    "enabled"?: boolean;
+                    "limit_ms"?: number;
+                    "stage"?: string;
+                  }>;
+                  "cadence_scope"?: string;
+                  "capture_boundary"?: string;
+                  "captured_at"?: string;
+                  "classification_algorithm"?: string;
+                  "coverage_rule"?: string;
+                  "expected_controller_publication_interval_ms"?: number;
+                  "hash"?: string;
+                  "policy_id"?: string;
+                  "revision"?: number;
+                  "schema_version"?: string;
+                  "sustained_breach_window_ms"?: number;
+                }) | null;
                 "termination_mode"?: string;
                 "total_vusers"?: number;
                 "traffic_profile"?: (Record<string, unknown>) | null;
@@ -3745,6 +3781,28 @@ export interface operations {
               "total_transactions"?: number;
               "tps"?: number;
             }>;
+            "telemetry_policy"?: ({
+              "availability"?: string;
+              "policy"?: ({
+                "budgets"?: Array<{
+                  "enabled"?: boolean;
+                  "limit_ms"?: number;
+                  "stage"?: string;
+                }>;
+                "cadence_scope"?: string;
+                "capture_boundary"?: string;
+                "captured_at"?: string;
+                "classification_algorithm"?: string;
+                "coverage_rule"?: string;
+                "expected_controller_publication_interval_ms"?: number;
+                "hash"?: string;
+                "policy_id"?: string;
+                "revision"?: number;
+                "schema_version"?: string;
+                "sustained_breach_window_ms"?: number;
+              }) | null;
+              "reason"?: string;
+            }) | null;
             "transaction_response_time_sla_results"?: Array<{
               "eligible_success_count"?: number;
               "excluded_error_count"?: number;
@@ -31726,6 +31784,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -32126,6 +32206,28 @@ export interface operations {
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
+                }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
                 }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
@@ -38922,6 +39024,28 @@ export interface operations {
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -40369,6 +40493,28 @@ export interface operations {
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
+              }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
               }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
@@ -54544,7 +54690,2113 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "history"?: (Array<({
+              "active_vusers": number;
+              "avg_connect_ms"?: number;
+              "avg_dns_ms"?: number;
+              "avg_response_ms": number;
+              "avg_tls_ms"?: number;
+              "avg_ttfb_ms"?: number;
+              "avg_wait_ms"?: number;
+              "browser"?: ({
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "samples": number;
+              }) | null;
+              "browser_by_device"?: Record<string, ({
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "browser_engine"?: string;
+                "device_platform"?: string;
+                "device_profile"?: string;
+                "device_tier"?: string;
+                "samples": number;
+              }) | null>;
+              "by_region"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
+              "capacity_status"?: ({
+                "allocated_vusers": number;
+                "available_generators": number;
+                "by_protocol"?: Record<string, (Record<string, unknown>) | null>;
+                "by_region"?: Record<string, (Record<string, unknown>) | null>;
+                "queued_vusers": number;
+                "recommended_generators": number;
+                "rejected_vusers": number;
+                "saturated": boolean;
+              }) | null;
+              "completed_iterations": number;
+              "dependency_health"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
+              "dependency_map"?: ({
+                "edges": Array<Record<string, unknown>>;
+                "nodes": Array<Record<string, unknown>>;
+              }) | null;
+              "dynatrace"?: ({
+                "capabilities"?: Record<string, Record<string, unknown>>;
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
+                "logs"?: Array<Record<string, unknown>>;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "problems"?: Array<Record<string, unknown>>;
+                "status": string;
+              }) | null;
+              "elk"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "samples"?: Array<Record<string, unknown>>;
+                "status": string;
+              }) | null;
+              "error_breakdown"?: Record<string, number>;
+              "error_patterns"?: Array<{
+                "actions"?: Array<string>;
+                "affected_groups"?: Array<string>;
+                "count": number;
+                "error_pct"?: number;
+                "evidence_count"?: number;
+                "evidence_url"?: string;
+                "first_seen": string;
+                "latest_evidence_id"?: string;
+                "latest_seen": string;
+                "sample": string;
+                "signature": string;
+                "snapshot_url"?: string;
+                "status_code"?: number;
+              }>;
+              "error_pct": number;
+              "generator_resources"?: Record<string, ({
+                "active_vusers": number;
+                "error_pct"?: number;
+                "generator_id": string;
+                "impact_reasons"?: Array<string>;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "pod_capacity"?: (Record<string, unknown>) | null;
+                "region"?: string;
+                "resources"?: (Record<string, unknown>) | null;
+                "saturation_state"?: string;
+                "target": string;
+                "timestamp": string;
+                "tps"?: number;
+              }) | null>;
+              "goal_status"?: ({
+                "breach_active"?: boolean;
+                "breach_duration_sec"?: number;
+                "cls_breached"?: boolean;
+                "current_total_vusers": number;
+                "current_tps": number;
+                "dead_letter_rate_breached"?: boolean;
+                "end_to_end_latency_breached"?: boolean;
+                "error_breached"?: boolean;
+                "error_count_breached"?: boolean;
+                "inp_breached"?: boolean;
+                "last_scale_at"?: (string) | null;
+                "last_scale_direction"?: string;
+                "last_scale_reason"?: string;
+                "latency_breached"?: boolean;
+                "lcp_breached"?: boolean;
+                "max_error_count"?: (number) | null;
+                "max_vusers"?: (number) | null;
+                "min_vusers"?: (number) | null;
+                "mode": string;
+                "partition_skew_breached"?: boolean;
+                "redelivery_rate_breached"?: boolean;
+                "server_processing_breached"?: boolean;
+                "stop_reason"?: string;
+                "stop_triggered"?: boolean;
+                "suggested_total_vusers"?: number;
+                "target_average_tps"?: (number) | null;
+                "throttled_requests_breached"?: boolean;
+                "transfer_breached"?: boolean;
+              }) | null;
+              "groups"?: Record<string, ({
+                "avg_response_ms": number;
+                "errors": number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "percentile_quality"?: string;
+                "target_tps"?: number;
+                "throughput_gap_pct"?: number;
+                "throughput_target_missed"?: boolean;
+                "tps": number;
+                "transactions": number;
+                "vusers": number;
+              }) | null>;
+              "latency"?: ({
+                "targets": Array<Record<string, unknown>>;
+              }) | null;
+              "load_levels"?: Array<{
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
+              "messaging"?: Record<string, ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<Record<string, unknown>>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
+              "native_evidence"?: ({
+                "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                "incomplete"?: boolean;
+                "publication"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "sequence": number;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
+                "version": number;
+                "window_seconds": number;
+              }) | null;
+              "network_profiles"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
+              "observation_state"?: string;
+              "observation_valid_until"?: (string) | null;
+              "p50_ms": number;
+              "p90_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
+              "properties"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
+              "resources"?: ({
+                "container_cpu_limit_cores"?: number;
+                "container_cpu_throttled_periods_delta"?: number;
+                "container_cpu_throttled_seconds_rate"?: number;
+                "container_cpu_usage_pct"?: number;
+                "container_memory_fail_count_delta"?: number;
+                "container_memory_limit_mb"?: number;
+                "container_memory_usage_pct"?: number;
+                "container_memory_working_set_mb"?: number;
+                "container_oom_kill_count_delta"?: number;
+                "cpu_free_pct": number;
+                "cpu_iowait_pct"?: number;
+                "cpu_process_pct": number;
+                "cpu_process_pct_max"?: number;
+                "cpu_steal_pct"?: number;
+                "cpu_system_pct"?: number;
+                "cpu_user_pct"?: number;
+                "disk_in_progress"?: number;
+                "disk_io_time_pct"?: number;
+                "disk_read_kbps": number;
+                "disk_weighted_io_time_pct"?: number;
+                "disk_write_kbps": number;
+                "ephemeral_port_utilization_pct"?: number;
+                "external_metrics"?: Record<string, number>;
+                "gc_count_delta"?: number;
+                "gc_pause_ms"?: number;
+                "goroutine_count"?: number;
+                "heap_alloc_mb"?: number;
+                "heap_in_use_mb"?: number;
+                "load1"?: number;
+                "load15"?: number;
+                "load5"?: number;
+                "mem_free_mb": number;
+                "mem_process_mb": number;
+                "net_drop_in_per_sec"?: number;
+                "net_drop_out_per_sec"?: number;
+                "net_error_in_per_sec"?: number;
+                "net_error_out_per_sec"?: number;
+                "net_recv_kbps": number;
+                "net_sent_kbps": number;
+                "open_fd_count"?: number;
+                "tcp_established"?: number;
+                "tcp_retransmits_per_sec"?: number;
+                "tcp_time_wait"?: number;
+                "thread_count"?: number;
+              }) | null;
+              "soap_operations"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
+              "statistical_findings"?: Array<{
+                "advisory": boolean;
+                "baseline_end": string;
+                "baseline_start": string;
+                "timestamp": string;
+              }>;
+              "target_tps"?: number;
+              "telemetry"?: ({
+                "browser_render_lag_ms"?: number;
+                "collected_at"?: string;
+                "controller_fanout_lag_ms"?: number;
+                "controller_received_at"?: string;
+                "dropped_results"?: number;
+                "dropped_results_available"?: boolean;
+                "dropped_subscriber_batches"?: number;
+                "generator_processing_lag_ms"?: number;
+                "generator_published_at"?: string;
+                "history_points"?: number;
+                "missing_metric_windows"?: number;
+                "published_at"?: string;
+                "sample_age_ms"?: number;
+                "shedded_arrivals"?: number;
+                "transport_lag_ms"?: number;
+                "websocket_clients"?: number;
+                "websocket_dropped_events"?: number;
+                "websocket_dropped_messages"?: number;
+              }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
+              "telemetry_status"?: ({
+                "breach_active"?: boolean;
+                "breach_duration_sec"?: number;
+                "breach_started_at"?: (string) | null;
+                "conditions"?: Array<string>;
+                "current_signature"?: string;
+                "last_observed_at": string;
+                "last_transition_at"?: string;
+                "severity": string;
+                "status": string;
+                "summary"?: string;
+                "sustained_breach"?: boolean;
+              }) | null;
+              "throughput_gap_pct"?: number;
+              "throughput_target_missed"?: boolean;
+              "timestamp": string;
+              "total_errors": number;
+              "total_transactions": number;
+              "tps": number;
+              "transaction_response_time_sla"?: Array<{
+                "eligible_success_count": number;
+                "excluded_error_count": number;
+                "group": string;
+                "met_pct": number;
+                "missed_count": number;
+                "missed_pct": number;
+                "required_met_pct": number;
+                "status": string;
+                "threshold_ms": number;
+                "total_count": number;
+                "transaction": string;
+              }>;
+              "transactions"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
+            }) | null>) | null;
+            "message"?: string;
+            "metrics"?: ({
+              "active_vusers": number;
+              "avg_connect_ms"?: number;
+              "avg_dns_ms"?: number;
+              "avg_response_ms": number;
+              "avg_tls_ms"?: number;
+              "avg_ttfb_ms"?: number;
+              "avg_wait_ms"?: number;
+              "browser"?: ({
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "samples": number;
+              }) | null;
+              "browser_by_device"?: Record<string, ({
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "browser_engine"?: string;
+                "device_platform"?: string;
+                "device_profile"?: string;
+                "device_tier"?: string;
+                "samples": number;
+              }) | null>;
+              "by_region"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
+              "capacity_status"?: ({
+                "allocated_vusers": number;
+                "available_generators": number;
+                "by_protocol"?: Record<string, ({
+                  "allocated_vusers"?: number;
+                  "queued_vusers"?: number;
+                  "rejected_vusers"?: number;
+                }) | null>;
+                "by_region"?: Record<string, ({
+                  "allocated_vusers"?: number;
+                  "queued_vusers"?: number;
+                  "rejected_vusers"?: number;
+                }) | null>;
+                "queued_vusers": number;
+                "recommended_generators": number;
+                "rejected_vusers": number;
+                "saturated": boolean;
+              }) | null;
+              "completed_iterations": number;
+              "dependency_health"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
+              "dependency_map"?: ({
+                "edges": Array<{
+                  "dependency_type"?: string;
+                  "error_pct"?: number;
+                  "errors"?: number;
+                  "p95_ms"?: number;
+                  "source": string;
+                  "target": string;
+                  "transactions"?: number;
+                }>;
+                "nodes": Array<{
+                  "dependency_type"?: string;
+                  "error_pct"?: number;
+                  "errors"?: number;
+                  "id": string;
+                  "kind": string;
+                  "label": string;
+                  "p95_ms"?: number;
+                  "status"?: string;
+                  "transactions"?: number;
+                }>;
+              }) | null;
+              "dynatrace"?: ({
+                "capabilities"?: Record<string, {
+                  "message"?: string;
+                  "status": string;
+                }>;
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
+                "logs"?: Array<{
+                  "message"?: string;
+                  "status"?: string;
+                  "test_id"?: string;
+                  "timestamp"?: string;
+                  "trace_id"?: string;
+                }>;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "problems"?: Array<{
+                  "affected_entity"?: string;
+                  "display_id"?: string;
+                  "end_time"?: string;
+                  "id"?: string;
+                  "severity"?: string;
+                  "start_time"?: string;
+                  "status"?: string;
+                  "title"?: string;
+                }>;
+                "status": string;
+              }) | null;
+              "elk"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "samples"?: Array<{
+                  "id"?: string;
+                  "level"?: string;
+                  "message"?: string;
+                  "test_id"?: string;
+                  "timestamp"?: string;
+                  "trace_id"?: string;
+                }>;
+                "status": string;
+              }) | null;
+              "error_breakdown"?: Record<string, number>;
+              "error_patterns"?: Array<{
+                "actions"?: Array<string>;
+                "affected_groups"?: Array<string>;
+                "count": number;
+                "error_pct"?: number;
+                "evidence_count"?: number;
+                "evidence_url"?: string;
+                "first_seen": string;
+                "latest_evidence_id"?: string;
+                "latest_seen": string;
+                "sample": string;
+                "signature": string;
+                "snapshot_url"?: string;
+                "status_code"?: number;
+              }>;
+              "error_pct": number;
+              "generator_resources"?: Record<string, ({
+                "active_vusers": number;
+                "error_pct"?: number;
+                "generator_id": string;
+                "impact_reasons"?: Array<string>;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "pod_capacity"?: ({
+                  "bottleneck"?: string;
+                  "confidence": string;
+                  "dedicated": boolean;
+                  "headroom_pct": number;
+                  "incarnation": string;
+                  "model_version": string;
+                  "observed_at_unix_ms": number;
+                  "remaining": Record<string, unknown>;
+                  "remaining_pct": number;
+                  "reserved": Record<string, unknown>;
+                  "reserved_pct": number;
+                  "schedulable": Record<string, unknown>;
+                  "state": string;
+                }) | null;
+                "region"?: string;
+                "resources"?: ({
+                  "container_cpu_limit_cores"?: number;
+                  "container_cpu_throttled_periods_delta"?: number;
+                  "container_cpu_throttled_seconds_rate"?: number;
+                  "container_cpu_usage_pct"?: number;
+                  "container_memory_fail_count_delta"?: number;
+                  "container_memory_limit_mb"?: number;
+                  "container_memory_usage_pct"?: number;
+                  "container_memory_working_set_mb"?: number;
+                  "container_oom_kill_count_delta"?: number;
+                  "cpu_free_pct": number;
+                  "cpu_iowait_pct"?: number;
+                  "cpu_process_pct": number;
+                  "cpu_process_pct_max"?: number;
+                  "cpu_steal_pct"?: number;
+                  "cpu_system_pct"?: number;
+                  "cpu_user_pct"?: number;
+                  "disk_in_progress"?: number;
+                  "disk_io_time_pct"?: number;
+                  "disk_read_kbps": number;
+                  "disk_weighted_io_time_pct"?: number;
+                  "disk_write_kbps": number;
+                  "ephemeral_port_utilization_pct"?: number;
+                  "external_metrics"?: Record<string, number>;
+                  "gc_count_delta"?: number;
+                  "gc_pause_ms"?: number;
+                  "goroutine_count"?: number;
+                  "heap_alloc_mb"?: number;
+                  "heap_in_use_mb"?: number;
+                  "load1"?: number;
+                  "load15"?: number;
+                  "load5"?: number;
+                  "mem_free_mb": number;
+                  "mem_process_mb": number;
+                  "net_drop_in_per_sec"?: number;
+                  "net_drop_out_per_sec"?: number;
+                  "net_error_in_per_sec"?: number;
+                  "net_error_out_per_sec"?: number;
+                  "net_recv_kbps": number;
+                  "net_sent_kbps": number;
+                  "open_fd_count"?: number;
+                  "tcp_established"?: number;
+                  "tcp_retransmits_per_sec"?: number;
+                  "tcp_time_wait"?: number;
+                  "thread_count"?: number;
+                }) | null;
+                "saturation_state"?: string;
+                "target": string;
+                "timestamp": string;
+                "tps"?: number;
+              }) | null>;
+              "goal_status"?: ({
+                "breach_active"?: boolean;
+                "breach_duration_sec"?: number;
+                "cls_breached"?: boolean;
+                "current_total_vusers": number;
+                "current_tps": number;
+                "dead_letter_rate_breached"?: boolean;
+                "end_to_end_latency_breached"?: boolean;
+                "error_breached"?: boolean;
+                "error_count_breached"?: boolean;
+                "inp_breached"?: boolean;
+                "last_scale_at"?: (string) | null;
+                "last_scale_direction"?: string;
+                "last_scale_reason"?: string;
+                "latency_breached"?: boolean;
+                "lcp_breached"?: boolean;
+                "max_error_count"?: (number) | null;
+                "max_vusers"?: (number) | null;
+                "min_vusers"?: (number) | null;
+                "mode": string;
+                "partition_skew_breached"?: boolean;
+                "redelivery_rate_breached"?: boolean;
+                "server_processing_breached"?: boolean;
+                "stop_reason"?: string;
+                "stop_triggered"?: boolean;
+                "suggested_total_vusers"?: number;
+                "target_average_tps"?: (number) | null;
+                "throttled_requests_breached"?: boolean;
+                "transfer_breached"?: boolean;
+              }) | null;
+              "groups"?: Record<string, ({
+                "avg_response_ms": number;
+                "errors": number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "percentile_quality"?: string;
+                "target_tps"?: number;
+                "throughput_gap_pct"?: number;
+                "throughput_target_missed"?: boolean;
+                "tps": number;
+                "transactions": number;
+                "vusers": number;
+              }) | null>;
+              "latency"?: ({
+                "targets": Array<{
+                  "connect_ms"?: number;
+                  "dns_ms"?: number;
+                  "endpoint": string;
+                  "error"?: string;
+                  "hops"?: number;
+                  "http_status"?: number;
+                  "ip"?: string;
+                  "jitter_ms"?: number;
+                  "last_success": boolean;
+                  "latency_ms": number;
+                  "name": string;
+                  "probe_method"?: string;
+                  "probe_total_ms"?: number;
+                  "route_status"?: string;
+                  "sample_count"?: number;
+                  "success_rate_pct"?: number;
+                  "timestamp": string;
+                  "tls_ms"?: number;
+                  "ttfb_ms"?: number;
+                }>;
+              }) | null;
+              "load_levels"?: Array<{
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
+              "messaging"?: Record<string, ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<{
+                  "acquired": number;
+                  "capture_revision": string;
+                  "captured_at": string;
+                  "checkpoint": Record<string, unknown>;
+                  "checkpoint_position": Record<string, unknown>;
+                  "delivered": number;
+                  "delivered_position": Record<string, unknown>;
+                  "expected_partitions": number;
+                  "generation": string;
+                  "group"?: string;
+                  "incomplete"?: boolean;
+                  "inventory_complete": boolean;
+                  "lost": number;
+                  "mode": string;
+                  "origin"?: string;
+                  "ownership": string;
+                  "ownership_verified_age_ms"?: (number) | null;
+                  "ownership_verified_at": string;
+                  "partition": string;
+                  "protocol": string;
+                  "redelivered": number;
+                  "rejected": number;
+                  "revision": string;
+                  "session_id": string;
+                  "source": string;
+                  "source_id": string;
+                  "subscription": string;
+                  "tail_position": Record<string, unknown>;
+                  "updated_at": string;
+                }>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
+              "native_evidence"?: ({
+                "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                "incomplete"?: boolean;
+                "publication"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "sequence": number;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
+                "version": number;
+                "window_seconds": number;
+              }) | null;
+              "network_profiles"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
+              "observation_state"?: string;
+              "observation_valid_until"?: (string) | null;
+              "p50_ms": number;
+              "p90_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
+              "properties"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
+              "resources"?: ({
+                "container_cpu_limit_cores"?: number;
+                "container_cpu_throttled_periods_delta"?: number;
+                "container_cpu_throttled_seconds_rate"?: number;
+                "container_cpu_usage_pct"?: number;
+                "container_memory_fail_count_delta"?: number;
+                "container_memory_limit_mb"?: number;
+                "container_memory_usage_pct"?: number;
+                "container_memory_working_set_mb"?: number;
+                "container_oom_kill_count_delta"?: number;
+                "cpu_free_pct": number;
+                "cpu_iowait_pct"?: number;
+                "cpu_process_pct": number;
+                "cpu_process_pct_max"?: number;
+                "cpu_steal_pct"?: number;
+                "cpu_system_pct"?: number;
+                "cpu_user_pct"?: number;
+                "disk_in_progress"?: number;
+                "disk_io_time_pct"?: number;
+                "disk_read_kbps": number;
+                "disk_weighted_io_time_pct"?: number;
+                "disk_write_kbps": number;
+                "ephemeral_port_utilization_pct"?: number;
+                "external_metrics"?: Record<string, number>;
+                "gc_count_delta"?: number;
+                "gc_pause_ms"?: number;
+                "goroutine_count"?: number;
+                "heap_alloc_mb"?: number;
+                "heap_in_use_mb"?: number;
+                "load1"?: number;
+                "load15"?: number;
+                "load5"?: number;
+                "mem_free_mb": number;
+                "mem_process_mb": number;
+                "net_drop_in_per_sec"?: number;
+                "net_drop_out_per_sec"?: number;
+                "net_error_in_per_sec"?: number;
+                "net_error_out_per_sec"?: number;
+                "net_recv_kbps": number;
+                "net_sent_kbps": number;
+                "open_fd_count"?: number;
+                "tcp_established"?: number;
+                "tcp_retransmits_per_sec"?: number;
+                "tcp_time_wait"?: number;
+                "thread_count"?: number;
+              }) | null;
+              "soap_operations"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
+              "statistical_findings"?: Array<{
+                "advisory": boolean;
+                "baseline_buckets": number;
+                "baseline_end": string;
+                "baseline_mean": number;
+                "baseline_start": string;
+                "baseline_stddev": number;
+                "current": number;
+                "exceeded": boolean;
+                "metric_name": string;
+                "threshold": number;
+                "timestamp": string;
+                "z_score": number;
+              }>;
+              "target_tps"?: number;
+              "telemetry"?: ({
+                "browser_render_lag_ms"?: number;
+                "collected_at"?: string;
+                "controller_fanout_lag_ms"?: number;
+                "controller_received_at"?: string;
+                "dropped_results"?: number;
+                "dropped_results_available"?: boolean;
+                "dropped_subscriber_batches"?: number;
+                "generator_processing_lag_ms"?: number;
+                "generator_published_at"?: string;
+                "history_points"?: number;
+                "missing_metric_windows"?: number;
+                "published_at"?: string;
+                "sample_age_ms"?: number;
+                "shedded_arrivals"?: number;
+                "transport_lag_ms"?: number;
+                "websocket_clients"?: number;
+                "websocket_dropped_events"?: number;
+                "websocket_dropped_messages"?: number;
+              }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
+              "telemetry_status"?: ({
+                "breach_active"?: boolean;
+                "breach_duration_sec"?: number;
+                "breach_started_at"?: (string) | null;
+                "conditions"?: Array<string>;
+                "current_signature"?: string;
+                "last_observed_at": string;
+                "last_transition_at"?: string;
+                "severity": string;
+                "status": string;
+                "summary"?: string;
+                "sustained_breach"?: boolean;
+              }) | null;
+              "throughput_gap_pct"?: number;
+              "throughput_target_missed"?: boolean;
+              "timestamp": string;
+              "total_errors": number;
+              "total_transactions": number;
+              "tps": number;
+              "transaction_response_time_sla"?: Array<{
+                "eligible_success_count": number;
+                "excluded_error_count": number;
+                "group": string;
+                "met_pct": number;
+                "missed_count": number;
+                "missed_pct": number;
+                "required_met_pct": number;
+                "status": string;
+                "threshold_ms": number;
+                "total_count": number;
+                "transaction": string;
+              }>;
+              "transactions"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
+            }) | null;
+            "status": string;
+            "test_id": string;
+          };
         };
       };
       "400": {
@@ -56152,6 +58404,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -56552,6 +58826,28 @@ export interface operations {
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
+                }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
                 }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
@@ -58038,6 +60334,24 @@ export interface operations {
               "started_by_subject"?: string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "telemetry_policy"?: ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
               "termination_mode"?: string;
               "total_vusers"?: number;
               "traffic_profile"?: ({
@@ -58848,6 +61162,24 @@ export interface operations {
               "started_by_subject"?: string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "telemetry_policy"?: ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
               "termination_mode"?: string;
               "total_vusers"?: number;
               "traffic_profile"?: ({
@@ -61304,6 +63636,24 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "telemetry_policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
                 "termination_mode"?: string;
                 "total_vusers"?: number;
                 "traffic_profile"?: ({
@@ -61667,6 +64017,24 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "telemetry_policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
                 "termination_mode"?: string;
                 "total_vusers"?: number;
                 "traffic_profile"?: ({
@@ -62305,6 +64673,28 @@ export interface operations {
               "total_transactions": number;
               "tps": number;
             }>;
+            "telemetry_policy"?: ({
+              "availability": string;
+              "policy"?: ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "reason"?: string;
+            }) | null;
             "transaction_response_time_sla_results"?: Array<{
               "eligible_success_count": number;
               "excluded_error_count": number;
@@ -68374,6 +70764,28 @@ export interface operations {
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -69821,6 +72233,28 @@ export interface operations {
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
+              }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
               }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
@@ -73345,6 +75779,28 @@ export interface operations {
             }>;
             "source": string;
             "status": string;
+            "telemetry_policy"?: ({
+              "availability": string;
+              "policy"?: ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "reason"?: string;
+            }) | null;
             "test_id": string;
             "test_name": string;
             "warnings"?: Array<string>;
@@ -87405,6 +89861,28 @@ export interface operations {
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -88852,6 +91330,28 @@ export interface operations {
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
+              }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
               }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
@@ -101765,6 +104265,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -102165,6 +104687,28 @@ export interface operations {
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
+                }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
                 }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
@@ -103322,6 +105866,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -103722,6 +106288,28 @@ export interface operations {
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
+                }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
                 }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
@@ -104879,6 +107467,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -105279,6 +107889,28 @@ export interface operations {
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
+                }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
                 }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
@@ -106436,6 +109068,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -106836,6 +109490,28 @@ export interface operations {
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
+                }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
                 }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
@@ -107993,6 +110669,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -108393,6 +111091,28 @@ export interface operations {
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
+                }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
                 }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
@@ -129999,6 +132719,28 @@ export interface operations {
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -131446,6 +134188,28 @@ export interface operations {
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
+              }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
               }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;

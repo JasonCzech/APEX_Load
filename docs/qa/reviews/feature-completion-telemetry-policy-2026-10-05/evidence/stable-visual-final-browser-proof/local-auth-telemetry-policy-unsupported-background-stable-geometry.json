@@ -1,0 +1,107 @@
+{
+  "browser_version": "149.0.7827.55",
+  "stable": true,
+  "effectiveOpacity": 1,
+  "finiteAnimations": 0,
+  "viewport": {
+    "width": 760,
+    "height": 1100
+  },
+  "box": {
+    "left": 32,
+    "right": 672,
+    "top": 32,
+    "bottom": 392
+  },
+  "scrollWidth": 640,
+  "clientWidth": 640,
+  "hitPoints": [
+    {
+      "x": 40,
+      "y": 40,
+      "owned": true
+    },
+    {
+      "x": 664,
+      "y": 40,
+      "owned": true
+    },
+    {
+      "x": 40,
+      "y": 384,
+      "owned": true
+    },
+    {
+      "x": 664,
+      "y": 384,
+      "owned": true
+    },
+    {
+      "x": 352,
+      "y": 212,
+      "owned": true
+    }
+  ],
+  "ancestors": [
+    {
+      "tag": "SECTION",
+      "class": "",
+      "opacity": "1",
+      "display": "block",
+      "visibility": "visible",
+      "background_color": "rgba(0, 255, 0, 0.25)",
+      "background_image": "none"
+    },
+    {
+      "tag": "MAIN",
+      "class": "main-content",
+      "opacity": "1",
+      "display": "block",
+      "visibility": "visible",
+      "background_color": "rgb(0, 0, 0)",
+      "background_image": "conic-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+    },
+    {
+      "tag": "BODY",
+      "class": "",
+      "opacity": "1",
+      "display": "block",
+      "visibility": "visible",
+      "background_color": "rgb(0, 0, 0)",
+      "background_image": "none"
+    },
+    {
+      "tag": "HTML",
+      "class": "",
+      "opacity": "1",
+      "display": "block",
+      "visibility": "visible",
+      "background_color": "rgb(0, 0, 0)",
+      "background_image": "none"
+    }
+  ],
+  "texts": [
+    {
+      "tag": "H3",
+      "color": "rgb(255, 255, 255)",
+      "opacity": "1",
+      "font_size": "18.72px",
+      "text": "Controlled CSS reference",
+      "computed_css_endpoint_reference_contrast": []
+    },
+    {
+      "tag": "P",
+      "color": "rgb(255, 255, 255)",
+      "opacity": "1",
+      "font_size": "16px",
+      "text": "Only this fixed uniform CSS paint case has a pixel oracle.",
+      "computed_css_endpoint_reference_contrast": []
+    }
+  ],
+  "background_reference_count": 0,
+  "background_reference_colors": [],
+  "unresolved_backgrounds": [
+    "unsupported_background_image"
+  ],
+  "contrast_scope": "Computed CSS text colors against bounded composited ancestor/card linear and radial gradient endpoints; reference contrast only, not pixel-level or general WCAG certification."
+}

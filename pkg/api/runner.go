@@ -883,6 +883,7 @@ type LiveMetrics struct {
 	BrowserByDevice            map[string]*BrowserDeviceLiveMetrics  `json:"browser_by_device,omitempty"`
 	GoalStatus                 *GoalStatus                           `json:"goal_status,omitempty"`
 	CapacityStatus             *LiveCapacityStatus                   `json:"capacity_status,omitempty"`
+	TelemetryPolicy            *TelemetryPolicyEvidence              `json:"telemetry_policy,omitempty"`
 	TelemetryStatus            *TelemetryRunHealth                   `json:"telemetry_status,omitempty"`
 	Telemetry                  *TelemetryHealth                      `json:"telemetry,omitempty"`
 	Resources                  *engine.SystemResources               `json:"resources,omitempty"`

@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+// @ts-expect-error Vitest runs in Node; the dashboard app intentionally omits Node globals.
+import { createHash } from 'node:crypto'
 import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -527,13 +529,16 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('telemetry gaps')
     const metadataBoxes = Array.from(container.querySelectorAll('.archive-metadata-box'))
     expect(metadataBoxes.map(box => box.querySelector('h3')?.textContent)).toEqual([
-      'Telemetry Health',
+      'Legacy telemetry classification',
       'Schema Compatibility',
       'Evidence Tiers',
       'Run Provenance',
       'Change Attribution',
     ])
     expect(container.textContent).toContain('1 healthy · 2 degraded · 0 breached')
+    expect(container.textContent).toContain('Retained legacy mixed diagnostic classifications')
+    expect(container.textContent).toContain('Legacy: degraded')
+    expect(container.textContent).toContain('do not establish synchronized source clocks, complete wall-time coverage, exact run loss totals, or a telemetry CI verdict')
     expect(container.textContent).toContain('Max Sample Age')
     expect(container.textContent).toContain('850ms')
     expect(container.textContent).toContain('Schema Compatibility')
@@ -1600,6 +1605,40 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('unknown · browser · unknown tier')
     expect(container.textContent).not.toContain('[object Object]')
     expect(Array.from(container.querySelectorAll('.browser-device-stats')).every(node => node.textContent?.includes('LCP n/a'))).toBe(true)
+  })
+
+  it.each([['absent', undefined, 'n/a'], ['observed zero', { ...archiveReport.overview.telemetry, samples: 0 }, '0']] as const)('preserves %s legacy telemetry samples without inventing zero', async (_, telemetry, samples) => {
+    await renderArchiveView('report-metadata', { ...archiveReport, overview: { ...archiveReport.overview, telemetry } } as RunArchiveReport)
+    const panel = Array.from(container.querySelectorAll('.archive-metadata-box')).find(node => node.querySelector('h3')?.textContent === 'Legacy telemetry classification')
+    const row = Array.from(panel?.querySelectorAll('.archive-compact-row') ?? []).find(node => node.querySelector('dt')?.textContent === 'Samples')
+    expect(row?.querySelector('dd')?.textContent).toBe(samples)
+    if (!telemetry) expect(panel?.textContent).toContain('Legacy: not captured')
+  })
+  it('preserves unknown legacy classification interval counts instead of manufacturing zeros', async () => {
+    const telemetry = { status: 'degraded', samples: 1 } as NonNullable<RunArchiveReport['overview']['telemetry']>
+    await renderArchiveView('report-metadata', { ...archiveReport, overview: { ...archiveReport.overview, telemetry } })
+    const panel = Array.from(container.querySelectorAll('.archive-metadata-box')).find(node => node.querySelector('h3')?.textContent === 'Legacy telemetry classification')
+    expect(panel?.textContent).toContain('n/a healthy · n/a degraded · n/a breached')
+  })
+
+  it('uses the report immutable policy receipt instead of refreshed final provenance', async () => {
+    const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+    Object.defineProperty(globalThis, 'crypto', { configurable: true, value: { subtle: { digest: async (_algorithm: string, data: Uint8Array) => Uint8Array.from(createHash('sha256').update(data).digest()).buffer } } })
+    try {
+      const policy: NonNullable<RunArchiveReport['telemetry_policy']>['policy'] = {
+        schema_version: 'apexload.telemetry_policy.v1', policy_id: 'system-telemetry-budgets', revision: 1, hash: '9946392432f9533e924fa82684a8094a9c55beaf6296d588500be28a66027629', captured_at: '2026-10-05T12:00:00Z', capture_boundary: 'execution-admission-before-staging', classification_algorithm: 'legacy-mixed-diagnostic.v1', expected_controller_publication_interval_ms: 3000, cadence_scope: 'local-controller-ticker', sustained_breach_window_ms: 15000, coverage_rule: 'retained-classifications-only;gaps-unknown',
+        budgets: [{ stage: 'sample_age', enabled: true, limit_ms: 17 }, { stage: 'generator_processing', enabled: false, limit_ms: 0 }, { stage: 'transport', enabled: true, limit_ms: 750 }, { stage: 'controller_fanout', enabled: true, limit_ms: 250 }, { stage: 'browser_render', enabled: true, limit_ms: 1e-12 }],
+      }
+      const changed = { ...policy, hash: '9ad5e50459df03837f8214c31cfe9833b0d7be94d9725d449ec7182e2e7e4c7f', budgets: policy.budgets.map(budget => budget.stage === 'sample_age' ? { ...budget, limit_ms: 999 } : budget) }
+      const report = { ...archiveReport, telemetry_policy: { availability: 'available' as const, policy }, manifest: { ...archiveReport.manifest, provenance: { ...archiveReport.manifest.provenance, telemetry_policy: changed } } }
+      await renderArchiveView('report-metadata', report)
+      const card = container.querySelector('[aria-label="Telemetry budget policy"]')
+      expect(card?.textContent).toContain('17 ms')
+      expect(card?.textContent).not.toContain('999 ms')
+      await renderArchiveView('report-metadata', { ...report, telemetry_policy: undefined })
+      expect(container.querySelector('[aria-label="Telemetry budget policy"]')?.textContent).toContain('No immutable policy receipt')
+      expect(container.querySelector('[aria-label="Retained telemetry stage budgets"]')).toBeNull()
+    } finally { if (cryptoDescriptor) Object.defineProperty(globalThis, 'crypto', cryptoDescriptor); else Reflect.deleteProperty(globalThis, 'crypto') }
   })
 
   async function renderArchiveView(

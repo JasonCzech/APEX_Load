@@ -1,3 +1,4 @@
+import TelemetryPolicy from './TelemetryPolicy'
 import MonitorRuleResults from './MonitorRuleResults'
 import PrometheusArchiveEvidence from './PrometheusArchiveEvidence'
 import AppDynamicsArchiveEvidence from './AppDynamicsArchiveEvidence'
@@ -390,6 +391,7 @@ interface ArchiveCompactItem {
 interface ArchiveCompactPanel {
   id: string
   title: string
+  description?: string
   status?: string
   tone: ArchiveCompactTone
   items: ArchiveCompactItem[]
@@ -462,15 +464,16 @@ function buildArchiveCompactPanels(
   return [
     {
       id: 'telemetry',
-      title: 'Telemetry Health',
-      status: compactStatus(telemetryStatus),
+      title: 'Legacy telemetry classification',
+      description: 'Retained legacy mixed diagnostic classifications. These interval labels do not establish synchronized source clocks, complete wall-time coverage, exact run loss totals, or a telemetry CI verdict.',
+      status: `Legacy: ${compactStatus(telemetryStatus)}`,
       tone: compactToneForStatus(telemetryStatus),
       items: [
-        { label: 'Samples', value: compactValue(telemetry?.samples ?? 0) },
+        { label: 'Samples', value: compactValue(telemetry?.samples) },
         {
           label: 'Intervals',
           value: telemetry
-            ? `${telemetry.healthy_intervals || 0} healthy · ${telemetry.degraded_intervals || 0} degraded · ${telemetry.breached_intervals || 0} breached`
+            ? `${compactValue(telemetry.healthy_intervals)} healthy · ${compactValue(telemetry.degraded_intervals)} degraded · ${compactValue(telemetry.breached_intervals)} breached`
             : 'n/a',
         },
         { label: 'Max Sample Age', value: compactDurationMs(telemetry?.max_sample_age_ms) },
@@ -1112,6 +1115,7 @@ export default function TestExecutionArchive({
                 ) : null
               )}
 
+              {showReportMetadataView && <TelemetryPolicy evidence={archiveReport.telemetry_policy} />}
               {showReportMetadataView && (
                 <section className="archive-metadata-summary" aria-label="Archive metadata summary">
                   <div className="archive-metadata-grid">
@@ -1121,6 +1125,7 @@ export default function TestExecutionArchive({
                           <h3>{panel.title}</h3>
                           {panel.status && <span className={`archive-compact-status ${panel.tone}`}>{panel.status}</span>}
                         </div>
+                        {panel.description && <p>{panel.description}</p>}
                         <dl className="archive-compact-list">
                           {panel.items.map(item => (
                             <div key={`${panel.id}-${item.label}`} className="archive-compact-row">

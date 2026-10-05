@@ -1,3 +1,4 @@
+import TelemetryPolicy from './TelemetryPolicy'
 import RuntimeResourceReservations from './RuntimeResourceReservations'
 import { useMemo, useState } from 'react'
 
@@ -236,6 +237,8 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
           <strong>{shardSummary(manifest.load_generators.generator_shards)}</strong>
         </div>
       </div>
+
+      <TelemetryPolicy evidence={manifest.telemetry_policy} />
 
       {compact ? <>
         <RuntimeResourceReservations shards={manifest.load_generators.generator_shards} />

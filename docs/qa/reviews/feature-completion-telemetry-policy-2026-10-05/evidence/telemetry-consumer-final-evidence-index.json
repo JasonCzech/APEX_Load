@@ -1,0 +1,379 @@
+{
+  "schema": "apexload.qa.telemetry-consumer-completion.v1",
+  "captured_at": "2026-10-05T13:07:57.380166+00:00",
+  "scope": "Narrow immutable legacy telemetry budget receipt consumers, neutral observed pipeline facts, explicit legacy classifications, missing-vs-zero fidelity, strict bounded CLI projections and canonical shared chart correction. Full TEL-1\u2013TEL-4/program remain open. Ready for parent final review/commit; no push by this agent.",
+  "final_source_inventory_sha256": "30b94f1075659b8e7ddc7c917fbbe8e181b3b3b007deeeba1c38016f2d171965",
+  "final_generated_embed_inventory_sha256": "9831a2af6644576d0e6ed69e57218f94122fb57d70ffed516213a9c1a3b60a5a",
+  "source_file_count": 20,
+  "generated_embed_file_count": 247,
+  "source_freeze": {
+    "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-consumer-final-cycle-source-and-embed-freeze.json",
+    "sha256": "0908d706005d3006166ca40510f471169a3500eb88f545c9c10e5dbf201ee2f8",
+    "bytes": 51209
+  },
+  "source_post_visual_bookend": {
+    "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-consumer-final-post-visual-source-and-embed-bookend.json",
+    "sha256": "c4fcf071779406c41d86fe9ac134f0051f5557b14fb086176fc68c0e3332f113",
+    "bytes": 51220
+  },
+  "independent_same_source_review": {
+    "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-consumer-independent-final-review.json",
+    "sha256": "fde0f81cfe91662f0f48a6ee88b7660b783e35842e89de4f18d6a728446108cd",
+    "bytes": 4795
+  },
+  "final_gates": [
+    {
+      "scope": "Full repository Go gate on final source; parent owned admission/dispatch/SQLite/PostgreSQL policy receipt and generated-contract qualification composed with consumers.",
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-composed-corrected-final-bundle-full-go.json",
+        "sha256": "cbd8535a6c5c82fc0887313630f3289cd67cd35467e9c8996576fd1d52b36382",
+        "bytes": 799336
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-composed-corrected-final-bundle-full-go.stdout.txt",
+        "sha256": "714066a34b764cb18d97c18ff4e995660990bf1efd4c9b33ba33bb5460ea70e5",
+        "bytes": 8296
+      },
+      "exit_code": 0,
+      "duration_seconds": 1353.763,
+      "source_before_after_equal": true,
+      "started_at": "2026-10-05T12:10:36.882996+00:00",
+      "finished_at": "2026-10-05T12:33:10.649925+00:00"
+    },
+    {
+      "scope": "Full dashboard typecheck/lint/units/build and both real auth profiles; generated embedded assets after build equal final freeze.",
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-dashboard-full-cycle-corrected.json",
+        "sha256": "4f3c84c0a8afc8c19647103551fd8f509b00f9f4f2f324942e503aaf4d2a9dd1",
+        "bytes": 1104389
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-dashboard-full-cycle-corrected.stdout.txt",
+        "sha256": "09408e6fb81fb5ff2a670c96e52e1fd5da3e849d57bd13af492c0ff14bbb78cb",
+        "bytes": 90871
+      },
+      "exit_code": 0,
+      "duration_seconds": 2353.064,
+      "source_before_after_equal": true,
+      "started_at": "2026-10-05T12:03:43.001013+00:00",
+      "finished_at": "2026-10-05T12:42:56.074895+00:00"
+    },
+    {
+      "scope": "Final-source CLI strict bounded policy projection regressions, normal.",
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-cli-focused-normal-final-source.json",
+        "sha256": "d34adbb8edb0609076a3510eb7a33e54cc44b605c99c3f88cf4335e8f94d4f5e",
+        "bytes": 1104376
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-cli-focused-normal-final-source.stdout.txt",
+        "sha256": "b995d99883f5eb25b5a5eced061687b5fa5c528f4b222165357459c85ff39cbd",
+        "bytes": 55
+      },
+      "exit_code": 0,
+      "duration_seconds": 8.414,
+      "source_before_after_equal": true,
+      "started_at": "2026-10-05T12:21:23.374607+00:00",
+      "finished_at": "2026-10-05T12:21:31.788159+00:00"
+    },
+    {
+      "scope": "Final-source CLI strict bounded policy projection regressions, race.",
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-cli-focused-race-final-source.json",
+        "sha256": "a2b683b5adf2c38c709d01eb0b95138e97fa56d811aac0a9d7f312e78fd871ab",
+        "bytes": 1104390
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-cli-focused-race-final-source.stdout.txt",
+        "sha256": "22f618f4427ec2e96dfe809ea9566f3e230b1754f4f16d9a5fc2a8a788a67d57",
+        "bytes": 55
+      },
+      "exit_code": 0,
+      "duration_seconds": 46.238,
+      "source_before_after_equal": true,
+      "started_at": "2026-10-05T12:21:44.619032+00:00",
+      "finished_at": "2026-10-05T12:22:30.857625+00:00"
+    },
+    {
+      "scope": "Unchanged final bundle genuine HTTP workload and stable live/archive/manifest screenshots; separate controlled CSS PNG/refusal helper, dev-admin.",
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-stable-visual-dev-admin-final.json",
+        "sha256": "fbeee90b05408258009138e15968b5b02dbf12212959fcae7ce9bca6107c4eb8",
+        "bytes": 1105630
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-stable-visual-dev-admin-final.stdout.txt",
+        "sha256": "8e4720ec36735b4227cc85cda9e5007b17e337f9dbc3c37514c705ac14262a9a",
+        "bytes": 897
+      },
+      "exit_code": 0,
+      "duration_seconds": 29.382,
+      "source_before_after_equal": true,
+      "started_at": "2026-10-05T13:01:04.632850+00:00",
+      "finished_at": "2026-10-05T13:01:34.015293+00:00"
+    },
+    {
+      "scope": "Unchanged final bundle genuine HTTP workload and stable live/archive/manifest screenshots; separate controlled CSS PNG/refusal helper, local-auth.",
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-stable-visual-local-auth-final.json",
+        "sha256": "837b21a9db500878f4150a5d21937b4eac908b5f49e8057fdceca5f23b334422",
+        "bytes": 1105632
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-stable-visual-local-auth-final.stdout.txt",
+        "sha256": "e59257da23cc57a2ba6bc2c12e8b0981e1232cc424f0a770c84f9edf09d5e3d7",
+        "bytes": 1089
+      },
+      "exit_code": 0,
+      "duration_seconds": 28.358,
+      "source_before_after_equal": true,
+      "started_at": "2026-10-05T13:01:51.411711+00:00",
+      "finished_at": "2026-10-05T13:02:19.770100+00:00"
+    }
+  ],
+  "full_dashboard_counts": {
+    "vitest_files": 514,
+    "vitest_tests": 5738,
+    "dev_admin_passed": 243,
+    "dev_admin_skipped": 5,
+    "local_auth_passed": 183,
+    "local_auth_skipped": 1,
+    "new_telemetry_cases_skipped": 0,
+    "new_telemetry_cases_passed": 4,
+    "skips_from_raw_log": [
+      "-  112 e2e/workflow-library-assignments.spec.ts:96:1 \u203a Viewer cannot change script or scenario assignments",
+      "-  122 e2e/workflow-loadrunner-review.spec.ts:303:1 \u203a LoadRunner private acceptance archive groups repeated findings without hiding source locations",
+      "-  159 e2e/workflow-object-activity.spec.ts:68:1 \u203a project viewers can inspect deleted history but cannot archive or restore",
+      "-  197 e2e/workflow-script-folders.spec.ts:66:1 \u203a Viewers cannot move scripts through the library or API",
+      "-  247 e2e/workflow-help.spec.ts:148:1 \u203a non-administrators cannot open or search Administration articles",
+      "-   84 e2e/workflow-loadrunner-review.spec.ts:303:1 \u203a LoadRunner private acceptance archive groups repeated findings without hiding source locations"
+    ],
+    "skip_interpretation": "Four role-specific viewer/nonadmin workflows are inactive in dev-admin; one private LoadRunner archive acceptance fixture absent in each profile. No missing private provider fixture is qualified by these skips."
+  },
+  "stable_visual_index": {
+    "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/stable-visual-final-browser-proof-index.json",
+    "sha256": "b91617bb5c4d7e1e3d1fbc8dc405cdcf72b515e7b9496d8b4cb9e425a6302e5f",
+    "bytes": 13959
+  },
+  "external_fixture_final_revision": {
+    "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/stable-visual-proof-revision5-source-index.json",
+    "sha256": "fc893940900e4b947f210724082f7b4f3ea2baa0a7216f43c14072d3dba47adb",
+    "bytes": 1775
+  },
+  "canonical_chart_backport": {
+    "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-chart-canonical-backport-provenance.json",
+    "sha256": "c7f0caa60abc4a9dda03631f050f71580eef7fcbc96f4abe038a0ec80e243975",
+    "bytes": 1420
+  },
+  "historical_failed_or_interrupted_gates": [
+    {
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-api-contract-and-admission-final1.json",
+        "sha256": "3d70a08a5ed6feefc01e9d60520397766ab8c8c0619c9f7c35b47b78a1b95edd",
+        "bytes": 799238
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-api-contract-and-admission-final1.stdout.txt",
+        "sha256": "aa00e4eb9497674eb4dba94f68c7888304161208d006692a6775db9d6c1d6d2b",
+        "bytes": 2416
+      },
+      "exit_code": 1,
+      "classification": "Retained failed or interrupted development attempt; not a passed acceptance gate."
+    },
+    {
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-api-final-admission-and-lifecycle-race.json",
+        "sha256": "a8d151c5979cc02cb0fad0aed7e6e1365df16b384234ad134e4c1e9d06f03bf8",
+        "bytes": 799607
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-api-final-admission-and-lifecycle-race.stdout.txt",
+        "sha256": "13fbcafccd54c8134dc1fdb5c21d6f82a702750e1f44b43a4b8439c51cb6f7f4",
+        "bytes": 1996
+      },
+      "exit_code": 1,
+      "classification": "Retained failed or interrupted development attempt; not a passed acceptance gate."
+    },
+    {
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-concurrent-manifest-before-fix.json",
+        "sha256": "1307e15df95427c9d7538f2b7d3b9b51c3ff1d17bf107adb7f32c2d4c7b749ca",
+        "bytes": 799425
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-concurrent-manifest-before-fix.stdout.txt",
+        "sha256": "29acb1ff3411dff1af3a56943914d53eb4b4e4ca6e43c2a7bede1c36b9f12f27",
+        "bytes": 743
+      },
+      "exit_code": 1,
+      "classification": "Retained failed or interrupted development attempt; not a passed acceptance gate."
+    },
+    {
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-consumer-digest-typecheck-repeat.json",
+        "sha256": "22787a27ee212aa5e04f4c6afb0bc6fe9a1ff2b485e4646337fdeaa2aa3ccb85",
+        "bytes": 450107
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-consumer-digest-typecheck-repeat.stdout.txt",
+        "sha256": "a2287bd265368ba07596a760cf5167b19661dd7490e163fbe11e0c476edd853b",
+        "bytes": 3282
+      },
+      "exit_code": 2,
+      "classification": "Retained failed or interrupted development attempt; not a passed acceptance gate."
+    },
+    {
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-consumer-digest-typecheck.json",
+        "sha256": "8eff37da0d5c1df0ecfe712fab8bba8f77ab9013f77ca803852869d6fa417859",
+        "bytes": 450105
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-consumer-digest-typecheck.stdout.txt",
+        "sha256": "adea794571eba233e6b9f775823d65064a2a1adf5f9f3c21b5be76da6ae947b8",
+        "bytes": 550
+      },
+      "exit_code": 2,
+      "classification": "Retained failed or interrupted development attempt; not a passed acceptance gate."
+    },
+    {
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-consumer-typecheck-initial.json",
+        "sha256": "a787ff4cb363758b7a42939b249bdb2cf83ecf78577ea1038e3e8233861d5e85",
+        "bytes": 449485
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-consumer-typecheck-initial.stdout.txt",
+        "sha256": "3b6df26265aa7185ba0cd9d91648199656ba475ce70ae5a180917ada63cdc3df",
+        "bytes": 366
+      },
+      "exit_code": 2,
+      "classification": "Retained failed or interrupted development attempt; not a passed acceptance gate."
+    },
+    {
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-dashboard-full-cycle-initial.json",
+        "sha256": "921cc924de0a14098e84b78b7fd88673804f0b5ab1f9965892f11ed9c013c2c0",
+        "bytes": 1072111
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-dashboard-full-cycle-initial.stdout.txt",
+        "sha256": "9d03d4c2fc85159b18dbbab7e79c2e95869d520f656c147a2e6eee1b34939a9f",
+        "bytes": 1763
+      },
+      "exit_code": -15,
+      "classification": "Retained failed or interrupted development attempt; not a passed acceptance gate."
+    },
+    {
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-durable-winner-regression-before-fix.json",
+        "sha256": "a3f68c2fa98800f56fc7bc1e7ff886bd9afb9579f1970f505ee5fdce9af27131",
+        "bytes": 680583
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-durable-winner-regression-before-fix.stdout.txt",
+        "sha256": "26aab0e3675f243530a14076d53a8d5eca2763593a70b5df010a42cc2d6fb918",
+        "bytes": 525
+      },
+      "exit_code": 1,
+      "classification": "Retained failed or interrupted development attempt; not a passed acceptance gate."
+    },
+    {
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-policy-admission-development.json",
+        "sha256": "52df41a14a19479b3325e13648c0e7a38659e2f30ed26c53883927391b39a57e",
+        "bytes": 680728
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-policy-admission-development.stdout.txt",
+        "sha256": "d2ecf428fcacf6c3ce7e43668ff1546a220efc6f285cb3151c7a1f8b63cc4d2d",
+        "bytes": 709
+      },
+      "exit_code": 1,
+      "classification": "Retained failed or interrupted development attempt; not a passed acceptance gate."
+    },
+    {
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-policy-admission-repeat1.json",
+        "sha256": "4addeac12a1736dd8a456fc9386703c350049f05bf3cb65f4145a49679e6dd46",
+        "bytes": 680730
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-policy-admission-repeat1.stdout.txt",
+        "sha256": "d06c4962b1b14c71ab9884ab2f8c68117202c017c16ef453cb1a65e553da4334",
+        "bytes": 1893
+      },
+      "exit_code": 1,
+      "classification": "Retained failed or interrupted development attempt; not a passed acceptance gate."
+    },
+    {
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-policy-focused-development.json",
+        "sha256": "6dc903b73b536797b20275abf202c4767a3c9d305f44b7d0d8f89be926e5f4ee",
+        "bytes": 679773
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-policy-focused-development.stdout.txt",
+        "sha256": "d6c952d59cf29165967c1ed0aaa3445525d0df0995847a7fde4d3dd21b2a3c88",
+        "bytes": 1174
+      },
+      "exit_code": 1,
+      "classification": "Retained failed or interrupted development attempt; not a passed acceptance gate."
+    },
+    {
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-stable-visual-dev-admin-corrected.json",
+        "sha256": "86dd9697a4a878413ed77d847862a885d069369d8cb18480d97b6442073deba3",
+        "bytes": 1105632
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-stable-visual-dev-admin-corrected.stdout.txt",
+        "sha256": "f6b3d8d8185b4cab1bc5abf4b6cf49cf0a5d0d19216f392f7ee28323fb012a0e",
+        "bytes": 17073
+      },
+      "exit_code": 1,
+      "classification": "Retained failed or interrupted development attempt; not a passed acceptance gate."
+    },
+    {
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-stable-visual-dev-admin-diagnostic.json",
+        "sha256": "f51ee4a425e73be1a5d5685549ce87de7759f3460862e2ac3ee0164214758c57",
+        "bytes": 1105627
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-stable-visual-dev-admin-diagnostic.stdout.txt",
+        "sha256": "7ab21b761e1442c0834154ed08d014b5acafb056bfa5612d5a721e60864dec49",
+        "bytes": 15678
+      },
+      "exit_code": 1,
+      "classification": "Retained failed or interrupted development attempt; not a passed acceptance gate."
+    },
+    {
+      "receipt": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-stable-visual-dev-admin-initial.json",
+        "sha256": "f92a214cbb7889805e2dded436cd4e2cfc948c30fd42fd4d31a34fc806374b11",
+        "bytes": 1105622
+      },
+      "raw_log": {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-stable-visual-dev-admin-initial.stdout.txt",
+        "sha256": "dc158ae785b279e9424c6cc57f86c73e053de9eec16372cb23b28bd9f28af732",
+        "bytes": 15790
+      },
+      "exit_code": 1,
+      "classification": "Retained failed or interrupted development attempt; not a passed acceptance gate."
+    }
+  ],
+  "historical_passed_boundaries": [
+    "Earlier production Go gate changed embed inventory during the zero-time rebuild and does not certify final corrected UI.",
+    "Earlier focused browser proofs before the canonical chart backport certify those historical source snapshots; preliminary archive screenshots captured page fade.",
+    "Initial/diagnostic external stable-capture helper attempts refused unrecognized CSS ancestor gradients; revision4 controlled renderer failed PATH Python without Pillow. All failures remain retained; no production assertion was weakened."
+  ],
+  "remaining_scope": [
+    "Source/counter epochs, qualified clocks and observation windows",
+    "Union coverage, gap-aware intervals and exact/lower-bound increments",
+    "Browser-render observations and measured end-to-end reference latency",
+    "Telemetry policy/workload comparisons, CI verdicts and full report/export program",
+    "Mandatory1GiB/platform/recovery/remote-backend acceptance elsewhere;10GiB waiver only"
+  ],
+  "cleanup": "Owned18671/18672 fixture controllers physically joined; listeners absent. Shared Go/frontend/Docker caches retained while dependent parent/browser tasks remain active."
+}

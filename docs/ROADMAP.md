@@ -57,6 +57,8 @@ retain all failed and superseded attempts. The 1 GiB reference, process
 restart/HA, remote-backend and five-platform release gates remain open; only
 10 GB acceptance is waived.
 
+The immutable telemetry receipt slice freezes resolved legacy diagnostic budgets and actual controller cadence in the atomic INITIALIZING admission, keeps SQL candidates private and adopts the durable winner before dispatch. Live/manifest/archive/report and bounded CLI readers preserve legacy absence; the dashboard verifies semantic identity and presents observed facts and explicit legacy classifications. SQLite/actual PostgreSQL affected checks, final full Go, the full dashboard cycle and stable visual proof in both authentication profiles pass in [the review record](qa/reviews/feature-completion-telemetry-policy-2026-10-05/README.md). [Usage](guides/TELEMETRY_POLICY_RECEIPTS.md). TEL-1–TEL-4 remain open for epochs/windows, clocks, wall-time coverage, exact loss, distributions, separate verdicts, exports and reference-load acceptance.
+
 ## Track status
 
 | Track | Status | Open work |

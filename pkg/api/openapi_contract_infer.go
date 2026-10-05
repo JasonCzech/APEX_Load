@@ -251,6 +251,7 @@ var explicitRouteContractTypes = map[string]struct {
 	responseTypes       map[int]string
 	responseDescription string
 }{
+	"GET /api/v1/tests/{id}/metrics": {responseTypes: map[int]string{200: "liveMetricsReadResponseContract"}},
 	// The compatibility test handler creates its own verification body before
 	// delegation. That internal body is not a caller-visible request contract.
 	"POST /api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/test": {

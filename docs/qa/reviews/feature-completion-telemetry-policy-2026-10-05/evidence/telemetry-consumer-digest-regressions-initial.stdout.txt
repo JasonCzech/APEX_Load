@@ -1,0 +1,13 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run src/components/TelemetryPolicy.test.tsx src/components/telemetryPolicyModel.test.ts src/components/TestExecutionArchive.test.tsx
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard
+
+
+ Test Files  3 passed (3)
+      Tests  64 passed (64)
+   Start at  07:18:07
+   Duration  1.91s (transform 313ms, setup 44ms, import 617ms, tests 343ms, environment 696ms)
+

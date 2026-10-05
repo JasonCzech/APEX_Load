@@ -1,0 +1,36 @@
+{
+  "captured_at": "2026-10-05T13:08:41.145350+00:00",
+  "scope": "Private immutable receipt/check/bookend and safe artifact-retention helper sources; no product implementation or arbitrary acceptance claims.",
+  "files": [
+    {
+      "source": "/private/tmp/apexload-telemetry-retain-final-visual.py",
+      "retained": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-consumer-final-helper-apexload-telemetry-retain-final-visual.py.txt",
+      "sha256": "bf1dc1aaabc6b2f1b445fae39a33cb06c8d4edd824e9b80bde2c17bbcc34575e",
+      "bytes": 5957
+    },
+    {
+      "source": "/private/tmp/apexload-telemetry-final-index.py",
+      "retained": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-consumer-final-helper-apexload-telemetry-final-index.py.txt",
+      "sha256": "c683c00a81e484929d9325138283ec6bed6d91086fad79e9a1756c2559dc6211",
+      "bytes": 6693
+    },
+    {
+      "source": "/private/tmp/apexload-telemetry-freeze.py",
+      "retained": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-consumer-final-helper-apexload-telemetry-freeze.py.txt",
+      "sha256": "4d90b074a4d354fa9374695ba5420d08f54a2ae31d26c976f1fe199bcbdd6ec9",
+      "bytes": 2178
+    },
+    {
+      "source": "/private/tmp/apexload-telemetry-consumer-check.py",
+      "retained": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-consumer-final-helper-apexload-telemetry-consumer-check.py.txt",
+      "sha256": "3a8208fe3201285955a37279596ee8d065c5b807f1a047d9e49ab5ec881dcb5d",
+      "bytes": 2680
+    },
+    {
+      "source": "/private/tmp/apexload-telemetry-visual-proof-check.py",
+      "retained": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-consumer-final-helper-apexload-telemetry-visual-proof-check.py.txt",
+      "sha256": "9af85e3119530baa3416d0a8757e822f3937b4c96b7931f48731d2e74a6d9d8c",
+      "bytes": 3119
+    }
+  ]
+}

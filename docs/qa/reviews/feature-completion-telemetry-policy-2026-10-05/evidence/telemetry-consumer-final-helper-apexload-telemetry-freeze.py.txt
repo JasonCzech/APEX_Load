@@ -1,0 +1,21 @@
+import datetime,hashlib,json,pathlib,sys
+r=pathlib.Path('/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner')
+q=r/'docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence'
+paths=[
+ 'cmd/apexctl/analysis_workflows.go','cmd/apexctl/telemetry_policy.go','cmd/apexctl/telemetry_policy_test.go',
+ 'dashboard/playwright.config.ts','dashboard/e2e/workflow-telemetry-policy.spec.ts','dashboard/src/types.ts',
+ 'dashboard/src/types/telemetryPolicy.ts','dashboard/src/components/TelemetryPolicy.tsx',
+ 'dashboard/src/components/TelemetryPolicy.test.tsx','dashboard/src/components/telemetryPolicyModel.ts',
+ 'dashboard/src/components/telemetryPolicyModel.test.ts','dashboard/src/components/TestExecutionStatusPanels.tsx',
+ 'dashboard/src/components/TestExecutionStatusPanels.test.tsx','dashboard/src/components/TestExecutionArchive.tsx',
+ 'dashboard/src/components/TestExecutionArchive.test.tsx','dashboard/src/components/TestExecutionManifestCard.tsx',
+ 'dashboard/src/components/runReport/RunExecutionDetails.tsx','dashboard/src/components/ExportableChart.css',
+ 'dashboard/src/components/ExportableChart.test.tsx','dashboard/e2e/workflow-analysis-preparation.spec.ts',
+]
+def digest(v):return hashlib.sha256(json.dumps(v,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+source=[{'path':p,'sha256':hashlib.sha256((r/p).read_bytes()).hexdigest()} for p in sorted(paths)]
+embed=[{'path':str(p.relative_to(r)),'size_bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in sorted((r/'pkg/api/static').rglob('*')) if p.is_file()]
+v={'schema':'apexload.qa.telemetry-consumer-freeze.v1','captured_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source_files':source,'source_inventory_sha256':digest(source),'generated_embed_files':embed,'generated_embed_inventory_sha256':digest(embed),'scope':sys.argv[2],'source_count':len(source),'generated_embed_count':len(embed)}
+p=q/(sys.argv[1]+'.json')
+with p.open('x') as f:json.dump(v,f,indent=2);f.write('\n')
+print(json.dumps({k:v[k] for k in ['source_count','source_inventory_sha256','generated_embed_count','generated_embed_inventory_sha256']}))

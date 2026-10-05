@@ -90,6 +90,9 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	}
 	client := NewApiClient(*endpoint)
 	client.Client.Timeout = 2 * time.Minute
+	if kind == "analysis" && action == "telemetry-policy" {
+		return client.readTelemetryPolicy(ctx, flags, *id, *project, *mode, out)
+	}
 	var body []byte
 	method, path := http.MethodGet, ""
 	if *file != "" && action != "upload" {
@@ -391,7 +394,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 					return errors.New("--file JSON query is required")
 				}
 			default:
-				return errors.New("analysis actions: progress, baseline, capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison")
+				return errors.New("analysis actions: telemetry-policy, progress, baseline, capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison")
 			}
 		}
 	default:

@@ -1,3 +1,4 @@
+export type { TelemetryBudgetPolicy, TelemetryPolicyEvidence } from './types/telemetryPolicy'
 // Compatibility barrel for dashboard domain contracts. New API/domain code
 // should import from ./types/<domain>; existing consumers can migrate without a
 // flag day while these re-exports preserve their public type names.
@@ -669,6 +670,7 @@ export interface LoadComparisonRequestOptions {
 }
 
 export interface RunArchiveProvenance {
+  telemetry_policy?: import('./types/telemetryPolicy').TelemetryBudgetPolicy
   elk_capture?: { connection_id: string; connection_name?: string }
   dynatrace_capture?: { connection_id: string; connection_name?: string }
   application_id?: string
@@ -1161,6 +1163,7 @@ export interface TestRunManifestArchive {
 }
 
 export interface TestRunManifest {
+  telemetry_policy?: import('./types/telemetryPolicy').TelemetryPolicyEvidence
   schema_version: string
   test_id: string
   ref_key?: string
@@ -1688,6 +1691,7 @@ export interface IntegrationOutcome {
 }
 
 export interface RunArchiveReport {
+  telemetry_policy?: import('./types/telemetryPolicy').TelemetryPolicyEvidence
   messaging_progress?: MessagingProgressSnapshot
   monitor_diagnostics?: import('./types/appdynamics').RunMonitorDiagnostic[]
   monitor_rule_results?: import('./types/appdynamics').MonitorRuleResult[]
@@ -2081,6 +2085,7 @@ export type TestStatus =
   | 'PAUSED'
 
 export interface LiveMetrics {
+  telemetry_policy?: import('./types/telemetryPolicy').TelemetryPolicyEvidence
   messaging_progress?: MessagingProgressSnapshot
   messaging?: Record<string, MessagingSummary>
   observation_state?: 'historical' | 'stale'

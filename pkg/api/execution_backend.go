@@ -297,6 +297,12 @@ func localExecutionFinalState(testStatus, testError string, runErr error, gracef
 
 func newRunArtifacts(tr *TestRunner, test *ManagedTest, saveRecord func(record *storage.RunArchiveRecord) error) (*runArtifacts, error) {
 	initialProvenance := maskRunArchiveProvenance(buildRunArchiveProvenance(tr, test))
+	if initialProvenance.TelemetryPolicy == nil {
+		initialProvenance.TelemetryPolicy = captureTelemetryBudgetPolicy(initialProvenance.ExecutionSettings, false, time.Now())
+	}
+	if initialProvenance.TelemetryPolicy == nil {
+		return nil, fmt.Errorf("resolve telemetry policy: invalid settings")
+	}
 	// Local runs must cross the same immutable provenance boundary as
 	// distributed runs before any runtime mutation or archive write can occur.
 	authoritativeInitial, err := tr.persistInitialArchiveProvenance(test, &initialProvenance)
@@ -328,14 +334,46 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 		tr.mu.RUnlock()
 		snapshot = copied
 	}
+	provenance = buildRunArchiveProvenanceFromSnapshot(snapshot)
+	if tr != nil {
+		provenance.RequestedAt = archiveRunTimestamp(snapshot.CreatedAt, tr.testStore)
+	}
+	if tr == nil {
+		return provenance
+	}
+	settings := tr.GetSystemSettings()
+	provenance.ExecutionSettings = RunArchiveExecutionSettingsSnapshot{
+		General:          settings.General,
+		Thresholds:       settings.Thresholds,
+		CapacityPlanning: settings.CapacityPlanning,
+	}
+	backend := snapshot.executionBackend
+	if backend == nil {
+		backend = tr.getExecutionBackend()
+	}
+	if inventoryBackend, ok := backend.(inventoryExecutionBackend); ok {
+		provenance.GeneratorInventory = generatorInventoryForProvenance(inventoryBackend, generatorInventoryRefreshTimeout)
+	}
+	return provenance
+}
+
+// buildRunArchiveProvenanceFromSnapshot copies one coherent configuration. It
+// performs no store, settings refresh, inventory or runner-lock operations and
+// is safe at the locked Start admission boundary. Inventory observed later is
+// retained in refreshed provenance rather than invented at admission.
+func buildRunArchiveProvenanceFromSnapshot(snapshot *ManagedTest) RunArchiveProvenance {
+	provenance := RunArchiveProvenance{}
+	if snapshot == nil {
+		return provenance
+	}
+	if snapshot.initialArchiveProvenance != nil {
+		provenance.TelemetryPolicy = cloneTelemetryBudgetPolicy(snapshot.initialArchiveProvenance.TelemetryPolicy)
+	}
 	provenance.ApplicationID = snapshot.ApplicationID
 	provenance.ReleaseID = snapshot.ReleaseID
 	provenance.ScenarioID = snapshot.ScenarioID
 	provenance.ProjectID = normalizeProjectID(snapshot.ProjectID)
 	provenance.RequestedAt = snapshot.CreatedAt
-	if tr != nil {
-		provenance.RequestedAt = archiveRunTimestamp(snapshot.CreatedAt, tr.testStore)
-	}
 	provenance.StartedAt = snapshot.StartedAt
 	provenance.ScheduledStartAt = cloneTimePtr(snapshot.ScheduledStartAt)
 	provenance.ScenarioMode = snapshot.ScenarioMode
@@ -366,22 +404,6 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	provenance.StoppedBySubject = snapshot.StoppedBySubject
 	provenance.StoppedByDisplayName = snapshot.StoppedByDisplayName
 	provenance.Governance = buildRunArchiveGovernanceSnapshot(snapshot)
-	if tr == nil {
-		return provenance
-	}
-	settings := tr.GetSystemSettings()
-	provenance.ExecutionSettings = RunArchiveExecutionSettingsSnapshot{
-		General:          settings.General,
-		Thresholds:       settings.Thresholds,
-		CapacityPlanning: settings.CapacityPlanning,
-	}
-	backend := snapshot.executionBackend
-	if backend == nil {
-		backend = tr.getExecutionBackend()
-	}
-	if inventoryBackend, ok := backend.(inventoryExecutionBackend); ok {
-		provenance.GeneratorInventory = generatorInventoryForProvenance(inventoryBackend, generatorInventoryRefreshTimeout)
-	}
 	return provenance
 }
 

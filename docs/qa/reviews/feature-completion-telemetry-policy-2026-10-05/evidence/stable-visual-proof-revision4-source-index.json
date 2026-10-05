@@ -1,0 +1,15 @@
+{
+  "files": [
+    {
+      "source": "/private/tmp/apexload-telemetry-stable-capture/workflow-telemetry-policy-stable.spec.ts",
+      "retained_file": "stable-visual-proof-revision4-workflow-telemetry-policy-stable.spec.ts.txt",
+      "sha256": "352c0583ca82bfb4eb35ffb16b01c055695c0e0f3b82cabe9730e4c08f464ad6"
+    },
+    {
+      "source": "/private/tmp/apexload-telemetry-stable-capture/fixture-provenance.json",
+      "retained_file": "stable-visual-proof-revision4-fixture-provenance.json.txt",
+      "sha256": "481d7d7e31143923651170fbe8fda4b36b676df054e45c351382863661a86ba4"
+    }
+  ],
+  "scope": "External-only final same-bundle genuine workflow plus separate CSS renderer/reference/refusal regression; no production/source/bundle modifications."
+}

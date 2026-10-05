@@ -157,6 +157,7 @@ type RunArchiveExecutionSettingsSnapshot struct {
 }
 
 type RunArchiveProvenance struct {
+	TelemetryPolicy       *TelemetryBudgetPolicy              `json:"telemetry_policy,omitempty"`
 	ComparisonFingerprint string                              `json:"comparison_fingerprint,omitempty"`
 	ComparisonMetrics     map[string]BaselineMetricDefinition `json:"comparison_metrics,omitempty"`
 	TerminationMode       string                              `json:"termination_mode,omitempty"`
@@ -443,6 +444,7 @@ type RunArchiveIdentityNames struct {
 }
 
 type RunArchiveReport struct {
+	TelemetryPolicy                   *TelemetryPolicyEvidence               `json:"telemetry_policy,omitempty"`
 	MessagingProgress                 *protocol.MessagingProgressSnapshot    `json:"messaging_progress,omitempty"`
 	MonitorDiagnostics                []RunMonitorDiagnostic                 `json:"monitor_diagnostics,omitempty"`
 	MonitorRuleResults                []analysis.MonitorRuleResult           `json:"monitor_rule_results,omitempty"`
