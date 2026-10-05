@@ -114,7 +114,8 @@ func bucketPrometheusSeries(points []MetricPoint, from, to time.Time, seconds in
 
 func samePrometheusIdentity(a, b MetricPoint) bool {
 	left, right := a.Provider, b.Provider
-	return left != nil && right != nil && left.Name == "prometheus" && right.Name == "prometheus" && left.QueryID == right.QueryID && left.DefinitionHash == right.DefinitionHash && left.BackendProfile == right.BackendProfile && left.Mode == right.Mode && left.Statistic == right.Statistic && left.AnalysisStatistic == right.AnalysisStatistic && left.EvaluationStepSeconds == right.EvaluationStepSeconds && left.ResolutionSeconds == right.ResolutionSeconds && maps.Equal(left.EntityIDs, right.EntityIDs) && maps.Equal(a.Dimensions, b.Dimensions)
+	return left != nil && right != nil && left.Name == "prometheus" && right.Name == "prometheus" &&
+		prometheusIdentityOf(left).equal(prometheusIdentityOf(right)) && maps.Equal(a.Dimensions, b.Dimensions)
 }
 
 // CompatibleOverlay compares declared semantics, including preserved Prometheus

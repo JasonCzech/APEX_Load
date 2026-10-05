@@ -5,9 +5,7 @@ package analysis
 import (
 	"errors"
 	"fmt"
-	"maps"
 	"math"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -283,10 +281,7 @@ type AlignedPair struct {
 // sameMetric compares measurement identity, excluding the dataset/run that
 // owns it so explicitly selected baselines may come from earlier runs.
 func sameMetric(a, b MetricPoint) bool {
-	return a.ProjectID == b.ProjectID && a.Source == b.Source &&
-		a.ScenarioID == b.ScenarioID && a.Host == b.Host && a.Service == b.Service &&
-		a.MetricName == b.MetricName && a.Population == b.Population && a.MetricVersion == b.MetricVersion && slices.Equal(a.Derivation, b.Derivation) && a.Kind == b.Kind && a.InputKind == b.InputKind && a.Unit == b.Unit &&
-		maps.Equal(a.Dimensions, b.Dimensions) && compatiblePrometheusProvenance(a, b)
+	return measurementIdentityOf(a).equal(measurementIdentityOf(b))
 }
 
 func compatiblePrometheusProvenance(a, b MetricPoint) bool {
@@ -299,10 +294,7 @@ func compatiblePrometheusProvenance(a, b MetricPoint) bool {
 // ProviderCompatibility excludes bucket clocks and mutable settlement state,
 // but retains source identity and the semantics required for valid comparisons.
 func compatibleProvider(a, b *ProviderMeasurement) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	return a.Name == b.Name && a.Backend == b.Backend && a.Synthetic == b.Synthetic && a.MetricID == b.MetricID && maps.Equal(a.EntityIDs, b.EntityIDs) && a.ResolutionSeconds == b.ResolutionSeconds && a.Statistic == b.Statistic && a.QueryWindow == b.QueryWindow
+	return generalProviderIdentityOf(a).equal(generalProviderIdentityOf(b))
 }
 
 func sameSeries(a, b MetricPoint) bool {

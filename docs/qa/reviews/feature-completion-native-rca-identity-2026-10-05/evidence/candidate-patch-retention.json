@@ -1,0 +1,8 @@
+{
+  "retained_file": "candidate.patch.gz",
+  "gzip_sha256": "acec5dd3ed7c892b0d8f634ea164e58c00c7341a4f19739181b90771aef027b6",
+  "uncompressed_sha256": "cfb2e5020058d13db4de2338c6e1bb74b2c86950a3f73de5e1a6a460b3da2f90",
+  "original_path": "/private/tmp/apexload-native-rca-identity-candidate-20261005.patch",
+  "uncompressed_bytes": 33274,
+  "byte_for_byte_roundtrip_verified": true
+}
