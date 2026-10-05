@@ -51,6 +51,7 @@ func archiveManifestArtifactNames(manifest *RunArchiveManifest) (map[string]stru
 		manifest.IntervalDistributionsFile,
 		manifest.ProviderLookupsFile,
 		manifest.ExemplarsFile,
+		manifest.ClockObservationsFile,
 		"manifest.json",
 	} {
 		if strings.TrimSpace(name) == "" {
@@ -130,6 +131,9 @@ func validateRunArchiveManifestArtifacts(manifest *RunArchiveManifest) error {
 		return err
 	}
 	if manifest.ExemplarsFile, err = optionalArchiveArtifactName("exemplars_file", manifest.ExemplarsFile); err != nil {
+		return err
+	}
+	if manifest.ClockObservationsFile, err = optionalArchiveArtifactName("clock_observations_file", manifest.ClockObservationsFile); err != nil {
 		return err
 	}
 	return nil

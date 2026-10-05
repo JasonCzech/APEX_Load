@@ -87,6 +87,9 @@ type Agent struct {
 	jobScanOffset             int
 	jobScanManagement         map[string]SignedRunJob
 	jobScanManagementOverflow bool
+	// clock is the latest heartbeat's measurement of this collector's clock
+	// against the controller's.
+	clock collectorClock
 }
 
 type metricPack struct {
@@ -440,7 +443,9 @@ func (a *Agent) pushHeartbeat(ctx context.Context, hb heartbeat) error {
 	client := *a.client
 	// A redirect must not carry the collector token to another destination.
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	sent := time.Now()
 	resp, err := client.Do(req)
+	received := time.Now()
 	if err != nil {
 		return err
 	}
@@ -452,6 +457,7 @@ func (a *Agent) pushHeartbeat(ctx context.Context, hb heartbeat) error {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("controller returned %d: %s", resp.StatusCode, strings.TrimSpace(string(snippet)))
 	}
+	a.clock.observe(sent, received, resp.Header)
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	return nil
 }

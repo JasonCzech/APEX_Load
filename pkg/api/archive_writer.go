@@ -1048,6 +1048,7 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		{Name: manifest.IntervalDistributionsFile, Kind: "evidence", Format: "jsonl", RecordType: intervalDistributionRecordType, Count: manifest.IntervalDistributionCount},
 		{Name: manifest.ProviderLookupsFile, Kind: "evidence", Format: "jsonl", RecordType: providerLookupRecordType, Count: manifest.ProviderLookupCount},
 		{Name: manifest.ExemplarsFile, Kind: "evidence", Format: "jsonl", RecordType: exemplarRecordType, Count: manifest.ExemplarCount},
+		{Name: manifest.ClockObservationsFile, Kind: "evidence", Format: "jsonl", RecordType: clockObservationRecordType, Count: manifest.ClockObservationCount},
 	}
 	for _, export := range manifest.CSVExports {
 		if export.Status == "complete" {

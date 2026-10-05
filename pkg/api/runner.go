@@ -444,6 +444,10 @@ type TestRunner struct {
 	// The pod list contains StatefulSet ordinals absent from headless DNS while
 	// Pending, NotReady, or terminating. It is published with liveInventory.
 	livePodSnapshot recoveryPodSnapshot
+
+	// clockObservationSpacing keeps at most one clock observation per source
+	// in each window; zero means a minute. Tests shorten it before a run.
+	clockObservationSpacing time.Duration
 }
 
 type archiveCommitGate struct {
@@ -518,6 +522,7 @@ type ManagedTest struct {
 	elkArtifacts          *runArtifacts
 	DynatraceCapture      *DynatraceCaptureConfig `json:"dynatrace_capture,omitempty"`
 	dynatraceArtifacts    *runArtifacts
+	clockObservations     *clockObservationLog                     // measured source clocks; created on first observation
 	TotalVUsers           int                                      `json:"total_vusers"`
 	GeneratorShards       []GeneratorShardSummary                  `json:"generator_shards,omitempty"`
 	Duration              time.Duration                            `json:"duration_ns"`

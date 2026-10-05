@@ -8589,6 +8589,13 @@ paths:
                               size_bytes:
                                 type: integer
                                 format: int64
+                        clock_observation_count:
+                          type: integer
+                          format: int64
+                        clock_observations_file:
+                          type: string
+                        clock_observations_truncated:
+                          type: boolean
                         completed_at:
                           type: string
                           format: date-time
@@ -50555,6 +50562,33 @@ paths:
                           timestamp_utc:
                             type: string
                             format: date-time
+                          timing:
+                            type: object
+                            properties:
+                              clock_offset_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              clock_source:
+                                type: string
+                              clock_uncertainty_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              freshness_seconds:
+                                type: number
+                                format: double
+                                nullable: true
+                              offset_status:
+                                type: string
+                              received_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              resolution_seconds:
+                                type: integer
+                                format: int64
+                            nullable: true
                           unit:
                             type: string
                           value:
@@ -51087,6 +51121,33 @@ paths:
                       timestamp_utc:
                         type: string
                         format: date-time
+                      timing:
+                        type: object
+                        properties:
+                          clock_offset_ms:
+                            type: number
+                            format: double
+                            nullable: true
+                          clock_source:
+                            type: string
+                          clock_uncertainty_ms:
+                            type: number
+                            format: double
+                            nullable: true
+                          freshness_seconds:
+                            type: number
+                            format: double
+                            nullable: true
+                          offset_status:
+                            type: string
+                          received_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          resolution_seconds:
+                            type: integer
+                            format: int64
+                        nullable: true
                       unit:
                         type: string
                       value:
@@ -51920,6 +51981,33 @@ paths:
                       timestamp_utc:
                         type: string
                         format: date-time
+                      timing:
+                        type: object
+                        properties:
+                          clock_offset_ms:
+                            type: number
+                            format: double
+                            nullable: true
+                          clock_source:
+                            type: string
+                          clock_uncertainty_ms:
+                            type: number
+                            format: double
+                            nullable: true
+                          freshness_seconds:
+                            type: number
+                            format: double
+                            nullable: true
+                          offset_status:
+                            type: string
+                          received_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          resolution_seconds:
+                            type: integer
+                            format: int64
+                        nullable: true
                       unit:
                         type: string
                       value:
@@ -302432,6 +302520,13 @@ paths:
                           format: int64
                       required:
                         - name
+                  clock_observation_count:
+                    type: integer
+                    format: int64
+                  clock_observations_file:
+                    type: string
+                  clock_observations_truncated:
+                    type: boolean
                   completed_at:
                     type: string
                     format: date-time
@@ -314772,6 +314867,13 @@ paths:
                               format: int64
                           required:
                             - name
+                      clock_observation_count:
+                        type: integer
+                        format: int64
+                      clock_observations_file:
+                        type: string
+                      clock_observations_truncated:
+                        type: boolean
                       completed_at:
                         type: string
                         format: date-time
@@ -357937,6 +358039,36 @@ paths:
                                   timestamp_utc:
                                     type: string
                                     format: date-time
+                                  timing:
+                                    type: object
+                                    properties:
+                                      clock_offset_ms:
+                                        type: number
+                                        format: double
+                                        nullable: true
+                                      clock_source:
+                                        type: string
+                                      clock_uncertainty_ms:
+                                        type: number
+                                        format: double
+                                        nullable: true
+                                      freshness_seconds:
+                                        type: number
+                                        format: double
+                                        nullable: true
+                                      offset_status:
+                                        type: string
+                                      received_at:
+                                        type: string
+                                        format: date-time
+                                        nullable: true
+                                      resolution_seconds:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - clock_source
+                                      - offset_status
+                                    nullable: true
                                   unit:
                                     type: string
                                   value:
@@ -358574,6 +358706,36 @@ paths:
                         timestamp_utc:
                           type: string
                           format: date-time
+                        timing:
+                          type: object
+                          properties:
+                            clock_offset_ms:
+                              type: number
+                              format: double
+                              nullable: true
+                            clock_source:
+                              type: string
+                            clock_uncertainty_ms:
+                              type: number
+                              format: double
+                              nullable: true
+                            freshness_seconds:
+                              type: number
+                              format: double
+                              nullable: true
+                            offset_status:
+                              type: string
+                            received_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            resolution_seconds:
+                              type: integer
+                              format: int64
+                          required:
+                            - clock_source
+                            - offset_status
+                          nullable: true
                         unit:
                           type: string
                         value:

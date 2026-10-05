@@ -13,11 +13,13 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/collectoragent"
 )
 
 // collectorStaleAfter is the freshness window after which a collector's latest
@@ -105,6 +107,9 @@ type collectorHeartbeatRequest struct {
 // routes the latest snapshot to live monitoring. Registered WITHOUT the RBAC auth
 // middleware (collector-token authenticated in-handler).
 func (s *Server) handleCollectorHeartbeat(w http.ResponseWriter, r *http.Request) {
+	// Taken first so the collector's four-timestamp offset excludes only this
+	// handler's own work, which the reply's two stamps bracket.
+	clockReceived := time.Now()
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
@@ -196,6 +201,8 @@ func (s *Server) handleCollectorHeartbeat(w http.ResponseWriter, r *http.Request
 	}
 	s.collectorMetrics.put(snap)
 	s.broadcastCollectorHeartbeat(snap, accepted)
+	w.Header().Set(collectoragent.ClockReceivedHeader, strconv.FormatInt(clockReceived.UnixNano(), 10))
+	w.Header().Set(collectoragent.ClockSentHeader, strconv.FormatInt(time.Now().UnixNano(), 10))
 	// Heartbeats are high-frequency telemetry, not audited (would flood the log).
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":         "accepted",

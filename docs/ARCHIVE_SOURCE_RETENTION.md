@@ -459,7 +459,8 @@ No source data is deleted to make space.
 
 `exemplars.jsonl` has its own allowance too,
 `APEXLOAD_ARCHIVE_EXEMPLARS_MAX_BYTES` (default 64 MiB, up to 4 GiB), with
-the same truncate-and-mark behaviour.
+the same truncate-and-mark behaviour, as does `clock_observations.jsonl`
+(`APEXLOAD_ARCHIVE_CLOCK_OBSERVATIONS_MAX_BYTES`, default 8 MiB).
 
 `interval_distributions.jsonl` has its own allowance,
 `APEXLOAD_ARCHIVE_INTERVAL_DISTRIBUTIONS_MAX_BYTES` (default 256 MiB, positive

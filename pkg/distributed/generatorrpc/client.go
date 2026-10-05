@@ -576,7 +576,22 @@ type HeartbeatStream struct {
 	clockSentAt       time.Time
 	clockPingUnixMS   int64
 	clockSampleActive bool
+	lastClock         generatorClockEstimate
+	lastRoundTrip     time.Duration
 }
+
+// ClockSample is one heartbeat's measurement of a generator's clock: the
+// generator's clock minus the controller's, the exchange's round trip, and the
+// uncertainty that bounds the offset error (half the round trip).
+type ClockSample struct {
+	Offset      time.Duration
+	RoundTrip   time.Duration
+	Uncertainty time.Duration
+	ObservedAt  time.Time
+}
+
+// ClockProbeGeneratorID names the controller's clock-probe heartbeats.
+const ClockProbeGeneratorID = "controller-clock-probe"
 
 type generatorClockEstimate struct {
 	offset      time.Duration
@@ -890,17 +905,26 @@ func (c *Client) commitWorkAt(ctx context.Context, testID string, generation uin
 	}, nil
 }
 
-func (c *Client) observeGeneratorClock(controllerSentAt, controllerReceivedAt, generatorAt time.Time) {
-	if c == nil || controllerSentAt.IsZero() || controllerReceivedAt.Before(controllerSentAt) || generatorAt.IsZero() {
-		return
+// generatorClockSample estimates a generator's offset from one heartbeat: its
+// pong timestamp against the midpoint of the controller's send and receive.
+func generatorClockSample(controllerSentAt, controllerReceivedAt, generatorAt time.Time) (generatorClockEstimate, bool) {
+	if controllerSentAt.IsZero() || controllerReceivedAt.Before(controllerSentAt) || generatorAt.IsZero() {
+		return generatorClockEstimate{}, false
 	}
 	roundTrip := controllerReceivedAt.Sub(controllerSentAt)
 	midpoint := controllerSentAt.Add(roundTrip / 2)
-	estimate := generatorClockEstimate{
+	return generatorClockEstimate{
 		offset:      generatorAt.Sub(midpoint),
 		uncertainty: roundTrip / 2,
 		observedAt:  controllerReceivedAt,
 		known:       true,
+	}, true
+}
+
+func (c *Client) observeGeneratorClock(controllerSentAt, controllerReceivedAt, generatorAt time.Time) {
+	estimate, ok := generatorClockSample(controllerSentAt, controllerReceivedAt, generatorAt)
+	if c == nil || !ok {
+		return
 	}
 	c.clockMu.Lock()
 	current := c.clockEstimate
@@ -947,7 +971,7 @@ func (c *Client) ensureCoordinatedStartClockEstimate(ctx context.Context) (gener
 	// Zero is deliberate for rolling compatibility: legacy generators return
 	// max(generatorNow,pingTimestamp), so a controller timestamp here would hide
 	// a generator clock that is behind the controller.
-	if err := heartbeat.Send(Heartbeat{GeneratorID: "controller-clock-probe"}); err != nil {
+	if err := heartbeat.Send(Heartbeat{GeneratorID: ClockProbeGeneratorID}); err != nil {
 		return generatorClockEstimate{}, fmt.Errorf("send coordinated start clock probe: %w", err)
 	}
 	if _, err := heartbeat.Receive(); err != nil {
@@ -1272,6 +1296,20 @@ func (s *HeartbeatStream) Send(heartbeat Heartbeat) error {
 	return err
 }
 
+// ClockSample returns the clock measurement of this stream's latest exchange,
+// if its pong carried a generator timestamp.
+func (s *HeartbeatStream) ClockSample() (ClockSample, bool) {
+	if s == nil {
+		return ClockSample{}, false
+	}
+	s.clockMu.Lock()
+	defer s.clockMu.Unlock()
+	if !s.lastClock.known {
+		return ClockSample{}, false
+	}
+	return ClockSample{Offset: s.lastClock.offset, RoundTrip: s.lastRoundTrip, Uncertainty: s.lastClock.uncertainty, ObservedAt: s.lastClock.observedAt}, true
+}
+
 func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 	pong, err := s.stream.Recv()
 	receivedAt := time.Now()
@@ -1304,6 +1342,11 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 		}
 		if !generatorAt.IsZero() {
 			s.owner.observeGeneratorClock(sentAt, receivedAt, generatorAt)
+			if sample, ok := generatorClockSample(sentAt, receivedAt, generatorAt); ok {
+				s.clockMu.Lock()
+				s.lastClock, s.lastRoundTrip = sample, receivedAt.Sub(sentAt)
+				s.clockMu.Unlock()
+			}
 		}
 	}
 	stats := generatorStatsFromProto(pong.GetStats())

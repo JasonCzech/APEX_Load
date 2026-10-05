@@ -312,6 +312,11 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 						return collectErr
 					}
 					points = []analysis.MetricPoint{}
+					// Stamped once at collection, so a retried batch keeps its
+					// identity. Only times this collector read itself carry its
+					// clock; adapter points and samples that bring their own
+					// timestamp were timed by another clock.
+					clock := a.clock.timing(now)
 					for _, pack := range hb.Packs {
 						keys := make([]string, 0, len(pack.Samples))
 						for name := range pack.Samples {
@@ -326,10 +331,14 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 								kind = analysis.KindGauge
 							}
 							at := pack.Timestamp
+							var timing *analysis.PointTiming
 							if meta.Timestamp != nil {
 								at = *meta.Timestamp
+							} else {
+								copied := *clock
+								timing = &copied
 							}
-							p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: job.ProjectID, RunID: job.RunID, ScenarioID: job.ScenarioID, Source: job.SourceID, Host: job.CollectorID, TimestampUTC: at.UTC(), MetricName: name, Value: &value, Kind: kind, Quality: analysis.QualityValid}
+							p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: job.ProjectID, RunID: job.RunID, ScenarioID: job.ScenarioID, Source: job.SourceID, Host: job.CollectorID, TimestampUTC: at.UTC(), MetricName: name, Value: &value, Kind: kind, Quality: analysis.QualityValid, Timing: timing}
 							p.Unit, p.Dimensions = meta.Unit, meta.Dimensions
 							if meta.Name != "" {
 								p.MetricName = meta.Name

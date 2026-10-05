@@ -258,9 +258,12 @@ without the setting behave as before.
 Archive rows record the context each request actually sent: `trace_sent`,
 `trace_source` (`authored`, `propagated` or `generated`), `sent_trace_id` and
 `sent_span_id`. `trace_id` and `span_id` come from that context, so a gateway's
-`X-Request-Id` no longer replaces them, and a fresh HTTP cache hit, which sends
-nothing, archives `trace_sent: false` with no `trace_id`. Rows written before
-this change, or by protocols that do not record it, omit `trace_sent`.
+`X-Request-Id` no longer replaces them. `trace_sent` means a send was
+attempted: a fresh HTTP cache hit, a request whose connection failed before
+any headers were written, a message rejected before reaching its client and a
+Kafka record still buffered in an open transaction all archive
+`trace_sent: false` with no `trace_id`. Rows written before this change, or by
+protocols that do not record it, omit `trace_sent`.
 
 These behaviours are covered by unit and engine tests against local HTTP
 servers; they have not yet been qualified against a live APM tenant.
@@ -300,6 +303,48 @@ valid trace ID) become exemplars.
   Ties break by duration, then timestamp, then trace ID. Selection is a pure
   function of the archive, so it is byte-identical when repeated.
   `exemplars_truncated` marks any cap.
+
+### Timing provenance and clock observations
+
+Metric points may carry an optional `timing` block (additive within
+`apexload.metric_point.v1`): `clock_source` (`generator`, `collector`,
+`provider` or `controller`), `offset_status` (`measured` or `unknown`),
+`clock_offset_ms` (the source's clock minus the controller's) and
+`clock_uncertainty_ms`, plus `resolution_seconds`, `freshness_seconds` and
+`received_at` where they apply. Offsets are evidence for ordering, never a
+silent correction: a point more than 30 s ahead of its receipt keeps its
+`clock_skewed` quality.
+
+- **Collectors** time each heartbeat. The controller stamps its replies with
+  `X-Apex-Clock-Received` and `X-Apex-Clock-Sent` (Unix nanoseconds), and the
+  agent derives its offset, round trip and uncertainty (half the round trip)
+  from the four timestamps. Points it timed itself for a run carry that
+  measurement, stamped once so a retried batch keeps its identity; without a
+  measurement in the last five minutes they say `unknown`. Adapter points
+  (CloudWatch, Azure Monitor, OTLP) and samples that bring their own
+  timestamp were timed by another clock and carry no collector timing. Older controllers
+  send no stamps and older agents send no timing; both keep working.
+- **Generators** are re-measured once a minute while a distributed run is
+  live, by the same heartbeat exchange the start barrier uses, including after
+  HA adoption.
+- **Providers** (AppDynamics, Dynatrace, Prometheus queries, Elasticsearch
+  query buckets) never exchange clocks with the controller, so their points say
+  `unknown` with an uncertainty of half the bucket or evaluation step;
+  Prometheus points add `freshness_seconds` when the sample time is known. The
+  timing depends only on the point, so re-reading a bucket persists identical
+  content.
+
+Measured offsets are archived after finalization in `clock_observations.jsonl`
+(`apexload.clock_observation.v1`): source, clock source, observed time, offset,
+round trip and uncertainty, at most one per source per minute and 10,000 per
+run (`clock_observations_truncated`). The file is written only when the run
+measured a clock. Observations live with the controller holding the run, so a
+collector batch accepted by another replica, or a probe lost to a controller
+restart, is not archived. With HA, offsets are against the replica that
+measured them: generator observations name the execution owner in
+`controller`, but a collector's offset is against whichever replica answered
+its heartbeat. The uncertainty does not include skew between replicas, so keep
+controller replicas NTP-synchronized.
 
 ### Messaging trace carriers
 

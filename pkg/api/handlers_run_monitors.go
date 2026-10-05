@@ -452,7 +452,8 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 	// Hash source observations before adding receive-time fields so retry
 	// identity does not depend on which replica accepted the request.
 	for i, p := range batch.Points {
-		if err := p.Validate(); err != nil || p.Provider != nil || p.ProjectID != job.ProjectID || p.RunID != job.RunID || p.ScenarioID != job.ScenarioID || p.Source != job.Source.ID || p.DatasetID != "" || p.Host != c.ID || !p.ReceivedAt.IsZero() || p.ActiveRuntimeMS != nil || job.Source.Pack == "prometheus" && (p.TimestampUTC.Before(job.StartedAt) || job.LoadEndedAt != nil && p.TimestampUTC.After(*job.LoadEndedAt)) {
+		// A collector may describe only its own clock, never a receive time.
+		if err := p.Validate(); err != nil || p.Provider != nil || p.ProjectID != job.ProjectID || p.RunID != job.RunID || p.ScenarioID != job.ScenarioID || p.Source != job.Source.ID || p.DatasetID != "" || p.Host != c.ID || !p.ReceivedAt.IsZero() || p.ActiveRuntimeMS != nil || p.Timing != nil && (p.Timing.ClockSource != analysis.ClockSourceCollector || p.Timing.ReceivedAt != nil) || job.Source.Pack == "prometheus" && (p.TimestampUTC.Before(job.StartedAt) || job.LoadEndedAt != nil && p.TimestampUTC.After(*job.LoadEndedAt)) {
 			writeError(w, 400, "invalid or misattributed monitor point")
 			return
 		}
@@ -495,7 +496,21 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 		writeError(w, 409, err.Error())
 		return
 	}
+	s.recordCollectorClock(job.RunID, c.ID, batch.Points, now)
 	writeJSON(w, 200, map[string]any{"accepted": true, "sequence": batch.Sequence})
+}
+
+// recordCollectorClock archives the collector's measured offset for the run
+// from the timing its points carry.
+func (s *Server) recordCollectorClock(runID, collectorID string, points []analysis.MetricPoint, now time.Time) {
+	for _, p := range points {
+		if t := p.Timing; t != nil && t.OffsetStatus == analysis.OffsetMeasured && t.ClockOffsetMs != nil && t.ClockUncertaintyMs != nil {
+			uncertainty := time.Duration(*t.ClockUncertaintyMs * float64(time.Millisecond))
+			estimate := analysis.ClockEstimate{Offset: time.Duration(*t.ClockOffsetMs * float64(time.Millisecond)), RoundTrip: 2 * uncertainty, Uncertainty: uncertainty}
+			s.runner.recordClockObservation(runID, newClockObservation(collectorID, "", analysis.ClockSourceCollector, estimate, now))
+			return
+		}
+	}
 }
 
 func (s *Server) handleRunMonitors(w http.ResponseWriter, r *http.Request) {

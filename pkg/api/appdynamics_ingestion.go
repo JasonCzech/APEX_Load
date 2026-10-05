@@ -312,6 +312,9 @@ func (s *Server) persistProviderBatch(ctx context.Context, job storage.RunMonito
 	if !ok {
 		return errors.New("provider monitor storage unavailable")
 	}
+	for i := range payload.Points {
+		payload.Points[i].Timing = providerPointTiming(payload.Points[i])
+	}
 	body, err := json.Marshal(payload)
 	if err != nil || len(body) > 1<<20 {
 		return errors.New("provider batch exceeds byte limit")
@@ -329,6 +332,31 @@ func (s *Server) persistProviderBatch(ctx context.Context, job storage.RunMonito
 		}
 	}
 	return store.AcceptProviderMonitorBatch(job.ProjectID, job.Source.CollectorID, receipt, payload, name, owner, generation)
+}
+
+// providerPointTiming is the controller's account of a provider point's
+// clock: never exchanged with the controller, so unknown, with uncertainty of
+// half the bucket: the source bucket, a query window, or a Prometheus
+// evaluation step. It depends only on the point, so re-reading a bucket
+// persists identical content.
+func providerPointTiming(p analysis.MetricPoint) *analysis.PointTiming {
+	if p.Provider == nil {
+		return nil
+	}
+	resolution := p.Provider.ResolutionSeconds
+	if window := p.Provider.BucketEnd.Sub(p.Provider.BucketStart); resolution == 0 && p.Provider.QueryWindow && window > 0 {
+		resolution = int(window / time.Second)
+	}
+	if resolution == 0 {
+		resolution = p.Provider.EvaluationStepSeconds
+	}
+	var freshness *time.Duration
+	if p.Provider.FreshnessKnown && p.Provider.UnderlyingSampleTime != nil {
+		if age := p.TimestampUTC.Sub(*p.Provider.UnderlyingSampleTime); age >= 0 {
+			freshness = &age
+		}
+	}
+	return analysis.ProviderTiming(resolution, freshness)
 }
 
 // Durable persistence is shared across provider-specific validators.

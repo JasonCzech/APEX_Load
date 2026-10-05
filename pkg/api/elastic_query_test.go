@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -153,6 +154,9 @@ func elasticPointValues(t *testing.T, store providerMonitorStore, job storage.Ru
 	for _, p := range page.Points {
 		if p.Provider == nil || p.Provider.BucketStart.Truncate(time.Minute) != p.Provider.BucketStart || p.Provider.BucketStart.Location() != time.UTC {
 			t.Fatalf("bucket not aligned to UTC minutes: %+v", p.Provider)
+		}
+		if p.Timing == nil || p.Timing.ClockSource != analysis.ClockSourceProvider || p.Timing.OffsetStatus != analysis.OffsetUnknown || p.Timing.ResolutionSeconds != p.Provider.ResolutionSeconds {
+			t.Fatalf("persisted bucket lacks provider timing: %+v", p.Timing)
 		}
 		if out[p.MetricName] == nil {
 			out[p.MetricName] = map[time.Time]float64{}

@@ -1110,6 +1110,7 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 		go b.consumeMetrics(lifecycleCtx, tr, test, target, streams[target])
 	}
 	if !stopping {
+		go b.observeGeneratorClocks(lifecycleCtx, tr, test)
 		preBaseline, _ := testexec.ResourceBaselineWindows(test.ResourceBaseline)
 		preBaseline += testexec.StartDelayWindow(test.StartDelay)
 		go tr.startDistributedStageSchedulesAfterBaseline(executionCtx, test, preBaseline)

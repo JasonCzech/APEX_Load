@@ -124,6 +124,11 @@ type RunArchiveManifest struct {
 	ExemplarsTruncated       bool   `json:"exemplars_truncated,omitempty"`
 	// ELKObservation labels legacy ELK capture values as cumulative.
 	ELKObservation string `json:"elk_observation,omitempty"`
+	// ClockObservationsFile holds measured generator and collector clock
+	// offsets (apexload.clock_observation.v1), written once after finalize.
+	ClockObservationsFile      string `json:"clock_observations_file,omitempty"`
+	ClockObservationCount      int64  `json:"clock_observation_count,omitempty"`
+	ClockObservationsTruncated bool   `json:"clock_observations_truncated,omitempty"`
 }
 
 type TransactionSLARuleResult struct {

@@ -319,6 +319,9 @@ type distributedExecutionBackend struct {
 	runSupervisionRenew   time.Duration
 	ensureRunCapacity     func(context.Context, *ManagedTest) error
 	releaseRunCapacity    func(*ManagedTest, bool)
+	// clockProbeInterval re-measures generator clocks during a run; zero
+	// means once a minute. Tests shorten it before starting a run.
+	clockProbeInterval time.Duration
 }
 
 func (*distributedExecutionBackend) requiresInitialRampReadinessProbe() {}
@@ -1599,6 +1602,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		return
 	}
 	activate()
+	go b.observeGeneratorClocks(remoteLifecycleCtx, tr, test)
 	if len(podClaims) > 0 {
 		store := tr.testStore.(podCapacityStore)
 		for _, claim := range podClaims {

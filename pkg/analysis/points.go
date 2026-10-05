@@ -68,6 +68,9 @@ type MetricPoint struct {
 	Dimensions      map[string]string    `json:"dimensions,omitempty"`
 	Quality         string               `json:"quality"`
 	Provider        *ProviderMeasurement `json:"provider,omitempty"`
+	// Timing is the controller's account of the point's clock; optional and
+	// additive within metric_point.v1.
+	Timing *PointTiming `json:"timing,omitempty"`
 }
 
 // ProviderMeasurement preserves source bucket semantics. A bucket statistic is
@@ -199,6 +202,11 @@ func (p MetricPoint) Validate() error {
 		}
 	default:
 		return fmt.Errorf("unsupported metric quality %q", p.Quality)
+	}
+	if p.Timing != nil {
+		if err := p.Timing.Validate(); err != nil {
+			return err
+		}
 	}
 	if len(p.Dimensions) > maxDimensions {
 		return fmt.Errorf("dimensions exceed %d", maxDimensions)

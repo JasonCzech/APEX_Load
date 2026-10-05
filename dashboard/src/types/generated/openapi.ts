@@ -3032,6 +3032,9 @@ export interface operations {
                 "sha256"?: string;
                 "size_bytes"?: number;
               }>;
+              "clock_observation_count"?: number;
+              "clock_observations_file"?: string;
+              "clock_observations_truncated"?: boolean;
               "completed_at"?: string;
               "continuity"?: ({
                 "armed"?: boolean;
@@ -9567,6 +9570,15 @@ export interface operations {
             "service"?: string;
             "source"?: string;
             "timestamp_utc"?: string;
+            "timing"?: ({
+              "clock_offset_ms"?: (number) | null;
+              "clock_source"?: string;
+              "clock_uncertainty_ms"?: (number) | null;
+              "freshness_seconds"?: (number) | null;
+              "offset_status"?: string;
+              "received_at"?: (string) | null;
+              "resolution_seconds"?: number;
+            }) | null;
             "unit"?: string;
             "value"?: (number) | null;
           }>;
@@ -45904,6 +45916,15 @@ export interface operations {
               "service"?: string;
               "source"?: string;
               "timestamp_utc"?: string;
+              "timing"?: ({
+                "clock_offset_ms"?: (number) | null;
+                "clock_source"?: string;
+                "clock_uncertainty_ms"?: (number) | null;
+                "freshness_seconds"?: (number) | null;
+                "offset_status"?: string;
+                "received_at"?: (string) | null;
+                "resolution_seconds"?: number;
+              }) | null;
               "unit"?: string;
               "value"?: (number) | null;
             }>;
@@ -56252,6 +56273,9 @@ export interface operations {
               "sha256"?: string;
               "size_bytes"?: number;
             }>;
+            "clock_observation_count"?: number;
+            "clock_observations_file"?: string;
+            "clock_observations_truncated"?: boolean;
             "completed_at"?: string;
             "continuity"?: ({
               "armed": boolean;
@@ -59922,6 +59946,9 @@ export interface operations {
                 "sha256"?: string;
                 "size_bytes"?: number;
               }>;
+              "clock_observation_count"?: number;
+              "clock_observations_file"?: string;
+              "clock_observations_truncated"?: boolean;
               "completed_at"?: string;
               "continuity"?: ({
                 "armed": boolean;
@@ -79819,6 +79846,15 @@ export interface operations {
                   "service"?: string;
                   "source": string;
                   "timestamp_utc": string;
+                  "timing"?: ({
+                    "clock_offset_ms"?: (number) | null;
+                    "clock_source": string;
+                    "clock_uncertainty_ms"?: (number) | null;
+                    "freshness_seconds"?: (number) | null;
+                    "offset_status": string;
+                    "received_at"?: (string) | null;
+                    "resolution_seconds"?: number;
+                  }) | null;
                   "unit"?: string;
                   "value"?: (number) | null;
                 }>;
@@ -81494,6 +81530,15 @@ export interface operations {
               "service"?: string;
               "source": string;
               "timestamp_utc": string;
+              "timing"?: ({
+                "clock_offset_ms"?: (number) | null;
+                "clock_source": string;
+                "clock_uncertainty_ms"?: (number) | null;
+                "freshness_seconds"?: (number) | null;
+                "offset_status": string;
+                "received_at"?: (string) | null;
+                "resolution_seconds"?: number;
+              }) | null;
               "unit"?: string;
               "value"?: (number) | null;
             }>;
@@ -110746,6 +110791,15 @@ export interface operations {
             "service"?: string;
             "source"?: string;
             "timestamp_utc"?: string;
+            "timing"?: ({
+              "clock_offset_ms"?: (number) | null;
+              "clock_source"?: string;
+              "clock_uncertainty_ms"?: (number) | null;
+              "freshness_seconds"?: (number) | null;
+              "offset_status"?: string;
+              "received_at"?: (string) | null;
+              "resolution_seconds"?: number;
+            }) | null;
             "unit"?: string;
             "value"?: (number) | null;
           }>;
