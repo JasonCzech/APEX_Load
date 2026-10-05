@@ -138,6 +138,17 @@ func (s *failOnceBrowserRecordingPublicationStore) CompareAndSwapSetting(key, ex
 	return s.SQLiteStore.CompareAndSwapSetting(key, expected, value)
 }
 
+func (s *failOnceBrowserRecordingPublicationStore) CompareAndSwapLibraryImportClaims(expected, value string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.failClaimCleanup && strings.Contains(expected, `"remote_id":"direct-import:browser-recording"`) &&
+		strings.Contains(expected, `"committed":true`) && !strings.Contains(value, `"remote_id":"direct-import:browser-recording"`) {
+		s.failClaimCleanup = false
+		return false, errors.New("injected browser claim cleanup failure")
+	}
+	return s.SQLiteStore.CompareAndSwapLibraryImportClaims(expected, value)
+}
+
 func (s *browserRecordingLocatorCountingStore) ListScripts(projectID string, folderID *string) ([]*dsl.Script, error) {
 	s.listScripts++
 	return s.SQLiteStore.ListScripts(projectID, folderID)

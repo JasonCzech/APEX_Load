@@ -1,0 +1,8 @@
+--- FAIL: TestBlankScriptIDBackfillRejectsOversizedClaims (0.94s)
+    --- FAIL: TestBlankScriptIDBackfillRejectsOversizedClaims/entry_limit (0.06s)
+        sqlite_script_id_backfill_test.go:445: blank-ID repair accepted claims beyond the publication bounds
+    --- FAIL: TestBlankScriptIDBackfillRejectsOversizedClaims/byte_limit (0.87s)
+        sqlite_script_id_backfill_test.go:445: blank-ID repair accepted claims beyond the publication bounds
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/storage	1.365s
+FAIL

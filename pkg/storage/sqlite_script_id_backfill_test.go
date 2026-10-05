@@ -420,3 +420,108 @@ func assertScriptSourceFenceMatches(t *testing.T, script *dsl.Script) {
 		t.Fatalf("source fence fingerprint = %q, want %q", got, want)
 	}
 }
+
+// The settings rewrite must not bypass the normal import publication bounds.
+func TestBlankScriptIDBackfillRejectsOversizedClaims(t *testing.T) {
+	for _, tc := range []struct{ name, raw string }{
+		{"entry_limit", "[" + strings.Repeat(`{"kind":"script","local_item_id":""},`, 10_000) + `{"kind":"script","local_item_id":""}]`},
+		{"byte_limit", `[{"kind":"script","local_item_id":"","padding":"` + strings.Repeat("x", 64<<20) + `"}]`},
+		{"repaired_byte_limit", `[{"kind":"script","local_item_id":"","padding":"` + strings.Repeat("x", (64<<20)-len(`[{"kind":"script","local_item_id":"","padding":"`)-len(`"}]`)-1) + `"}]`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bounded-backfill.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			if err := store.SaveSetting(libraryImportClaimsSettingKeyForScriptIDBackfill, tc.raw); err != nil {
+				t.Fatal(err)
+			}
+			tx, err := store.db.Begin()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Rollback()
+			if err := rewriteBlankScriptSettingsRefs(tx, "", "repaired"); err == nil {
+				t.Fatal("blank-ID repair accepted claims beyond the publication bounds")
+			}
+			if err := tx.Rollback(); err != nil {
+				t.Fatal(err)
+			}
+			stored, err := store.GetSetting(libraryImportClaimsSettingKeyForScriptIDBackfill)
+			if err != nil || stored != tc.raw {
+				t.Fatalf("failed repair altered claims: err=%v", err)
+			}
+		})
+	}
+}
+
+func TestBlankScriptSettingsRepairRejectsInvalidUTF8(t *testing.T) {
+	for _, key := range []string{libraryImportClaimsSettingKeyForScriptIDBackfill, librarySyncLinksSettingKeyForScriptIDBackfill} {
+		t.Run(key, func(t *testing.T) {
+			store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "invalid-utf8.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			raw := "[{\"kind\":\"script\",\"local_item_id\":\"\xff\"}]"
+			if err := store.SaveSetting(key, raw); err != nil {
+				t.Fatal(err)
+			}
+			tx, err := store.db.Begin()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Rollback()
+			if err := acquireLibraryImportPublicationFenceTx(tx); err != nil {
+				t.Fatal(err)
+			}
+			if err := rewriteBlankScriptSettingsRefs(tx, "", "repaired"); err == nil || !strings.Contains(err.Error(), "UTF-8") {
+				t.Fatalf("invalid UTF-8 rewrite: %v", err)
+			}
+			if err := tx.Rollback(); err != nil {
+				t.Fatal(err)
+			}
+			stored, err := store.GetSetting(key)
+			if err != nil || stored != raw {
+				t.Fatal("failed repair changed corrupt bytes", err)
+			}
+		})
+	}
+}
+
+func TestBlankScriptIDBackfillInvalidClaimsRollBackSource(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "corrupt-backfill.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	if _, err := store.db.Exec(`INSERT INTO scripts (id,name,protocol,version,project_id,config,data_sources,init,actions,teardown,created_at,updated_at) VALUES ('','Legacy','http','1',?,'{}','[]','[]','[]','[]',?,?)`, DefaultProjectID, now, now); err != nil {
+		t.Fatal(err)
+	}
+	links := `[{"Kind":"script","LocalItemID":""}]`
+	claims := "[{\"kind\":\"script\",\"local_item_id\":\"\",\"identity\":\"\xff\"}]"
+	if err := store.SaveSetting(librarySyncLinksSettingKeyForScriptIDBackfill, links); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSetting(LibraryImportClaimsSettingKey, claims); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.backfillBlankScriptIDs(); err == nil || !strings.Contains(err.Error(), "UTF-8") {
+		t.Fatalf("corrupt claims repair: %v", err)
+	}
+	var total, blank int
+	if err := store.db.QueryRow(`SELECT COUNT(*),SUM(CASE WHEN id='' THEN 1 ELSE 0 END) FROM scripts`).Scan(&total, &blank); err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || blank != 1 {
+		t.Fatal("failed repair partially remapped source rows")
+	}
+	for key, want := range map[string]string{LibraryImportClaimsSettingKey: claims, librarySyncLinksSettingKeyForScriptIDBackfill: links} {
+		got, err := store.GetSetting(key)
+		if err != nil || got != want {
+			t.Fatal("failed repair partially rewrote serialized references", key, err)
+		}
+	}
+}

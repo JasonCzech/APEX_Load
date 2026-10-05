@@ -54,6 +54,13 @@ func (s *directImportClaimWriteCountingStore) CompareAndSwapSetting(key, expecte
 	return s.libraryAtomicForwardingStore.CompareAndSwapSetting(key, expectedValue, nextValue)
 }
 
+func (s *directImportClaimWriteCountingStore) CompareAndSwapLibraryImportClaims(expected, value string) (bool, error) {
+	s.mu.Lock()
+	s.claimWrites++
+	s.mu.Unlock()
+	return s.libraryAtomicForwardingStore.CompareAndSwapLibraryImportClaims(expected, value)
+}
+
 func (s *directImportClaimWriteCountingStore) writes() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

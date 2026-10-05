@@ -1,0 +1,211 @@
+{
+  "scope": "Dedicated durable publication primitive and existing claims/backfill paths. Frozen-source storage normal/race, actual PostgreSQL, affected API normal/race, and scoped review qualification passed. Composed merge acceptance remains pending.",
+  "source_inventory": "publication-primitive-source-inventory-v1.json",
+  "source_inventory_sha256": "dcaf2d02766031e063310f599e00e743b98a244bf9d226071b2838ae83876f54",
+  "gates": [
+    {
+      "receipt": "publication-backfill-bounds-red-1.json",
+      "receipt_sha256": "c48bd9929e10a487f0a6c3655c9c1d8b235e119f054cfc81bfa38b16810f0ac8",
+      "status": "failed",
+      "exit_code": 1,
+      "duration_seconds": 15.574,
+      "raw_log_sha256": "6d64f9028033405ec52b47ca4d12a9e2973e471251ded6e0f555e913dcdb36d1",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-storage-focused-1.json",
+      "receipt_sha256": "f4c7824a228fac6ad6566d6359b1e59a2cbbf578f77e853183ca2c54b19e70b5",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 25.725,
+      "raw_log_sha256": "22ae3e247204d3329d9dcb67489abd85a116dde5f35d0baf847a9cb8466d496a",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-storage-race-1.json",
+      "receipt_sha256": "6cbb5da759610c9e74a9fd0ad0806aada0bdc949b251fabf6a15d051974edec8",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 90.438,
+      "raw_log_sha256": "d4d04f3c4d4c5f74c34b8fec3350b488fb09344d6295ef6cdd9c2542a29e7c18",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-storage-focused-2.json",
+      "receipt_sha256": "158df7a8afa5fa225f3cfe98b689ade8dce10ebdef9e07f2f68b202b99390326",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 12.79,
+      "raw_log_sha256": "96734dde27b6d7aa1ed971be8c8477443674ff3ce5531c509f69651da967de85",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-postgres-focused-1.json",
+      "receipt_sha256": "e5334694714fbd74a3f571f89e405cb027ebda10d5a2337cff1e89e47c49d86d",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 13.954,
+      "raw_log_sha256": "ae7945f64779e895d14df66c893a6315212ac1751766451fa66635a8300ac486",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-storage-race-2.json",
+      "receipt_sha256": "59152897da399f0e2eecc1a18192c68673b725d5d8c71f93a0e1500b8c57831b",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 80.979,
+      "raw_log_sha256": "11e2f5f9816eb621436f1d2d4d3db4adafdce6c37a576a8f5c9737bf7af8cefa",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-docs-1.json",
+      "receipt_sha256": "beac5c10131264760b9dc88515211009e9447aec09745824734fd41153d5bb60",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.615,
+      "raw_log_sha256": "0d7bc7e93b2f077656d159145b5264ac56681ad7db715486562768016a0e9764",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-docs-2.json",
+      "receipt_sha256": "52fbf97c34dbb8a50ccd493fedcd3f589bc929a5eb337eab0662bb55fcc87814",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.821,
+      "raw_log_sha256": "0d7bc7e93b2f077656d159145b5264ac56681ad7db715486562768016a0e9764",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-diff-1.json",
+      "receipt_sha256": "6661072a6cc24225283c9423ee656f5287a4da4072bab91f3691deea08eaf387",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 1.268,
+      "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-affected-api-import-1.json",
+      "receipt_sha256": "03b7fc87c47a29c5af1990294ba3ef6394404265a63f61b4dd0e7be94906575e",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 106.174,
+      "raw_log_sha256": "e30c187728c149019b2361ec44ce8b6719d9135e458d02d7c8756d599bc08326",
+      "source_changed": false,
+      "verified_test_counts": {
+        "top_level_runs": 113,
+        "top_level_passes": 113,
+        "including_subtest_passes": 131,
+        "skips": 0,
+        "failures": 0,
+        "lost_unmutated_oracle_passes": 1
+      }
+    },
+    {
+      "receipt": "publication-affected-api-import-race-1.json",
+      "receipt_sha256": "406913a0015343ac0181dee09ba73dc754cf84113fc5696e0dad3d313d1bab2a",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 356.346,
+      "raw_log_sha256": "21cea6603433edfe66c054eb32a66f623d67a4ad4870daa9c84b9110ec7842b1",
+      "source_changed": false,
+      "verified_test_counts": {
+        "top_level_runs": 226,
+        "top_level_passes": 226,
+        "including_subtest_passes": 262,
+        "skips": 0,
+        "failures": 0,
+        "lost_unmutated_oracle_passes": 2
+      }
+    },
+    {
+      "receipt": "publication-docs-3.json",
+      "receipt_sha256": "e0e71989ce9e920b4e71eef2307959637e18d46c1a26a918066798b3f1582e84",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.716,
+      "raw_log_sha256": "0d7bc7e93b2f077656d159145b5264ac56681ad7db715486562768016a0e9764",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-diff-2.json",
+      "receipt_sha256": "2fa8794c32ee9873b5b1ab5e4f231e332e756d51a4b03726ce7179a4f6003cab",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.241,
+      "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-staged-diff-red-1.json",
+      "receipt_sha256": "63c6f9556b43679ad5b9d0cc6ba9ec09e7f71c9bd36573de66601cee5e7284e8",
+      "status": "failed",
+      "exit_code": 2,
+      "duration_seconds": 0.205,
+      "raw_log_sha256": "818122d644be87ffe2b961f637db1892b0ff729a6d53c7f296a77beec788f288",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-docs-4.json",
+      "receipt_sha256": "9b6ba7be63dbf7c6ba1dd7bf0d99aaed6747d508a2013ec1514438791f6be850",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.657,
+      "raw_log_sha256": "0d7bc7e93b2f077656d159145b5264ac56681ad7db715486562768016a0e9764",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-diff-3.json",
+      "receipt_sha256": "95bb9986da9a88edc3d7506c605f7b3d258e918c5c937d19ee3ee9b90e97eccc",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.193,
+      "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-staged-diff-2.json",
+      "receipt_sha256": "37ac7b46c1c32941d03cf7425db444deb5e94b3ec19ad171c4f35f682406b2ce",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.262,
+      "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_changed": false,
+      "qualification_limit": "Checks the existing 49 staged files after only the text driver was unstaged. Replacement gzip and new/updated QA have not been staged by the child; parent must verify the final staged candidate."
+    }
+  ],
+  "independent_reviews": [
+    {
+      "file": "publication-parent-independent-review-v1.json",
+      "sha256": "0774a258c25f6c71d85cbd59617b5420fd19558b660a4f5b65bad3faef8266db"
+    },
+    {
+      "file": "publication-final-scoped-review-v2.json",
+      "sha256": "78ca04a1066897747b8cdd5e3a9b9fb78bba1df900787b2e60a76455c22cbb59"
+    }
+  ],
+  "historical_indexes_preserved": [
+    "publication-gate-index-v1.json",
+    "publication-gate-index-v2.json",
+    "publication-gate-index-v3.json"
+  ],
+  "pending": [
+    "Parent semantic composition with authoring-fidelity library_import_claims.go changes",
+    "Composed full Go merge gate; separate native WebKit INP fix pending",
+    "Parent staging audit and qualified commit boundary"
+  ],
+  "exclusions": [
+    "Unrelated untracked telemetry supplement",
+    "Public conditional scenario API/UI support",
+    "Dependency-aware scenario storage admission",
+    "Commit/push/cache cleanup"
+  ],
+  "driver_output": {
+    "file": "publication-affected-api-import-race-1.driver.stdout.txt.gz",
+    "compression": "gzip",
+    "uncompressed_sha256": "72509222494403fb96a2bd44cdbea65d4603ab921117c379a9d87e67f985a0b3",
+    "compressed_sha256": "2be69b0eedf4d47cf8ef819c5cbe3c0c907baf41877ef748d04c6f9ce144b7fe",
+    "packaging_record": "publication-driver-lossless-compression-v1.json",
+    "packaging_record_sha256": "3d3cb1bf26951e58d0d0bb8fc50014ec1741ef8eedadd70949d3217227bf3f08"
+  }
+}

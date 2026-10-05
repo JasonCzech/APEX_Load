@@ -81,6 +81,13 @@ func (s *libraryAtomicForwardingStore) CompareAndSwapSetting(key, expectedValue,
 	}).CompareAndSwapSetting(key, expectedValue, nextValue)
 }
 
+func (s *libraryAtomicForwardingStore) GetLibraryImportPublicationSnapshot() (*storage.LibraryImportPublicationSnapshot, error) {
+	return s.Store.(storage.LibraryImportPublicationStore).GetLibraryImportPublicationSnapshot()
+}
+func (s *libraryAtomicForwardingStore) CompareAndSwapLibraryImportClaims(expected, value string) (bool, error) {
+	return s.Store.(storage.LibraryImportPublicationStore).CompareAndSwapLibraryImportClaims(expected, value)
+}
+
 func (s *libraryAtomicForwardingStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
 	return s.Store.(interface {
 		CreateScriptIfAbsent(*dsl.Script) (bool, error)
