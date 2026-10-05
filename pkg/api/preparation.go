@@ -568,6 +568,10 @@ func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
 				if err := tr.validatePreparedPrometheus(readinessContext, source, record.ProjectID, goals); err != nil {
 					return err
 				}
+			} else if source.Pack == monitorprovider.PackElasticQuery {
+				if err := tr.validatePreparedElastic(readinessContext, source, record.ProjectID); err != nil {
+					return err
+				}
 			} else if source.CredentialRef != "" {
 				single := &fixedMonitorBindingsStore{RunMonitorStore: monitorStore, bindings: &storage.MonitorBindings{Sources: []storage.MonitorBinding{binding}}}
 				if err := validateRequiredMonitorCredentials(context.Background(), single, tr.projectSecretStore, record.ProjectID, "selected"); err != nil {

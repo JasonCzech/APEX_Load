@@ -8642,6 +8642,8 @@ paths:
                           format: int64
                         elk_evidence_file:
                           type: string
+                        elk_observation:
+                          type: string
                         error:
                           type: string
                         exemplar_count:
@@ -57359,6 +57361,29 @@ paths:
                       required:
                         - project_id
                       nullable: true
+                    elastic_query:
+                      type: object
+                      properties:
+                        bucket_seconds:
+                          type: integer
+                          format: int64
+                        overlap_seconds:
+                          type: integer
+                          format: int64
+                        profile:
+                          type: string
+                        project_id:
+                          type: string
+                        terms_fields:
+                          type: array
+                          items:
+                            type: string
+                        terms_size:
+                          type: integer
+                          format: int64
+                      required:
+                        - project_id
+                      nullable: true
                     enabled:
                       type: boolean
                     executor_mode:
@@ -57795,6 +57820,27 @@ paths:
                     topology_mode:
                       type: string
                   nullable: true
+                elastic_query:
+                  type: object
+                  properties:
+                    bucket_seconds:
+                      type: integer
+                      format: int64
+                    overlap_seconds:
+                      type: integer
+                      format: int64
+                    profile:
+                      type: string
+                    project_id:
+                      type: string
+                    terms_fields:
+                      type: array
+                      items:
+                        type: string
+                    terms_size:
+                      type: integer
+                      format: int64
+                  nullable: true
                 enabled:
                   type: boolean
                 executor_mode:
@@ -58152,6 +58198,29 @@ paths:
                         type: string
                       topology_mode:
                         type: string
+                    required:
+                      - project_id
+                    nullable: true
+                  elastic_query:
+                    type: object
+                    properties:
+                      bucket_seconds:
+                        type: integer
+                        format: int64
+                      overlap_seconds:
+                        type: integer
+                        format: int64
+                      profile:
+                        type: string
+                      project_id:
+                        type: string
+                      terms_fields:
+                        type: array
+                        items:
+                          type: string
+                      terms_size:
+                        type: integer
+                        format: int64
                     required:
                       - project_id
                     nullable: true
@@ -58591,6 +58660,27 @@ paths:
                     topology_mode:
                       type: string
                   nullable: true
+                elastic_query:
+                  type: object
+                  properties:
+                    bucket_seconds:
+                      type: integer
+                      format: int64
+                    overlap_seconds:
+                      type: integer
+                      format: int64
+                    profile:
+                      type: string
+                    project_id:
+                      type: string
+                    terms_fields:
+                      type: array
+                      items:
+                        type: string
+                    terms_size:
+                      type: integer
+                      format: int64
+                  nullable: true
                 enabled:
                   type: boolean
                 executor_mode:
@@ -58948,6 +59038,29 @@ paths:
                         type: string
                       topology_mode:
                         type: string
+                    required:
+                      - project_id
+                    nullable: true
+                  elastic_query:
+                    type: object
+                    properties:
+                      bucket_seconds:
+                        type: integer
+                        format: int64
+                      overlap_seconds:
+                        type: integer
+                        format: int64
+                      profile:
+                        type: string
+                      project_id:
+                        type: string
+                      terms_fields:
+                        type: array
+                        items:
+                          type: string
+                      terms_size:
+                        type: integer
+                        format: int64
                     required:
                       - project_id
                     nullable: true
@@ -59391,6 +59504,27 @@ paths:
                     topology_mode:
                       type: string
                   nullable: true
+                elastic_query:
+                  type: object
+                  properties:
+                    bucket_seconds:
+                      type: integer
+                      format: int64
+                    overlap_seconds:
+                      type: integer
+                      format: int64
+                    profile:
+                      type: string
+                    project_id:
+                      type: string
+                    terms_fields:
+                      type: array
+                      items:
+                        type: string
+                    terms_size:
+                      type: integer
+                      format: int64
+                  nullable: true
                 enabled:
                   type: boolean
                 executor_mode:
@@ -59748,6 +59882,29 @@ paths:
                         type: string
                       topology_mode:
                         type: string
+                    required:
+                      - project_id
+                    nullable: true
+                  elastic_query:
+                    type: object
+                    properties:
+                      bucket_seconds:
+                        type: integer
+                        format: int64
+                      overlap_seconds:
+                        type: integer
+                        format: int64
+                      profile:
+                        type: string
+                      project_id:
+                        type: string
+                      terms_fields:
+                        type: array
+                        items:
+                          type: string
+                      terms_size:
+                        type: integer
+                        format: int64
                     required:
                       - project_id
                     nullable: true
@@ -72531,6 +72688,8 @@ paths:
                                   additionalProperties:
                                     type: number
                                     format: double
+                                observation:
+                                  type: string
                                 samples:
                                   type: array
                                   items:
@@ -73464,6 +73623,8 @@ paths:
                                 additionalProperties:
                                   type: number
                                   format: double
+                              observation:
+                                type: string
                               samples:
                                 type: array
                                 items:
@@ -77331,6 +77492,8 @@ paths:
                                   additionalProperties:
                                     type: number
                                     format: double
+                                observation:
+                                  type: string
                                 samples:
                                   type: array
                                   items:
@@ -78264,6 +78427,8 @@ paths:
                                 additionalProperties:
                                   type: number
                                   format: double
+                              observation:
+                                type: string
                               samples:
                                 type: array
                                 items:
@@ -82132,6 +82297,8 @@ paths:
                                   additionalProperties:
                                     type: number
                                     format: double
+                                observation:
+                                  type: string
                                 samples:
                                   type: array
                                   items:
@@ -83065,6 +83232,8 @@ paths:
                                 additionalProperties:
                                   type: number
                                   format: double
+                              observation:
+                                type: string
                               samples:
                                 type: array
                                 items:
@@ -86945,6 +87114,8 @@ paths:
                                   additionalProperties:
                                     type: number
                                     format: double
+                                observation:
+                                  type: string
                                 samples:
                                   type: array
                                   items:
@@ -87878,6 +88049,8 @@ paths:
                                 additionalProperties:
                                   type: number
                                   format: double
+                              observation:
+                                type: string
                               samples:
                                 type: array
                                 items:
@@ -91758,6 +91931,8 @@ paths:
                                   additionalProperties:
                                     type: number
                                     format: double
+                                observation:
+                                  type: string
                                 samples:
                                   type: array
                                   items:
@@ -92691,6 +92866,8 @@ paths:
                                 additionalProperties:
                                   type: number
                                   format: double
+                              observation:
+                                type: string
                               samples:
                                 type: array
                                 items:
@@ -96571,6 +96748,8 @@ paths:
                                   additionalProperties:
                                     type: number
                                     format: double
+                                observation:
+                                  type: string
                                 samples:
                                   type: array
                                   items:
@@ -97504,6 +97683,8 @@ paths:
                                 additionalProperties:
                                   type: number
                                   format: double
+                              observation:
+                                type: string
                               samples:
                                 type: array
                                 items:
@@ -101384,6 +101565,8 @@ paths:
                                   additionalProperties:
                                     type: number
                                     format: double
+                                observation:
+                                  type: string
                                 samples:
                                   type: array
                                   items:
@@ -102317,6 +102500,8 @@ paths:
                                 additionalProperties:
                                   type: number
                                   format: double
+                              observation:
+                                type: string
                               samples:
                                 type: array
                                 items:
@@ -281349,6 +281534,8 @@ paths:
                               additionalProperties:
                                 type: number
                                 format: double
+                            observation:
+                              type: string
                             samples:
                               type: array
                               items:
@@ -284146,6 +284333,8 @@ paths:
                             additionalProperties:
                               type: number
                               format: double
+                          observation:
+                            type: string
                           samples:
                             type: array
                             items:
@@ -293035,6 +293224,8 @@ paths:
                               additionalProperties:
                                 type: number
                                 format: double
+                            observation:
+                              type: string
                             samples:
                               type: array
                               items:
@@ -295832,6 +296023,8 @@ paths:
                             additionalProperties:
                               type: number
                               format: double
+                          observation:
+                            type: string
                           samples:
                             type: array
                             items:
@@ -302326,6 +302519,8 @@ paths:
                     type: integer
                     format: int64
                   elk_evidence_file:
+                    type: string
+                  elk_observation:
                     type: string
                   error:
                     type: string
@@ -314664,6 +314859,8 @@ paths:
                         type: integer
                         format: int64
                       elk_evidence_file:
+                        type: string
+                      elk_observation:
                         type: string
                       error:
                         type: string
@@ -327181,6 +327378,8 @@ paths:
                               additionalProperties:
                                 type: number
                                 format: double
+                            observation:
+                              type: string
                             samples:
                               type: array
                               items:
@@ -329978,6 +330177,8 @@ paths:
                             additionalProperties:
                               type: number
                               format: double
+                          observation:
+                            type: string
                           samples:
                             type: array
                             items:
@@ -338811,6 +339012,8 @@ paths:
                               additionalProperties:
                                 type: number
                                 format: double
+                            observation:
+                              type: string
                             samples:
                               type: array
                               items:
@@ -341608,6 +341811,8 @@ paths:
                             additionalProperties:
                               type: number
                               format: double
+                          observation:
+                            type: string
                           samples:
                             type: array
                             items:
@@ -359156,6 +359361,29 @@ paths:
                               required:
                                 - project_id
                               nullable: true
+                            elastic_query:
+                              type: object
+                              properties:
+                                bucket_seconds:
+                                  type: integer
+                                  format: int64
+                                overlap_seconds:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: string
+                                project_id:
+                                  type: string
+                                terms_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                terms_size:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - project_id
+                              nullable: true
                             enabled:
                               type: boolean
                             executor_mode:
@@ -359578,6 +359806,29 @@ paths:
                                   type: string
                                 topology_mode:
                                   type: string
+                              required:
+                                - project_id
+                              nullable: true
+                            elastic_query:
+                              type: object
+                              properties:
+                                bucket_seconds:
+                                  type: integer
+                                  format: int64
+                                overlap_seconds:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: string
+                                project_id:
+                                  type: string
+                                terms_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                terms_size:
+                                  type: integer
+                                  format: int64
                               required:
                                 - project_id
                               nullable: true
@@ -360083,6 +360334,29 @@ paths:
                               required:
                                 - project_id
                               nullable: true
+                            elastic_query:
+                              type: object
+                              properties:
+                                bucket_seconds:
+                                  type: integer
+                                  format: int64
+                                overlap_seconds:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: string
+                                project_id:
+                                  type: string
+                                terms_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                terms_size:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - project_id
+                              nullable: true
                             enabled:
                               type: boolean
                             executor_mode:
@@ -360505,6 +360779,29 @@ paths:
                                   type: string
                                 topology_mode:
                                   type: string
+                              required:
+                                - project_id
+                              nullable: true
+                            elastic_query:
+                              type: object
+                              properties:
+                                bucket_seconds:
+                                  type: integer
+                                  format: int64
+                                overlap_seconds:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: string
+                                project_id:
+                                  type: string
+                                terms_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                terms_size:
+                                  type: integer
+                                  format: int64
                               required:
                                 - project_id
                               nullable: true
@@ -361030,6 +361327,29 @@ paths:
                               required:
                                 - project_id
                               nullable: true
+                            elastic_query:
+                              type: object
+                              properties:
+                                bucket_seconds:
+                                  type: integer
+                                  format: int64
+                                overlap_seconds:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: string
+                                project_id:
+                                  type: string
+                                terms_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                terms_size:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - project_id
+                              nullable: true
                             enabled:
                               type: boolean
                             executor_mode:
@@ -361452,6 +361772,29 @@ paths:
                                   type: string
                                 topology_mode:
                                   type: string
+                              required:
+                                - project_id
+                              nullable: true
+                            elastic_query:
+                              type: object
+                              properties:
+                                bucket_seconds:
+                                  type: integer
+                                  format: int64
+                                overlap_seconds:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: string
+                                project_id:
+                                  type: string
+                                terms_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                terms_size:
+                                  type: integer
+                                  format: int64
                               required:
                                 - project_id
                               nullable: true

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -155,6 +156,7 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 			IntervalSummariesFile:        "interval_summaries.jsonl",
 			IntervalSummariesParquetFile: "interval_summaries.parquet",
 			ELKEvidenceFile:              elkEvidenceFile,
+			ELKObservation:               elkObservation(elkEvidenceFile),
 			DynatraceEvidenceFile:        dynatraceEvidenceFile,
 			ProviderLookupsFile:          providerLookupsFile,
 		},
@@ -1207,4 +1209,12 @@ func cloneBrowserByDeviceMetrics(metrics map[string]*BrowserDeviceLiveMetrics) m
 
 func durationMillis(duration time.Duration) float64 {
 	return float64(duration.Microseconds()) / 1000.0
+}
+
+// elkObservation labels the legacy ELK capture whenever it is archived.
+func elkObservation(file string) string {
+	if file == "" {
+		return ""
+	}
+	return monitorprovider.ObservationCumulative
 }

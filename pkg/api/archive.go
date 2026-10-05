@@ -122,6 +122,8 @@ type RunArchiveManifest struct {
 	ExemplarsFile            string `json:"exemplars_file,omitempty"`
 	ExemplarCount            int64  `json:"exemplar_count,omitempty"`
 	ExemplarsTruncated       bool   `json:"exemplars_truncated,omitempty"`
+	// ELKObservation labels legacy ELK capture values as cumulative.
+	ELKObservation string `json:"elk_observation,omitempty"`
 }
 
 type TransactionSLARuleResult struct {

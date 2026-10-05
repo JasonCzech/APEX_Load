@@ -37,6 +37,9 @@ const (
 	maxDimensions          = 16
 	maxDimensionBytes      = 128
 	MaxSeriesPoints        = 10_000
+	// MaxMetricIdentityBytes bounds a point's metric name, project and source,
+	// so providers that build names from data can check them before sending.
+	MaxMetricIdentityBytes = maxMetricIdentityBytes
 )
 
 // MetricPoint is a measurement, not an aggregated percentile. Value is absent

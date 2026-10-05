@@ -24,6 +24,7 @@ type PreparationMonitorSnapshot struct {
 	Sources               map[string]MonitorSource                  `json:"sources"`
 	Connections           map[string]*AppDynamicsConnectionSnapshot `json:"-"`
 	DynatraceConnections  map[string]*DynatraceConnectionSnapshot   `json:"-"`
+	ElasticConnections    map[string]*ElasticConnectionSnapshot     `json:"-"`
 }
 
 // Capability verification is mutable health for one unchanged connection
@@ -137,6 +138,18 @@ func preparationMonitorSnapshotTx(tx *storeTx, project, run string) (*Preparatio
 				snapshot.DynatraceConnections = map[string]*DynatraceConnectionSnapshot{}
 			}
 			snapshot.DynatraceConnections[source.ID] = c.Snapshot()
+		}
+		if source.Pack == monitorprovider.PackElasticQuery {
+			connection, _, e := elasticConnectionSnapshotTx(tx, project, source.ConnectionID)
+			if e != nil {
+				return nil, e
+			}
+			if connection != nil {
+				if snapshot.ElasticConnections == nil {
+					snapshot.ElasticConnections = map[string]*ElasticConnectionSnapshot{}
+				}
+				snapshot.ElasticConnections[source.ID] = connection
+			}
 		}
 		if source.Pack == monitorprovider.PackAppDynamics {
 			var raw string

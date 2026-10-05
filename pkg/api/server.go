@@ -79,6 +79,8 @@ const maxDesktopBrowserCapabilities = 32
 
 type Server struct {
 	prometheusClient func(prometheus.Config, prometheus.Credentials) (*prometheus.Client, error)
+	// elasticHTTPClient replaces the allowlisted Elasticsearch query client in tests.
+	elasticHTTPClient *http.Client
 
 	httpServer *http.Server
 	hub        *Hub

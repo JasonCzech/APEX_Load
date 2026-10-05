@@ -78,6 +78,7 @@ func safeMonitorJob(job storage.RunMonitorJob) storage.RunMonitorJob {
 	job.ConnectionSnapshot = nil
 	job.PrometheusConnectionSnapshot = nil
 	job.DynatraceSnapshot = nil
+	job.ElasticSnapshot = nil
 	job.ProviderCursor = ""
 	job.RunTraceIDs = nil
 	job.QueryCoverage = nil
@@ -98,6 +99,7 @@ func safePreparation(p *storage.Preparation) *storage.Preparation {
 		out.Monitors.Connections = nil
 		out.Monitors.PrometheusConnections = nil
 		out.Monitors.DynatraceConnections = nil
+		out.Monitors.ElasticConnections = nil
 		for id, s := range out.Monitors.Sources {
 			out.Monitors.Sources[id] = safeMonitorSource(s)
 		}

@@ -8,14 +8,16 @@ const (
 	PackAppDynamics     = "appdynamics"
 	PackDynatrace       = "dynatrace"
 	PackPrometheusQuery = "prometheus-query"
+	PackElasticQuery    = "elastic-query"
 )
 
 // Provider names carried on metric points, diagnostics and monitor rules.
 // Prometheus queries report as "prometheus".
 const (
-	ProviderAppDynamics = "appdynamics"
-	ProviderDynatrace   = "dynatrace"
-	ProviderPrometheus  = "prometheus"
+	ProviderAppDynamics   = "appdynamics"
+	ProviderDynatrace     = "dynatrace"
+	ProviderPrometheus    = "prometheus"
+	ProviderElasticsearch = "elasticsearch"
 )
 
 // Scheduling says how a provider's collection advances.
@@ -79,6 +81,13 @@ var descriptors = map[string]Descriptor{
 		DefaultIntervalSeconds: 60, MinIntervalSeconds: 60, MaxIntervalSeconds: 3600, DefaultExecutorMode: "direct",
 		CollectorCredentialKey: true, SupportsTraceLookup: true, SupportsDiagnostics: true, SupportsRunHeader: true,
 	},
+	PackElasticQuery: {
+		Pack: PackElasticQuery, ProviderName: ProviderElasticsearch, Label: "Elasticsearch query",
+		CapabilityPack: "elastic-query.v1", ContractUnavailableReason: "collector_elastic_contract_unavailable",
+		Scheduling: SchedulingWindowed, Observation: ObservationInterval,
+		DefaultIntervalSeconds: 60, MinIntervalSeconds: 30, MaxIntervalSeconds: 3600, DefaultExecutorMode: "direct",
+		SupportsTraceLookup: true,
+	},
 	PackPrometheusQuery: {
 		Pack: PackPrometheusQuery, ProviderName: ProviderPrometheus, Label: "Prometheus",
 		CapabilityPack: "prometheus-query.v1", ContractUnavailableReason: "collector_prometheus_contract_unavailable",
@@ -101,15 +110,22 @@ func Canonical(pack string) bool {
 	return ok
 }
 
+// ByCapabilityPack returns the governed provider whose collector capability
+// is name, such as "dynatrace.v1".
+func ByCapabilityPack(name string) (Descriptor, bool) {
+	for _, d := range descriptors {
+		if d.CapabilityPack == name {
+			return d, true
+		}
+	}
+	return Descriptor{}, false
+}
+
 // IsCapabilityPack reports whether name is a governed provider's collector
 // capability, such as "dynatrace.v1".
 func IsCapabilityPack(name string) bool {
-	for _, d := range descriptors {
-		if d.CapabilityPack == name {
-			return true
-		}
-	}
-	return false
+	_, ok := ByCapabilityPack(name)
+	return ok
 }
 
 // ByProviderName returns the governed provider that reports under name.

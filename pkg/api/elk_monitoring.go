@@ -83,6 +83,9 @@ type ELKCaptureStatus struct {
 	Message          string             `json:"message,omitempty"`
 	Metrics          map[string]float64 `json:"metrics,omitempty"`
 	Samples          []ELKLogSample     `json:"samples,omitempty"`
+	// Observation labels the legacy capture's values as cumulative from the
+	// run start; they are never reinterpreted as interval buckets.
+	Observation string `json:"observation,omitempty"`
 }
 
 type ELKLogSample struct {

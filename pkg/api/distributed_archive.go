@@ -265,6 +265,7 @@ func writeDistributedELKEvidence(root string, manifest *RunArchiveManifest, tr *
 		defer outputBudget.close()
 	}
 	manifest.ELKEvidenceFile = "elk_evidence.jsonl"
+	manifest.ELKObservation = elkObservation(manifest.ELKEvidenceFile)
 	var artifacts *runArtifacts
 	if tr != nil {
 		tr.mu.RLock()

@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/collectoragent"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -245,7 +246,9 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 			writeError(w, 400, "invalid collector readiness contracts")
 			return
 		}
-		if slices.Contains(ad.Packs, collectoragent.AppDynamicsBatchContract) || slices.Contains(ad.Packs, collectoragent.PrometheusBatchContract) || slices.Contains(ad.Packs, "prometheus-scrape.v2") || slices.Contains(ad.Packs, collectoragent.DynatraceBatchContract) {
+		if slices.ContainsFunc(ad.Packs, func(pack string) bool {
+			return monitorprovider.IsCapabilityPack(pack) || pack == "prometheus-scrape.v2"
+		}) {
 			writeError(w, 400, "collector contracts must be advertised separately")
 			return
 		}

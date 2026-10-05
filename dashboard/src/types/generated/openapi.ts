@@ -3053,6 +3053,7 @@ export interface operations {
               "dynatrace_evidence_file"?: string;
               "elk_evidence_count"?: number;
               "elk_evidence_file"?: string;
+              "elk_observation"?: string;
               "error"?: string;
               "exemplar_count"?: number;
               "exemplars_file"?: string;
@@ -30621,6 +30622,7 @@ export interface operations {
                   "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
+                  "observation"?: string;
                   "samples"?: Array<Record<string, unknown>>;
                   "status": string;
                 }) | null;
@@ -30900,6 +30902,7 @@ export interface operations {
                   "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
+                  "observation"?: string;
                   "samples"?: Array<Record<string, unknown>>;
                   "status": string;
                 }) | null;
@@ -37491,6 +37494,7 @@ export interface operations {
                 "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
+                "observation"?: string;
                 "samples"?: Array<Record<string, unknown>>;
                 "status": string;
               }) | null;
@@ -38320,6 +38324,7 @@ export interface operations {
                 "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
+                "observation"?: string;
                 "samples"?: Array<{
                   "id"?: string;
                   "level"?: string;
@@ -54883,6 +54888,7 @@ export interface operations {
                   "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
+                  "observation"?: string;
                   "samples"?: Array<Record<string, unknown>>;
                   "status": string;
                 }) | null;
@@ -55162,6 +55168,7 @@ export interface operations {
                   "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
+                  "observation"?: string;
                   "samples"?: Array<Record<string, unknown>>;
                   "status": string;
                 }) | null;
@@ -56274,6 +56281,7 @@ export interface operations {
             "dynatrace_evidence_file"?: string;
             "elk_evidence_count"?: number;
             "elk_evidence_file"?: string;
+            "elk_observation"?: string;
             "error"?: string;
             "exemplar_count"?: number;
             "exemplars_file"?: string;
@@ -59943,6 +59951,7 @@ export interface operations {
               "dynatrace_evidence_file"?: string;
               "elk_evidence_count"?: number;
               "elk_evidence_file"?: string;
+              "elk_observation"?: string;
               "error"?: string;
               "exemplar_count"?: number;
               "exemplars_file"?: string;
@@ -66108,6 +66117,7 @@ export interface operations {
                 "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
+                "observation"?: string;
                 "samples"?: Array<Record<string, unknown>>;
                 "status": string;
               }) | null;
@@ -66937,6 +66947,7 @@ export interface operations {
                 "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
+                "observation"?: string;
                 "samples"?: Array<{
                   "id"?: string;
                   "level"?: string;
@@ -79941,6 +79952,14 @@ export interface operations {
               "smartscape_node_type"?: string;
               "topology_mode"?: string;
             }) | null;
+            "elastic_query"?: ({
+              "bucket_seconds"?: number;
+              "overlap_seconds"?: number;
+              "profile"?: string;
+              "project_id": string;
+              "terms_fields"?: Array<string>;
+              "terms_size"?: number;
+            }) | null;
             "enabled": boolean;
             "executor_mode"?: string;
             "id": string;
@@ -80140,6 +80159,14 @@ export interface operations {
             "smartscape_node_type"?: string;
             "topology_mode"?: string;
           }) | null;
+          "elastic_query"?: ({
+            "bucket_seconds"?: number;
+            "overlap_seconds"?: number;
+            "profile"?: string;
+            "project_id"?: string;
+            "terms_fields"?: Array<string>;
+            "terms_size"?: number;
+          }) | null;
           "enabled"?: boolean;
           "executor_mode"?: string;
           "id"?: string;
@@ -80287,6 +80314,14 @@ export interface operations {
               "smartscape_entity_ids"?: Array<string>;
               "smartscape_node_type"?: string;
               "topology_mode"?: string;
+            }) | null;
+            "elastic_query"?: ({
+              "bucket_seconds"?: number;
+              "overlap_seconds"?: number;
+              "profile"?: string;
+              "project_id": string;
+              "terms_fields"?: Array<string>;
+              "terms_size"?: number;
             }) | null;
             "enabled": boolean;
             "executor_mode"?: string;
@@ -80488,6 +80523,14 @@ export interface operations {
             "smartscape_node_type"?: string;
             "topology_mode"?: string;
           }) | null;
+          "elastic_query"?: ({
+            "bucket_seconds"?: number;
+            "overlap_seconds"?: number;
+            "profile"?: string;
+            "project_id"?: string;
+            "terms_fields"?: Array<string>;
+            "terms_size"?: number;
+          }) | null;
           "enabled"?: boolean;
           "executor_mode"?: string;
           "id"?: string;
@@ -80635,6 +80678,14 @@ export interface operations {
               "smartscape_entity_ids"?: Array<string>;
               "smartscape_node_type"?: string;
               "topology_mode"?: string;
+            }) | null;
+            "elastic_query"?: ({
+              "bucket_seconds"?: number;
+              "overlap_seconds"?: number;
+              "profile"?: string;
+              "project_id": string;
+              "terms_fields"?: Array<string>;
+              "terms_size"?: number;
             }) | null;
             "enabled": boolean;
             "executor_mode"?: string;
@@ -80836,6 +80887,14 @@ export interface operations {
             "smartscape_node_type"?: string;
             "topology_mode"?: string;
           }) | null;
+          "elastic_query"?: ({
+            "bucket_seconds"?: number;
+            "overlap_seconds"?: number;
+            "profile"?: string;
+            "project_id"?: string;
+            "terms_fields"?: Array<string>;
+            "terms_size"?: number;
+          }) | null;
           "enabled"?: boolean;
           "executor_mode"?: string;
           "id"?: string;
@@ -80983,6 +81042,14 @@ export interface operations {
               "smartscape_entity_ids"?: Array<string>;
               "smartscape_node_type"?: string;
               "topology_mode"?: string;
+            }) | null;
+            "elastic_query"?: ({
+              "bucket_seconds"?: number;
+              "overlap_seconds"?: number;
+              "profile"?: string;
+              "project_id": string;
+              "terms_fields"?: Array<string>;
+              "terms_size"?: number;
             }) | null;
             "enabled": boolean;
             "executor_mode"?: string;
@@ -85253,6 +85320,7 @@ export interface operations {
                 "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
+                "observation"?: string;
                 "samples"?: Array<Record<string, unknown>>;
                 "status": string;
               }) | null;
@@ -86082,6 +86150,7 @@ export interface operations {
                 "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
+                "observation"?: string;
                 "samples"?: Array<{
                   "id"?: string;
                   "level"?: string;
@@ -88715,6 +88784,14 @@ export interface operations {
                   "smartscape_node_type"?: string;
                   "topology_mode"?: string;
                 }) | null;
+                "elastic_query"?: ({
+                  "bucket_seconds"?: number;
+                  "overlap_seconds"?: number;
+                  "profile"?: string;
+                  "project_id": string;
+                  "terms_fields"?: Array<string>;
+                  "terms_size"?: number;
+                }) | null;
                 "enabled": boolean;
                 "executor_mode"?: string;
                 "id": string;
@@ -88864,6 +88941,14 @@ export interface operations {
                   "smartscape_entity_ids"?: Array<string>;
                   "smartscape_node_type"?: string;
                   "topology_mode"?: string;
+                }) | null;
+                "elastic_query"?: ({
+                  "bucket_seconds"?: number;
+                  "overlap_seconds"?: number;
+                  "profile"?: string;
+                  "project_id": string;
+                  "terms_fields"?: Array<string>;
+                  "terms_size"?: number;
                 }) | null;
                 "enabled": boolean;
                 "executor_mode"?: string;
@@ -89076,6 +89161,14 @@ export interface operations {
                   "smartscape_node_type"?: string;
                   "topology_mode"?: string;
                 }) | null;
+                "elastic_query"?: ({
+                  "bucket_seconds"?: number;
+                  "overlap_seconds"?: number;
+                  "profile"?: string;
+                  "project_id": string;
+                  "terms_fields"?: Array<string>;
+                  "terms_size"?: number;
+                }) | null;
                 "enabled": boolean;
                 "executor_mode"?: string;
                 "id": string;
@@ -89225,6 +89318,14 @@ export interface operations {
                   "smartscape_entity_ids"?: Array<string>;
                   "smartscape_node_type"?: string;
                   "topology_mode"?: string;
+                }) | null;
+                "elastic_query"?: ({
+                  "bucket_seconds"?: number;
+                  "overlap_seconds"?: number;
+                  "profile"?: string;
+                  "project_id": string;
+                  "terms_fields"?: Array<string>;
+                  "terms_size"?: number;
                 }) | null;
                 "enabled": boolean;
                 "executor_mode"?: string;
@@ -89447,6 +89548,14 @@ export interface operations {
                   "smartscape_node_type"?: string;
                   "topology_mode"?: string;
                 }) | null;
+                "elastic_query"?: ({
+                  "bucket_seconds"?: number;
+                  "overlap_seconds"?: number;
+                  "profile"?: string;
+                  "project_id": string;
+                  "terms_fields"?: Array<string>;
+                  "terms_size"?: number;
+                }) | null;
                 "enabled": boolean;
                 "executor_mode"?: string;
                 "id": string;
@@ -89596,6 +89705,14 @@ export interface operations {
                   "smartscape_entity_ids"?: Array<string>;
                   "smartscape_node_type"?: string;
                   "topology_mode"?: string;
+                }) | null;
+                "elastic_query"?: ({
+                  "bucket_seconds"?: number;
+                  "overlap_seconds"?: number;
+                  "profile"?: string;
+                  "project_id": string;
+                  "terms_fields"?: Array<string>;
+                  "terms_size"?: number;
                 }) | null;
                 "enabled": boolean;
                 "executor_mode"?: string;
@@ -98393,6 +98510,7 @@ export interface operations {
                   "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
+                  "observation"?: string;
                   "samples"?: Array<Record<string, unknown>>;
                   "status": string;
                 }) | null;
@@ -98672,6 +98790,7 @@ export interface operations {
                   "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
+                  "observation"?: string;
                   "samples"?: Array<Record<string, unknown>>;
                   "status": string;
                 }) | null;
@@ -99963,6 +100082,7 @@ export interface operations {
                   "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
+                  "observation"?: string;
                   "samples"?: Array<Record<string, unknown>>;
                   "status": string;
                 }) | null;
@@ -100242,6 +100362,7 @@ export interface operations {
                   "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
+                  "observation"?: string;
                   "samples"?: Array<Record<string, unknown>>;
                   "status": string;
                 }) | null;
@@ -101533,6 +101654,7 @@ export interface operations {
                   "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
+                  "observation"?: string;
                   "samples"?: Array<Record<string, unknown>>;
                   "status": string;
                 }) | null;
@@ -101812,6 +101934,7 @@ export interface operations {
                   "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
+                  "observation"?: string;
                   "samples"?: Array<Record<string, unknown>>;
                   "status": string;
                 }) | null;
@@ -103103,6 +103226,7 @@ export interface operations {
                   "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
+                  "observation"?: string;
                   "samples"?: Array<Record<string, unknown>>;
                   "status": string;
                 }) | null;
@@ -103382,6 +103506,7 @@ export interface operations {
                   "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
+                  "observation"?: string;
                   "samples"?: Array<Record<string, unknown>>;
                   "status": string;
                 }) | null;
@@ -104673,6 +104798,7 @@ export interface operations {
                   "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
+                  "observation"?: string;
                   "samples"?: Array<Record<string, unknown>>;
                   "status": string;
                 }) | null;
@@ -104952,6 +105078,7 @@ export interface operations {
                   "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
+                  "observation"?: string;
                   "samples"?: Array<Record<string, unknown>>;
                   "status": string;
                 }) | null;
@@ -126571,6 +126698,7 @@ export interface operations {
                 "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
+                "observation"?: string;
                 "samples"?: Array<Record<string, unknown>>;
                 "status": string;
               }) | null;
@@ -127400,6 +127528,7 @@ export interface operations {
                 "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
+                "observation"?: string;
                 "samples"?: Array<{
                   "id"?: string;
                   "level"?: string;

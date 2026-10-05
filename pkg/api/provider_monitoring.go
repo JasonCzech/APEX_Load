@@ -55,6 +55,11 @@ func init() {
 			PopulateGrant: (*Server).populatePrometheusGrant, GrantUnavailable: "Prometheus executor unavailable", ContractLabel: "Prometheus query",
 			ValidateSubmission: validatePrometheusSubmission,
 		}),
+		monitorprovider.PackElasticQuery: describe(monitorprovider.PackElasticQuery, providerDescriptor{
+			Ingest: (*Server).ingestElasticBatch, CollectDirect: (*Server).collectDirectElastic,
+			PopulateGrant: populateElasticGrant, GrantUnavailable: "Elasticsearch query sources run in the controller", ContractLabel: "Elasticsearch query",
+			ValidateSubmission: validateElasticSubmission,
+		}),
 	}
 	for _, pack := range monitorprovider.Packs() {
 		if _, ok := providerDescriptors[pack]; !ok {
@@ -104,12 +109,11 @@ func lookupProvider(pack string) (providerDescriptor, bool) {
 // providerForCapability maps a collector capability such as "dynatrace.v1"
 // to its provider.
 func providerForCapability(capability string) (providerDescriptor, bool) {
-	for _, d := range providerDescriptors {
-		if d.CapabilityPack == capability {
-			return d, true
-		}
+	static, ok := monitorprovider.ByCapabilityPack(capability)
+	if !ok {
+		return providerDescriptor{}, false
 	}
-	return providerDescriptor{}, false
+	return lookupProvider(static.Pack)
 }
 
 // nativeProviderPack identifies providers using durable canonical monitoring.

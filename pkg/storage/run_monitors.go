@@ -114,6 +114,7 @@ type MonitorSource struct {
 	Enabled                  bool                         `json:"enabled"`
 	LegacyConnectionRevision int64                        `json:"legacy_connection_revision,omitempty"`
 	Dynatrace                *dynatrace.Selection         `json:"dynatrace,omitempty"`
+	ElasticQuery             *ElasticQuerySelection       `json:"elastic_query,omitempty"`
 }
 
 type MonitorBinding struct {
@@ -164,6 +165,7 @@ type RunMonitorJob struct {
 	NextSequence                 int64                                           `json:"next_sequence"`
 	CoverageReason               string                                          `json:"coverage_reason,omitempty"`
 	DynatraceSnapshot            *DynatraceConnectionSnapshot                    `json:"-"`
+	ElasticSnapshot              *ElasticConnectionSnapshot                      `json:"-"`
 	ProviderCursor               string                                          `json:"-"`
 	RunTraceIDs                  []string                                        `json:"-"`
 	ScanConsumedBytes            int64                                           `json:"scan_consumed_bytes,omitempty"`
@@ -421,6 +423,24 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 				}
 			}
 		}
+		if job.CoverageReason == "" && job.Source.Pack == monitorprovider.PackElasticQuery {
+			if prepared != nil {
+				job.ElasticSnapshot = prepared.ElasticConnections[binding.SourceID]
+				if job.ElasticSnapshot == nil {
+					job.CoverageReason = "connection_not_ready"
+				}
+			}
+			if job.CoverageReason == "" && job.ElasticSnapshot == nil {
+				snapshot, reason, e := elasticConnectionSnapshotTx(tx, project, job.Source.ConnectionID)
+				if e != nil {
+					return nil, e
+				}
+				job.ElasticSnapshot, job.CoverageReason = snapshot, reason
+			}
+			if job.CoverageReason == "" && ValidateElasticSourceConnection(job.Source, job.ElasticSnapshot) != nil {
+				job.CoverageReason = "connection_source_mismatch"
+			}
+		}
 		if job.CoverageReason == "" && job.Source.ManagementScope != nil {
 			if err = managementReadinessTx(tx, job.Source, "", started); err != nil {
 				job.CoverageReason = "collector_management_configuration_unavailable"
@@ -647,7 +667,7 @@ func (m MonitorSource) Validate() error {
 		return errors.New("invalid legacy connection revision")
 	}
 	if m.ManagementScope != nil || m.ManagementIdentity != nil {
-		if m.Prometheus != nil || m.AppDynamics != nil || m.Dynatrace != nil || m.ExecutorMode != "" || m.ConnectionID != "" {
+		if m.Prometheus != nil || m.AppDynamics != nil || m.Dynatrace != nil || m.ElasticQuery != nil || m.ExecutorMode != "" || m.ConnectionID != "" {
 			return errors.New("management source cannot include provider query configuration")
 		}
 		return validateManagementMonitorSource(m)
@@ -666,7 +686,7 @@ func (m MonitorSource) Validate() error {
 	if provider, governed := monitorprovider.Lookup(m.Pack); governed {
 		return monitorSourceValidators[provider.Pack](m, provider)
 	}
-	if m.ExecutorMode == "direct" || m.ConnectionID != "" || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace != nil {
+	if m.ExecutorMode == "direct" || m.ConnectionID != "" || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace != nil || m.ElasticQuery != nil {
 		return errors.New("provider fields require a governed provider pack")
 	}
 	if m.IntervalSeconds < 1 || m.IntervalSeconds > 3600 {
@@ -971,6 +991,7 @@ var monitorSourceValidators = map[string]func(MonitorSource, monitorprovider.Des
 	monitorprovider.PackAppDynamics:     validateAppDynamicsMonitorSource,
 	monitorprovider.PackPrometheusQuery: validatePrometheusMonitorSource,
 	monitorprovider.PackDynatrace:       validateDynatraceMonitorSource,
+	monitorprovider.PackElasticQuery:    validateElasticMonitorSource,
 }
 
 // monitorSourceTxValidators recheck each governed provider's connection
@@ -979,6 +1000,7 @@ var monitorSourceTxValidators = map[string]func(*storeTx, *MonitorSource) error{
 	monitorprovider.PackAppDynamics:     validateAppDynamicsSourceTx,
 	monitorprovider.PackPrometheusQuery: validatePrometheusSourceTx,
 	monitorprovider.PackDynatrace:       validateDynatraceSourceTx,
+	monitorprovider.PackElasticQuery:    validateElasticSourceTx,
 }
 
 func intervalOutside(m MonitorSource, d monitorprovider.Descriptor) bool {
@@ -986,7 +1008,7 @@ func intervalOutside(m MonitorSource, d monitorprovider.Descriptor) bool {
 }
 
 func validateAppDynamicsMonitorSource(m MonitorSource, d monitorprovider.Descriptor) error {
-	if m.ConnectionID == "" || m.AppDynamics == nil || m.Dynatrace != nil || m.Prometheus != nil || m.AppDynamics.ProjectID != m.ProjectID || m.AppDynamics.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" {
+	if m.ConnectionID == "" || m.AppDynamics == nil || m.Dynatrace != nil || m.Prometheus != nil || m.AppDynamics.ProjectID != m.ProjectID || m.AppDynamics.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" || m.ElasticQuery != nil {
 		return errors.New("invalid AppDynamics monitor source")
 	}
 	if len(m.AppDynamics.Metrics) == 0 && len(m.AppDynamics.Analytics) == 0 && !m.AppDynamics.Events && !m.AppDynamics.Violations && !m.AppDynamics.Snapshots {
@@ -996,14 +1018,14 @@ func validateAppDynamicsMonitorSource(m MonitorSource, d monitorprovider.Descrip
 }
 
 func validatePrometheusMonitorSource(m MonitorSource, d monitorprovider.Descriptor) error {
-	if m.ConnectionID == "" || m.Prometheus == nil || m.Prometheus.ProjectID != m.ProjectID || m.Prometheus.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" || m.AppDynamics != nil || m.Dynatrace != nil {
+	if m.ConnectionID == "" || m.Prometheus == nil || m.Prometheus.ProjectID != m.ProjectID || m.Prometheus.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" || m.AppDynamics != nil || m.Dynatrace != nil || m.ElasticQuery != nil {
 		return errors.New("invalid Prometheus query source")
 	}
 	return nil
 }
 
 func validateDynatraceMonitorSource(m MonitorSource, d monitorprovider.Descriptor) error {
-	if m.ConnectionID == "" || m.Dynatrace == nil || m.Dynatrace.ProjectID != m.ProjectID || m.Dynatrace.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace.Cursor != "" || m.Dynatrace.QueryOffset != 0 {
+	if m.ConnectionID == "" || m.Dynatrace == nil || m.Dynatrace.ProjectID != m.ProjectID || m.Dynatrace.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace.Cursor != "" || m.Dynatrace.QueryOffset != 0 || m.ElasticQuery != nil {
 		return errors.New("invalid Dynatrace monitor source")
 	}
 	return nil

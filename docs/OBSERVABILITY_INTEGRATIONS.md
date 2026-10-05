@@ -28,8 +28,45 @@ AppDynamics, Dynatrace and Prometheus query sources share the durable provider p
 | AppDynamics | `appdynamics` | Windowed: closed windows behind the clock | Interval buckets | 60 s / 60 s | Required |
 | Dynatrace | `dynatrace` | Cursor: resumable queries under scan budgets | Interval buckets | 60 s / 60 s | Required |
 | Prometheus query | `prometheus-query` | Polled at a fixed interval | Snapshot evaluations | 30 s / 15 s | Not used |
+| Elasticsearch query | `elastic-query` | Windowed, re-reading a five-minute overlap | Interval buckets | 60 s / 30 s | Not used (controller only) |
 
 Intervals may go up to 3,600 seconds. Dynatrace defaults to direct execution and is the provider that supports trace lookups. Collectors must advertise the provider's capability (`appdynamics.v1`, `dynatrace.v1` or `prometheus-query.v1`); a job whose collector lacks it records that provider's `collector_*_contract_unavailable` coverage reason.
+
+### Bucketed Elasticsearch capture
+
+An `elastic-query` monitor source reads an existing ELK connection (its
+endpoint, index pattern, timestamp field, filters and API-key or basic
+credentials from project secrets, through the same outbound host allowlist)
+and collects interval buckets instead of the legacy capture's run totals:
+
+```json
+{"pack": "elastic-query", "executor_mode": "direct", "connection_id": "<elk connection>", "interval_seconds": 60,
+ "elastic_query": {"project_id": "<project>", "bucket_seconds": 60, "terms_fields": ["http.method"], "terms_size": 10}}
+```
+
+- **Buckets:** each poll runs a `date_histogram` with a fixed interval of
+  30–300 seconds (default 60) aligned to UTC. Each bucket yields `logs.count`,
+  `logs.errors` (from the connection's error filter) and
+  `logs.terms.<field>.<value>` for the top `terms_size` values of each field.
+- **Truncation:** at most 16 terms fields are queried, each at most 128
+  bytes. Extra fields, values beyond the top ones, and values too long to name
+  a series within the 256-byte metric name are flagged as coverage warnings.
+  Values are named as the server displays them (`key_as_string`, or a
+  number's exact literal).
+- **Late data:** each poll re-reads from five minutes (`overlap_seconds`)
+  before the last watermark and upserts buckets by start, so a late document
+  updates its bucket. A bucket is marked settled once it falls behind the
+  overlap; ingestion rejects earlier settled claims.
+- **Execution:** sources run in the controller only (`executor_mode: direct`).
+  One poll reads at most 120 buckets, fewer when terms are heavy, so a search
+  stays under 10,000 aggregation buckets (`search.max_buckets` before
+  Elasticsearch 7.9). A selection whose overlap re-read plus one new bucket
+  does not fit one search is rejected, so every poll can advance.
+
+The legacy ELK capture keeps running unchanged. Its status and the archive
+manifest label it `observation: cumulative` (`elk_observation`), and its run
+totals are never reinterpreted as intervals. Fixture-tested only; not yet
+qualified against a live cluster.
 
 ## Confluence Cloud result publishing
 

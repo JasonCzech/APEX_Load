@@ -64,14 +64,10 @@ func validateCollectorRunReadiness(project, collector string, packs, destination
 			return errors.New("unsupported collector pack")
 		}
 	}
-	if containsReadinessPack(packs, "appdynamics.v1") && !containsReadinessPack(packs, "appdynamics") {
-		return errors.New("AppDynamics contract requires pack approval")
-	}
-	if containsReadinessPack(packs, "dynatrace.v1") && !containsReadinessPack(packs, "dynatrace") {
-		return errors.New("Dynatrace contract requires its pack")
-	}
-	if containsReadinessPack(packs, "prometheus-query.v1") && !containsReadinessPack(packs, "prometheus-query") {
-		return errors.New("Prometheus query contract requires pack approval")
+	for _, pack := range packs {
+		if provider, contract := monitorprovider.ByCapabilityPack(pack); contract && !containsReadinessPack(packs, provider.Pack) {
+			return errors.New(provider.Label + " contract requires pack approval")
+		}
 	}
 	if containsReadinessPack(packs, "prometheus-scrape.v2") && !containsReadinessPack(packs, "prometheus") {
 		return errors.New("Prometheus scrape contract requires pack approval")

@@ -36,7 +36,7 @@ func TestRegistryDescribesEveryGovernedProvider(t *testing.T) {
 // Provider dispatch goes through the registry: no other Go source may compare
 // a value against a governed provider's literal pack or provider name.
 func TestNoProviderNameComparisonsOutsideRegistry(t *testing.T) {
-	names := `(appdynamics|dynatrace|prometheus-query)`
+	names := `(appdynamics|dynatrace|prometheus-query|elastic-query)`
 	patterns := []*regexp.Regexp{
 		regexp.MustCompile(`(==|!=)\s*"` + names + `"`),
 		regexp.MustCompile(`"` + names + `"\s*(==|!=)`),
@@ -97,4 +97,16 @@ func itoa(n int) string {
 		digits = append([]byte{byte('0' + n%10)}, digits...)
 	}
 	return string(digits)
+}
+
+func TestByCapabilityPackMapsContractsToProviders(t *testing.T) {
+	for _, pack := range Packs() {
+		d, _ := Lookup(pack)
+		if byContract, ok := ByCapabilityPack(d.CapabilityPack); !ok || byContract.Pack != pack || !IsCapabilityPack(d.CapabilityPack) {
+			t.Fatalf("%s capability %q does not map back", pack, d.CapabilityPack)
+		}
+	}
+	if _, ok := ByCapabilityPack("prometheus-scrape.v2"); ok {
+		t.Fatal("the scrape contract is not a governed provider capability")
+	}
 }

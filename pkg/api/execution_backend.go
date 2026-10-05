@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -757,7 +758,7 @@ func (a *runArtifacts) collectELKMetrics(ctx context.Context, test *ManagedTest,
 
 	a.elkMu.Lock()
 	a.elkLastPoll = now
-	status := &ELKCaptureStatus{ConnectionID: test.ELKCapture.ConnectionID, ConnectionName: test.ELKCapture.ConnectionName, LastPolledAt: &now}
+	status := &ELKCaptureStatus{ConnectionID: test.ELKCapture.ConnectionID, ConnectionName: test.ELKCapture.ConnectionName, LastPolledAt: &now, Observation: monitorprovider.ObservationCumulative}
 	var fresh []ELKLogSample
 	if err != nil {
 		status.Status = "unavailable"

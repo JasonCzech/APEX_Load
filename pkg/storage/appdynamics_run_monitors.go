@@ -355,8 +355,8 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	}
 	limited := false
 	expectedProvider := job.Source.Pack
-	if expectedProvider == monitorprovider.PackPrometheusQuery {
-		expectedProvider = "prometheus"
+	if provider, governed := monitorprovider.Lookup(job.Source.Pack); governed {
+		expectedProvider = provider.ProviderName
 	}
 	for i, p := range payload.Points {
 		if p.Provider == nil || p.Validate() != nil || p.Provider.Name != expectedProvider || p.ProjectID != project || p.RunID != job.RunID || p.Source != job.Source.ID {
@@ -520,6 +520,9 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	}
 	if job.Source.Dynatrace != nil && job.Source.Dynatrace.SettleSeconds > 0 {
 		settle = job.Source.Dynatrace.SettleSeconds
+	}
+	if job.Source.ElasticQuery != nil {
+		settle = job.Source.ElasticQuery.Defaults().OverlapSeconds
 	}
 	stableDelay := 50 * time.Second
 	if job.Source.Pack == monitorprovider.PackDynatrace {
