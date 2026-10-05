@@ -29,7 +29,7 @@ const (
 	rcaBundleSchema   = "apexload.rca_bundle.v1"
 	// rcaEngineVersion changes whenever the engine's output for the same
 	// frozen inputs could change, so it is part of every input digest.
-	rcaEngineVersion  = "apexload.rca.engine.v1+" + rca.ValidityRulesVersion + "+" + rca.DetectParamsVersion
+	rcaEngineVersion  = "apexload.rca.engine.v1+" + rca.ValidityRulesVersion + "+" + rca.DetectParamsVersion + "+" + rca.GraphSchemaVersion
 	rcaMaxBundleBytes = 256 << 10
 	// An analysis lease outlives the engine's 120 s wall-time budget plus
 	// archive reading, so a live owner is not overtaken.
@@ -82,6 +82,10 @@ type rcaEvidence struct {
 	// absent.
 	Sidecars       map[string]string   `json:"sidecars"`
 	MonitorSources []rcaEvidenceSource `json:"monitor_sources"`
+	// Mappings are the project's dependency-to-entity decisions when the
+	// evidence was captured; MappingDigest identifies them.
+	Mappings      []rca.GraphMapping `json:"mappings"`
+	MappingDigest string             `json:"mapping_digest,omitempty"`
 }
 
 type rcaEvidenceSource struct {
@@ -161,11 +165,12 @@ func sidecarState(file string, truncated bool) string {
 }
 
 // captureRCAEvidence freezes a new evidence revision for a run: its archive
-// sidecars and its monitor sources' outcomes. Enrichment captures the same
-// inventory; provider evidence pulls arrive with onset detection. When reuse
-// accepts the run's latest revision for this archive digest, that revision is
-// returned instead; the check runs under the run's lock.
-func captureRCAEvidence(store any, project, testID string, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, enriched bool, now time.Time, reuse func(latest rcaEvidence, digest string) bool) (*storage.RCAEvidenceRevision, error) {
+// sidecars, its monitor sources' outcomes and the project's mapping
+// decisions. Enrichment captures the same inventory; provider evidence pulls
+// arrive with the signatures. When reuse accepts the run's latest revision
+// against the one being captured, that revision is returned instead; the
+// check runs under the run's lock.
+func captureRCAEvidence(store any, project, testID string, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, enriched bool, now time.Time, reuse func(latest, current rcaEvidence) bool) (*storage.RCAEvidenceRevision, error) {
 	rcaStore, ok := store.(storage.RCAStore)
 	if !ok {
 		return nil, errors.New("root-cause storage unavailable")
@@ -192,6 +197,9 @@ func captureRCAEvidence(store any, project, testID string, record *storage.RunAr
 		}
 		sort.Slice(evidence.MonitorSources, func(i, j int) bool { return evidence.MonitorSources[i].SourceID < evidence.MonitorSources[j].SourceID })
 	}
+	if evidence.Mappings, evidence.MappingDigest, err = loadRCAMappings(store, project); err != nil {
+		return nil, err
+	}
 	payload, err := json.Marshal(evidence)
 	if err != nil {
 		return nil, err
@@ -200,14 +208,17 @@ func captureRCAEvidence(store any, project, testID string, record *storage.RunAr
 	if reuse != nil {
 		accept = func(latest *storage.RCAEvidenceRevision) bool {
 			var frozen rcaEvidence
-			return json.Unmarshal(latest.Payload, &frozen) == nil && reuse(frozen, digest)
+			return json.Unmarshal(latest.Payload, &frozen) == nil && reuse(frozen, evidence)
 		}
 	}
 	return rcaStore.AppendRCAEvidenceRevision(project, testID, payload, now, accept)
 }
 
-// sameArchive reuses a revision captured from the same archive.
-func sameArchive(latest rcaEvidence, digest string) bool { return latest.ArchiveDigest == digest }
+// sameEvidence reuses a revision captured from the same archive under the
+// same mapping decisions.
+func sameEvidence(latest, current rcaEvidence) bool {
+	return latest.ArchiveDigest == current.ArchiveDigest && latest.MappingDigest == current.MappingDigest
+}
 
 // autoEnrichRCAEvidence captures an enriched evidence revision when a
 // gated project's run archive is finalized.
@@ -220,7 +231,7 @@ func (tr *TestRunner) autoEnrichRCAEvidence(test *ManagedTest, record *storage.R
 		return
 	}
 	// A refresh of the same archive reuses its enrichment.
-	reuse := func(latest rcaEvidence, digest string) bool { return latest.Enriched && sameArchive(latest, digest) }
+	reuse := func(latest, current rcaEvidence) bool { return latest.Enriched && sameEvidence(latest, current) }
 	if _, err := captureRCAEvidence(tr.testStore, project, test.ID, record, manifest, true, time.Now(), reuse); err != nil {
 		slog.Warn("failed to enrich root-cause evidence", "test_id", test.ID, "error", err)
 	}
@@ -290,11 +301,12 @@ func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request)
 		inputs.Baseline = baseline
 	}
 	// Evidence is captured afresh when asked, when the run has none, or when
-	// the archive changed since the latest capture; otherwise the latest is
-	// reused, so identical requests share one evidence revision.
-	var reuse func(rcaEvidence, string) bool
+	// the archive or the project's mapping decisions changed since the latest
+	// capture; otherwise the latest is reused, so identical requests share
+	// one evidence revision.
+	var reuse func(latest, current rcaEvidence) bool
 	if !request.Enrich {
-		reuse = sameArchive
+		reuse = sameEvidence
 	}
 	evidence, err := captureRCAEvidence(s.store, project, test.ID, record, manifest, request.Enrich, time.Now(), reuse)
 	if err != nil {
@@ -306,6 +318,10 @@ func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	inputs.EvidenceRevision = evidence.Revision
+	var frozen rcaEvidence
+	if json.Unmarshal(evidence.Payload, &frozen) == nil {
+		inputs.Mapping = frozen.MappingDigest
+	}
 	payload, _ := json.Marshal(rcaAnalysisPayload{Request: request, Inputs: inputs})
 	analysis, created, err := store.CreateRCAAnalysis(project, test.ID, rcaInputDigest(inputs), payload, time.Now())
 	if errors.Is(err, storage.ErrRCALimit) {
@@ -425,7 +441,8 @@ func (s *Server) handleGetRCABundle(w http.ResponseWriter, r *http.Request) {
 }
 
 // boundRCABundle trims the validity windows, the spikes, the weakest
-// anomalies, the evidence and then the SLA details until the bundle fits
+// anomalies, the graph's unused and then lowest-confidence edges and its
+// nodes, the evidence and then the SLA details until the bundle fits
 // 256 KiB, and marks what it cut.
 func boundRCABundle(bundle RCABundle) RCABundle {
 	fits := func() bool {
@@ -450,6 +467,22 @@ func boundRCABundle(bundle RCABundle) RCABundle {
 			slices.SortStableFunc(kept, func(a, b rca.Anomaly) int { return a.Onset.Compare(b.Onset) })
 			bundle.Assessment.Anomalies = kept
 			bundle.Truncated = true
+		}
+	}
+	if graph := &bundle.Assessment.Graph; !fits() && len(graph.Edges) > 0 {
+		used := graph.Edges[:0:0]
+		for _, e := range graph.Edges {
+			if e.Used {
+				used = append(used, e)
+			}
+		}
+		graph.Edges, bundle.Truncated = used, true
+		// Edges are stored strongest first.
+		for !fits() && len(graph.Edges) > 0 {
+			graph.Edges = graph.Edges[:len(graph.Edges)/2]
+		}
+		for !fits() && len(graph.Nodes) > 0 {
+			graph.Nodes = graph.Nodes[:len(graph.Nodes)/2]
 		}
 	}
 	if !fits() && bundle.Evidence != nil {
@@ -696,9 +729,19 @@ func (s *Server) assessRCAAnalysis(ctx context.Context, analysis *storage.RCAAna
 	if err != nil {
 		return nil, err
 	}
+	evidence, frozen := s.frozenRCAEvidence(analysis, payload)
+	// Mapping decisions are frozen inputs: without the revision that holds
+	// them, the analysis cannot judge what it was asked to.
+	if payload.Inputs.Mapping != "" && (!frozen || evidence.MappingDigest != payload.Inputs.Mapping) {
+		return nil, errors.New("the evidence revision holding the analysis's mapping decisions could not be read")
+	}
+	// One pass over the rows counts results for validity and collects the
+	// calls the graph is built from.
 	counter := newValidityResultCounter(archiveValidityIntervals(manifest, summaries))
+	calls := newGraphCallCollector()
 	if err := forEachArchiveTransaction(record, func(tx *TransactionEvent) error {
 		counter.add(tx.Timestamp)
+		calls.add(tx)
 		return ctx.Err()
 	}); err != nil {
 		return nil, err
@@ -707,10 +750,12 @@ func (s *Server) assessRCAAnalysis(ctx context.Context, analysis *storage.RCAAna
 		Acceptance: archiveAcceptance(manifest),
 		Validity:   archiveValidityInput(manifest, counter.counted(), summaries, resources),
 	}
-	if input.Detection, err = archiveDetectionInput(ctx, record, manifest, summaries, input.Validity.ArrivalModel, budgeter, budget); err != nil {
+	observations := newGraphObservationCollector()
+	if input.Detection, err = archiveDetectionInput(ctx, record, manifest, summaries, input.Validity.ArrivalModel, budgeter, budget, observations.observe); err != nil {
 		return nil, err
 	}
-	input.Coverage, input.Detection.Baseline = s.rcaCoverage(ctx, analysis, payload, manifest, input.Validity, input.Detection, budgeter, budget)
+	input.Graph = archiveGraphInput(manifest, calls, observations, evidence.Mappings)
+	input.Coverage, input.Detection.Baseline = s.rcaCoverage(ctx, payload, manifest, input, evidence, frozen, budgeter, budget)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -735,9 +780,25 @@ func archiveAcceptance(manifest *RunArchiveManifest) rca.Acceptance {
 	return acceptance
 }
 
+// frozenRCAEvidence reads the evidence revision an analysis froze, and
+// whether it could.
+func (s *Server) frozenRCAEvidence(analysis *storage.RCAAnalysis, payload rcaAnalysisPayload) (rcaEvidence, bool) {
+	var evidence rcaEvidence
+	store, ok := s.store.(storage.RCAStore)
+	if !ok {
+		return evidence, false
+	}
+	revision, err := store.GetRCAEvidenceRevision(analysis.ProjectID, analysis.TestID, payload.Inputs.EvidenceRevision)
+	if err != nil || json.Unmarshal(revision.Payload, &evidence) != nil {
+		return rcaEvidence{}, false
+	}
+	return evidence, true
+}
+
 // rcaCoverage says how much of each kind of evidence the analysis had, and
 // returns the requested baseline's detection evidence when it qualifies.
-func (s *Server) rcaCoverage(ctx context.Context, analysis *storage.RCAAnalysis, payload rcaAnalysisPayload, manifest *RunArchiveManifest, validity rca.ValidityInput, detection rca.DetectionInput, budgeter *rca.Budgeter, budget rca.Budget) ([]rca.Coverage, *rca.DetectionBaseline) {
+func (s *Server) rcaCoverage(ctx context.Context, payload rcaAnalysisPayload, manifest *RunArchiveManifest, input rca.AnalysisInput, evidence rcaEvidence, frozen bool, budgeter *rca.Budgeter, budget rca.Budget) ([]rca.Coverage, *rca.DetectionBaseline) {
+	validity, detection, graph := input.Validity, input.Detection, input.Graph
 	coverage := []rca.Coverage{}
 	status := rca.CoverageComplete
 	switch {
@@ -768,34 +829,37 @@ func (s *Server) rcaCoverage(ctx context.Context, analysis *storage.RCAAnalysis,
 		seriesStatus = rca.CoveragePartial
 	}
 	coverage = append(coverage, rca.Coverage{Evidence: "detection_series", Status: seriesStatus, Detail: fmt.Sprintf("%d transaction series, %d provider series, %d load levels", transactions, providers, len(detection.Levels))})
-	if store, ok := s.store.(storage.RCAStore); ok {
-		if revision, err := store.GetRCAEvidenceRevision(analysis.ProjectID, analysis.TestID, payload.Inputs.EvidenceRevision); err == nil {
-			var evidence rcaEvidence
-			if json.Unmarshal(revision.Payload, &evidence) == nil {
-				names := make([]string, 0, len(evidence.Sidecars))
-				for name := range evidence.Sidecars {
-					names = append(names, name)
-				}
-				sort.Strings(names)
-				for _, name := range names {
-					coverage = append(coverage, rca.Coverage{Evidence: name, Status: map[string]string{"present": rca.CoverageComplete, "truncated": rca.CoveragePartial, "absent": rca.CoverageMissing}[evidence.Sidecars[name]]})
-				}
-				monitor := rca.CoverageComplete
-				incomplete := 0
-				for _, source := range evidence.MonitorSources {
-					if source.CoverageReason != "" {
-						incomplete++
-					}
-				}
-				switch {
-				case len(evidence.MonitorSources) == 0:
-					monitor = rca.CoverageMissing
-				case incomplete > 0:
-					monitor = rca.CoveragePartial
-				}
-				coverage = append(coverage, rca.Coverage{Evidence: "monitor_sources", Status: monitor, Detail: fmt.Sprintf("%d sources, %d incomplete", len(evidence.MonitorSources), incomplete)})
+	topology := rca.CoverageComplete
+	switch {
+	case len(graph.Entities)+len(graph.Relations) == 0:
+		topology = rca.CoverageMissing
+	case len(graph.Limitations) > 0:
+		topology = rca.CoveragePartial
+	}
+	coverage = append(coverage, rca.Coverage{Evidence: "topology", Status: topology, Detail: fmt.Sprintf("%d calls, %d provider entities, %d provider relations, %d mapping decisions", len(graph.Calls), len(graph.Entities), len(graph.Relations), len(graph.Mappings))})
+	if frozen {
+		names := make([]string, 0, len(evidence.Sidecars))
+		for name := range evidence.Sidecars {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			coverage = append(coverage, rca.Coverage{Evidence: name, Status: map[string]string{"present": rca.CoverageComplete, "truncated": rca.CoveragePartial, "absent": rca.CoverageMissing}[evidence.Sidecars[name]]})
+		}
+		monitor := rca.CoverageComplete
+		incomplete := 0
+		for _, source := range evidence.MonitorSources {
+			if source.CoverageReason != "" {
+				incomplete++
 			}
 		}
+		switch {
+		case len(evidence.MonitorSources) == 0:
+			monitor = rca.CoverageMissing
+		case incomplete > 0:
+			monitor = rca.CoveragePartial
+		}
+		coverage = append(coverage, rca.Coverage{Evidence: "monitor_sources", Status: monitor, Detail: fmt.Sprintf("%d sources, %d incomplete", len(evidence.MonitorSources), incomplete)})
 	}
 	var baseline *rca.DetectionBaseline
 	if baselineID := payload.Request.BaselineTestID; baselineID != "" {
@@ -845,7 +909,7 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveMa
 	summaries, err := readAllArchiveSummaries(record)
 	if err == nil {
 		var evidence rca.DetectionInput
-		if evidence, err = archiveDetectionInput(ctx, record, baselineManifest, summaries, archiveArrivalModel(&baselineKey), budgeter, budget); err == nil {
+		if evidence, err = archiveDetectionInput(ctx, record, baselineManifest, summaries, archiveArrivalModel(&baselineKey), budgeter, budget, nil); err == nil {
 			// What limited the baseline's own evidence limits every
 			// comparison with it.
 			if len(evidence.Limitations) > 0 {

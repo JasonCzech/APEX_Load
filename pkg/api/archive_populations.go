@@ -19,15 +19,20 @@ type archivePopulationAccumulator struct {
 }
 
 func archiveEventPopulation(tx TransactionEvent) string {
-	if tx.Population == "action" || tx.Population == "transaction" {
-		return tx.Population
+	return eventPopulation(tx.Population, tx.BusinessTransaction, tx.DependencyType)
+}
+
+// eventPopulation classifies an event from the three fields that decide it.
+func eventPopulation(population string, businessTransaction bool, dependencyType string) string {
+	if population == "action" || population == "transaction" {
+		return population
 	}
-	if tx.BusinessTransaction {
+	if businessTransaction {
 		return "transaction"
 	}
 	// Dependency identity is positive protocol evidence. Lack of retained detail
 	// is not evidence that a legacy event was an enclosing transaction.
-	if tx.DependencyType != "" {
+	if dependencyType != "" {
 		return "action"
 	}
 	return "unknown"

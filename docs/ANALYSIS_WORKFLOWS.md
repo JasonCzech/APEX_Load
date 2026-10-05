@@ -416,6 +416,59 @@ steps (about 2% at either setting).
 The fault corpus (WP3.9) calibrates these values; until then they are the
 plan's starting values.
 
+## Root-cause graph
+
+Each assessment carries the run's typed graph (`graph`, schema
+`apexload.rca_graph.v1`, built by `pkg/rca/graph.go`) from frozen evidence:
+the archived rows, the monitor jobs' archived topology, the archived monitor
+points and the mapping decisions frozen into the evidence revision.
+
+| Node | From |
+| --- | --- |
+| `transaction`, `action` | Archived rows; IDs match the detection series (`transaction:<name>`, `action:<name>`) |
+| `dependency` | The dependency type and target an action reached, with the target's host |
+| `monitor_source` | Each monitor job bound to the run |
+| `provider_entity` | Dynatrace entities (classic and Smartscape), AppDynamics tiers, nodes and business transactions |
+| `infrastructure` | Hosts, processes, containers, pods, nodes and queues, from provider entities or monitor point dimensions |
+
+| Edge | Meaning | Confidence |
+| --- | --- | --- |
+| `calls` | An action reached a dependency; a provider entity calls another (Smartscape, classic `calls`) | explicit (rows) or provider |
+| `contains` | A transaction encloses an action; a tier its nodes; an entity its instances | explicit or provider |
+| `shares_infrastructure` | An entity runs on an infrastructure node; entities on the same node share it | provider |
+| `monitors` | A monitor source measured an entity or infrastructure node | provider |
+| `maps_to` | A dependency is a provider entity | explicit (approved) or inferred |
+
+- **Approval.** A dependency whose host is a provider entity's name (including
+  provider-reported hosts and processes) gets an inferred `maps_to` edge with
+  `used: false`: listed, never walked, and counted in
+  `graph_unapproved_mappings`. Hosts and pods seen only in point dimensions
+  are not candidates, since no decision can name them. Several candidates are
+  all kept and marked `ambiguous` (`graph_ambiguous_mappings`). An operator
+  records a decision as an `rca_mapping` definition at
+  `/api/v1/analysis/rca-mappings?project_id=…` (GET, POST; GET, PUT and
+  DELETE by ID; editor to write, viewer to read; gated by
+  `APEXLOAD_RCA_V2_PROJECTS`) with `{dependency, provider, entity_id,
+  entity_name, decision}`, where `dependency` is the dependency label as the
+  graph shows it and `decision` is `approved` or `rejected`. Approved
+  decisions become explicit edges carrying the definition's ID and
+  revision; rejected ones remove the candidate. Decisions are revisioned,
+  apply to every run of the project, and have their own allowance of 1,000
+  per project apart from saved mappings and comparisons. Dynatrace entities
+  collected through Smartscape also answer to their classic IDs, which points
+  and classic relationships use.
+- **Freezing.** An evidence revision freezes the project's decisions and
+  their digest, which is the analysis's `mapping` input. A decision changed
+  after the latest revision makes the next POST capture a new one, so the
+  same request is a new analysis.
+- **Cycles** among used `calls` edges are found (Tarjan) and listed under
+  `graph.cycles`; they are allowed.
+- **Bounds.** The graph keeps 5,000 nodes and 20,000 edges (the run's own
+  nodes first, explicit edges before provider and inferred ones) and at most
+  1 MiB; a run contributes at most 20,000 distinct calls and 1,000 observed
+  entities and infrastructure nodes per source (`graph_truncated`,
+  `graph_evidence_cut`). The bundle drops unused edges first.
+
 ## Root-cause analysis service
 
 v2 root-cause analyses run as revisioned jobs over a run's archive.
@@ -435,13 +488,15 @@ MCP tools keep returning v1.
 
 - **Frozen inputs.** An analysis's `input_digest` hashes the archive's
   manifest digest, the evidence revision, the baseline archive's digest, the
-  mapping and policy revisions (none yet) and the engine version. A POST
+  digest of the mapping decisions frozen into the evidence revision, the
+  policy revision (none yet) and the engine version. A POST
   whose digest matches a queued, running or completed analysis returns it;
   a failed or cancelled one can be retried. A run keeps at most 200
   analyses and 200 evidence revisions.
-- **Evidence revisions** freeze the archive's evidence sidecars and the run's
-  monitor sources with their outcomes. A POST captures one when the run has
-  none, when the archive changed since the latest, or when `enrich` is true.
+- **Evidence revisions** freeze the archive's evidence sidecars, the run's
+  monitor sources with their outcomes and the project's mapping decisions. A
+  POST captures one when the run has none, when the archive or the mapping
+  decisions changed since the latest, or when `enrich` is true.
   `APEXLOAD_RCA_AUTO_ENRICH_PROJECTS` captures an enriched revision at archive
   finalize. Provider evidence pulls (topology and diagnostics) arrive with the
   per-run graph and signatures (WP3.7–WP3.8); until then enrichment records

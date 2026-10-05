@@ -133,7 +133,7 @@ func TestRCADetectionEvidenceBudgetAndUnreadableSidecars(t *testing.T) {
 	budget := rca.DefaultBudget
 	budget.MaxSeries = 4
 	budgeter := rca.NewBudgeter(budget, nil, nil)
-	input, err := archiveDetectionInput(context.Background(), record, manifest, summaries, rca.ArrivalClosed, budgeter, budget)
+	input, err := archiveDetectionInput(context.Background(), record, manifest, summaries, rca.ArrivalClosed, budgeter, budget, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,14 +153,14 @@ func TestRCADetectionEvidenceBudgetAndUnreadableSidecars(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(record.ArchivePath, "monitor_points.jsonl"), []byte("{not json\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	input, err = archiveDetectionInput(context.Background(), record, manifest, summaries, rca.ArrivalClosed, rca.NewBudgeter(rca.DefaultBudget, nil, nil), rca.DefaultBudget)
+	input, err = archiveDetectionInput(context.Background(), record, manifest, summaries, rca.ArrivalClosed, rca.NewBudgeter(rca.DefaultBudget, nil, nil), rca.DefaultBudget, nil)
 	if err != nil || len(input.Series) != 3 || !strings.Contains(limitationCodes(input.Limitations), limitationDetectionEvidenceUnreadable) {
 		t.Fatalf("%v: %d series, %+v", err, len(input.Series), input.Limitations)
 	}
 	// Cancellation still fails the read.
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := archiveDetectionInput(cancelled, record, manifest, summaries, rca.ArrivalClosed, rca.NewBudgeter(rca.DefaultBudget, nil, nil), rca.DefaultBudget); err == nil {
+	if _, err := archiveDetectionInput(cancelled, record, manifest, summaries, rca.ArrivalClosed, rca.NewBudgeter(rca.DefaultBudget, nil, nil), rca.DefaultBudget, nil); err == nil {
 		t.Fatal("cancelled read succeeded")
 	}
 }
@@ -221,7 +221,7 @@ func TestRCADetectionInputFromSidecars(t *testing.T) {
 		t.Fatal(err)
 	}
 	budgeter := rca.NewBudgeter(rca.DefaultBudget, nil, nil)
-	input, err := archiveDetectionInput(context.Background(), record, manifest, summaries, rca.ArrivalClosed, budgeter, rca.DefaultBudget)
+	input, err := archiveDetectionInput(context.Background(), record, manifest, summaries, rca.ArrivalClosed, budgeter, rca.DefaultBudget, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

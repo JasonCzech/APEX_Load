@@ -27,6 +27,12 @@ var analysisAPIRouteCatalog = apiRouteCatalog{Domain: "analysis", Routes: []apiR
 	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/comparisons/{id}", "handleAnalysisDefinitions", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
 	newAuthenticatedAPIRoute(http.MethodPut, "/api/v1/analysis/comparisons/{id}", "handleAnalysisDefinitions", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
 	newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/analysis/comparisons/{id}", "handleAnalysisDefinitions", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
+	// Root-cause graph mapping decisions (rca_mapping definitions).
+	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/rca-mappings", "handleAnalysisDefinitions", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
+	newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/analysis/rca-mappings", "handleAnalysisDefinitions", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
+	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/rca-mappings/{id}", "handleAnalysisDefinitions", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
+	newAuthenticatedAPIRoute(http.MethodPut, "/api/v1/analysis/rca-mappings/{id}", "handleAnalysisDefinitions", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
+	newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/analysis/rca-mappings/{id}", "handleAnalysisDefinitions", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
 }}
 
 func analysisQueryAccess(lookup projectScopedLookup) accessRequirement {

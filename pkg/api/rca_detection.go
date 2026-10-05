@@ -147,7 +147,8 @@ func (r *rcaSeriesReader) list() []rca.Series {
 // interval distributions, and every provider series from the monitor points.
 // Transaction series take the series budget first. Evidence that cannot be
 // read becomes a limitation; only cancellation fails the read.
-func archiveDetectionInput(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, summaries []IntervalSummaryRecord, arrivalModel string, budgeter *rca.Budgeter, budget rca.Budget) (rca.DetectionInput, error) {
+// observe, when set, sees every provider point read.
+func archiveDetectionInput(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, summaries []IntervalSummaryRecord, arrivalModel string, budgeter *rca.Budgeter, budget rca.Budget, observe func(analysis.MetricPoint)) (rca.DetectionInput, error) {
 	input := rca.DetectionInput{Levels: archiveLoadLevels(summaries, archiveRunStarted(manifest), arrivalModel)}
 	unreadable := func(what string, err error) {
 		input.Limitations = append(input.Limitations, rca.Limitation{Code: limitationDetectionEvidenceUnreadable, Detail: what + " could not be read: " + err.Error()})
@@ -169,7 +170,7 @@ func archiveDetectionInput(ctx context.Context, record *storage.RunArchiveRecord
 		limit = max(0, limit-len(transactions.series))
 	}
 	monitors := newRCASeriesReader(limit, budget.MaxSeriesPoints)
-	cut, unknown, err := readMonitorSeries(ctx, record, manifest, monitors, budgeter)
+	cut, unknown, err := readMonitorSeries(ctx, record, manifest, monitors, budgeter, observe)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return input, ctxErr
 	}
@@ -332,7 +333,7 @@ func finiteNonNegative(value float64) bool {
 // readMonitorSeries groups the archived monitor points into one series per
 // provider query, metric and dimension set. It reports whether the budget
 // stopped the read and how many points had no declared semantics.
-func readMonitorSeries(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, reader *rcaSeriesReader, budgeter *rca.Budgeter) (bool, int, error) {
+func readMonitorSeries(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, reader *rcaSeriesReader, budgeter *rca.Budgeter, observe func(analysis.MetricPoint)) (bool, int, error) {
 	if manifest.MonitorEvidenceFile == "" {
 		return false, 0, nil
 	}
@@ -352,6 +353,9 @@ func readMonitorSeries(ctx context.Context, record *storage.RunArchiveRecord, ma
 		if point.Provider == nil {
 			unknown++
 			return nil
+		}
+		if observe != nil {
+			observe(*point)
 		}
 		identity := monitorSeriesIdentity(*point)
 		template, cached := templates[identity]

@@ -51,6 +51,7 @@ type Assessment struct {
 	Budget        Budget       `json:"budget"`
 
 	Detection Detection `json:"detection"`
+	Graph     Graph     `json:"graph"`
 }
 
 // InputDigests identify the frozen inputs an assessment read.
@@ -151,10 +152,11 @@ type AnalysisInput struct {
 	Validity   ValidityInput
 	Coverage   []Coverage
 	Detection  DetectionInput
+	Graph      GraphInput
 }
 
-// Analyze builds an assessment within budget: acceptance, validity and the
-// anomalies onset detection finds. Hypotheses need the signatures (WP3.8),
+// Analyze builds an assessment within budget: acceptance, validity, the
+// anomalies onset detection finds and the run's typed graph. Hypotheses need the signatures (WP3.8),
 // so the outcome is insufficient_evidence.
 func Analyze(input AnalysisInput, budgeter *Budgeter) Assessment {
 	if budgeter == nil {
@@ -182,6 +184,14 @@ func Analyze(input AnalysisInput, budgeter *Budgeter) Assessment {
 	} else {
 		var limitations []Limitation
 		out.Anomalies, out.Detection, limitations = Detect(input.Detection, DefaultDetectParams, budgeter)
+		out.Limitations = append(out.Limitations, limitations...)
+	}
+	if budgeter.Exhausted() {
+		out.Graph = Graph{Schema: GraphSchemaVersion, Nodes: []GraphNode{}, Edges: []GraphEdge{}, Cycles: [][]string{}}
+		out.Limitations = append(out.Limitations, input.Graph.Limitations...)
+	} else {
+		var limitations []Limitation
+		out.Graph, limitations = BuildGraph(input.Graph, budgeter)
 		out.Limitations = append(out.Limitations, limitations...)
 	}
 	out.Limitations = append(out.Limitations, Limitation{Code: LimitationHypothesesUnavailable, Detail: "hypotheses are not available yet"})

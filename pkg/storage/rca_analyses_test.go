@@ -2,6 +2,7 @@ package storage
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -257,5 +258,22 @@ func TestRCALegacyRunWithoutProjectBelongsToTheDefaultProject(t *testing.T) {
 	}
 	if _, created, err := s.CreateRCAAnalysis(DefaultProjectID, "legacy-run", digestA, []byte(`{}`), now); err != nil || !created {
 		t.Fatalf("legacy run: %v %v", created, err)
+	}
+}
+
+func TestRCAMappingDecisionsHaveTheirOwnDefinitionBudget(t *testing.T) {
+	s, _ := rcaFixture(t)
+	definition := json.RawMessage(`{"dependency":"x","provider":"dynatrace","entity_id":"E","decision":"approved"}`)
+	for i := 0; i < 1000; i++ {
+		if _, err := s.SaveAnalysisDefinition(AnalysisDefinition{ID: fmt.Sprintf("rca-%04d", i), ProjectID: "rca-p", Kind: AnalysisDefinitionKindRCAMapping, Name: "decision", Definition: definition}, 0); err != nil {
+			t.Fatal(i, err)
+		}
+	}
+	if _, err := s.SaveAnalysisDefinition(AnalysisDefinition{ID: "rca-over", ProjectID: "rca-p", Kind: AnalysisDefinitionKindRCAMapping, Name: "decision", Definition: definition}, 0); err == nil {
+		t.Fatal("decision over the budget saved")
+	}
+	// A full set of decisions leaves the other definitions' budget alone.
+	if _, err := s.SaveAnalysisDefinition(AnalysisDefinition{ID: "comparison", ProjectID: "rca-p", Kind: "comparison", Name: "comparison", Definition: json.RawMessage(`{}`)}, 0); err != nil {
+		t.Fatal(err)
 	}
 }

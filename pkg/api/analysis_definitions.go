@@ -13,7 +13,15 @@ import (
 
 func (s *Server) handleAnalysisDefinitions(w http.ResponseWriter, r *http.Request) {
 	project := r.URL.Query().Get("project_id")
-	if !analysisProjectEnabled(project) {
+	kind := "mapping"
+	switch {
+	case strings.Contains(r.URL.Path, "/comparisons"):
+		kind = "comparison"
+	case strings.Contains(r.URL.Path, "/rca-mappings"):
+		kind = storage.AnalysisDefinitionKindRCAMapping
+	}
+	// Root-cause mappings follow the root-cause v2 gate.
+	if kind == storage.AnalysisDefinitionKindRCAMapping && !rcaV2ProjectEnabled(project) || kind != storage.AnalysisDefinitionKindRCAMapping && !analysisProjectEnabled(project) {
 		writeError(w, 409, "analysis is not enabled for project")
 		return
 	}
@@ -21,10 +29,6 @@ func (s *Server) handleAnalysisDefinitions(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		writeError(w, 503, "analysis definitions unavailable")
 		return
-	}
-	kind := "mapping"
-	if strings.Contains(r.URL.Path, "/comparisons") {
-		kind = "comparison"
 	}
 	id := r.PathValue("id")
 	if r.Method == http.MethodGet {
@@ -90,7 +94,12 @@ func (s *Server) handleAnalysisDefinitions(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		in.ID, in.ProjectID, in.Kind, in.Deleted = id, project, kind, false
-		if kind == "mapping" {
+		if kind == storage.AnalysisDefinitionKindRCAMapping {
+			if err := validateRCAMappingDefinition(in.Definition); err != nil {
+				writeError(w, 400, err.Error())
+				return
+			}
+		} else if kind == "mapping" {
 			var mapping analysis.ParquetMapping
 			if json.Unmarshal(in.Definition, &mapping) != nil {
 				writeError(w, 400, "invalid saved mapping")
