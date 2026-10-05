@@ -62,6 +62,7 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 			preApplied = nil
 		}
 	}
+	applyClientGeneratedUUIDs(script, importReq.Data, result)
 
 	draft := importDraft{
 		Source:           source,

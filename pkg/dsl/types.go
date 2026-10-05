@@ -976,7 +976,7 @@ type Parameter struct {
 	BlockSize         int      `json:"block_size,omitempty"`
 	AutoAllocate      bool     `json:"auto_allocate,omitempty"`
 	ValueForEachVUser bool     `json:"value_for_each_vuser,omitempty"`
-	Format            string   `json:"format,omitempty"`
+	Format            string   `json:"format,omitempty"` // timestamp: unix|unix_ms|iso8601|rfc3339|rfc3339_nano; uuid: uppercase (any other value is lowercase)
 	Timezone          string   `json:"timezone,omitempty"`
 	OffsetSeconds     int      `json:"offset_seconds,omitempty"`
 	Min               int      `json:"min,omitempty"`

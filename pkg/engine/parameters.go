@@ -306,6 +306,9 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState,
 	case "host":
 		return generateHostValue(param)
 	case "uuid":
+		if strings.EqualFold(strings.TrimSpace(param.Format), "uppercase") {
+			return strings.ToUpper(uuid.NewString()), true
+		}
 		return uuid.NewString(), true
 	case "random_string":
 		return generateRandomString(state.random, param.Length, param.Charset), true

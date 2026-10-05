@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/agentforce"
+	"github.com/jasonczech/apexload/pkg/convert/clientids"
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
@@ -66,6 +67,30 @@ type harImportRequest struct {
 	// Salvage describes the truncated capture whose complete entries Data
 	// holds, when the import opted in to salvage_truncated.
 	Salvage *har.TruncationSalvage
+}
+
+// applyClientGeneratedUUIDs gives UUIDs the recorded client made up (no
+// response contains them) fresh values per replayed iteration; see package
+// clientids. It records what changed, or why detection was skipped.
+func applyClientGeneratedUUIDs(script *dsl.Script, harData []byte, result *har.ConvertResult) {
+	if script == nil || result == nil {
+		return
+	}
+	server, judged, err := clientids.ServerUUIDs(harData)
+	if err != nil {
+		return
+	}
+	var note string
+	if judged {
+		note = clientids.Apply(script, server).Warning()
+	} else if clientids.HasRequestUUIDs(script) {
+		note = "Client-generated UUIDs were not detected: too few recorded responses kept their bodies to tell which UUIDs the server sent, so request UUIDs keep their recorded values."
+	}
+	if note == "" {
+		return
+	}
+	result.Warnings = append(result.Warnings, note)
+	result.Unsupported = append(result.Unsupported, diag.Diagnostic{Code: "client_generated_uuids", Element: "Client-generated UUIDs", Location: "HAR requests", Detail: note, Severity: diag.Warning})
 }
 
 // noteSalvage records on a converted import that its HAR was truncated.
