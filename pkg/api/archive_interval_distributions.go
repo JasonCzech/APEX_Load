@@ -246,6 +246,18 @@ func archiveIntervalWindows(ordered []IntervalSummaryRecord) []intervalWindow {
 	return windows
 }
 
+// intervalDistributionRow decodes only the transaction-row fields that
+// reconstruction reads; decoding whole TransactionEvents dominated its cost.
+type intervalDistributionRow struct {
+	Timestamp           time.Time `json:"timestamp"`
+	ActionName          string    `json:"action_name"`
+	DurationMs          float64   `json:"duration_ms"`
+	Success             bool      `json:"success"`
+	Population          string    `json:"population"`
+	BusinessTransaction bool      `json:"business_transaction"`
+	DependencyType      string    `json:"dependency_type"`
+}
+
 // reconstructIntervalDistributions rebuilds transaction and action
 // distributions per archived interval with one streaming scan of the rows.
 // It reports whether any bound cut the result.
@@ -270,13 +282,13 @@ func reconstructIntervalDistributions(ctx context.Context, record *storage.RunAr
 	// buckets[window][dimension][key]
 	buckets := make([]map[string]map[string]*accumulator, len(windows))
 	observations := 0
-	err = forEachArchiveTransactionContext(ctx, record, func(tx *TransactionEvent) error {
+	err = forEachArchiveRecordContext(ctx, record, func(m *RunArchiveManifest) string { return m.TransactionsFile }, func(tx *intervalDistributionRow) error {
 		at := tx.Timestamp.UTC()
 		index := sort.Search(len(windows), func(i int) bool { return !windows[i].end.Before(at) })
 		if index == len(windows) || !at.After(windows[index].start) {
 			return nil
 		}
-		dimension := archiveEventPopulation(*tx)
+		dimension := archiveEventPopulation(TransactionEvent{Population: tx.Population, BusinessTransaction: tx.BusinessTransaction, DependencyType: tx.DependencyType})
 		if dimension != "transaction" && dimension != "action" {
 			return nil
 		}
