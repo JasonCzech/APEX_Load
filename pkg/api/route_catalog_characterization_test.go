@@ -888,4 +888,9 @@ var accessRequirementGolden = map[string]string{
 	"PUT /api/v1/scripts/sample-id":                                          "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
 	"PUT /api/v1/system/settings":                                            "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0 featureID=",
 	"PUT /api/v1/tests/sample-id/report/annotations":                         "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
+
+	// Deep links (WP2.4): connection link settings and linked exemplars.
+	"GET /api/v1/projects/sample-id/monitoring/connection-links/sample-kind/sample-connection-id": "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
+	"PUT /api/v1/projects/sample-id/monitoring/connection-links/sample-kind/sample-connection-id": "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
+	"GET /api/v1/tests/sample-id/archive/exemplars":                                               "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
 }

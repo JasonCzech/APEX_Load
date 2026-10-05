@@ -346,6 +346,47 @@ measured them: generator observations name the execution owner in
 its heartbeat. The uncertainty does not include skew between replicas, so keep
 controller replicas NTP-synchronized.
 
+### Deep links
+
+Archived exemplars carry links that open their trace in the run's providers:
+`GET /api/v1/tests/{id}/archive/exemplars` (viewer; `limit` up to 1000,
+`offset`, and optional `group` and transaction `name`) returns each exemplar with
+`links`, one per trace-capable connection the run used: its legacy ELK and
+Dynatrace captures and its trace-lookup monitor sources (Dynatrace and
+Elasticsearch query). `total` counts the matching exemplars across pages;
+`capture_truncated` means the archive kept fewer exemplars than the run
+selected. When link settings cannot be read, exemplars are still returned,
+without links and with `links_unavailable`.
+
+- **Templates.** Each Dynatrace or ELK connection can hold a trace link
+  template, saved with `PUT /api/v1/projects/{id}/monitoring/connection-links/{kind}/{connection_id}`
+  (`kind` is `dynatrace` or `elk`; project admins, with `GET` for editors) as a
+  revisioned definition. Templates may use only `{trace_id}`, `{entity_id}`,
+  `{from_utc}` and `{to_utc}` (RFC 3339 UTC seconds). Validation requires
+  HTTPS and one of the connection's own hosts, and an ELK connection may add
+  a Kibana `ui_url` host because Kibana is not the search endpoint. Scheme and
+  host must be literal. Trace and entity IDs must be plain identifiers (RFC
+  3986 unreserved characters, not only dots), and every value is
+  percent-encoded, so a value can never add a path, parameter, fragment or
+  host, or change Kibana's state after it decodes the link. Save validates
+  the template in effect, including a default built from `ui_url`.
+- **Defaults.** Dynatrace links open the distributed-tracing app on the
+  platform (or environment) URL with `traceId`; they carry no timeframe, so
+  for traces older than the app's default window, save a template with your
+  tenant's timeframe parameter. ELK links open Kibana Discover around the
+  exemplar's time once `ui_url` names Kibana, querying the connection's trace
+  ID field when it has a plain name (free text otherwise); Discover opens on
+  Kibana's default data view, so save a template naming the data view when
+  that is not the logs index. With no Kibana URL there is no ELK link.
+  AppDynamics snapshot and Dynatrace problem links remain on
+  `ProviderDiagnostic.DeepLink`, validated against their connection's origin;
+  Dynatrace and AppDynamics ingestion share the template target check.
+- **Budget.** Link settings are one definition per connection and do not count
+  toward the project's 1000 mappings and comparisons. They outlive a deleted
+  connection unused, since connection IDs are never reused.
+- **Not yet.** Grafana Explore links need a Grafana or Tempo connection, which
+  APEX Load does not have; Grafana is currently an annotation sink only.
+
 ### Messaging trace carriers
 
 Messaging scripts opt in per script with `config.observability.trace_carrier:

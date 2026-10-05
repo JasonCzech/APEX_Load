@@ -1125,24 +1125,33 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) requireRunArchive(w http.ResponseWriter, r *http.Request) (*storage.RunArchiveRecord, *archiveMaterializationLease, bool) {
+	_, record, lease, ok := s.requireRunArchiveTest(w, r)
+	return record, lease, ok
+}
+
+// requireRunArchiveTest is requireRunArchive for handlers that also need the
+// run. The run is a summary snapshot: archive reads never need its metrics
+// history.
+func (s *Server) requireRunArchiveTest(w http.ResponseWriter, r *http.Request) (*ManagedTest, *storage.RunArchiveRecord, *archiveMaterializationLease, bool) {
 	extendArtifactWriteDeadline(w)
 	id := r.PathValue("id")
 	archives := s.archiveDomainService()
-	if _, ok := archives.GetTest(id); !ok {
+	test, ok := archives.GetTestSummary(id)
+	if !ok || test == nil {
 		writeError(w, http.StatusNotFound, "test not found")
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 	record, ok := archives.GetRunArchiveContext(r.Context(), id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "archive not found")
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 	lease, err := acquireArchiveMaterialized(r.Context(), record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
-	return record, lease, true
+	return test, record, lease, true
 }
 
 func parseArchivePage(w http.ResponseWriter, r *http.Request) (archivePage, bool) {

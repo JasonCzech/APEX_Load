@@ -26,8 +26,8 @@ func TestPhaseEventLogDeduplicatesAndBounds(t *testing.T) {
 	}{
 		{PhaseEvent{Kind: PhaseRampStart, Target: "buy", Level: level(10), At: at}, true},
 		{PhaseEvent{Kind: PhaseRampStart, Target: "buy", Level: level(10), At: at.Add(800 * time.Millisecond)}, false}, // same second
-		{PhaseEvent{Kind: PhaseRampStart, Target: "buy", Level: level(20), At: at}, true},                               // another level
-		{PhaseEvent{Kind: PhaseRampStart, Target: "browse", Level: level(10), At: at}, true},                            // another group
+		{PhaseEvent{Kind: PhaseRampStart, Target: "buy", Level: level(20), At: at}, true},                              // another level
+		{PhaseEvent{Kind: PhaseRampStart, Target: "browse", Level: level(10), At: at}, true},                           // another group
 		{PhaseEvent{Kind: PhaseStop, At: at.Add(time.Minute)}, true},
 		{PhaseEvent{Kind: PhaseStop, At: at.Add(2 * time.Minute)}, false}, // one stop per run
 	} {

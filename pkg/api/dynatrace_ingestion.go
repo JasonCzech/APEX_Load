@@ -3,12 +3,12 @@ package api
 import (
 	"context"
 	"errors"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/deeplink"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -109,13 +109,8 @@ func (s *Server) ingestDynatraceBatch(ctx context.Context, job storage.RunMonito
 		if d.Properties["correlation"] == "run_header" && (!selection.RunHeader || d.Properties["run_id"] != job.RunID) {
 			return errors.New("unsupported run-header correlation")
 		}
-		if d.DeepLink != "" {
-			u, e := url.Parse(d.DeepLink)
-			env, _ := url.Parse(job.DynatraceSnapshot.Config.EnvironmentURL)
-			platform, _ := url.Parse(job.DynatraceSnapshot.Config.PlatformURL)
-			if e != nil || u.Scheme != "https" || u.User != nil || len(d.DeepLink) > 2048 || (env == nil || u.Host != env.Host) && (platform == nil || u.Host != platform.Host) {
-				d.DeepLink = ""
-			}
+		if d.DeepLink != "" && deeplink.CheckTarget(d.DeepLink, deeplink.OriginHosts(job.DynatraceSnapshot.Config.EnvironmentURL, job.DynatraceSnapshot.Config.PlatformURL)) != nil {
+			d.DeepLink = ""
 		}
 		payload.Evidence[i] = d
 	}

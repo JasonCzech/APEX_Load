@@ -29,6 +29,10 @@ func (service *stubArchiveService) GetTest(string) (*ManagedTest, bool) {
 	return service.test, service.testFound
 }
 
+func (service *stubArchiveService) GetTestSummary(id string) (*ManagedTest, bool) {
+	return service.GetTest(id)
+}
+
 func (service *stubArchiveService) GetTestManifest(string) (*TestRunManifest, error) {
 	return service.testManifest, nil
 }

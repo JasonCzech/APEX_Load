@@ -24002,6 +24002,142 @@ export interface operations {
       };
     };
   };
+  "handleConnectionLinks": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+        "kind": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "connection_id": string;
+            "effective_trace_template"?: string;
+            "kind": string;
+            "revision": number;
+            "settings": {
+              "trace_template"?: string;
+              "ui_url"?: string;
+            };
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleConnectionLinks_2": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+        "kind": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "revision"?: number;
+          "trace_template"?: string;
+          "ui_url"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "connection_id": string;
+            "effective_trace_template"?: string;
+            "kind": string;
+            "revision": number;
+            "settings": {
+              "trace_template"?: string;
+              "ui_url"?: string;
+            };
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleConnectionTest": {
     parameters?: never;
     requestBody: {
@@ -56242,6 +56378,76 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetRunArchiveExemplars": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "group"?: string;
+        "limit"?: number;
+        "name"?: string;
+        "offset"?: number;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "capture_truncated": boolean;
+            "exemplars": Array<{
+              "duration_ms": number;
+              "error_class"?: string;
+              "group"?: string;
+              "interval_end": string;
+              "interval_median_ms"?: (number) | null;
+              "interval_start": string;
+              "links": Array<{
+                "connection_id": string;
+                "provider": string;
+                "url": string;
+              }>;
+              "name": string;
+              "population": string;
+              "reason": string;
+              "schema": string;
+              "span_id"?: string;
+              "status_code"?: number;
+              "success": boolean;
+              "timestamp": string;
+              "trace_id": string;
+            }>;
+            "links_unavailable"?: boolean;
+            "total": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -144398,6 +144604,10 @@ export interface paths {
   "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/tiers": {
     "get": operations["handleDiscoverAppDynamicsTiers"];
   };
+  "/api/v1/projects/{id}/monitoring/connection-links/{kind}/{connection_id}": {
+    "get": operations["handleConnectionLinks"];
+    "put": operations["handleConnectionLinks_2"];
+  };
   "/api/v1/projects/{id}/monitoring/dynatrace-connections": {
     "get": operations["handleListDynatraceConnections"];
     "post": operations["handleCreateDynatraceConnection"];
@@ -145217,6 +145427,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/comparison": {
     "get": operations["handleGetRunArchiveComparison"];
+  };
+  "/api/v1/tests/{id}/archive/exemplars": {
+    "get": operations["handleGetRunArchiveExemplars"];
   };
   "/api/v1/tests/{id}/archive/files/{name}": {
     "get": operations["handleDownloadRunArchiveArtifact"];

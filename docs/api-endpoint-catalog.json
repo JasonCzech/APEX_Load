@@ -3277,6 +3277,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/connection-links/{kind}/{connection_id}",
+      "operationId": "handleConnectionLinks",
+      "summary": "Connection Links",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/monitoring/connection-links/{kind}/{connection_id}",
+      "operationId": "handleConnectionLinks_2",
+      "summary": "Connection Links",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections",
       "operationId": "handleListDynatraceConnections",
       "summary": "List Dynatrace Connections",
@@ -6310,6 +6330,16 @@
       "path": "/api/v1/tests/{id}/archive/comparison",
       "operationId": "handleGetRunArchiveComparison",
       "summary": "Get Run Archive Comparison",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/exemplars",
+      "operationId": "handleGetRunArchiveExemplars",
+      "summary": "Get Run Archive Exemplars",
       "category": "Test Execution",
       "public": false,
       "authenticated": true,

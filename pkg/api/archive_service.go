@@ -16,6 +16,8 @@ import (
 // as one atomic slice.
 type archiveService interface {
 	GetTest(id string) (*ManagedTest, bool)
+	// GetTestSummary is GetTest without the metrics history.
+	GetTestSummary(id string) (*ManagedTest, bool)
 	GetTestManifest(id string) (*TestRunManifest, error)
 	GetRunArchive(id string) (*storage.RunArchiveRecord, bool)
 	GetRunArchiveContext(ctx context.Context, id string) (*storage.RunArchiveRecord, bool)
@@ -38,6 +40,13 @@ func (service *testRunnerArchiveService) GetTest(id string) (*ManagedTest, bool)
 		return nil, false
 	}
 	return service.runner.GetTest(id)
+}
+
+func (service *testRunnerArchiveService) GetTestSummary(id string) (*ManagedTest, bool) {
+	if service == nil || service.runner == nil {
+		return nil, false
+	}
+	return service.runner.GetTestSummary(id)
 }
 
 func (service *testRunnerArchiveService) GetTestManifest(id string) (*TestRunManifest, error) {

@@ -21,6 +21,10 @@ type AnalysisDefinition struct {
 	CreatedAt  time.Time       `json:"created_at"`
 }
 
+// AnalysisDefinitionKindConnectionLinks holds one connection's deep link
+// settings; it is not a user analytical definition.
+const AnalysisDefinitionKindConnectionLinks = "connection_links"
+
 type AnalysisDefinitionStore interface {
 	SaveAnalysisDefinition(AnalysisDefinition, int64) (*AnalysisDefinition, error)
 	GetAnalysisDefinition(string, string, int64) (*AnalysisDefinition, error)
@@ -28,7 +32,7 @@ type AnalysisDefinitionStore interface {
 }
 
 func (s *SQLiteStore) SaveAnalysisDefinition(in AnalysisDefinition, expected int64) (*AnalysisDefinition, error) {
-	if in.ID == "" || len(in.ID) > 128 || in.ProjectID == "" || strings.TrimSpace(in.Name) == "" || len(in.Name) > 256 || expected < 0 || expected >= 1<<62 || (in.Kind != "mapping" && in.Kind != "comparison") || !json.Valid(in.Definition) || len(in.Definition) > 128<<10 {
+	if in.ID == "" || len(in.ID) > 128 || in.ProjectID == "" || strings.TrimSpace(in.Name) == "" || len(in.Name) > 256 || expected < 0 || expected >= 1<<62 || (in.Kind != "mapping" && in.Kind != "comparison" && in.Kind != AnalysisDefinitionKindConnectionLinks) || !json.Valid(in.Definition) || len(in.Definition) > 128<<10 {
 		return nil, errors.New("invalid analytical definition")
 	}
 	tx, err := s.db.Begin()
@@ -48,9 +52,11 @@ func (s *SQLiteStore) SaveAnalysisDefinition(in AnalysisDefinition, expected int
 	if revision != expected || revision > 0 && (project != in.ProjectID || kind != in.Kind) {
 		return nil, ErrAnalysisRevision
 	}
-	if expected == 0 {
+	// Connection link settings are one per connection and stay out of the
+	// mappings' and comparisons' budget.
+	if expected == 0 && in.Kind != AnalysisDefinitionKindConnectionLinks {
 		var n int
-		if err = tx.QueryRow(`SELECT COUNT(DISTINCT id) FROM analysis_definitions WHERE project_id=?`, in.ProjectID).Scan(&n); err != nil {
+		if err = tx.QueryRow(`SELECT COUNT(DISTINCT id) FROM analysis_definitions WHERE project_id=? AND kind<>?`, in.ProjectID, AnalysisDefinitionKindConnectionLinks).Scan(&n); err != nil {
 			return nil, err
 		}
 		if n >= 1000 {

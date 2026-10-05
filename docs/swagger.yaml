@@ -61588,6 +61588,215 @@ paths:
       tags:
         - Projects
       x-handler: handleDiscoverAppDynamicsTiers
+  /api/v1/projects/{id}/monitoring/connection-links/{kind}/{connection_id}:
+    get:
+      summary: Connection Links
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleConnectionLinks
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection_id:
+                    type: string
+                  effective_trace_template:
+                    type: string
+                  kind:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                  settings:
+                    type: object
+                    properties:
+                      trace_template:
+                        type: string
+                      ui_url:
+                        type: string
+                required:
+                  - connection_id
+                  - kind
+                  - revision
+                  - settings
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleConnectionLinks
+    put:
+      summary: Connection Links
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleConnectionLinks_2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                revision:
+                  type: integer
+                  format: int64
+                trace_template:
+                  type: string
+                ui_url:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection_id:
+                    type: string
+                  effective_trace_template:
+                    type: string
+                  kind:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                  settings:
+                    type: object
+                    properties:
+                      trace_template:
+                        type: string
+                      ui_url:
+                        type: string
+                required:
+                  - connection_id
+                  - kind
+                  - revision
+                  - settings
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleConnectionLinks
   /api/v1/projects/{id}/monitoring/dynatrace-connections:
     get:
       summary: List Dynatrace Connections
@@ -302432,6 +302641,161 @@ paths:
       tags:
         - Tests
       x-handler: handleGetRunArchiveComparison
+  /api/v1/tests/{id}/archive/exemplars:
+    get:
+      summary: Get Run Archive Exemplars
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleGetRunArchiveExemplars
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  capture_truncated:
+                    type: boolean
+                  exemplars:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        duration_ms:
+                          type: number
+                          format: double
+                        error_class:
+                          type: string
+                        group:
+                          type: string
+                        interval_end:
+                          type: string
+                          format: date-time
+                        interval_median_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        interval_start:
+                          type: string
+                          format: date-time
+                        links:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              provider:
+                                type: string
+                              url:
+                                type: string
+                            required:
+                              - connection_id
+                              - provider
+                              - url
+                        name:
+                          type: string
+                        population:
+                          type: string
+                        reason:
+                          type: string
+                        schema:
+                          type: string
+                        span_id:
+                          type: string
+                        status_code:
+                          type: integer
+                          format: int64
+                        success:
+                          type: boolean
+                        timestamp:
+                          type: string
+                          format: date-time
+                        trace_id:
+                          type: string
+                      required:
+                        - duration_ms
+                        - interval_end
+                        - interval_start
+                        - links
+                        - name
+                        - population
+                        - reason
+                        - schema
+                        - success
+                        - timestamp
+                        - trace_id
+                  links_unavailable:
+                    type: boolean
+                  total:
+                    type: integer
+                    format: int64
+                required:
+                  - capture_truncated
+                  - exemplars
+                  - total
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: group
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: name
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: offset
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+      tags:
+        - Tests
+      x-handler: handleGetRunArchiveExemplars
   /api/v1/tests/{id}/archive/files/{name}:
     get:
       summary: Download Run Archive Artifact

@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/deeplink"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -277,12 +277,8 @@ func (s *Server) ingestAppDynamicsBatch(ctx context.Context, job storage.RunMoni
 				return errors.New("invalid diagnostic entities")
 			}
 		}
-		if d.DeepLink != "" {
-			link, err := url.Parse(d.DeepLink)
-			origin, originErr := url.Parse(job.ConnectionSnapshot.Config.Endpoint)
-			if err != nil || originErr != nil || link.Scheme != "https" || link.Host != origin.Host || link.User != nil || len(d.DeepLink) > 2048 {
-				d.DeepLink = ""
-			}
+		if d.DeepLink != "" && deeplink.CheckTarget(d.DeepLink, deeplink.OriginHosts(job.ConnectionSnapshot.Config.Endpoint)) != nil {
+			d.DeepLink = ""
 		}
 		payload.Evidence[i] = d
 	}
