@@ -1,3 +1,4 @@
+import type { ScriptSaveOptions } from '../types/storedContent'
 import LibraryAssignmentFilters from './LibraryAssignmentFilters'
 import { matchesAssignmentFilter } from './libraryAssignmentModel'
 import LibraryAssignmentDialog from './LibraryAssignmentDialog'
@@ -27,7 +28,7 @@ import { type ImportedSaveResult, type ScriptsAuthoringSubView, useScriptsAuthor
 import { getErrorMessage } from '../utils/errorUtils'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
-import ScriptSecretBindingsDialog from './ScriptSecretBindingsDialog'
+import StoredScriptSecretBindingsDialog from './StoredScriptSecretBindingsDialog'
 import { requestSettingsFocus } from './settingsSectionLayout'
 import {
   formatSourceSecretSessionFailure,
@@ -225,6 +226,8 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     requestSettingsFocus('integrations')
     onNavigate?.('settings')
   }, [onNavigate])
+
+  useEffect(() => { setSecretDialogScript(null) }, [activeProjectId])
 
   const openProjectSecrets = useCallback((script?: StoredScript) => {
     if (script?.id && script.script) {
@@ -471,6 +474,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     api,
     initialMode,
     initialEditId,
+    projectId: activeProjectId,
   })
   const handleSavedScript = useCallback((...args: Parameters<typeof acceptSavedScript>) => {
     acceptSavedScript(...args)
@@ -913,10 +917,10 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     }
   }
 
-  const handleSaved = useCallback((script: StoredScript, options?: { configureSecrets?: boolean }) => {
+  const handleSaved = useCallback((script: StoredScript, options?: ScriptSaveOptions) => {
     void refresh()
     void refreshAuthoringSessions()
-    handleSavedScript(script)
+    handleSavedScript(script, undefined, options?.retainedDraft, options)
     if (options?.configureSecrets) setSecretDialogScript(script)
   }, [handleSavedScript, refresh, refreshAuthoringSessions])
 
@@ -1314,25 +1318,17 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
           />
         </Suspense>
       )}
-      {secretDialogScript?.script && (
-        <ScriptSecretBindingsDialog
-          scriptId={secretDialogScript.id}
-          script={secretDialogScript.script}
-          projectId={secretDialogScript.project_id || activeProjectId || ''}
-          applicationId={secretDialogScript.library_assignment?.application?.id}
-          scriptName={secretDialogScript.name}
+      {secretDialogScript?.script && activeProjectId && (
+        <StoredScriptSecretBindingsDialog key={`${activeProjectId}:${secretDialogScript.id}`}
+          stored={secretDialogScript} projectId={activeProjectId}
           onClose={() => setSecretDialogScript(null)}
-          onConfigured={async () => {
-            retryScriptSecretStatus(secretDialogScript)
-            await refresh()
-          }}
-          onRebound={async (rebound, changedLocations) => {
-            const saved = await api.updateScript(secretDialogScript.id, rebound)
-            setSecretDialogScript(saved)
+          onConfigured={async () => { retryScriptSecretStatus(secretDialogScript); await refresh() }}
+          onSaved={async (saved, changedLocations) => {
+            const scope = { ...projectScopeRef.current }
+            if (saved.project_id !== scope.id || saved.id !== secretDialogScript.id) return
             appendLibraryNotice(`Rebound ${changedLocations.length} secret reference location${changedLocations.length === 1 ? '' : 's'} in ${saved.name}.`)
             await refresh()
-          }}
-        />
+          }} />
       )}
       {githubImportOpen && githubConfig && (
         <Suspense fallback={null}>

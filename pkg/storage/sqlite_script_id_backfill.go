@@ -178,6 +178,15 @@ func backfillOneBlankScriptID(tx *storeTx, oldID string) (string, error) {
 		return "", err
 	}
 
+	if _, err := tx.Exec(`INSERT INTO script_library_assignments(item_id,application_id,revision) SELECT ?,application_id,revision FROM script_library_assignments WHERE item_id=?`, newID, oldID); err != nil {
+		return "", fmt.Errorf("copy repaired script placement: %w", err)
+	}
+	if _, err := tx.Exec(`INSERT INTO script_library_assignments_releases(item_id,release_id) SELECT ?,release_id FROM script_library_assignments_releases WHERE item_id=?`, newID, oldID); err != nil {
+		return "", fmt.Errorf("copy repaired script releases: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM script_library_assignments WHERE item_id=?`, oldID); err != nil {
+		return "", err
+	}
 	result, err := tx.Exec(`DELETE FROM scripts WHERE id = ?`, oldID)
 	if err != nil {
 		return "", fmt.Errorf("delete blank-id script after remap: %w", err)

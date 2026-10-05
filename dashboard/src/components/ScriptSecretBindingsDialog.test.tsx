@@ -1,3 +1,6 @@
+import { authoringFixture, savedAuthoringFixture } from '../test/scriptAuthoringFixtures'
+import StoredScriptSecretBindingsDialog from './StoredScriptSecretBindingsDialog'
+import { ApiError } from '../hooks/apiClient'
 // @vitest-environment jsdom
 
 import { act } from 'react'
@@ -5,12 +8,16 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ScriptDefinition } from '../types/scripts'
-import ScriptSecretBindingsDialog from './ScriptSecretBindingsDialog'
+import RealScriptSecretBindingsDialog from './ScriptSecretBindingsDialog'
+import type { ComponentProps } from 'react'
+function ScriptSecretBindingsDialog(props: ComponentProps<typeof RealScriptSecretBindingsDialog>) { return <RealScriptSecretBindingsDialog {...props} authoringBaseline={props.authoringBaseline === undefined ? authoringFixture(props.script, props.scriptId, props.projectId) : props.authoringBaseline} /> }
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const apiMock = vi.hoisted(() => ({
   getScriptSecretStatus: vi.fn(),
+  getScriptAuthoring: vi.fn(),
+  updateScript: vi.fn(),
   getProjectSecretStatuses: vi.fn(),
   listProjectSecrets: vi.fn(),
   getProjectSecretUsage: vi.fn(),
@@ -87,6 +94,25 @@ describe('ScriptSecretBindingsDialog', () => {
     await act(async () => root.unmount())
     container.remove()
     document.body.querySelectorAll('.script-secret-bindings-overlay').forEach(element => element.remove())
+  })
+
+  it('renders zero-consumer null lists without hiding the secret recovery dialog', async () => {
+    apiMock.getProjectSecretUsage.mockResolvedValueOnce({ project_id: 'project-1', name: 'LOGIN_TOKEN', usage_revision: 'empty-consumers', consumer_count: 0, reference_count: 0, consumers: null, limit: 50, offset: 0, has_more: false })
+    await act(async () => { root.render(<ScriptSecretBindingsDialog scriptId="script-1" script={script} projectId="project-1" scriptName="Checkout Flow" onClose={vi.fn()} onRebound={vi.fn()} />) })
+    await flush()
+    expect(document.body.querySelector('.script-secret-bindings-dialog')!.textContent).toContain('0 consuming scripts')
+    expect(document.body.textContent).not.toContain('Consuming scripts')
+    expect(document.body.querySelector<HTMLSelectElement>('.script-secret-rebind-control select')!.disabled).toBe(false)
+  })
+
+  it('refuses rebind controls without a protected authoring pair', async () => {
+    await act(async () => { root.render(<ScriptSecretBindingsDialog scriptId="script-1" script={script} projectId="project-1" scriptName="Checkout Flow" authoringBaseline={null} onClose={vi.fn()} onRebound={vi.fn()} />) })
+    await flush()
+    expect(document.body.querySelector<HTMLSelectElement>('.script-secret-rebind-control select')!.disabled).toBe(true)
+    const button = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent === 'Rebind and share')!
+    expect(button.disabled).toBe(true)
+    await act(async () => { button.click() })
+    expect(apiMock.rebindScriptSecretReference).not.toHaveBeenCalled()
   })
 
   it('creates a missing value for the exact read-only script reference', async () => {
@@ -215,7 +241,7 @@ describe('ScriptSecretBindingsDialog', () => {
     const rebind = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Rebind and share')
     await act(async () => rebind?.click())
 
-    expect(apiMock.rebindScriptSecretReference).toHaveBeenCalledWith(script, 'LOGIN_TOKEN', 'SHARED_LOGIN')
+    expect(apiMock.rebindScriptSecretReference).toHaveBeenCalledWith(script, 'LOGIN_TOKEN', 'SHARED_LOGIN', authoringFixture(script))
     expect(onRebound).toHaveBeenCalledWith(expect.objectContaining({ actions: expect.any(Array) }), ['/actions/0/headers/Authorization'])
     expect(onClose).toHaveBeenCalled()
   })
@@ -245,6 +271,7 @@ describe('ScriptSecretBindingsDialog', () => {
       value: 'dedicated-value',
       expected_usage: { usage_revision: 'revision-LOGIN_TOKEN_CHECKOUT_FLOW' },
     }])
+    expect(apiMock.rebindScriptSecretReference).toHaveBeenCalledWith(script, 'LOGIN_TOKEN', 'LOGIN_TOKEN_CHECKOUT_FLOW', authoringFixture(script))
     expect(onRebound).toHaveBeenCalledWith(
       expect.objectContaining({ actions: expect.any(Array) }),
       ['/actions/0/headers/Authorization'],
@@ -278,4 +305,57 @@ describe('ScriptSecretBindingsDialog', () => {
     expect(createdName.length).toBeLessThanOrEqual(249)
     expect(createdName).toMatch(/^L_X+$/)
   })
+  it('refuses a late rebind callback after the dialog changes resource ownership', async () => {
+    let complete!: (response: unknown) => void
+    apiMock.rebindScriptSecretReference.mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
+    const onRebound = vi.fn()
+    await act(async () => { root.render(<ScriptSecretBindingsDialog scriptId="script-1" script={script} projectId="project-1" scriptName="Checkout Flow" onClose={vi.fn()} onRebound={onRebound} />) })
+    await flush()
+    const select = document.body.querySelector<HTMLSelectElement>('select')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'SHARED_LOGIN')
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => { Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Rebind and share')!.click() })
+    expect(apiMock.rebindScriptSecretReference).toHaveBeenCalledTimes(1)
+    await act(async () => { root.render(<ScriptSecretBindingsDialog scriptId="script-2" script={{ ...script, id: 'script-2', project_id: 'project-2' }} projectId="project-2" scriptName="Other script" onClose={vi.fn()} onRebound={onRebound} />) })
+    await act(async () => { complete({ script, changed_locations: ['/actions/0/headers/Authorization'], changed_count: 1 }) })
+    expect(onRebound).not.toHaveBeenCalled()
+  })
+
+  it('keeps protected rebind buttons disabled during save reconciliation', async () => {
+    await act(async () => { root.render(<ScriptSecretBindingsDialog scriptId="script-1" script={script} projectId="project-1" scriptName="Checkout Flow" rebindDisabled onClose={vi.fn()} onRebound={vi.fn()} />) })
+    await flush()
+    const select = document.body.querySelector<HTMLSelectElement>('select')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'SHARED_LOGIN')
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Rebind and share')!.disabled).toBe(true)
+    expect(apiMock.rebindScriptSecretReference).not.toHaveBeenCalled()
+  })
+
+  it('recovers the real binding child after conflict and same-placement reload', async () => {
+    const pair = authoringFixture(script)
+    apiMock.getScriptAuthoring.mockResolvedValueOnce(pair)
+    apiMock.updateScript.mockRejectedValueOnce(new ApiError('stale', 412))
+    await act(async () => { root.render(<StoredScriptSecretBindingsDialog stored={savedAuthoringFixture(script)} projectId="project-1" onClose={vi.fn()} onConfigured={vi.fn()} onSaved={vi.fn()} />) })
+    await flush()
+    const select = () => document.body.querySelector<HTMLSelectElement>('.script-secret-bindings-dialog select')!
+    const choose = async () => { await act(async () => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select(), 'SHARED_LOGIN'); select().dispatchEvent(new Event('change', { bubbles: true })) }) }
+    const button = (name: string) => Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === name)!
+    await choose()
+    await act(async () => { button('Rebind and share').click() })
+    await flush()
+    expect(document.body.textContent).toContain('rebound draft is retained')
+    apiMock.getScriptAuthoring.mockResolvedValueOnce(authoringFixture(script, 'script-1', 'project-1', 'c'))
+    await act(async () => { button('Load current baseline').click() })
+    await flush()
+    await act(async () => { button('Reload script and discard draft').click() })
+    await flush()
+    await choose()
+    expect(button('Rebind and share').disabled).toBe(false)
+    expect(apiMock.updateScript).toHaveBeenCalledTimes(1)
+  })
+
 })

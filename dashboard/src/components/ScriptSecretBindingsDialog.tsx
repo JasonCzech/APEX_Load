@@ -1,10 +1,11 @@
 import DialogLayer from './ux/DialogLayer'
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 import { useApi } from '../hooks/useApi'
 import { type ProjectSecretMetadata, type ProjectSecretStatus, type ProjectSecretUsage, type ScriptSecretBinding } from '../types/secrets'
 import { type ScriptDefinition } from '../types/scripts'
+import type { ScriptAuthoringBaseline } from '../types/storedContent'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
@@ -19,6 +20,9 @@ interface Props {
   projectId: string
   applicationId?: string
   scriptName: string
+  reconciliation?: ReactNode
+  rebindDisabled?: boolean
+  authoringBaseline?: ScriptAuthoringBaseline | null
   onClose: () => void
   onConfigured?: () => void | Promise<void>
   onRebound: (
@@ -46,16 +50,27 @@ export default function ScriptSecretBindingsDialog({
   projectId,
   applicationId,
   scriptName,
+  reconciliation,
+  rebindDisabled: rebindDisabledByOwner = false,
+  authoringBaseline,
   onClose,
   onConfigured,
   onRebound,
 }: Props) {
   const api = useApi()
+  const rebindDisabled = rebindDisabledByOwner || !authoringBaseline
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const closeRef = useRef<HTMLButtonElement | null>(null)
   const titleId = useId()
   const descriptionId = useId()
   const requestGenerationRef = useRef(0)
+  const mutationScopeRef = useRef({ scriptId, projectId, applicationId, script })
+  if (mutationScopeRef.current.scriptId !== scriptId || mutationScopeRef.current.projectId !== projectId
+    || mutationScopeRef.current.applicationId !== applicationId || mutationScopeRef.current.script !== script) {
+    mutationScopeRef.current = { scriptId, projectId, applicationId, script }
+  }
+  const mountedRef = useRef(true)
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false } }, [])
   const [bindings, setBindings] = useState<BindingRow[]>([])
   const [vaultSecrets, setVaultSecrets] = useState<ProjectSecretMetadata[]>([])
   const [values, setValues] = useState<Record<string, string>>({})
@@ -65,6 +80,10 @@ export default function ScriptSecretBindingsDialog({
   const [busyName, setBusyName] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  useLayoutEffect(() => {
+    setValues({}); setReuseNames({}); setShareAcknowledged({}); setBusyName(''); setMessage('')
+  }, [scriptId, projectId, applicationId])
+  useLayoutEffect(() => { setBusyName('') }, [script])
   useModalDialog({ dialogRef, initialFocusRef: closeRef, onClose })
 
   const draftSummaries = useMemo(() => scriptSecretReferenceSummaries(script), [script])
@@ -92,7 +111,7 @@ export default function ScriptSecretBindingsDialog({
       if (requestGenerationRef.current !== requestGeneration) return
       const statusByName = new Map<string, ProjectSecretStatus>(projectStatuses.secrets.map(status => [status.name, status]))
       const savedBindingByName = new Map((savedStatus.bindings || []).map(binding => [binding.name, binding]))
-      const usageByName = new Map(usages.map(usage => [usage.name, usage]))
+      const usageByName = new Map(usages.map(usage => [usage.name, { ...usage, consumers: Array.isArray(usage.consumers) ? usage.consumers : [] }]))
       setBindings(draftSummaries.map(summary => {
         const status = statusByName.get(summary.name)
         const savedBinding = savedBindingByName.get(summary.name)
@@ -128,6 +147,8 @@ export default function ScriptSecretBindingsDialog({
   const createExactValue = async (binding: BindingRow) => {
     const value = values[binding.name] || ''
     if (!value || busyName) return
+    const scope = mutationScopeRef.current
+    const current = () => mountedRef.current && mutationScopeRef.current === scope
     if ((binding.usage?.consumer_count || 0) > 1 && !shareAcknowledged[binding.name]) {
       setError('Confirm the shared impact before creating one value for every consuming script.')
       return
@@ -147,37 +168,44 @@ export default function ScriptSecretBindingsDialog({
             : {}),
         } : undefined,
       }])
+      if (!current()) return
       setValues(current => ({ ...current, [binding.name]: '' }))
       setMessage(`${displayNameFor(binding.name)} is configured for the exact reference used by this script. The value cannot be viewed.`)
       await load()
+      if (!current()) return
       await onConfigured?.()
     } catch (cause: unknown) {
-      setError(getErrorMessage(cause, `Unable to create the ${applicationId ? 'application' : 'project'} secret.`))
+      if (current()) setError(getErrorMessage(cause, `Unable to create the ${applicationId ? 'application' : 'project'} secret.`))
     } finally {
-      setBusyName('')
+      if (current()) setBusyName('')
     }
   }
 
   const applyRebind = async (binding: BindingRow, newName: string) => {
-    if (!newName || newName === binding.name || busyName) return
+    if (!newName || newName === binding.name || busyName || rebindDisabled) return
+    const scope = mutationScopeRef.current
+    const current = () => mountedRef.current && mutationScopeRef.current === scope
     setBusyName(binding.name)
     setError('')
     setMessage('')
     try {
-      const response = await api.rebindScriptSecretReference(script, binding.name, newName)
+      const response = await api.rebindScriptSecretReference(script, binding.name, newName, authoringBaseline!)
+      if (!current()) return
       await onRebound(response.script, response.changed_locations)
+      if (!current()) return
       setMessage(`Rebound ${response.changed_count} occurrence${response.changed_count === 1 ? '' : 's'} from ${displayNameFor(binding.name)} to ${newName}.`)
       onClose()
     } catch (cause: unknown) {
-      setError(getErrorMessage(cause, 'Unable to rebind the script secret reference.'))
+      if (current()) setError(getErrorMessage(cause, 'Unable to rebind the script secret reference.'))
     } finally {
-      setBusyName('')
+      if (current()) setBusyName('')
     }
   }
 
-  const allocateDedicatedName = async (binding: BindingRow): Promise<string> => {
+  const allocateDedicatedName = async (binding: BindingRow, current: () => boolean): Promise<string> => {
     const base = dedicatedBaseName(binding.name, scriptName, scriptId)
     for (let ordinal = 1; ordinal <= 32; ordinal += 1) {
+      if (!current()) throw new DOMException('Dialog ownership changed', 'AbortError')
       const candidate = ordinal === 1 ? base : collisionSafeSecretName(base, ordinal)
       const [status, usage] = await Promise.all([
         applicationId ? api.getApplicationSecretStatuses(applicationId, [candidate]) : api.getProjectSecretStatuses(projectId, [candidate]),
@@ -190,17 +218,21 @@ export default function ScriptSecretBindingsDialog({
 
   const createDedicatedAndRebind = async (binding: BindingRow) => {
     const value = values[binding.name] || ''
-    if (!value || busyName) return
+    if (!value || busyName || rebindDisabled) return
+    const scope = mutationScopeRef.current
+    const current = () => mountedRef.current && mutationScopeRef.current === scope
     setBusyName(binding.name)
     setError('')
     setMessage('')
     let createdName = ''
     let valueCreated = false
     try {
-      createdName = await allocateDedicatedName(binding)
+      createdName = await allocateDedicatedName(binding, current)
+      if (!current()) return
       const usage = applicationId
         ? await api.getApplicationSecretUsage(applicationId, createdName, { limit: 1 })
         : await api.getProjectSecretUsage(projectId, createdName, { limit: 1 })
+      if (!current()) return
       const create = applicationId ? api.createApplicationSecrets : api.createProjectSecrets
       await create(applicationId || projectId, [{
         name: createdName,
@@ -208,18 +240,23 @@ export default function ScriptSecretBindingsDialog({
         expected_usage: { usage_revision: usage.usage_revision },
       }])
       valueCreated = true
-      const response = await api.rebindScriptSecretReference(script, binding.name, createdName)
+      if (!current()) return
+      const response = await api.rebindScriptSecretReference(script, binding.name, createdName, authoringBaseline!)
+      if (!current()) return
       await onRebound(response.script, response.changed_locations, { createdSecretName: createdName })
+      if (!current()) return
       setValues(current => ({ ...current, [binding.name]: '' }))
       await onConfigured?.()
+      if (!current()) return
       onClose()
     } catch (cause: unknown) {
+      if (!current()) return
       const base = getErrorMessage(cause, 'Unable to create a dedicated script secret.')
       setError(valueCreated
         ? `${createdName} was created, but the script rebind/save did not complete. The value remains as an unused vault entry. ${base}`
         : base)
     } finally {
-      setBusyName('')
+      if (current()) setBusyName('')
     }
   }
 
@@ -245,6 +282,7 @@ export default function ScriptSecretBindingsDialog({
 
         {message && <p className="settings-notice" role="status">{message}</p>}
         {error && <p className="settings-error-inline" role="alert">{error}</p>}
+        {reconciliation}
         {loading && <p role="status">Loading secret bindings…</p>}
         {!loading && bindings.length === 0 && <p>This script does not reference any secrets.</p>}
 
@@ -324,7 +362,7 @@ export default function ScriptSecretBindingsDialog({
                         <button
                           className="btn btn-secondary btn-sm"
                           type="button"
-                          disabled={!values[binding.name] || Boolean(busyName)}
+                          disabled={!values[binding.name] || Boolean(busyName) || rebindDisabled}
                           onClick={() => { void createDedicatedAndRebind(binding) }}
                         >
                           Create dedicated value
@@ -340,7 +378,7 @@ export default function ScriptSecretBindingsDialog({
                     <select
                       id={`${titleId.replace(/:/g, '')}-reuse-${index}`}
                       value={reuseName}
-                      disabled={Boolean(busyName)}
+                      disabled={Boolean(busyName) || rebindDisabled}
                       onChange={event => setReuseNames(current => ({ ...current, [binding.name]: event.target.value }))}
                     >
                       <option value="">Select an existing configured name</option>
@@ -351,7 +389,7 @@ export default function ScriptSecretBindingsDialog({
                     <button
                       className="btn btn-secondary btn-sm"
                       type="button"
-                      disabled={!reuseName || Boolean(busyName)}
+                      disabled={!reuseName || Boolean(busyName) || rebindDisabled}
                       onClick={() => { void applyRebind(binding, reuseName) }}
                     >
                       Rebind and share

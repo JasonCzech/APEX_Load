@@ -1,0 +1,37 @@
+{
+  "label": "editor-units-search-stability-repeat",
+  "command": [
+    "./node_modules/.bin/vitest",
+    "run",
+    "src/components/ScriptEditor.test.tsx",
+    "src/components/useScriptsAuthoringState.test.tsx",
+    "src/components/ScriptsPage.test.tsx",
+    "src/components/ScriptSecretBindingsDialog.test.tsx",
+    "src/components/StoredScriptSecretBindingsDialog.test.tsx",
+    "src/utils/scriptAuthoringRevision.test.ts",
+    "src/hooks/apiClient.test.ts",
+    "src/hooks/api/useScriptApi.test.tsx",
+    "src/components/ScriptsAuthoringSurface.test.tsx",
+    "src/components/ScriptJsonAuthoringView.test.tsx"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard",
+  "started_utc": "2026-10-05T07:55:52.001839+00:00",
+  "finished_utc": "2026-10-05T07:56:34.189001+00:00",
+  "duration_seconds": 42.187,
+  "exit_code": 0,
+  "profile": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "APEXLOAD_ANALYSIS_MEMORY_LIMIT": "512MiB",
+    "APEXLOAD_ANALYSIS_SPILL_LIMIT": "128MiB",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_AUTH_PORT": "18472"
+  },
+  "log_bytes": 288,
+  "log_sha256": "e0b5e98e55afe0129cc0adf224e47c7131167933f9e170c906ba3c4b79f676cf"
+}

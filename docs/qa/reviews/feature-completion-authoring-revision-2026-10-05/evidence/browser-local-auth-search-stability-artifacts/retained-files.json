@@ -1,0 +1,30 @@
+{
+  "source": "/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/test-results/local-auth",
+  "files": [
+    {
+      "path": ".last-run.json",
+      "bytes": 45,
+      "sha256": "91d1c43004802cd49950d78eb11c8fa7d05da8ffffe219a8b13b2f561bc00903"
+    },
+    {
+      "path": "workflow-script-editor-aut-7060d-r-save-and-canonical-reopen/canonical-goals-reopen.png",
+      "bytes": 328673,
+      "sha256": "f92e80faa8ba1ecba203d91670594166d82d0537175a1679ec56ef72327ae468"
+    },
+    {
+      "path": "workflow-script-editor-lib-d68ba-eview-after-a-real-conflict/library-secret-revision-conflict.png",
+      "bytes": 120599,
+      "sha256": "f876736a25c52719571b0ae80f6302fcc1a5a171f81098cec9c921753048dec1"
+    },
+    {
+      "path": "workflow-script-editor-ope-64e79-ithout-losing-source-fields/script-debug-evidence.png",
+      "bytes": 278744,
+      "sha256": "ca7bb89dd3dd3324a560b766d4be7970a17a199064ee9b88f41d999ce791a115"
+    },
+    {
+      "path": "workflow-script-editor-two-d2399-ision-review-before-reapply/script-revision-conflict.png",
+      "bytes": 93203,
+      "sha256": "fe0fa8671fe07fc090357d4c0787a20204d98ce8d5d21e7594a62bd394e6258f"
+    }
+  ]
+}

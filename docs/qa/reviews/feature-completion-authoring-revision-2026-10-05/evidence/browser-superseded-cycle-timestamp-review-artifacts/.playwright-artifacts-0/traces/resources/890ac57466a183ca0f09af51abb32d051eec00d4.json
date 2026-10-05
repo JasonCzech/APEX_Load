@@ -1,0 +1,1 @@
+{"name":"command-clean-interface-run","duration":"5m","groups":[{"name":"smoke","script_id":"cfddc5e8-5bb5-4a0a-a358-bc064ccca986","vusers":2,"ramp_up":"1s"}]}

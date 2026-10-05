@@ -1,0 +1,5 @@
+--- FAIL: TestScriptContentRevisionImportWriters (0.05s)
+    script_content_revision_test.go:750: github goalsconflict github script import updated_at must advance the durable revision
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/storage	1.604s
+FAIL

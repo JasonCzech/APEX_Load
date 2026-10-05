@@ -1,3 +1,7 @@
+import { scriptSecretReferenceSummaries } from './scriptSecretReferenceModel'
+import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
+import { admitScriptAuthoringBaseline, baselineFromSavedScript, reapplyScriptDraft, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
+import ScriptRevisionConflict from './ScriptRevisionConflict'
 import TooltipButton from './ux/TooltipButton'
 import { AuthorInsertDialog } from './AuthorInsertDialog'
 import { actionBreadcrumb, dedupeAuthorIssues, humanActionType, insertAuthorAction, remapInsertedBreakpoints, changedDocumentLines, type InsertPosition } from './authorExperience'
@@ -644,6 +648,11 @@ interface ActionEditorParameterRequest {
 interface Props {
   scriptId?: string | null
   initialScript?: ScriptData | null
+  initialAuthoring?: ScriptAuthoringBaseline | null
+  initialRetainedDraft?: ScriptData | null
+  initialRetainedNeedsReview?: boolean
+  initialRetainedJsonText?: string
+  initialRetainedCreatedSecretNames?: string[]
   initiallyDirty?: boolean
   initialFocusedActionName?: string | null
   initialFocusedSection?: string | null
@@ -651,7 +660,7 @@ interface Props {
   initialFocusedRuntimeArea?: string | null
   projectId?: string
   folderId?: string | null
-  onSave?: (script: StoredScript, options?: { configureSecrets?: boolean }) => void
+  onSave?: (script: StoredScript, options?: ScriptSaveOptions) => void
   onClose?: () => void
 }
 
@@ -660,7 +669,13 @@ function scriptHasAuthoredActions(script: ScriptData): boolean {
 }
 
 
-export default function ScriptEditor({ scriptId, initialScript, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, onSave, onClose }: Props) {
+export default function ScriptEditor({ scriptId, initialScript, initialAuthoring, initialRetainedDraft, initialRetainedNeedsReview = false, initialRetainedJsonText, initialRetainedCreatedSecretNames, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, onSave, onClose }: Props) {
+  const [authoringBaseline, setAuthoringBaseline] = useState<ScriptAuthoringBaseline | null>(null)
+  const [authoringRevisionState, setAuthoringRevisionState] = useState<'loading' | 'ready' | 'blocked'>('loading')
+  const [authoringRevisionReason, setAuthoringRevisionReason] = useState('')
+  const [reviewedAuthoringBaseline, setReviewedAuthoringBaseline] = useState<ScriptAuthoringBaseline | null>(null)
+  const [authoringReviewLoading, setAuthoringReviewLoading] = useState(false)
+  const authoringLoadGenerationRef = useRef(0)
   const [authorOverview, setAuthorOverview] = useState(false)
   const [insertSeed, setInsertSeed] = useState<Action | null>(null)
   const [insertPhase, setInsertPhase] = useState<ScriptActionPhase>('action')
@@ -672,7 +687,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const api = useApi()
   const [secretBindingsOpen, setSecretBindingsOpen] = useState(false)
   const saveAndConfigureRequestedRef = useRef(false)
-  const pendingCreatedSecretNamesRef = useRef<string[]>([])
+  const pendingCreatedSecretNamesRef = useRef<string[]>([...(initialRetainedCreatedSecretNames || [])])
   const [scriptSecretStatus, setScriptSecretStatus] = useState<ScriptSecretStatus | null>(null)
   const scriptSecretStatusRequestRef = useRef(0)
   const [projectSecretProbe, setProjectSecretProbe] = useState<{
@@ -764,25 +779,27 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     return result.accepted
   }, [publishRuntimeAdmission])
 
+  const validateDraftForAssist = api.validateDraftScript
   const scriptAssistExtensions = useMemo(
     () => buildDslAssistExtensions(
-      script => api.validateDraftScript(script as ScriptDefinition, projectId, folderId ?? undefined),
+      script => validateDraftForAssist(script as ScriptDefinition, projectId, folderId ?? undefined),
       () => replayVariableInspectorRef.current,
       () => replayVariableQualificationRef.current,
     ),
-    [api, projectId, folderId],
+    [validateDraftForAssist, projectId, folderId],
   )
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const { runGuarded } = useNavigationGuardRunner()
   const handleSaveRef = useRef<() => Promise<boolean>>(async () => false)
   const openProjectSecrets = useCallback(() => {
+    if (saveInFlightScopeRef.current || secretBindingsOpen) return
     if (scriptId) {
       setSecretBindingsOpen(true)
       return
     }
     saveAndConfigureRequestedRef.current = true
     void handleSaveRef.current()
-  }, [scriptId])
+  }, [scriptId, secretBindingsOpen])
   const {
     activeAction,
     activeReplaySessionId,
@@ -844,7 +861,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     validating,
     warnings,
     closeReplayScreenshot,
-  } = useScriptEditorState(initialScript)
+  } = useScriptEditorState(initialRetainedDraft || initialScript)
   const runtimeVariablesUnavailable = runtimeEvidenceUnavailable(retainedBrowserReplaySession, retainedReplayReport)
     || unavailableRuntimeSessionId !== null || runtimeAdmission.privacyUnavailable
   // Project before any controller, history or export consumer can use a stale
@@ -904,15 +921,15 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     notFoundCount: number
   } | null>(null)
   const [replayEditableActionsKey, setReplayEditableActionsKey] = useState<string | null>(null)
-  const [initialSaveRequired, setInitialSaveRequired] = useState(initiallyDirty)
+  const [initialSaveRequired, setInitialSaveRequired] = useState(initiallyDirty || Boolean(initialRetainedDraft))
   const initialSaveSourceRef = useRef({ script: initialScript, initiallyDirty })
   useEffect(() => {
     const previous = initialSaveSourceRef.current
     if (previous.script !== initialScript || (!previous.initiallyDirty && initiallyDirty)) {
-      setInitialSaveRequired(initiallyDirty)
+      setInitialSaveRequired(initiallyDirty || Boolean(initialRetainedDraft))
     }
     initialSaveSourceRef.current = { script: initialScript, initiallyDirty }
-  }, [initialScript, initiallyDirty])
+  }, [initialScript, initiallyDirty, initialRetainedDraft])
   const [focusParameterIdx, setFocusParameterIdx] = useState<number | null>(null)
   const [selectedParameterIdx, setSelectedParameterIdx] = useState<number | null>(null)
   // Holds the pending selection while the Parameterize choice dialog (File vs Built-in Function)
@@ -1345,6 +1362,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setScript,
     setSuccess,
   })
+  const currentAuthoringSourceRef = useRef({ script: currentDraftScript, jsonText, jsonDirty, invalid: Boolean(jsonParseMessage) })
+  currentAuthoringSourceRef.current = { script: currentDraftScript, jsonText, jsonDirty, invalid: Boolean(jsonParseMessage) }
   // Serializing the whole editable draft is O(script size); memoize it so the
   // debug workspace does not re-stringify the entire script on every render
   // (replay progress events, keystrokes, breakpoint toggles).
@@ -1417,6 +1436,11 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     pendingParameterDataCellEditsRef.current.clear()
     setPendingParameterDataCellEditCount(0)
   }, [])
+  const ownSavedEditorEchoRef = useRef<{ id: string; projectId?: string; documentKey: string; submitted: ScriptData; baseline: ScriptAuthoringBaseline | null } | null>(null)
+  const initialScriptDocumentKey = useMemo(() => initialScript ? formatScriptJson(initialScript) : null, [initialScript])
+  const editorOwnsSavedEcho = Boolean(ownSavedEditorEchoRef.current && scriptId === ownSavedEditorEchoRef.current.id
+    && (projectId === undefined || projectId === ownSavedEditorEchoRef.current.projectId)
+    && initialScriptDocumentKey === ownSavedEditorEchoRef.current.documentKey)
   const editorResourceScopeRef = useRef({ projectId, folderId, scriptId, initialScript })
   const editorResourceScopeVersionRef = useRef(0)
   if (
@@ -1443,7 +1467,13 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     validationRequestRef.current += 1
     saveRequestRef.current += 1
     saveInFlightScopeRef.current = null
-    clearPendingParameterDataCellEdits()
+    const ownEcho = ownSavedEditorEchoRef.current
+    const canonicalEcho = ownEcho && scriptId === ownEcho.id && (projectId === undefined || projectId === ownEcho.projectId)
+      && initialScriptDocumentKey === ownEcho.documentKey
+    if (!canonicalEcho) {
+      clearPendingParameterDataCellEdits()
+      pendingCreatedSecretNamesRef.current = [...(initialRetainedCreatedSecretNames || [])]
+    }
     replayStartInFlightRef.current = null
     replayStartAttemptRef.current = null
     debugMutationSequenceRef.current += 1
@@ -1469,12 +1499,15 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setReplayScreenshotSelection(null)
     setReplaySeedVariables({})
     setReplaying(false)
+    setSecretBindingsOpen(false)
     setError('')
     setSuccess('')
     setWarnings([])
   }, [
     folderId,
     initialScript,
+    initialScriptDocumentKey,
+    initialRetainedCreatedSecretNames,
     projectId,
     scriptId,
     clearPendingParameterDataCellEdits,
@@ -1787,7 +1820,13 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     const hydrated = hydratedInitialScriptRef.current
     if (hydrated?.script === initialScript && hydrated.scriptId === scriptId) return
     hydratedInitialScriptRef.current = { script: initialScript, scriptId }
-    if (hydrated && hydrated.scriptId === scriptId && formatScriptJson(initialScript) === baselineJsonRef.current) return
+    if (editorOwnsSavedEcho || (hydrated && hydrated.scriptId === scriptId && initialScriptDocumentKey === baselineJsonRef.current)) return
+    if (initialRetainedDraft) {
+      hydrateEditorState(initialRetainedDraft)
+      markBaseline(initialScript)
+      if (initialRetainedJsonText !== undefined) { setJsonText(initialRetainedJsonText); setJsonDirty(true) }
+      return
+    }
     hydrateEditorState(initialScript)
     setAuthorCodeFocus(null)
     setShowFullScriptJson(false)
@@ -1820,7 +1859,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       openCenterTab('parameter-data')
       setOpenDataEditor(focusedDataSourceIndex)
     }
-  }, [baselineJsonRef, hydrateEditorState, initialFocusedActionName, initialFocusedDataSourceName, initialFocusedRuntimeArea, initialFocusedSection, initialScript, openCenterTab, openImportedRuntimeSettings, scriptId, setActiveAction, setAuthorCodeFocus, setOpenDataEditor, setOpenSections, setScriptJsonSidebarTab, setShowFullScriptJson])
+  }, [initialScriptDocumentKey, editorOwnsSavedEcho, initialRetainedDraft, initialRetainedJsonText, setJsonDirty, setJsonText, markBaseline, baselineJsonRef, hydrateEditorState, initialFocusedActionName, initialFocusedDataSourceName, initialFocusedRuntimeArea, initialFocusedSection, initialScript, openCenterTab, openImportedRuntimeSettings, scriptId, setActiveAction, setAuthorCodeFocus, setOpenDataEditor, setOpenSections, setScriptJsonSidebarTab, setShowFullScriptJson])
 
   const selectAuthorPhaseIndex = (phase: ScriptActionPhase, index: number | null) => {
     setActiveAction(phase === 'action' ? index : null)
@@ -1902,31 +1941,89 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setShowFullScriptJson(false)
   }
 
+  const resolveCurrentAuthoringDraftRef = useRef<() => ScriptData>(() => script)
+  resolveCurrentAuthoringDraftRef.current = () => resolveCurrentScript()
   useEffect(() => {
-    if (!scriptId || initialScript) return
-
-    let isCancelled = false
-
-    api.getScript(scriptId)
-      .then((res) => {
-        if (isCancelled) return
-        if (!res.script) {
-          setError('Failed to load script')
+    const generation = ++authoringLoadGenerationRef.current
+    const scope = editorResourceScopeRef.current
+    const current = () => authoringLoadGenerationRef.current === generation && editorResourceScopeRef.current === scope && editorMountedRef.current
+    const abort = new AbortController()
+    setAuthoringBaseline(null)
+    setReviewedAuthoringBaseline(null)
+    setAuthoringRevisionReason('')
+    setAuthoringReviewLoading(false)
+    if (!scriptId) { setAuthoringRevisionState('ready'); return () => abort.abort() }
+    if (!initialAuthoring && initialRetainedNeedsReview) {
+      setAuthoringRevisionState('blocked')
+      setAuthoringRevisionReason('The canonical authoring baseline could not be loaded. Your draft is retained. Load the current baseline and explicitly review it before saving.')
+      return () => abort.abort()
+    }
+    setAuthoringRevisionState('loading')
+    const initialKey = validationDocumentKeyRef.current
+    const load = async () => {
+      try {
+        const baseline = initialAuthoring
+          ? admitScriptAuthoringBaseline(initialAuthoring.projection, initialAuthoring.etag, scriptId, projectId)
+          : await api.getScriptAuthoring(scriptId, projectId, abort.signal)
+        if (!current()) return
+        if (initialRetainedNeedsReview || (!initialAuthoring && (initiallyDirty || validationDocumentKeyRef.current !== initialKey || pendingParameterDataCellEditsRef.current.size > 0))) {
+          setReviewedAuthoringBaseline(baseline)
+          setAuthoringRevisionState('blocked')
+          setAuthoringRevisionReason('The server baseline loaded after this draft was edited. Review and explicitly reapply the draft before saving.')
           return
         }
-        setAuthorCodeFocus(null)
-        setShowFullScriptJson(false)
-        hydrateEditorState(res.script)
-      })
-      .catch((loadError: unknown) => {
-        if (isCancelled) return
-        setError(getErrorMessage(loadError, 'Failed to load script'))
-      })
-
-    return () => {
-      isCancelled = true
+        setAuthoringBaseline(baseline)
+        setAuthoringRevisionState('ready')
+        if (!initialAuthoring) {
+          setAuthorCodeFocus(null)
+          setShowFullScriptJson(false)
+          hydrateEditorState(baseline.projection.script)
+        }
+      } catch (cause) {
+        if (!current()) return
+        setAuthoringRevisionState('blocked')
+        setAuthoringRevisionReason(getErrorMessage(cause, 'Unable to load a protected authoring baseline.'))
+      }
     }
-  }, [api, hydrateEditorState, initialScript, scriptId, setAuthorCodeFocus, setError, setShowFullScriptJson])
+    void load()
+    return () => { abort.abort(); authoringLoadGenerationRef.current += 1 }
+  }, [api, hydrateEditorState, initialAuthoring, initialRetainedNeedsReview, initialScript, initiallyDirty, projectId, scriptId, setAuthorCodeFocus, setShowFullScriptJson])
+
+  const loadCurrentAuthoringBaseline = async () => {
+    if (!scriptId || authoringReviewLoading) return
+    const generation = ++authoringLoadGenerationRef.current
+    const scope = editorResourceScopeRef.current
+    setAuthoringReviewLoading(true)
+    setReviewedAuthoringBaseline(null)
+    try {
+      const baseline = await api.getScriptAuthoring(scriptId, projectId)
+      if (authoringLoadGenerationRef.current !== generation || editorResourceScopeRef.current !== scope || !editorMountedRef.current) return
+      setReviewedAuthoringBaseline(baseline)
+    } catch (cause) {
+      if (authoringLoadGenerationRef.current === generation && editorResourceScopeRef.current === scope && editorMountedRef.current) setAuthoringRevisionReason(getErrorMessage(cause, 'Unable to load the current baseline.'))
+    } finally {
+      if (authoringLoadGenerationRef.current === generation && editorResourceScopeRef.current === scope && editorMountedRef.current) setAuthoringReviewLoading(false)
+    }
+  }
+  const adoptReviewedAuthoringBaseline = (reapply: boolean) => {
+    if (!reviewedAuthoringBaseline || authoringReviewLoading) return
+    try {
+      const adopted = reapply
+        ? reapplyScriptDraft(flushPendingParameterDataCellEdits(resolveCurrentAuthoringDraftRef.current()).script, reviewedAuthoringBaseline, authoringBaseline?.projection.script || initialScript || undefined)
+        : reviewedAuthoringBaseline.projection.script
+      restoreScript(adopted)
+      setJsonText(formatScriptJson(adopted))
+      setJsonDirty(false)
+      clearPendingParameterDataCellEdits()
+      markBaseline(reviewedAuthoringBaseline.projection.script)
+      setAuthoringBaseline(reviewedAuthoringBaseline)
+      setReviewedAuthoringBaseline(null)
+      setAuthoringRevisionReason('')
+      setAuthoringRevisionState('ready')
+      setError('')
+      setSuccess(reapply ? 'Draft reapplied to the reviewed baseline. Review its fields, then save explicitly.' : 'Loaded the current script; the previous draft was discarded.')
+    } catch (cause) { setAuthoringRevisionReason(getErrorMessage(cause, 'Resolve invalid draft JSON before reapplying.')) }
+  }
 
   const [followExecution, setFollowExecution] = useState(true)
   const followExecutionRef = useRef(true)
@@ -2707,8 +2804,10 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     }
   }, [api, currentDraftScript.name, exportGeneratedTextFile, jsonText, script, scriptEditorDirty, scriptId, setError])
 
-  const saveScriptDisabled = saving || validating || !scriptEditorDirty || !currentDraftScript.name || Boolean(jsonParseMessage)
-  const saveScriptTitle = saving
+  const saveScriptDisabled = (Boolean(scriptId) && (authoringRevisionState !== 'ready' || !authoringBaseline)) || saving || secretBindingsOpen || validating || !scriptEditorDirty || !currentDraftScript.name || Boolean(jsonParseMessage)
+  const saveScriptTitle = scriptId && authoringRevisionState !== 'ready'
+    ? 'Load and review a protected authoring baseline before saving'
+    : saving
     ? 'Saving script'
     : validating
       ? 'Wait for validation to finish before saving'
@@ -2729,6 +2828,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   scriptEditorDirtyRef.current = scriptEditorDirty
 
   const handleSave = async (): Promise<boolean> => {
+    if (secretBindingsOpen || (scriptId && (authoringRevisionState !== 'ready' || !authoringBaseline))) return false
     const requestResourceScope = editorResourceScopeRef.current
     if (saveInFlightScopeRef.current === requestResourceScope) return false
     const requestID = ++saveRequestRef.current
@@ -2749,7 +2849,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         script: flushedScript,
         editGeneration: parameterDataEditGenerationAtSave,
       } = flushPendingParameterDataCellEdits(resolvedScript)
-      const currentScript = await preserveMappingBindings(flushedScript, importBaselineScript || initialScript || null)
+      const documentKeyAtSave = formatScriptJson(flushedScript)
+      validationDocumentKeyRef.current = documentKeyAtSave
+      const ownNormalization = ownSavedEditorEchoRef.current
+      const normalizedDraft = ownNormalization?.baseline && authoringBaseline?.projection.content_revision === ownNormalization.baseline.projection.content_revision
+        ? reapplyScriptDraft(flushedScript, authoringBaseline, ownNormalization.submitted) : flushedScript
+      const currentScript = await preserveMappingBindings(normalizedDraft, importBaselineScript || initialScript || null)
       if (!requestIsCurrent()) return false
       // A new Java Vuser script with executable runner actions cannot be created
       // through POST /scripts — the backend answers 409 and requires governed
@@ -2767,7 +2872,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           idempotency_key: authoringSessionIdempotencyKey('script-editor-java-vuser', currentScript),
         })
         if (!requestIsCurrent()) return true
-        if (parameterDataEditGenerationRef.current === parameterDataEditGenerationAtSave) {
+        if (validationDocumentKeyRef.current === documentKeyAtSave && parameterDataEditGenerationRef.current === parameterDataEditGenerationAtSave) {
           commitJsonDraft(currentScript)
         }
         // Deliberately not markBaseline/setInitialSaveRequired(false): no library
@@ -2779,35 +2884,57 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       if (collectAuthoringIssues(currentScript).some(issue => issue.severity === 'error')) { setShowAuthorProblems(true); return false }
       let savedScript: StoredScript
       if (scriptId) {
-        savedScript = await api.updateScript(scriptId, currentScript)
+        savedScript = await api.updateScript(scriptId, currentScript, authoringBaseline!)
       } else {
         savedScript = await api.createScript(currentScript, projectId, folderId)
       }
       if (!requestIsCurrent()) return true
-      const savedDefinition = savedScript.script || currentScript
-      if (parameterDataEditGenerationRef.current === parameterDataEditGenerationAtSave) {
+      const savedBaseline = scriptId || savedScript.authoring_projection ? baselineFromSavedScript(savedScript, projectId) : null
+      if (savedBaseline) setAuthoringBaseline(savedBaseline)
+      const savedDefinition = savedBaseline?.projection.script || savedScript.script || currentScript
+      const adoptedSavedDocument = validationDocumentKeyRef.current === documentKeyAtSave && parameterDataEditGenerationRef.current === parameterDataEditGenerationAtSave
+      if (adoptedSavedDocument) {
         // Adopt the server's canonical document without treating normalization as
         // an edit or resetting the current selection/history on the parent echo.
         restoreScript(savedDefinition)
         setJsonText(formatScriptJson(savedDefinition))
         setJsonDirty(false)
+        validationDocumentKeyRef.current = formatScriptJson(savedDefinition)
       }
+      const expectedCurrentDocumentKey = adoptedSavedDocument ? formatScriptJson(savedDefinition) : documentKeyAtSave
+      ownSavedEditorEchoRef.current = { id: savedScript.id, projectId: savedScript.project_id || savedDefinition.project_id || projectId, documentKey: formatScriptJson(savedDefinition), submitted: flushedScript, baseline: savedBaseline }
       markBaseline(savedDefinition)
       setInitialSaveRequired(false)
-      pendingCreatedSecretNamesRef.current = []
+      const persistedSecretNames = new Set(scriptSecretReferenceSummaries(savedDefinition).map(binding => binding.name))
+      pendingCreatedSecretNamesRef.current = pendingCreatedSecretNamesRef.current.filter(name => !persistedSecretNames.has(name))
       setSuccess('Script saved successfully!')
       if (scriptId) {
         await refreshScriptSecretStatus()
+        if (!requestIsCurrent()) return true
         setProjectSecretProbeRetryGeneration(generation => generation + 1)
       }
       const configureSecrets = saveAndConfigureRequestedRef.current
       saveAndConfigureRequestedRef.current = false
-      if (configureSecrets) onSave?.(savedScript, { configureSecrets: true })
+      if (!requestIsCurrent()) return true
+      const hasLaterDraft = validationDocumentKeyRef.current !== expectedCurrentDocumentKey || parameterDataEditGenerationRef.current !== parameterDataEditGenerationAtSave
+      const source = currentAuthoringSourceRef.current
+      const lateDraft = hasLaterDraft ? applyPendingParameterDataCellEdits(source.script, Array.from(pendingParameterDataCellEditsRef.current.values())) : !savedBaseline ? currentScript : undefined
+      const retainedDraft = lateDraft && savedBaseline ? reapplyScriptDraft(lateDraft, savedBaseline, flushedScript) : lateDraft
+      const retainedJsonText = hasLaterDraft && source.jsonDirty ? source.jsonText : undefined
+      const retainedCreatedSecretNames = pendingCreatedSecretNamesRef.current.length ? [...pendingCreatedSecretNamesRef.current] : undefined
+      if (configureSecrets || retainedDraft || retainedCreatedSecretNames) onSave?.(savedScript, { ...(configureSecrets ? { configureSecrets: true } : {}), ...(retainedDraft ? { retainedDraft } : {}), ...(retainedJsonText !== undefined ? { retainedJsonText } : {}), ...(retainedCreatedSecretNames ? { retainedCreatedSecretNames } : {}) })
       else onSave?.(savedScript)
       return true
     } catch (e: unknown) {
       if (!requestIsCurrent()) return false
       saveAndConfigureRequestedRef.current = false
+      if (scriptId && scriptSaveNeedsReconciliation(e)) {
+        setAuthoringRevisionState('blocked')
+        setReviewedAuthoringBaseline(null)
+        setAuthoringRevisionReason(e instanceof ApiError && e.status === 412
+          ? 'The authored script or its placement changed since this editor loaded. Your draft was not saved. Load the current baseline, inspect the diff, and explicitly reapply or reload.'
+          : 'The save outcome or revision protection could not be verified. Your draft is retained. Load the current baseline before reviewing and reapplying it; do not retry automatically.')
+      }
       const baseMessage = getErrorMessage(e, 'Failed to save script')
       const createdNames = pendingCreatedSecretNamesRef.current
       setError(createdNames.length > 0
@@ -6193,7 +6320,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             </span>
           </div>
           <div className="settings-inline-actions">
-            <button className="btn btn-secondary btn-sm" type="button" onClick={openProjectSecrets}>{scriptId ? 'Configure secrets' : 'Save & configure secrets'}</button>
+            <button className="btn btn-secondary btn-sm" type="button" disabled={saving || secretBindingsOpen} onClick={openProjectSecrets}>{scriptId ? 'Configure secrets' : 'Save & configure secrets'}</button>
             {replaySecretStatusState === 'unavailable' && (
               <button className="btn btn-secondary btn-sm" type="button" onClick={() => setProjectSecretProbeRetryGeneration(generation => generation + 1)}>
                 Retry credential check
@@ -6202,11 +6329,20 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           </div>
         </div>
       )}
+      {scriptId && authoringRevisionState === 'blocked' && <ScriptRevisionConflict
+        reason={authoringRevisionReason} current={reviewedAuthoringBaseline}
+        draft={currentDraftScript} loading={authoringReviewLoading}
+        onLoad={() => { void loadCurrentAuthoringBaseline() }}
+        onReload={() => adoptReviewedAuthoringBaseline(false)} onReapply={() => adoptReviewedAuthoringBaseline(true)}
+      />}
       {secretBindingsOpen && scriptId && projectId && (
         <ScriptSecretBindingsDialog
           scriptId={scriptId}
           script={currentDraftScript}
           projectId={projectId}
+          authoringBaseline={authoringBaseline}
+          applicationId={authoringBaseline?.projection.library_placement.application_id || undefined}
+          rebindDisabled={authoringRevisionState !== 'ready'}
           scriptName={currentDraftScript.name || 'Script'}
           onClose={() => setSecretBindingsOpen(false)}
           onConfigured={async () => {
@@ -6221,6 +6357,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                 outcome.createdSecretName,
               ]))
             }
+            setSecretBindingsOpen(false)
             setSuccess(`Updated ${changedLocations.length} secret reference location${changedLocations.length === 1 ? '' : 's'} in the draft. Save the script to make the rebind authoritative.`)
           }}
         />

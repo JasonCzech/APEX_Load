@@ -1,0 +1,9 @@
+
+> apexload-dashboard@0.1.0 typecheck
+> tsc --noEmit --pretty false -p tsconfig.json && tsc --noEmit --pretty false -p tsconfig.node.json
+
+src/components/ScriptsPage.test.tsx(345,53): error TS2550: Property 'at' does not exist on type 'MockResult<any>[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.
+src/components/ScriptsPage.test.tsx(346,119): error TS2339: Property 'script' does not exist on type '{ id: string; name: string; project_id: string; protocol: string; version: string; created_at: string; scenario_count: number; associated_releases: never[]; scenario_run_releases: never[]; last_run_at: string; }'.
+src/hooks/api/useScriptApi.test.tsx(63,69): error TS2550: Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.
+src/utils/scriptAuthoringRevision.test.ts(46,90): error TS2561: Object literal may only specify known properties, but 'value' does not exist in type 'ScriptParameterDefinition'. Did you mean to write 'values'?
+src/utils/scriptAuthoringRevision.ts(1,15): error TS2305: Module '"../types/generated/openapi"' has no exported member 'JsonResponse'.

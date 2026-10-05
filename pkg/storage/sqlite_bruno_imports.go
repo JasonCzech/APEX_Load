@@ -54,6 +54,17 @@ func (s *SQLiteStore) CommitBrunoImport(commit *BrunoImportCommit) (*BrunoImport
 	if err := validateScriptObjectRepositoryProjectsTx(tx, script.ProjectID, script); err != nil {
 		return nil, err
 	}
+	if commit.ExpectedScriptAuthoring != nil {
+		if err := validateScriptAuthoringPrecondition(*commit.ExpectedScriptAuthoring); err != nil {
+			return nil, err
+		}
+		if normalizeProjectID(commit.ExpectedScriptAuthoring.ProjectID) != script.ProjectID {
+			return nil, ErrScriptAuthoringNotFound
+		}
+		if err := claimScriptAuthoringTx(tx, script.ID, *commit.ExpectedScriptAuthoring); err != nil {
+			return nil, err
+		}
+	}
 	rawArtifact, err := saveBrunoArtifactTx(tx, &commit.RawArtifact)
 	if err != nil {
 		return nil, err
@@ -152,13 +163,18 @@ func (s *SQLiteStore) CommitBrunoImport(commit *BrunoImportCommit) (*BrunoImport
 		encodedRevision.canonicalScript, nullableString(commit.Revision.CreatedBy), commit.Revision.CreatedAt); err != nil {
 		return nil, err
 	}
+	snapshot, err := readScriptAuthoringSnapshotTx(tx, script.ID)
+	if err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return &BrunoImportCommitResult{
-		Script:   cloneBrunoScript(script),
-		Revision: cloneBrunoRevision(&commit.Revision),
-		Created:  created,
+		AuthoringSnapshot: snapshot,
+		Script:            cloneBrunoScript(script),
+		Revision:          cloneBrunoRevision(&commit.Revision),
+		Created:           created,
 	}, nil
 }
 
@@ -354,35 +370,66 @@ func (s *SQLiteStore) ListImportSourceRevisions(scriptID string, projectID strin
 	return revisions, rows.Err()
 }
 
-func (s *SQLiteStore) ActivateImportSourceRevision(scriptID string, projectID string, revisionID string, expectedActiveRevisionID string) (*ImportSourceRevision, error) {
+func (s *SQLiteStore) ActivateImportSourceRevision(scriptID, projectID, revisionID, expectedActiveRevisionID string) (*ImportSourceRevision, error) {
+	revision, _, err := s.activateImportSourceRevision(scriptID, projectID, revisionID, expectedActiveRevisionID, nil)
+	return revision, err
+}
+
+func (s *SQLiteStore) ActivateImportSourceRevisionIfScriptCurrent(scriptID, projectID, revisionID, expectedActiveRevisionID string, expected ScriptAuthoringPrecondition) (*ImportSourceRevision, *ScriptAuthoringSnapshot, error) {
+	if err := validateScriptAuthoringPrecondition(expected); err != nil {
+		return nil, nil, err
+	}
+	return s.activateImportSourceRevision(scriptID, projectID, revisionID, expectedActiveRevisionID, &expected)
+}
+
+func (s *SQLiteStore) activateImportSourceRevision(scriptID string, projectID string, revisionID string, expectedActiveRevisionID string, expected *ScriptAuthoringPrecondition) (*ImportSourceRevision, *ScriptAuthoringSnapshot, error) {
 	scriptID = strings.TrimSpace(scriptID)
 	projectID = normalizeProjectID(strings.TrimSpace(projectID))
 	revisionID = strings.TrimSpace(revisionID)
 	expectedActiveRevisionID = strings.TrimSpace(expectedActiveRevisionID)
 	tx, err := s.db.Begin()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer tx.Rollback()
+	// Serialize source selection with every other script writer before reading
+	// the source-active revision. Source-only CAS is retained independently.
+	if err := lockRequiredPlacementParent(tx, `UPDATE projects SET updated_at=updated_at WHERE id=?`, projectID, "script", "project"); err != nil {
+		return nil, nil, err
+	}
+	if _, err := tx.Exec(`UPDATE scripts SET id=id WHERE id=? AND project_id=?`, scriptID, projectID); err != nil {
+		return nil, nil, err
+	}
+	if expected != nil {
+		if err := validateScriptAuthoringPrecondition(*expected); err != nil {
+			return nil, nil, err
+		}
+		if normalizeProjectID(expected.ProjectID) != projectID {
+			return nil, nil, ErrScriptAuthoringNotFound
+		}
+		if err := claimScriptAuthoringTx(tx, scriptID, *expected); err != nil {
+			return nil, nil, err
+		}
+	}
 	var currentActive string
 	err = tx.QueryRow(`SELECT id FROM bruno_source_revisions WHERE script_id = ? AND project_id = ? AND active_flag = 1`,
 		scriptID, projectID).Scan(&currentActive)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return nil, err
+		return nil, nil, err
 	}
 	if expectedActiveRevisionID != "" && (errors.Is(err, sql.ErrNoRows) || currentActive != expectedActiveRevisionID) {
-		return nil, ErrBrunoImportConcurrentChange
+		return nil, nil, ErrBrunoImportConcurrentChange
 	}
 	revision, err := scanBrunoRevision(tx.QueryRow(brunoRevisionSelect+` WHERE id = ? AND script_id = ? AND project_id = ?`,
 		revisionID, scriptID, projectID))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrBrunoRevisionNotFound
+		return nil, nil, ErrBrunoRevisionNotFound
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := ensureObjectActiveTx(tx, "script", scriptID); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var currentScript dsl.Script
 	var metadataJSON, configJSON, currentUpdatedRaw string
@@ -390,18 +437,18 @@ func (s *SQLiteStore) ActivateImportSourceRevision(scriptID string, projectID st
 		FROM scripts WHERE id = ? AND project_id = ?`, scriptID, projectID).
 		Scan(&currentScript.ID, &currentScript.Name, &currentScript.Protocol, &currentScript.Version,
 			&currentScript.ProjectID, &metadataJSON, &configJSON, &currentUpdatedRaw); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if strings.TrimSpace(metadataJSON) != "" && strings.TrimSpace(metadataJSON) != "null" {
 		if err := json.Unmarshal([]byte(metadataJSON), &currentScript.Metadata); err != nil {
-			return nil, fmt.Errorf("decode current Bruno script metadata: %w", err)
+			return nil, nil, fmt.Errorf("decode current Bruno script metadata: %w", err)
 		}
 	}
 	if err := json.Unmarshal([]byte(configJSON), &currentScript.Config); err != nil {
-		return nil, fmt.Errorf("decode current Bruno script config: %w", err)
+		return nil, nil, fmt.Errorf("decode current Bruno script config: %w", err)
 	}
 	if revision.CanonicalScript == nil {
-		return nil, errors.New("Bruno revision has no canonical script snapshot")
+		return nil, nil, errors.New("Bruno revision has no canonical script snapshot")
 	}
 	// Preserve APEX pacing, logging, observability, policy, secret-binding names,
 	// and the user's selected bruno_run roots. Only the immutable source binding
@@ -414,35 +461,39 @@ func (s *SQLiteStore) ActivateImportSourceRevision(scriptID string, projectID st
 	synchronizeBrunoRuntimeArtifactMarker(&currentScript, revision.CanonicalScript)
 	encodedMetadata, err := json.Marshal(currentScript.Metadata)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	encodedConfig, err := json.Marshal(currentScript.Config)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	now := time.Now().UTC()
 	result, err := tx.Exec(`UPDATE scripts SET metadata_json = ?, config = ?, updated_at = ? WHERE id = ? AND project_id = ? AND CAST(updated_at AS TEXT) = ?`,
 		string(encodedMetadata), string(encodedConfig), now, scriptID, projectID, currentUpdatedRaw)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if affected, err := result.RowsAffected(); err != nil || affected != 1 {
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return nil, ErrBrunoImportConcurrentChange
+		return nil, nil, ErrBrunoImportConcurrentChange
 	}
 	if _, err := tx.Exec(`UPDATE bruno_source_revisions SET active_flag = 0 WHERE script_id = ? AND project_id = ?`, scriptID, projectID); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if _, err := tx.Exec(`UPDATE bruno_source_revisions SET active_flag = 1 WHERE id = ? AND script_id = ? AND project_id = ?`, revisionID, scriptID, projectID); err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	snapshot, err := readScriptAuthoringSnapshotTx(tx, scriptID)
+	if err != nil {
+		return nil, nil, err
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	revision.Active = true
-	return revision, nil
+	return revision, snapshot, nil
 }
 
 func synchronizeBrunoRuntimeArtifactMarker(current, target *dsl.Script) {

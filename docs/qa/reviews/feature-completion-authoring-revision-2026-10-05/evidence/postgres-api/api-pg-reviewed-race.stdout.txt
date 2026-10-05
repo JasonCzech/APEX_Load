@@ -1,0 +1,22 @@
+=== RUN   TestPostgresScriptAuthoringAPICrossReplicaRevisionAndReopen
+    script_authoring_postgres_integration_test.go:87: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=script_authoring_api_1791182151402515000
+2026/10/05 02:35:52 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:35:53 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:35:53 INFO http request method=POST path=/api/v1/scripts status=201 duration_ms=69 remote=192.0.2.1:1234
+2026/10/05 02:35:53 INFO http request method=GET path=/api/v1/scripts/pg-authoring status=200 duration_ms=23 remote=192.0.2.1:1234
+2026/10/05 02:35:53 INFO http request method=GET path=/api/v1/scripts/LOC-SCR-0001-v1 status=200 duration_ms=36 remote=192.0.2.1:1234
+2026/10/05 02:35:53 INFO http request method=PUT path=/api/v1/scripts/LOC-SCR-0001-v1 status=200 duration_ms=100 remote=192.0.2.1:1234
+2026/10/05 02:35:53 INFO http request method=GET path=/api/v1/scripts/pg-authoring status=200 duration_ms=23 remote=192.0.2.1:1234
+2026/10/05 02:35:53 INFO http request method=GET path=/api/v1/scripts/pg-authoring status=200 duration_ms=24 remote=192.0.2.1:1234
+2026/10/05 02:35:53 INFO http request method=PUT path=/api/v1/scripts/pg-authoring status=412 duration_ms=35 remote=192.0.2.1:1234
+2026/10/05 02:35:53 INFO http request method=GET path=/api/v1/scripts/pg-authoring status=200 duration_ms=30 remote=192.0.2.1:1234
+2026/10/05 02:35:53 INFO http request method=GET path=/api/v1/scripts/LOC-SCR-0002-v1 status=200 duration_ms=35 remote=192.0.2.1:1234
+2026/10/05 02:35:53 INFO http request method=GET path=/api/v1/scripts/loc-scr-0002-v1 status=200 duration_ms=26 remote=192.0.2.1:1234
+2026/10/05 02:35:53 INFO http request method=GET path=/api/v1/scripts/LOC-SCR-0002-V1 status=200 duration_ms=27 remote=192.0.2.1:1234
+2026/10/05 02:35:54 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:35:54 INFO http request method=GET path=/api/v1/scripts/LOC-SCR-0001-v2 status=200 duration_ms=40 remote=192.0.2.1:1234
+2026/10/05 02:35:54 INFO http request method=GET path=/api/v1/scripts/LOC-SCR-0001-v1 status=404 duration_ms=5 remote=192.0.2.1:1234
+2026/10/05 02:35:54 INFO http request method=GET path=/api/v1/scripts/LOC-SCR-0002-v1 status=200 duration_ms=30 remote=192.0.2.1:1234
+--- PASS: TestPostgresScriptAuthoringAPICrossReplicaRevisionAndReopen (3.26s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/api	6.352s

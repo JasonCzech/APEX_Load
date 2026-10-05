@@ -1,0 +1,28 @@
+{
+  "label": "build-null-consumers-repeat",
+  "command": [
+    "npm",
+    "run",
+    "build"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard",
+  "started_utc": "2026-10-05T07:43:56.965209+00:00",
+  "finished_utc": "2026-10-05T07:44:27.137050+00:00",
+  "duration_seconds": 30.172,
+  "exit_code": 0,
+  "profile": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "APEXLOAD_ANALYSIS_MEMORY_LIMIT": "512MiB",
+    "APEXLOAD_ANALYSIS_SPILL_LIMIT": "128MiB",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_AUTH_PORT": "18472"
+  },
+  "log_bytes": 25926,
+  "log_sha256": "c3feca7283f2cc7a239918ba5e48cb66f563eba20cacb69b1ee25cc14de0a7b0"
+}

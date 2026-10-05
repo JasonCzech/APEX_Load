@@ -279,6 +279,14 @@ func (tr *TestRunner) revalidatePublishedScriptSnapshot(snapshot *StoredScript) 
 	if store == nil {
 		return nil, false
 	}
+	if snapshot.ContentRevision != "" {
+		if authoringStore, supported := tr.scriptStore.(storage.ScriptAuthoringStore); supported {
+			current, err := authoringStore.GetScriptAuthoringSnapshot(snapshot.ID)
+			unchanged := err == nil && current != nil && current.Script != nil && snapshot.Script != nil && current.ContentRevision == snapshot.ContentRevision && current.Script.ProjectID == snapshot.Script.ProjectID && current.Script.CreatedAt.Equal(snapshot.Script.CreatedAt)
+			return snapshot, unchanged
+		}
+		return nil, false
+	}
 	current, err := store.GetScript(snapshot.ID)
 	if err != nil || current == nil || snapshot.Script == nil || !current.UpdatedAt.Equal(snapshot.Script.UpdatedAt) {
 		return nil, false

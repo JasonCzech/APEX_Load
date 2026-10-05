@@ -1,0 +1,270 @@
+{
+  "captured_utc": "2026-10-05T10:01:47.713542+00:00",
+  "reviewer": "root final composition review; independent backend/frontend reviews retained separately",
+  "result": "no remaining actionable findings for durable ordinary script revision and paired conflict-recovery slice",
+  "scope_limit": "AUTH-1\u2013AUTH-3 remain partial: shared session/scenario ownership, alternate-writer parity, idempotency and lifecycle retirement are open",
+  "receipts": [
+    {
+      "path": "authoring-composed-full-go-own-keys-final.json",
+      "sha256": "f822854c4a3b71b0d7df0160fbbf4526a8ff1fb09ee0775af3c4fa65acdaf20c"
+    },
+    {
+      "path": "authoring-composed-full-go-final-source-reconciliation.json",
+      "sha256": "7788fce7decba0557f9b0f715ad95c56c88973605a787191019670335f379535"
+    },
+    {
+      "path": "frontend-full-cycle-own-keys-final.json",
+      "sha256": "78f4cf59ed46d10bc32ab72a0662052a58422b11b87460cd83c7cd87427cd09f"
+    },
+    {
+      "path": "frontend-own-keys-cycle-complete-freeze-receipt.json",
+      "sha256": "1bb4c5ab1d7d772e6a48006541c73bb4034bb7d494993ffbfe6f89cab6cd95c1"
+    },
+    {
+      "path": "authoring-final-docs-check.json",
+      "sha256": "21c8d03d52c7cce1b033a34b459176abadf09acd25ffe774a16d47ed1ab400a2"
+    }
+  ],
+  "application_files": [
+    {
+      "path": "dashboard/e2e/workflow-authoring.spec.ts",
+      "sha256": "ace60cfae422810cc65a579d4a3b3150b7544feacbee4267d2f03b5950da0733"
+    },
+    {
+      "path": "dashboard/e2e/workflow-script-editor.spec.ts",
+      "sha256": "63dcaf46fe00c22a2f56f124f1c14bd75f3e61a2590a9c4d15440a1f8bad62c5"
+    },
+    {
+      "path": "dashboard/src/components/ScriptEditor.test.tsx",
+      "sha256": "a2a10c322945cfd6a5ab2c500021463c6e206c32614cceeaa9c612ff8eade1c6"
+    },
+    {
+      "path": "dashboard/src/components/ScriptEditor.tsx",
+      "sha256": "1daffc3e1e33f23909ce9b599963d04d07291bd9aba02d89871d8da836af980b"
+    },
+    {
+      "path": "dashboard/src/components/ScriptJsonAuthoringView.test.tsx",
+      "sha256": "62dc5af20dad0bc437ad4f0b1469f7a31bd8dd426d798340ecf68bf9aafcf959"
+    },
+    {
+      "path": "dashboard/src/components/ScriptJsonAuthoringView.tsx",
+      "sha256": "ea54c1441babb42a5c37aa9a41fd944b94c6ff1fcce6297d2ab1f7aec8542fa0"
+    },
+    {
+      "path": "dashboard/src/components/ScriptRevisionConflict.css",
+      "sha256": "3a98cd2312a5865c136990353498f0fbf28eaa21ad78103abc872e3bf6bc3cec"
+    },
+    {
+      "path": "dashboard/src/components/ScriptRevisionConflict.tsx",
+      "sha256": "621c610c73408bbbc3e0b652eb3a4fdeae5be1420d328dc2e365211f030169d5"
+    },
+    {
+      "path": "dashboard/src/components/ScriptSecretBindingsDialog.test.tsx",
+      "sha256": "67cc46d77d2d58fb3a920ac646159841a4551cd58815ce8ce5a17909b9f9cb29"
+    },
+    {
+      "path": "dashboard/src/components/ScriptSecretBindingsDialog.tsx",
+      "sha256": "25f0880edd4444f2ac517978b8950810dcc33b8af74a90b0a802ea25118cfed7"
+    },
+    {
+      "path": "dashboard/src/components/ScriptsAuthoringShell.tsx",
+      "sha256": "ef6f1f3872bd2ca3a1cbb2090f6928206c8ac0bcf5e6bf2c015a6ecaee375f8d"
+    },
+    {
+      "path": "dashboard/src/components/ScriptsAuthoringSurface.tsx",
+      "sha256": "dbae8e4014ce9e8801bd76252333d89c192c2baaa56f9ab9aa6df4f3c1e6c263"
+    },
+    {
+      "path": "dashboard/src/components/ScriptsPage.test.tsx",
+      "sha256": "1b38cdb5e05369fb9b0c55910e7cf2731fdb41367f4975d421be782b6cd45ae1"
+    },
+    {
+      "path": "dashboard/src/components/ScriptsPage.tsx",
+      "sha256": "0356bade773a6db960fb05620263c24f4cc396fa4c56f1715a20cad47a43f8aa"
+    },
+    {
+      "path": "dashboard/src/components/StoredScriptSecretBindingsDialog.test.tsx",
+      "sha256": "87f70a09d58dab9025f60b014b960f2b3f08bed67fe86b9b2673a576982a0ceb"
+    },
+    {
+      "path": "dashboard/src/components/StoredScriptSecretBindingsDialog.tsx",
+      "sha256": "5203b8773557f3883190cefabeec58773757ca7e8e28c7ae0a1c3d4dd60120eb"
+    },
+    {
+      "path": "dashboard/src/components/useScriptsAuthoringState.test.tsx",
+      "sha256": "2a8252754b114b764b0d93e71efcada3588851379f76994ad811d909c6b69a47"
+    },
+    {
+      "path": "dashboard/src/components/useScriptsAuthoringState.ts",
+      "sha256": "1f453e881ba2590463c3a00d0898df69af31bce894bf069b50c790a37a8170c8"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useScriptApi.test.tsx",
+      "sha256": "de9dd4e51316b4c4ccf1bcb70100624b274091b12b48638545b10072cc71afea"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useScriptApi.ts",
+      "sha256": "71371c39679f01c447560a611715dfac8174142a9f904ba4bf4c353fbe31a0e1"
+    },
+    {
+      "path": "dashboard/src/hooks/apiClient.test.ts",
+      "sha256": "dd47c4dc85b1137c11f2e0963b5b4821dae043a8137e316f4c46f5e219288ffc"
+    },
+    {
+      "path": "dashboard/src/hooks/apiClient.ts",
+      "sha256": "c85b1704abfc4ba8787eb5f4d4ed4614b3441b4e8f55a2007ec5cd8dbaeab380"
+    },
+    {
+      "path": "dashboard/src/test/scriptAuthoringFixtures.ts",
+      "sha256": "348cd9fa00ca1315555dd3323372f4fc418c65eb9583a4ad40e760895710dc13"
+    },
+    {
+      "path": "dashboard/src/types/generated/openapi.ts",
+      "sha256": "a339fd56d64c6bcc09c827dbc5e7ed5215d487b230c18fac63ab49fb31284e05"
+    },
+    {
+      "path": "dashboard/src/types/storedContent.ts",
+      "sha256": "7e7d6e57e34f4f94ea3903b64682b68e70e967903d245d47ae92d85e26639a64"
+    },
+    {
+      "path": "dashboard/src/utils/scriptAuthoringRevision.test.ts",
+      "sha256": "13ae2d77fcc1fd05ada89ed588dbbaca3e1e07a54f7fc82b15db67f98c28e788"
+    },
+    {
+      "path": "dashboard/src/utils/scriptAuthoringRevision.ts",
+      "sha256": "34d1711c75c92253f55b34f76cab4bdcda9b67a888e80d31e6f3e59f243729f1"
+    },
+    {
+      "path": "pkg/api/apidocs/swagger.yaml",
+      "sha256": "1cfe6a1172ccc604f6d2dd52a2074d03d4251a88100507a64b40a0e8393137e0"
+    },
+    {
+      "path": "pkg/api/handlers.go",
+      "sha256": "4af62cc04e9801360081548b5c0a4eea138b388c1c961a3d2b57d566b7446ab8"
+    },
+    {
+      "path": "pkg/api/handlers_resource_audit_test.go",
+      "sha256": "d9165435ff664b7ab19bc576ab2f737f3fd0e1cad426e1e996339755cef1dab4"
+    },
+    {
+      "path": "pkg/api/handlers_scripts.go",
+      "sha256": "6bcf63898ccdcb413176602866ab1f23e763c53b15095a7441e1a3555f635286"
+    },
+    {
+      "path": "pkg/api/import_publication_visibility.go",
+      "sha256": "61c997557eb1f8690efd7e85849717d40ddab5ddbc96f614d828a3c7579548d8"
+    },
+    {
+      "path": "pkg/api/middleware.go",
+      "sha256": "bcb2569794c8dffdf0f6c43b0fa586159015dc184cc8c6b062573681a0a11391"
+    },
+    {
+      "path": "pkg/api/object_activity.go",
+      "sha256": "8bd945e755e6310851fd64c18835aef219ab9d6766b957cef2892eb17bcb749c"
+    },
+    {
+      "path": "pkg/api/openapi_contract_infer.go",
+      "sha256": "acdd2e50c3c73a435e382793ca5b000ef6b643d28e6f1652398fec6858417b55"
+    },
+    {
+      "path": "pkg/api/openapi_script_authoring.go",
+      "sha256": "25263328aec0d1c1dfff0ad69d0628c877157d0c9d586e6709179febe1616555"
+    },
+    {
+      "path": "pkg/api/openapi_script_authoring_test.go",
+      "sha256": "21a383dbd9e4e3d470f2b5eb968b85641ee4ad18dba8cb1fbf265d32096c2f26"
+    },
+    {
+      "path": "pkg/api/runner.go",
+      "sha256": "6fc33f985f4f58a8c2c9a7814c2ea42cb8246778a0930ec4b9fc1805e6fd0e39"
+    },
+    {
+      "path": "pkg/api/script.go",
+      "sha256": "60d3d7bca2a9e5de1a5eb4194ac1786e8c70e7950d495c9719439379a6f669a3"
+    },
+    {
+      "path": "pkg/api/script_authoring_activity_test.go",
+      "sha256": "ee992cc835426e4e9efdff26d30a54e52cde3267bd6fdd564821f570d55e9aa5"
+    },
+    {
+      "path": "pkg/api/script_authoring_handlers_test.go",
+      "sha256": "07b348c52034146e0ce02c4f5c79517c1fd72e714162b53e845c4a2b4cf3e28a"
+    },
+    {
+      "path": "pkg/api/script_authoring_postgres_integration_test.go",
+      "sha256": "60811b9ec58394c81fa0d3039571222bf8236fafb89af8169958cce9edd18334"
+    },
+    {
+      "path": "pkg/api/script_authoring_projection.go",
+      "sha256": "53be157bf7908cb1c8b1366540fddf0618cd8626e710340e35973496b4f5f733"
+    },
+    {
+      "path": "pkg/api/script_authoring_projection_test.go",
+      "sha256": "89eac3f2c5ab0593594ec479b8a3b7128d13279026d7f008e6c57ef041233ef5"
+    },
+    {
+      "path": "pkg/api/script_secret_authoring_revision_test.go",
+      "sha256": "56668963f183efdd38c5fd5434315826281a5761b554f980dbd2160ec107a827"
+    },
+    {
+      "path": "pkg/api/script_secret_references.go",
+      "sha256": "2a424633dfe0b923c024b1dd32122accd86406c06fd62d4352f9a84ca12562ef"
+    },
+    {
+      "path": "pkg/storage/bruno_imports.go",
+      "sha256": "518d05acd900749699f2df65129f3b547a3f2a60f917ea9e1d77fc448d9e204b"
+    },
+    {
+      "path": "pkg/storage/library_assignments.go",
+      "sha256": "e2f2f2964a2d08abb3830f73816c99d248e91c0bf32aa9e1345891c8c42ae465"
+    },
+    {
+      "path": "pkg/storage/schema_migrations.go",
+      "sha256": "7e56ec2a71b3168c4318c11a0d07b8fb1c5b4780f92f97d875651441a95fada8"
+    },
+    {
+      "path": "pkg/storage/script_content_revision.go",
+      "sha256": "c086a2ee76eea6cd858edb6aea389639ac1e61498d241af2416cfb34e647bc9f"
+    },
+    {
+      "path": "pkg/storage/script_content_revision_postgres_integration_test.go",
+      "sha256": "329acfd5d900580112bd61306a51a90d5c96d2d75fb636019659c7bc9f32fe63"
+    },
+    {
+      "path": "pkg/storage/script_content_revision_test.go",
+      "sha256": "6e5088437eed94fa89a7f616e7fd9fd296c5f2f6b07bfc35420e746fb954c16e"
+    },
+    {
+      "path": "pkg/storage/script_content_revision_tracking.go",
+      "sha256": "20d5da4a94302d3c646034f9118b94027914be409c9f287e2ef167d4226de26c"
+    },
+    {
+      "path": "pkg/storage/script_goal_config_postgres_integration_test.go",
+      "sha256": "c7fb51b30bbb9439d3fbb1a483c1f21f0c35ed62ddd87c74e5729b117fb2a2b0"
+    },
+    {
+      "path": "pkg/storage/script_goal_config_test.go",
+      "sha256": "0a6cf0a5089228b489f5adf07cd427159ca8f236e4072fb060c182a11c42924d"
+    },
+    {
+      "path": "pkg/storage/sqlite_bruno_imports.go",
+      "sha256": "e40d73f4877a0fd13c9de3e628240d2b0e0e649efd67a7729294c7c2c915c89a"
+    },
+    {
+      "path": "pkg/storage/sqlite_schema.go",
+      "sha256": "72ce77a9e70aed540a34d9ce6fa6fc19d41a72edb708b2f64bf0b58f3b5df0e1"
+    },
+    {
+      "path": "pkg/storage/sqlite_script_id_backfill.go",
+      "sha256": "93f927301c5c9425a26bf773ceeabf0e1fdec0adbdb963172d8fb7cf29db1742"
+    },
+    {
+      "path": "pkg/storage/sqlite_scripts.go",
+      "sha256": "215b9c354216e6e4b983c594f25619a016aed95ad52f204181275969ed9496ed"
+    },
+    {
+      "path": "pkg/storage/storage.go",
+      "sha256": "2002f462721459a849a6b43c06605054cbcefa9ce4782b427408f1ed6ab9c91a"
+    }
+  ]
+}

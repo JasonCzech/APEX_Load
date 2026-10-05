@@ -1,0 +1,1 @@
+{"script":{"name":"command-details-return-script","version":"1.0.0","protocol":"http","config":{"base_url":"http://127.0.0.1:18471","pacing":{"type":"fixed_interval","interval_ms":500}},"actions":[{"name":"Health","type":"http","method":"GET","target":"/api/v1/system/health"}]}}

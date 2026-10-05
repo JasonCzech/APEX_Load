@@ -34,6 +34,7 @@ type ApiErrorPayload = {
 
 export type ApiRequestOptions = RequestInit & {
   timeoutMs?: number;
+  maxResponseBytes?: number;
 };
 
 export function trimTrailingSlash(value: string): string {
@@ -296,12 +297,40 @@ export function wsUrl(
   return url.toString();
 }
 
-async function parseJsonResponse(res: Response): Promise<unknown> {
+async function parseJsonResponse(res: Response, maxBytes?: number): Promise<unknown> {
   const contentType = (res.headers.get("content-type") || "").toLowerCase();
   if (res.status === 204 || res.status === 205) {
     return undefined;
   }
-  const text = await res.text();
+  let text: string;
+  if (maxBytes !== undefined && res.body) {
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        bytes += chunk.value.byteLength;
+        if (bytes > maxBytes) {
+          void reader.cancel().catch(() => undefined);
+          throw new Error("API response exceeds the approved size limit.");
+        }
+        chunks.push(chunk.value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const joined = new Uint8Array(bytes);
+    let offset = 0;
+    for (const chunk of chunks) { joined.set(chunk, offset); offset += chunk.byteLength; }
+    text = new TextDecoder().decode(joined);
+  } else {
+    text = await res.text();
+    if (maxBytes !== undefined && new TextEncoder().encode(text).byteLength > maxBytes) {
+      throw new Error("API response exceeds the approved size limit.");
+    }
+  }
   if (!text.trim()) {
     return undefined;
   }
@@ -420,6 +449,7 @@ export function apiFetch(
   const isDesktopController =
     new URL(target).origin === new URL(API_ORIGIN).origin;
   const { timeoutMs, signal, ...init } = options ?? {};
+  delete init.maxResponseBytes;
   const timeout = createTimeoutSignal(timeoutMs);
   const mergedSignal = mergeAbortSignals(signal, timeout.signal);
   const pendingFetch = fetch(target, {
@@ -494,6 +524,7 @@ export function apiFetchFromOrigin(
   const isDesktopController =
     new URL(target).origin === new URL(API_ORIGIN).origin;
   const { timeoutMs, signal, ...init } = options ?? {};
+  delete init.maxResponseBytes;
   const timeout = createTimeoutSignal(timeoutMs);
   const mergedSignal = mergeAbortSignals(signal, timeout.signal);
   const pendingFetch = fetch(target, {
@@ -525,17 +556,35 @@ export async function request<T>(
   return requestFromOrigin<T>(API_ORIGIN, path, options);
 }
 
+export interface ApiResponseEnvelope<T> {
+  body: T;
+  headers: Headers;
+  status: number;
+}
+
+export async function requestWithResponse<T>(path: string, options?: ApiRequestOptions): Promise<ApiResponseEnvelope<T>> {
+  return requestEnvelopeFromOrigin<T>(API_ORIGIN, path, options);
+}
+
 export async function requestFromOrigin<T>(
   apiOrigin: string,
   path: string,
   options?: ApiRequestOptions,
 ): Promise<T> {
+  return (await requestEnvelopeFromOrigin<T>(apiOrigin, path, options)).body;
+}
+
+async function requestEnvelopeFromOrigin<T>(
+  apiOrigin: string,
+  path: string,
+  options?: ApiRequestOptions,
+): Promise<ApiResponseEnvelope<T>> {
   const headers = new Headers(options?.headers);
   const formBody = typeof FormData !== "undefined" && options?.body instanceof FormData;
   if (!headers.has("Content-Type") && !formBody) {
     headers.set("Content-Type", "application/json");
   }
-  const { timeoutMs, signal, ...init } = options ?? {};
+  const { timeoutMs, signal, maxResponseBytes, ...init } = options ?? {};
   const timeout = createTimeoutSignal(timeoutMs);
   const mergedSignal = mergeAbortSignals(signal, timeout.signal);
   const pendingRequest = (async () => {
@@ -548,7 +597,7 @@ export async function requestFromOrigin<T>(
       signal: mergedSignal,
     });
     if (!res.ok) {
-      const body = await parseJsonResponse(res).catch((error: unknown): ApiErrorPayload => {
+      const body = await parseJsonResponse(res, maxResponseBytes).catch((error: unknown): ApiErrorPayload => {
         // Preserve cancellation so the full-request timeout can classify it;
         // only malformed/non-JSON error bodies use the status-text fallback.
         if (error instanceof DOMException && error.name === "AbortError") {
@@ -562,7 +611,7 @@ export async function requestFromOrigin<T>(
           : res.statusText;
       throw new ApiError(message, res.status, body);
     }
-    return (await parseJsonResponse(res)) as T;
+    return { body: (await parseJsonResponse(res, maxResponseBytes)) as T, headers: new Headers(res.headers), status: res.status };
   })();
 
   try {

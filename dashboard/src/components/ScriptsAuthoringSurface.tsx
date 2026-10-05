@@ -1,3 +1,4 @@
+import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
 import ObjectHistory from './ObjectHistory'
 import type { ObjectActivitySummary } from '../types/objectActivity'
 import { lazy, useEffect, useState, type ReactNode } from 'react'
@@ -29,6 +30,11 @@ export interface ScriptsAuthoringSurfaceProps {
   authoringNotice: string | null
   importFiles?: File[] | null
   editingId: string | null
+  editingAuthoring?: ScriptAuthoringBaseline | null
+  editingRetainedDraft?: ScriptDefinition | null
+  editingRetainedNeedsReview?: boolean
+  editingRetainedJsonText?: string
+  editingRetainedCreatedSecretNames?: string[]
   editingScript: ScriptDefinition | null
   editingActivity?: ObjectActivitySummary
   projectId?: string
@@ -37,7 +43,7 @@ export interface ScriptsAuthoringSurfaceProps {
   // session is approved; omitting it saves to project root.
   folderId?: string | null
   activeProject?: Project | null
-  onSaved: (script: StoredScript, options?: { configureSecrets?: boolean }) => void
+  onSaved: (script: StoredScript, options?: ScriptSaveOptions) => void
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
   onImported: (result: ImportedSaveResult) => void
@@ -108,6 +114,11 @@ function ScriptsAuthoringContent({
   importFiles,
   editingId,
   editingScript,
+  editingAuthoring,
+  editingRetainedDraft,
+  editingRetainedNeedsReview,
+  editingRetainedJsonText,
+  editingRetainedCreatedSecretNames,
   editingActivity,
   draftInitiallyDirty,
   projectId,
@@ -182,7 +193,7 @@ function ScriptsAuthoringContent({
       }
       return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} onSave={onSaved} onClose={closeCreateEditor} /></div>
     case 'edit':
-      return <div className="page">{editingId && <ObjectHistory key={editingId} projectId={projectId} resourceType="script" resourceId={editingId} activity={editingActivity} />}{editingScript?.archived_at ? <section aria-label="Archived script"><h2>{editingScript.name} — Archived</h2><p>Restore this script from the library before editing or executing it.</p><button className="btn btn-secondary" onClick={onOpenLibrary}>Back to library</button><pre className="object-archive-content">{JSON.stringify(editingScript, null, 2)}</pre></section> : <>{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={projectId} folderId={destinationFolderValue} onSave={onSaved} onClose={onOpenLibrary} /></>}</div>
+      return <div className="page">{editingId && <ObjectHistory key={editingId} projectId={projectId} resourceType="script" resourceId={editingId} activity={editingActivity} />}{editingScript?.archived_at ? <section aria-label="Archived script"><h2>{editingScript.name} — Archived</h2><p>Restore this script from the library before editing or executing it.</p><button className="btn btn-secondary" onClick={onOpenLibrary}>Back to library</button><pre className="object-archive-content">{JSON.stringify(editingScript, null, 2)}</pre></section> : <>{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} initialAuthoring={editingAuthoring} initialRetainedDraft={editingRetainedDraft} initialRetainedNeedsReview={editingRetainedNeedsReview} initialRetainedJsonText={editingRetainedJsonText} initialRetainedCreatedSecretNames={editingRetainedCreatedSecretNames} projectId={projectId} folderId={destinationFolderValue} onSave={onSaved} onClose={onOpenLibrary} /></>}</div>
     case 'import':
       return (
         <div className="scripts-authoring-stack">

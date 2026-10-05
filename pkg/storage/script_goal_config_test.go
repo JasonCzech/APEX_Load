@@ -300,7 +300,10 @@ func TestScriptGoalConfigMigrationPreservesPublishedLedger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, query := range []string{`ALTER TABLE scripts DROP COLUMN goal_config_json`, `DELETE FROM schema_migrations WHERE version=36`} {
+	if err := removeScriptRevisionTrackingForTest(store); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{`ALTER TABLE scripts DROP COLUMN content_revision`, `ALTER TABLE scripts DROP COLUMN goal_config_json`, `DELETE FROM schema_migrations WHERE version>=36`} {
 		if _, err := store.db.Exec(query); err != nil {
 			t.Fatal(err)
 		}
@@ -314,7 +317,7 @@ func TestScriptGoalConfigMigrationPreservesPublishedLedger(t *testing.T) {
 	}
 	defer upgraded.Close()
 	after, err := upgraded.SchemaStatus()
-	if err != nil || after.AppliedVersion != 36 || len(after.Applied) != 36 || !reflect.DeepEqual(before.Applied[:35], after.Applied[:35]) {
+	if err != nil || after.AppliedVersion != currentSchemaRelease().Version || len(after.Applied) != len(schemaReleases) || !reflect.DeepEqual(before.Applied[:35], after.Applied[:35]) {
 		t.Fatalf("upgrade changed released identities: %#v, %v", after, err)
 	}
 	requireScriptGoals(t, upgraded, script.ID, nil)

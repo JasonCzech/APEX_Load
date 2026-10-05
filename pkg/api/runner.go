@@ -1296,6 +1296,8 @@ type GroupLiveMetrics struct {
 }
 
 type StoredScript struct {
+	ContentRevision     string                     `json:"content_revision,omitempty"`
+	AuthoringProjection *ScriptAuthoringProjection `json:"authoring_projection,omitempty"`
 	ArchivedAt          *time.Time                 `json:"archived_at,omitempty"`
 	Activity            *ObjectActivitySummary     `json:"activity,omitempty"`
 	LibraryAssignment   *storage.LibraryAssignment `json:"library_assignment,omitempty"`

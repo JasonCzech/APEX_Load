@@ -1,6 +1,8 @@
+import ScriptsAuthoringSurface from './ScriptsAuthoringSurface'
+import type { ScriptSaveOptions, StoredScript } from '../types/storedContent'
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, Suspense, useState, type ComponentProps } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -12,7 +14,8 @@ import { KeyboardShortcutProvider } from '../hooks/KeyboardShortcutRoot'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { formatSOAPFaultSummary } from './soapFaultUtils'
-import ScriptEditor from './ScriptEditor'
+import RealScriptEditor from './ScriptEditor'
+import { authoringFixture, savedAuthoringFixture } from '../test/scriptAuthoringFixtures'
 import { RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
 
 const { downloadTextFileMock } = vi.hoisted(() => ({
@@ -32,10 +35,24 @@ const { replaySessionIdMock } = vi.hoisted(() => ({ replaySessionIdMock: vi.fn()
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+// Existing rendering cases use an explicit paired baseline. Cases exercising
+// loading/refusal pass initialAuthoring={null} to exercise real admission.
+function ScriptEditor(props: ComponentProps<typeof RealScriptEditor>) {
+  if (props.scriptId && props.initialScript && props.initialAuthoring === undefined) {
+    const pair = authoringFixture(props.initialScript, props.scriptId, props.projectId || props.initialScript.project_id)
+    return <RealScriptEditor {...props} initialScript={pair.projection.script} initialAuthoring={pair} />
+  }
+  return <RealScriptEditor {...props} />
+}
+
 const apiMock = {
   getScript: vi.fn(),
+  getScriptAuthoring: vi.fn(),
   getScriptSecretStatus: vi.fn(),
   getProjectSecretStatuses: vi.fn(),
+  getApplicationSecretStatuses: vi.fn(),
+  getApplicationSecretUsage: vi.fn(),
+  listApplicationSecrets: vi.fn(),
   getProjectSecretUsage: vi.fn(),
   listProjectSecrets: vi.fn(),
   createProjectSecrets: vi.fn(),
@@ -497,6 +514,7 @@ describe('ScriptEditor', () => {
     codeMirrorDispatchMock.mockReset()
     codeMirrorScrollDoms.length = 0
     apiMock.getScript.mockResolvedValue({ script: initialScript })
+    apiMock.getScriptAuthoring.mockImplementation(async (id: string, projectId?: string) => authoringFixture((await apiMock.getScript(id)).script, id, projectId))
     apiMock.getScriptSecretStatus.mockResolvedValue({
       script_id: 'script-1',
       project_id: 'project-1',
@@ -542,7 +560,7 @@ describe('ScriptEditor', () => {
     })
     apiMock.createProjectSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 1 })
     apiMock.createScript.mockResolvedValue({ id: 'script-1' })
-    apiMock.updateScript.mockResolvedValue({ id: 'script-1' })
+    apiMock.updateScript.mockImplementation(async (id: string, script: ScriptDefinition) => savedAuthoringFixture(script, id))
     apiMock.downloadScript.mockResolvedValue('{"preserved":"download-password"}')
     apiMock.validateScript.mockResolvedValue({
       script_id: 'script-1',
@@ -6424,7 +6442,7 @@ describe('ScriptEditor', () => {
   })
 
   it('surfaces script load failures when fetching by id', async () => {
-    apiMock.getScript.mockRejectedValueOnce(new Error('Network unavailable'))
+    apiMock.getScriptAuthoring.mockRejectedValueOnce(new Error('Network unavailable'))
 
     await act(async () => {
       root.render(<ScriptEditor scriptId="script-1" />)
@@ -7201,7 +7219,7 @@ describe('ScriptEditor', () => {
 
   it('retains the selected action and undo history when save returns a normalized document', async () => {
     const savedDefinition = { ...initialScript, version: '1.0.1' }
-    apiMock.updateScript.mockResolvedValueOnce({ id: 'script-1', script: savedDefinition })
+    apiMock.updateScript.mockResolvedValueOnce(savedAuthoringFixture(savedDefinition))
     await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} initialFocusedActionName="Login" />) })
     const name = container.querySelector<HTMLInputElement>('.side-panel-script-name input')!
     await act(async () => { changeInputValue(name, 'Edited locally') })
@@ -7212,6 +7230,239 @@ describe('ScriptEditor', () => {
     expect(container.querySelector<HTMLInputElement>('.author-main-action [data-author-field="name"]')?.value).toBe('Login')
     expect(container.querySelector<HTMLButtonElement>('button[aria-label="Undo document change"]')?.disabled).toBe(false)
     expect(container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')?.disabled).toBe(true)
+  })
+
+  it('conditions an existing save on its exact loaded baseline', async () => {
+    const pair = authoringFixture(initialScript)
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} projectId="project-1" />) })
+    await act(async () => { changeInputValue(container.querySelector<HTMLInputElement>('.side-panel-script-name input')!, 'Conditioned draft') })
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click() })
+    await flushReact()
+    expect(apiMock.updateScript).toHaveBeenCalledWith('script-1', expect.objectContaining({ name: 'Conditioned draft' }), pair)
+    expect(apiMock.getScriptAuthoring).not.toHaveBeenCalled()
+  })
+
+  it('retains structured edits made during a save and its canonical parent echo', async () => {
+    const pair = authoringFixture(initialScript)
+    let complete!: (saved: ReturnType<typeof savedAuthoringFixture>) => void
+    apiMock.updateScript.mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
+    const onSave = vi.fn()
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} projectId="project-1" onSave={onSave} />) })
+    const name = () => container.querySelector<HTMLInputElement>('.side-panel-script-name input')!
+    await act(async () => { changeInputValue(name(), 'Sent draft') })
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click() })
+    expect(apiMock.updateScript).toHaveBeenCalledTimes(1)
+    await act(async () => { changeInputValue(name(), 'Edited while saving') })
+    const saved = savedAuthoringFixture({ ...pair.projection.script, name: 'Sent draft' })
+    await act(async () => { complete(saved) })
+    await flushReact()
+    expect(name().value).toBe('Edited while saving')
+    expect(onSave).toHaveBeenCalledWith(saved, expect.objectContaining({ retainedDraft: expect.objectContaining({ name: 'Edited while saving' }) }))
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={saved.authoring_projection!.script} initialAuthoring={{ projection: saved.authoring_projection!, etag: `"script-authoring-v1:${saved.content_revision}"` }} projectId="project-1" onSave={onSave} />) })
+    expect(name().value).toBe('Edited while saving')
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.disabled).toBe(false)
+  })
+
+  it.each([new ApiError('stale', 412), new ApiError('unknown outcome', 503, { code: 'script_save_outcome_unknown' }), new ApiError('audit unavailable', 503, { code: 'script_save_outcome_audit_unavailable' }), new Error('lost response')])('preserves the draft and refuses retry until explicit baseline review: %s', async cause => {
+    const pair = authoringFixture(initialScript)
+    apiMock.updateScript.mockRejectedValueOnce(cause)
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} projectId="project-1" />) })
+    const name = () => container.querySelector<HTMLInputElement>('.side-panel-script-name input')!
+    await act(async () => { changeInputValue(name(), 'Retained local draft') })
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click() })
+    await flushReact()
+    expect(name().value).toBe('Retained local draft')
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.disabled).toBe(true)
+    expect(apiMock.getScriptAuthoring).not.toHaveBeenCalled()
+    const newer = authoringFixture({ ...pair.projection.script, config: { ...pair.projection.script.config, base_url: '/new-server' }, folder_id: 'new-folder' }, 'script-1', 'project-1', 'c')
+    apiMock.getScriptAuthoring.mockResolvedValueOnce(newer)
+    await act(async () => { findButtonByText(container, 'Load current baseline')!.click() })
+    await flushReact()
+    expect(name().value).toBe('Retained local draft')
+    expect(apiMock.updateScript).toHaveBeenCalledTimes(1)
+    await act(async () => { findButtonByText(container, 'Diff')!.click() })
+    expect(container.querySelector('[aria-label="Script revision field diff"]')!.textContent).toContain('name')
+    expect(container.querySelector('[aria-label="Script revision field diff"]')!.textContent).not.toContain('Retained local draft')
+    await act(async () => { findButtonByText(container, 'Reapply draft')!.click() })
+    expect(name().value).toBe('Retained local draft')
+    expect(apiMock.updateScript).toHaveBeenCalledTimes(1)
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click() })
+    await flushReact()
+    expect(apiMock.updateScript).toHaveBeenLastCalledWith('script-1', expect.objectContaining({ name: 'Retained local draft', folder_id: 'new-folder', config: expect.objectContaining({ base_url: '/new-server' }) }), newer)
+  })
+
+  it('retains JSON edits after a conflict and discards only on explicit reload', async () => {
+    const pair = authoringFixture(initialScript)
+    apiMock.updateScript.mockRejectedValueOnce(new ApiError('stale', 412))
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} projectId="project-1" />) })
+    await act(async () => { findCenterTab(container, 'Source')!.click() })
+    const editor = () => container.querySelector<HTMLTextAreaElement>('[data-testid="codemirror-mock"]')!
+    await act(async () => { changeTextareaValue(editor(), editor().value.replace('/login', '/login?local=1')) })
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click() })
+    await flushReact()
+    expect(editor().value).toContain('/login?local=1')
+    apiMock.getScriptAuthoring.mockResolvedValueOnce(authoringFixture({ ...pair.projection.script, name: 'Remote revision' }, 'script-1', 'project-1', 'd'))
+    await act(async () => { findButtonByText(container, 'Load current baseline')!.click() })
+    await flushReact()
+    expect(editor().value).toContain('/login?local=1')
+    await act(async () => { changeTextareaValue(editor(), '{"name":"Incomplete conflicting draft",') })
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.disabled).toBe(true)
+    await act(async () => { findButtonByText(container, 'Reload script and discard draft')!.click() })
+    expect(editor().value).not.toContain('/login?local=1')
+    expect(container.querySelector<HTMLInputElement>('.side-panel-script-name input')!.value).toBe('Remote revision')
+  })
+
+  it('does not admit a late baseline into a different editor project', async () => {
+    let complete!: (pair: ReturnType<typeof authoringFixture>) => void
+    apiMock.getScriptAuthoring.mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} initialAuthoring={null} projectId="project-1" />) })
+    const other = authoringFixture({ ...initialScript, name: 'Other project' }, 'script-2', 'project-2', 'c')
+    await act(async () => { root.render(<ScriptEditor scriptId="script-2" initialScript={other.projection.script} initialAuthoring={other} projectId="project-2" />) })
+    await act(async () => { complete(authoringFixture(initialScript)) })
+    expect(container.querySelector<HTMLInputElement>('.side-panel-script-name input')!.value).toBe('Other project')
+    expect(container.textContent).not.toContain('server baseline loaded after')
+    expect(apiMock.updateScript).not.toHaveBeenCalled()
+  })
+
+  it('adopts version/ref-key normalization after its own unblurred cell flush', async () => {
+    const pair = authoringFixture({ ...initialScript, parameters: [{ name: 'username', type: 'file', data_source: 'users', column: 'username' }], data_sources: [{ name: 'users', type: 'csv', strategy: 'sequential', first_row_header: true, inline_data: 'username\nalice' }] })
+    const onSave = vi.fn()
+    apiMock.updateScript.mockImplementationOnce(async (id: string, draft: ScriptDefinition) => savedAuthoringFixture({ ...draft, version: '2.0', ref_key: 'NORMALIZED' }, id))
+    await act(async () => { root.render(<KeyboardShortcutProvider><ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} initialFocusedDataSourceName="users" projectId="project-1" onSave={onSave} /></KeyboardShortcutProvider>) })
+    const cell = container.querySelector<HTMLInputElement>('input[aria-label="Row 1, username for users"]')!
+    await act(async () => { cell.focus(); changeInputValue(cell, 'flushed-value') })
+    await act(async () => { cell.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true })) })
+    await flushReact()
+    expect(apiMock.updateScript.mock.calls[0][1].data_sources[0].inline_data).toContain('flushed-value')
+    expect(onSave.mock.calls[0]).toHaveLength(1)
+    expect(onSave.mock.calls[0][0].script).toMatchObject({ version: '2.0', ref_key: 'NORMALIZED' })
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.disabled).toBe(true)
+  })
+
+  it('retains a focused cell typed during save through canonical parent echo and the next save', async () => {
+    const pair = authoringFixture({ ...initialScript, parameters: [{ name: 'username', type: 'file', data_source: 'users', column: 'username' }], data_sources: [{ name: 'users', type: 'csv', strategy: 'sequential', first_row_header: true, inline_data: 'username\nalice' }] })
+    let complete!: (saved: ReturnType<typeof savedAuthoringFixture>) => void
+    apiMock.updateScript.mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
+    const onSave = vi.fn()
+    const render = async (document = pair.projection.script, baseline = pair, retainedDraft?: ScriptDefinition) => { await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={document} initialAuthoring={baseline} initialRetainedDraft={retainedDraft} initialFocusedDataSourceName="users" projectId="project-1" onSave={onSave} />) }) }
+    await render()
+    await act(async () => { changeInputValue(container.querySelector<HTMLInputElement>('.side-panel-script-name input')!, 'Sent cell draft') })
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click() })
+    const cell = () => container.querySelector<HTMLInputElement>('input[aria-label="Row 1, username for users"]')!
+    await act(async () => { cell().focus(); changeInputValue(cell(), 'late-focused-value') })
+    const saved = savedAuthoringFixture({ ...pair.projection.script, name: 'Sent cell draft', version: '2.0', ref_key: 'NORMALIZED' })
+    await act(async () => { complete(saved) })
+    await flushReact()
+    const retained = onSave.mock.calls[0][1].retainedDraft
+    expect(retained.data_sources[0].inline_data).toContain('late-focused-value')
+    await render(saved.authoring_projection!.script, { projection: saved.authoring_projection!, etag: `"script-authoring-v1:${saved.content_revision}"` }, retained)
+    expect(cell().value).toBe('late-focused-value')
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click() })
+    await flushReact()
+    expect(apiMock.updateScript.mock.calls[1][1].data_sources[0].inline_data).toContain('late-focused-value')
+    expect(apiMock.updateScript.mock.calls[1][1]).toMatchObject({ version: '2.0', ref_key: 'NORMALIZED' })
+  })
+
+  it.each(['structured', 'invalid JSON'])('retains %s edits through the real create-to-edit surface remount', async mode => {
+    let complete!: (saved: ReturnType<typeof savedAuthoringFixture>) => void
+    apiMock.createScript.mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
+    function Surface() {
+      const [ack, setAck] = useState<{ saved: StoredScript; options?: ScriptSaveOptions } | null>(null)
+      const pair = ack ? { projection: ack.saved.authoring_projection!, etag: `"script-authoring-v1:${ack.saved.content_revision}"` } : null
+      return <Suspense fallback={<div>Loading editor</div>}><ScriptsAuthoringSurface subView={ack ? 'edit' : 'create'}
+        draftScript={initialScript} draftInitiallyDirty={true} draftEditorFocus={null} draftReturnTarget={null} authoringNotice={null}
+        editingId={ack?.saved.id || null} editingScript={pair?.projection.script || null} editingAuthoring={pair}
+        editingRetainedDraft={ack?.options?.retainedDraft} editingRetainedJsonText={ack?.options?.retainedJsonText}
+        projectId="project-1" onSaved={(saved, options) => setAck({ saved, options })} onOpenLibrary={vi.fn()} onOpenCreateOptions={vi.fn()} onImported={vi.fn()} onEditDraft={vi.fn()} onReturnToDraftSource={vi.fn()} /></Suspense>
+    }
+    await act(async () => { root.render(<Surface />) })
+    await flushReact()
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click() })
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    if (mode === 'structured') {
+      await act(async () => { changeInputValue(container.querySelector<HTMLInputElement>('.side-panel-script-name input')!, 'Late created draft') })
+    } else {
+      await act(async () => { findCenterTab(container, 'Source')!.click() })
+      const text = container.querySelector<HTMLTextAreaElement>('[data-testid="codemirror-mock"]')!
+      await act(async () => { changeTextareaValue(text, '{"name":"Incomplete local draft",') })
+    }
+    await act(async () => { complete(savedAuthoringFixture(initialScript, 'created-script')) })
+    await flushReact()
+    if (mode === 'structured') {
+      expect(container.querySelector<HTMLInputElement>('.side-panel-script-name input')!.value).toBe('Late created draft')
+      expect(container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.disabled).toBe(false)
+    } else {
+      await act(async () => { findCenterTab(container, 'Source')!.click() })
+      expect(container.querySelector<HTMLTextAreaElement>('[data-testid="codemirror-mock"]')!.value).toBe('{"name":"Incomplete local draft",')
+      expect(container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.disabled).toBe(true)
+    }
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains failed canonical-read handoff without an implicit read or write retry', async () => {
+    await act(async () => { root.render(<ScriptEditor scriptId="saved-retained" initialScript={{ ...initialScript, name: 'Retained local snapshot' }} initialAuthoring={null}
+      initialRetainedDraft={{ ...initialScript, name: 'Retained local snapshot' }} initialRetainedNeedsReview={true}
+      initialRetainedJsonText={'{"name":"Incomplete retained JSON",'} initialRetainedCreatedSecretNames={['UNACKNOWLEDGED_ENTRY']} projectId="project-1" />) })
+    await flushReact()
+    expect(apiMock.getScriptAuthoring).not.toHaveBeenCalled()
+    expect(apiMock.updateScript).not.toHaveBeenCalled()
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.disabled).toBe(true)
+    await act(async () => { findCenterTab(container, 'Source')!.click() })
+    expect(container.querySelector<HTMLTextAreaElement>('[data-testid="codemirror-mock"]')!.value).toBe('{"name":"Incomplete retained JSON",')
+    apiMock.getScriptAuthoring.mockResolvedValueOnce(authoringFixture({ ...initialScript, name: 'Current server document' }, 'saved-retained'))
+    await act(async () => { findButtonByText(container, 'Load current baseline')!.click() })
+    await flushReact()
+    expect(apiMock.getScriptAuthoring).toHaveBeenCalledTimes(1)
+    await act(async () => { findButtonByText(container, 'Reload script and discard draft')!.click() })
+    expect(container.querySelector<HTMLTextAreaElement>('[data-testid="codemirror-mock"]')!.value).toContain('Current server document')
+    expect(apiMock.updateScript).not.toHaveBeenCalled()
+  })
+
+  it('uses the observed application placement for editor secret review', async () => {
+    const authoredDocument = { ...initialScript, actions: [{ name: 'Auth', type: 'request', method: 'GET', target: '/', headers: { Authorization: 'Bearer {{secret.APP_REFERENCE}}' } }] }
+    const pair = authoringFixture(authoredDocument)
+    pair.projection.library_placement.application_id = 'observed-application'
+    apiMock.getScriptSecretStatus.mockResolvedValue({ required: ['APP_REFERENCE'], missing: ['APP_REFERENCE'], configured: [], bindings: [] })
+    apiMock.getApplicationSecretStatuses.mockResolvedValue({ secrets: [{ name: 'APP_REFERENCE', configured: false }] })
+    apiMock.listApplicationSecrets.mockResolvedValue({ secrets: [] })
+    apiMock.getApplicationSecretUsage.mockResolvedValue({ name: 'APP_REFERENCE', usage_revision: 'app-usage', consumer_count: 0, reference_count: 0, consumers: null })
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} projectId="project-1" />) })
+    await flushReact()
+    await act(async () => { findButtonByText(container, 'Configure secrets')!.click() })
+    await flushReact()
+    expect(apiMock.getApplicationSecretStatuses).toHaveBeenCalledWith('observed-application', ['APP_REFERENCE'])
+    expect(apiMock.listApplicationSecrets).toHaveBeenCalledWith('observed-application')
+    expect(apiMock.getApplicationSecretUsage).toHaveBeenCalledWith('observed-application', 'APP_REFERENCE', { limit: 50 })
+    expect(document.body.textContent).toContain('Use existing application or project secret')
+  })
+
+  it('keeps created-name provenance within the actual editor resource', async () => {
+    const first = authoringFixture(initialScript)
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={first.projection.script} initialAuthoring={first} initialRetainedCreatedSecretNames={['A_DEDICATED_VALUE']} projectId="project-1" />) })
+    const next = authoringFixture({ ...initialScript, name: 'Other resource' }, 'script-2', 'project-2')
+    await act(async () => { root.render(<ScriptEditor scriptId="script-2" initialScript={next.projection.script} initialAuthoring={next} initialRetainedCreatedSecretNames={['B_DEDICATED_VALUE']} projectId="project-2" />) })
+    apiMock.updateScript.mockRejectedValueOnce(new ApiError('Definite validation rejection', 422))
+    await act(async () => { changeInputValue(container.querySelector<HTMLInputElement>('.side-panel-script-name input')!, 'B retained draft') })
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click() })
+    await flushReact()
+    expect(container.textContent).toContain('B_DEDICATED_VALUE was already created')
+    expect(container.textContent).not.toContain('A_DEDICATED_VALUE')
+  })
+
+  it('rejects an old saved callback after secret-status refresh crosses editor scope', async () => {
+    const pair = authoringFixture(initialScript)
+    let complete!: (value: unknown) => void
+    apiMock.getScriptSecretStatus.mockResolvedValueOnce({ required: [], missing: [], configured: [] }).mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
+    const onSave = vi.fn()
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} projectId="project-1" onSave={onSave} />) })
+    await act(async () => { changeInputValue(container.querySelector<HTMLInputElement>('.side-panel-script-name input')!, 'Previous resource saved') })
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click() })
+    expect(apiMock.getScriptSecretStatus).toHaveBeenCalledTimes(2)
+    const next = authoringFixture({ ...initialScript, name: 'New resource' }, 'script-2', 'project-2')
+    await act(async () => { root.render(<ScriptEditor scriptId="script-2" initialScript={next.projection.script} initialAuthoring={next} projectId="project-2" onSave={onSave} />) })
+    await act(async () => { complete({ required: [], missing: [], configured: [] }) })
+    expect(onSave).not.toHaveBeenCalled()
+    expect(container.querySelector<HTMLInputElement>('.side-panel-script-name input')!.value).toBe('New resource')
   })
 
   it('passes the stored script response through the save callback', async () => {
@@ -7259,7 +7510,7 @@ describe('ScriptEditor', () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       id: 'script-saved-1',
       name: 'Saved Callback Flow',
-    }))
+    }), { retainedDraft: expect.objectContaining({ name: 'Saved Callback Flow', actions: initialScript.actions }) })
     expect(container.textContent).toContain('Script saved successfully!')
   })
 

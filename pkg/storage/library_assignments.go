@@ -28,7 +28,8 @@ type LibraryAssignment struct {
 	Revision    int64                         `json:"revision"`
 }
 
-// LibraryAssignmentStore keeps catalog placement independent of executable content.
+// LibraryAssignmentStore keeps placement outside executable DSL. A script
+// authored-content revision nevertheless includes its application/release IDs.
 type LibraryAssignmentStore interface {
 	ListLibraryAssignments(kind string, ids []string) (map[string]*LibraryAssignment, error)
 	ReplaceLibraryAssignment(kind, id, projectID string, applicationID *string, releaseIDs []string, expectedRevision int64) (*LibraryAssignment, *LibraryAssignment, error)
@@ -114,12 +115,28 @@ func (s *SQLiteStore) ListLibraryAssignments(kind string, ids []string) (map[str
 // ReplaceLibraryAssignment serializes with hierarchy deletion and content writes,
 // and fences stale editors independently from content revisions.
 func (s *SQLiteStore) ReplaceLibraryAssignment(kind, id, projectID string, applicationID *string, releaseIDs []string, expectedRevision int64) (*LibraryAssignment, *LibraryAssignment, error) {
-	table, items, err := libraryAssignmentTables(kind)
+	before, after, _, err := s.replaceLibraryAssignment(kind, id, projectID, applicationID, releaseIDs, expectedRevision, nil)
+	return before, after, err
+}
+
+func (s *SQLiteStore) ReplaceScriptLibraryAssignmentIfCurrent(id string, expected ScriptAuthoringPrecondition, applicationID *string, releaseIDs []string, expectedAssignmentRevision int64) (*LibraryAssignment, *ScriptAuthoringMutationResult, error) {
+	if err := validateScriptAuthoringPrecondition(expected); err != nil {
+		return nil, nil, err
+	}
+	before, _, snapshot, err := s.replaceLibraryAssignment("script", id, expected.ProjectID, applicationID, releaseIDs, expectedAssignmentRevision, &expected)
 	if err != nil {
 		return nil, nil, err
 	}
-	invalid := func(message string) (*LibraryAssignment, *LibraryAssignment, error) {
-		return nil, nil, fmt.Errorf("%w: %s", ErrLibraryAssignmentInvalid, message)
+	return before, &ScriptAuthoringMutationResult{Snapshot: snapshot, Applied: true}, nil
+}
+
+func (s *SQLiteStore) replaceLibraryAssignment(kind, id, projectID string, applicationID *string, releaseIDs []string, expectedRevision int64, expectedContent *ScriptAuthoringPrecondition) (*LibraryAssignment, *LibraryAssignment, *ScriptAuthoringSnapshot, error) {
+	table, items, err := libraryAssignmentTables(kind)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	invalid := func(message string) (*LibraryAssignment, *LibraryAssignment, *ScriptAuthoringSnapshot, error) {
+		return nil, nil, nil, fmt.Errorf("%w: %s", ErrLibraryAssignmentInvalid, message)
 	}
 	if expectedRevision < 0 || len(releaseIDs) > 1000 {
 		return invalid("invalid revision or too many releases")
@@ -133,7 +150,7 @@ func (s *SQLiteStore) ReplaceLibraryAssignment(kind, id, projectID string, appli
 	projectID = normalizeProjectID(projectID)
 	tx, err := s.db.Begin()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	defer tx.Rollback()
 	lock := func(query, id string) error {
@@ -154,31 +171,31 @@ func (s *SQLiteStore) ReplaceLibraryAssignment(kind, id, projectID string, appli
 		if errors.Is(err, sql.ErrNoRows) {
 			return invalid("project not found")
 		}
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if applicationID != nil {
 		if err := lock(`UPDATE applications SET updated_at = updated_at WHERE id = ?`, *applicationID); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return invalid("application not found")
 			}
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		var appProject string
 		if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM applications WHERE id = ?`, *applicationID).Scan(&appProject); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if normalizeProjectID(appProject) != projectID {
 			return invalid("application belongs to another project")
 		}
 		if _, err := tx.Exec(`UPDATE releases SET updated_at = updated_at WHERE application_id = ?`, *applicationID); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 	if err := lock(`UPDATE `+items+` SET updated_at = updated_at WHERE id = ?`, id); err != nil {
-		return nil, nil, err
-	}
-	if err := ensureObjectActiveTx(tx, kind, id); err != nil {
-		return nil, nil, err
+		if expectedContent != nil && errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, nil, ErrScriptAuthoringNotFound
+		}
+		return nil, nil, nil, err
 	}
 	var owner string
 	if kind == "script" {
@@ -187,18 +204,29 @@ func (s *SQLiteStore) ReplaceLibraryAssignment(kind, id, projectID string, appli
 		owner, _, err = storedScenarioProjectIDTx(tx, id)
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if normalizeProjectID(owner) != projectID {
+		if expectedContent != nil {
+			return nil, nil, nil, ErrScriptAuthoringNotFound
+		}
 		return invalid("item belongs to another project")
+	}
+	if expectedContent != nil {
+		if err := claimScriptAuthoringTx(tx, id, *expectedContent); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	if err := ensureObjectActiveTx(tx, kind, id); err != nil {
+		return nil, nil, nil, err
 	}
 	previous, err := readLibraryAssignments(tx, table, []string{id})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	before := previous[id]
 	if before.Revision != expectedRevision {
-		return nil, nil, ErrLibraryAssignmentConflict
+		return nil, nil, nil, ErrLibraryAssignmentConflict
 	}
 	retained := map[string]bool{}
 	for _, release := range before.Releases {
@@ -213,7 +241,7 @@ func (s *SQLiteStore) ReplaceLibraryAssignment(kind, id, projectID string, appli
 			if errors.Is(err, sql.ErrNoRows) {
 				return invalid("release does not belong to the selected application")
 			}
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if archived.Valid && !retained[resolved] {
 			return invalid("archived releases cannot be newly assigned")
@@ -221,21 +249,28 @@ func (s *SQLiteStore) ReplaceLibraryAssignment(kind, id, projectID string, appli
 		canonical[resolved] = true
 	}
 	if _, err := tx.Exec(`INSERT INTO `+table+` (item_id, application_id, revision) VALUES (?, ?, 0) ON CONFLICT(item_id) DO NOTHING`, id, applicationID); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	updated, err := tx.Exec(`UPDATE `+table+` SET application_id = ?, revision = revision + 1 WHERE item_id = ? AND revision = ?`, applicationID, id, expectedRevision)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	count, err := updated.RowsAffected()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if count != 1 {
-		return nil, nil, ErrLibraryAssignmentConflict
+		return nil, nil, nil, ErrLibraryAssignmentConflict
 	}
-	if _, err := tx.Exec(`DELETE FROM `+table+`_releases WHERE item_id = ?`, id); err != nil {
-		return nil, nil, err
+	// Apply the normalized set delta. Deleting/reinserting retained edges
+	// would invalidate an authored snapshot even when logical placement is equal.
+	for releaseID := range retained {
+		if canonical[releaseID] {
+			continue
+		}
+		if _, err := tx.Exec(`DELETE FROM `+table+`_releases WHERE item_id = ? AND release_id = ?`, id, releaseID); err != nil {
+			return nil, nil, nil, err
+		}
 	}
 	ordered := make([]string, 0, len(canonical))
 	for releaseID := range canonical {
@@ -243,16 +278,26 @@ func (s *SQLiteStore) ReplaceLibraryAssignment(kind, id, projectID string, appli
 	}
 	sort.Strings(ordered)
 	for _, releaseID := range ordered {
+		if retained[releaseID] {
+			continue
+		}
 		if _, err := tx.Exec(`INSERT INTO `+table+`_releases (item_id, release_id) VALUES (?, ?)`, id, releaseID); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 	after, err := readLibraryAssignments(tx, table, []string{id})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	var snapshot *ScriptAuthoringSnapshot
+	if expectedContent != nil {
+		snapshot, err = readScriptAuthoringSnapshotTx(tx, id)
+		if err != nil {
+			return nil, nil, nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return before, after[id], nil
+	return before, after[id], snapshot, nil
 }

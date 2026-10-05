@@ -813,8 +813,10 @@ func (tr *TestRunner) createScriptDurable(
 	authoringApprovedJava bool,
 	trustedImport bool,
 	sourceProfile string,
+	ordinaryCreates ...bool,
 ) (*StoredScript, bool, error) {
 	created := true
+	ordinaryCreate := len(ordinaryCreates) > 0 && ordinaryCreates[0]
 	if script == nil {
 		return nil, false, fmt.Errorf("script is required")
 	}
@@ -866,7 +868,34 @@ func (tr *TestRunner) createScriptDurable(
 		script.UpdatedAt = now
 	}
 	persisted := script
-	if store, ok := tr.scriptStore.(createOnlyScriptPersistence); ok {
+	var authored *StoredScript
+	if store, supported := tr.scriptStore.(storage.ScriptAuthoringStore); supported && ordinaryCreate {
+		if strings.TrimSpace(script.RefKey) == "" {
+			sequence, err := tr.nextScriptSeqLocked()
+			if err != nil {
+				return nil, false, fmt.Errorf("allocate script reference key: %w", err)
+			}
+			script.RefKey = refkey.Script(tr.envCode, sequence, 1)
+		}
+		mutation, err := store.CreateScriptAuthoringIfAbsent(script)
+		if err != nil {
+			return nil, false, err
+		}
+		if mutation == nil || mutation.Snapshot == nil || mutation.Snapshot.Script == nil {
+			return nil, false, storage.ErrScriptAuthoringUnavailable
+		}
+		if !mutation.Applied {
+			if normalizeProjectID(mutation.Snapshot.Script.ProjectID) != script.ProjectID || isCIScriptSnapshot(mutation.Snapshot.Script) {
+				return nil, false, storage.ErrScriptAuthoringNotFound
+			}
+			return nil, false, errScriptAuthoringAlreadyExists
+		}
+		authored, err = storedScriptFromAuthoringSnapshot(mutation.Snapshot)
+		if err != nil {
+			return nil, false, err
+		}
+		persisted = cloneScriptDefinition(authored.Script)
+	} else if store, ok := tr.scriptStore.(createOnlyScriptPersistence); ok {
 		// Shared storage is authoritative. A replica can have an equivalent but
 		// stale cached script after another replica edited or replaced the durable
 		// row, so never let the cache bypass the create-only ownership fence.
@@ -886,6 +915,12 @@ func (tr *TestRunner) createScriptDurable(
 			if err != nil {
 				return nil, false, fmt.Errorf("load conflicting script %s: %w", script.ID, err)
 			}
+			if ordinaryCreate {
+				if normalizeProjectID(existing.ProjectID) != script.ProjectID || isCIScriptSnapshot(existing) {
+					return nil, false, storage.ErrScriptAuthoringNotFound
+				}
+				return nil, false, errScriptAuthoringAlreadyExists
+			}
 			if normalizeProjectID(existing.ProjectID) != script.ProjectID || !equivalentCreateOnlyScript(existing, script) {
 				return nil, false, fmt.Errorf("%w: script %s already exists and is not owned by this approval", errScriptConcurrentChange, script.ID)
 			}
@@ -896,6 +931,12 @@ func (tr *TestRunner) createScriptDurable(
 		return nil, false, fmt.Errorf("durable script store does not support atomic create-only persistence")
 	} else {
 		if existing := tr.scripts[script.ID]; existing != nil {
+			if ordinaryCreate {
+				if normalizeProjectID(existing.ProjectID) != script.ProjectID || isStoredCIScriptSnapshot(existing) {
+					return nil, false, storage.ErrScriptAuthoringNotFound
+				}
+				return nil, false, errScriptAuthoringAlreadyExists
+			}
 			if normalizeProjectID(existing.ProjectID) != script.ProjectID || !equivalentCreateOnlyScript(existing.Script, script) {
 				return nil, false, fmt.Errorf("%w: script %s already exists and is not owned by this approval", errScriptConcurrentChange, script.ID)
 			}
@@ -935,6 +976,9 @@ func (tr *TestRunner) createScriptDurable(
 	tr.scripts[stored.ID] = stored
 	tr.contentRevision++
 	tr.observeAndIndexRefKeyLocked(stored.RefKey, stored.ID)
+	if authored != nil {
+		return authored, created, nil
+	}
 	return cloneStoredScriptForReadLocked(stored), created, nil
 }
 
@@ -1485,6 +1529,7 @@ func (tr *TestRunner) updateScriptDurableInProject(
 	expectedRulesetUpdatedAt time.Time,
 	trustedImport bool,
 	sourceProfile string,
+	contentPreconditions ...*storage.ScriptAuthoringPrecondition,
 ) (*StoredScript, bool, error) {
 	if script == nil {
 		return nil, false, fmt.Errorf("script is required")
@@ -1505,21 +1550,60 @@ func (tr *TestRunner) updateScriptDurableInProject(
 	defer tr.mu.Unlock()
 	tr.beginLockHeldDurableWrite()
 	defer tr.endLockHeldDurableWrite()
-	id = tr.resolveRefKeyLocked(id)
+	var expectedContent *storage.ScriptAuthoringPrecondition
+	if len(contentPreconditions) > 0 {
+		expectedContent = contentPreconditions[0]
+	}
+	// An admitted authoring snapshot already names the exact durable primary
+	// key. Resolving it as a display alias again could select a different row.
+	if expectedContent == nil {
+		id = tr.resolveRefKeyLocked(id)
+	}
 	if err := tr.rejectActivePrivateCISnapshotMutationLocked(id); err != nil {
 		return nil, false, err
 	}
-	existing, ok := tr.scripts[id]
-	if !ok {
-		return nil, false, nil
+	authoringStore, supportsAuthoring := tr.scriptStore.(storage.ScriptAuthoringStore)
+	if expectedContent != nil && !supportsAuthoring {
+		return nil, false, errScriptAuthoringUnsupported
+	}
+	existing := tr.scripts[id]
+	var current *dsl.Script
+	var observed *storage.ScriptAuthoringSnapshot
+	if supportsAuthoring {
+		observed, err = authoringStore.GetScriptAuthoringSnapshot(id)
+		if errors.Is(err, storage.ErrScriptAuthoringNotFound) || errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		if observed == nil || observed.Script == nil || isCIScriptSnapshot(observed.Script) {
+			return nil, false, nil
+		}
+		current = observed.Script
+		if existing == nil {
+			existing = &StoredScript{ID: current.ID, ProjectID: current.ProjectID}
+		}
+	} else {
+		if existing == nil {
+			return nil, false, nil
+		}
+		current, err = tr.durableScriptForMutationLocked(id)
+		if err != nil {
+			return nil, false, err
+		}
+		if current == nil {
+			return nil, false, nil
+		}
 	}
 	expectedProjectID = expectedScriptMutationProject(expectedProjectID, existing)
-	current, err := tr.durableScriptForMutationLocked(id)
-	if err != nil {
-		return nil, false, err
-	}
-	if current == nil {
-		return nil, false, nil
+	if expectedContent != nil {
+		if expectedContent.ProjectID != current.ProjectID || !expectedContent.CreatedAt.Equal(current.CreatedAt) {
+			return nil, false, storage.ErrScriptAuthoringNotFound
+		}
+		if expectedContent.ContentRevision != observed.ContentRevision {
+			return nil, false, errors.Join(errScriptConcurrentChange, storage.ErrScriptAuthoringConflict)
+		}
 	}
 	if err := verifyScriptMutationOwnership(current, expectedProjectID); err != nil {
 		return nil, false, err
@@ -1584,9 +1668,7 @@ func (tr *TestRunner) updateScriptDurableInProject(
 	if script.FolderID == nil {
 		script.FolderID = current.FolderID
 	}
-	if script.CreatedAt.IsZero() {
-		script.CreatedAt = current.CreatedAt
-	}
+	script.CreatedAt = current.CreatedAt
 	if tr.scriptStore == nil {
 		if strings.TrimSpace(rulesetID) != "" {
 			return nil, false, fmt.Errorf("atomic correlation ruleset apply requires durable storage")
@@ -1597,7 +1679,33 @@ func (tr *TestRunner) updateScriptDurableInProject(
 		}
 		script.UpdatedAt = now
 	}
-	if tr.scriptStore != nil {
+	var committed *StoredScript
+	if supportsAuthoring {
+		precondition := storage.ScriptAuthoringPrecondition{ProjectID: current.ProjectID, CreatedAt: current.CreatedAt, ContentRevision: observed.ContentRevision}
+		if expectedContent != nil {
+			precondition = *expectedContent
+		}
+		var mutation *storage.ScriptAuthoringMutationResult
+		if strings.TrimSpace(rulesetID) != "" {
+			mutation, err = authoringStore.UpdateScriptAuthoringIfCurrentAndCorrelationRulesetCurrent(script, precondition, rulesetID, expectedProjectID, expectedRulesetUpdatedAt)
+		} else {
+			mutation, err = authoringStore.UpdateScriptAuthoringIfCurrent(script, precondition)
+		}
+		if errors.Is(err, storage.ErrScriptAuthoringConflict) {
+			return nil, false, errors.Join(errScriptConcurrentChange, err)
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		if mutation == nil || !mutation.Applied || mutation.Snapshot == nil {
+			return nil, false, errors.Join(errScriptConcurrentChange, storage.ErrScriptAuthoringConflict)
+		}
+		committed, err = storedScriptFromAuthoringSnapshot(mutation.Snapshot)
+		if err != nil {
+			return nil, false, err
+		}
+		script = cloneScriptDefinition(committed.Script)
+	} else if tr.scriptStore != nil {
 		if strings.TrimSpace(rulesetID) != "" {
 			store, ok := tr.scriptStore.(correlationRulesetFencedScriptPersistence)
 			if !ok {
@@ -1643,12 +1751,20 @@ func (tr *TestRunner) updateScriptDurableInProject(
 	existing.FolderID = cloneStringPtr(script.FolderID)
 	existing.AuthoringHealth = buildStoredScriptAuthoringHealth(script)
 	existing.Script = cloneScriptDefinition(script)
+	existing.CreatedAt = script.CreatedAt
+	// Display caches never retain a nonce separately from its durable snapshot.
+	existing.ContentRevision = ""
+	existing.AuthoringProjection = nil
+	tr.scripts[id] = existing
 	tr.removeRefKeyLocked(existing.RefKey)
 	if oldRefKey != existing.RefKey {
 		tr.removeRefKeyLocked(oldRefKey)
 	}
 	tr.indexRefKeyLocked(existing.RefKey, existing.ID)
 	tr.contentRevision++
+	if committed != nil {
+		return committed, true, nil
+	}
 	return cloneStoredScriptForReadLocked(existing), true, nil
 }
 
@@ -1790,6 +1906,7 @@ func cloneStoredScriptForReadLocked(script *StoredScript) *StoredScript {
 		return nil
 	}
 	cloned := *script
+	cloned.AuthoringProjection = cloneScriptAuthoringProjection(script.AuthoringProjection)
 	cloned.FolderID = cloneStringPtr(script.FolderID)
 	cloned.AssociatedScenarios = append([]ScenarioRef(nil), script.AssociatedScenarios...)
 	cloned.AssociatedReleases = append([]ReleaseRef(nil), script.AssociatedReleases...)

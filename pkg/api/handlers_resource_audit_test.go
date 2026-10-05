@@ -354,6 +354,7 @@ func TestHandleScriptCRUDWritesAuditEvents(t *testing.T) {
 		"script.delete",
 		"script.move",
 		"script.update",
+		"script.update",
 		"script.create",
 	})
 }

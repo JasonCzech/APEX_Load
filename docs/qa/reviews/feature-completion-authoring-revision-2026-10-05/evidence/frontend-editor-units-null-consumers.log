@@ -1,0 +1,65 @@
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard
+
+ ❯ src/components/ScriptEditor.test.tsx (203 tests | 4 failed) 11657ms
+     × layers the parameter data dialog above the sticky app chrome 10ms
+     × lets the author center workbench fill the desktop editor frame 0ms
+     × lets the Source Mapping tab fill the center workbench frame 0ms
+     × uses the observed application placement for editor secret review 19ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/ScriptEditor.test.tsx > ScriptEditor > layers the parameter data dialog above the sticky app chrome
+Error: ENOENT: no such file or directory, open '/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/src/components/ScriptEditor.css'
+ ❯ src/components/ScriptEditor.test.tsx:1774:23
+    1772|     const { readFileSync } = await import('node:fs')
+    1773|     const cwd = (globalThis as typeof globalThis & { process: { cwd: (…
+    1774|     const editorCss = readFileSync(`${cwd}/src/components/ScriptEditor…
+       |                       ^
+    1775|     const backdropRule = cssRule(editorCss, '.editor-dialog-backdrop')
+    1776|     const dialogRule = cssRule(editorCss, '.parameter-data-dialog')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  src/components/ScriptEditor.test.tsx > ScriptEditor > lets the author center workbench fill the desktop editor frame
+Error: ENOENT: no such file or directory, open '/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/src/components/ScriptEditor.css'
+ ❯ src/components/ScriptEditor.test.tsx:1798:23
+    1796|     const { readFileSync } = await import('node:fs')
+    1797|     const cwd = (globalThis as typeof globalThis & { process: { cwd: (…
+    1798|     const editorCss = readFileSync(`${cwd}/src/components/ScriptEditor…
+       |                       ^
+    1799|     const mainContentRule = cssRule(editorCss, '.main-content:has(.edi…
+    1800|     const topbarRule = cssRule(editorCss, '.main-content:has(.editor-b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  src/components/ScriptEditor.test.tsx > ScriptEditor > lets the Source Mapping tab fill the center workbench frame
+Error: ENOENT: no such file or directory, open '/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/src/components/ScriptEditor.css'
+ ❯ src/components/ScriptEditor.test.tsx:1821:23
+    1819|     const { readFileSync } = await import('node:fs')
+    1820|     const cwd = (globalThis as typeof globalThis & { process: { cwd: (…
+    1821|     const editorCss = readFileSync(`${cwd}/src/components/ScriptEditor…
+       |                       ^
+    1822|     const sourceMapReviewRule = cssRule(editorCss, '.imported-metadata…
+    1823|     const sourceMapHeaderRule = cssRule(editorCss, '.imported-metadata…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  src/components/ScriptEditor.test.tsx > ScriptEditor > uses the observed application placement for editor secret review
+TypeError: Cannot read properties of undefined (reading 'textContent')
+ ❯ src/components/ScriptEditor.test.tsx:7436:26
+    7434|     expect(apiMock.listApplicationSecrets).toHaveBeenCalledWith('obser…
+    7435|     expect(apiMock.getApplicationSecretUsage).toHaveBeenCalledWith('ob…
+    7436|     expect(document.body.textContent).toContain('Use existing applicat…
+       |                          ^
+    7437|   })
+    7438|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed | 8 passed (9)
+      Tests  4 failed | 389 passed (393)
+   Start at  03:40:53
+   Duration  16.71s (transform 1.13s, setup 77ms, import 1.44s, tests 12.60s, environment 2.05s)
+

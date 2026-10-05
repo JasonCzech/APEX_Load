@@ -54,7 +54,10 @@ func TestPostgresScriptGoalConfigMigrationWritersAndReopen(t *testing.T) {
 		store.Close()
 		t.Fatal(err)
 	}
-	for _, query := range []string{`ALTER TABLE scripts DROP COLUMN goal_config_json`, `DELETE FROM schema_migrations WHERE version=36`} {
+	if err := removeScriptRevisionTrackingForTest(store.SQLiteStore); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{`ALTER TABLE scripts DROP COLUMN content_revision`, `ALTER TABLE scripts DROP COLUMN goal_config_json`, `DELETE FROM schema_migrations WHERE version>=36`} {
 		if _, err := store.db.Exec(query); err != nil {
 			store.Close()
 			t.Fatal(err)
@@ -68,7 +71,7 @@ func TestPostgresScriptGoalConfigMigrationWritersAndReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, err := store.SchemaStatus()
-	if err != nil || after.AppliedVersion != 36 || !reflect.DeepEqual(before.Applied[:35], after.Applied[:35]) {
+	if err != nil || after.AppliedVersion != currentSchemaRelease().Version || !reflect.DeepEqual(before.Applied[:35], after.Applied[:35]) {
 		store.Close()
 		t.Fatalf("published ledger changed: %#v, %v", after, err)
 	}

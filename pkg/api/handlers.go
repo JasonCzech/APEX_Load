@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	"github.com/jasonczech/apexload/pkg/scrub"
+	"github.com/jasonczech/apexload/pkg/storage"
 	"github.com/jasonczech/apexload/pkg/telemetry"
 )
 
@@ -755,6 +757,23 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Resolve duplicate IDs before credential/source work. The durable insert
+	// repeats this check atomically after validation to close concurrent creates.
+	if strings.TrimSpace(script.ID) != "" && !(isCredentialPreservingImport(script) && importDraftAttestationToken(script) != "") {
+		existing, exists, readErr := s.runner.scriptPrimaryIDForCreate(script.ID)
+		if readErr != nil && !errors.Is(readErr, sql.ErrNoRows) {
+			writeError(w, http.StatusServiceUnavailable, "script create admission unavailable")
+			return
+		}
+		if exists && existing != nil {
+			if isCIScriptSnapshot(existing) || normalizeProjectID(existing.ProjectID) != normalizeProjectID(script.ProjectID) {
+				writeError(w, http.StatusNotFound, "script not found")
+				return
+			}
+			writeError(w, http.StatusConflict, "script ID already exists; use a conditioned update")
+			return
+		}
+	}
 	if err := validateScriptFolderProject(s.store, script); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -876,9 +895,17 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 			importAttestationClaim.Profile,
 		)
 	} else {
-		stored, err = s.runner.StoreScriptDurable(script)
+		stored, err = s.runner.CreateScriptAuthoringDurable(script)
 	}
 	if err != nil {
+		if errors.Is(err, errScriptAuthoringAlreadyExists) {
+			writeError(w, http.StatusConflict, "script ID already exists; use a conditioned update")
+			return
+		}
+		if errors.Is(err, storage.ErrScriptAuthoringNotFound) {
+			writeError(w, http.StatusNotFound, "script not found")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to save script: "+err.Error())
 		return
 	}
@@ -992,18 +1019,35 @@ func (s *Server) projectIDForFolderFilter(r *http.Request, projectID string, fol
 
 func (s *Server) handleGetScript(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	script, ok := s.runner.GetScript(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "script not found")
+	stored, _, admitted := s.loadScriptAuthoringRequest(w, r, id)
+	if !admitted {
 		return
 	}
-	if !requireAuthorizedProjectMatch(w, r, script.ProjectID) {
+	if views, present := r.URL.Query()["view"]; present {
+		if len(views) != 1 || views[0] != "authoring" {
+			writeError(w, http.StatusBadRequest, "unsupported script view")
+			return
+		}
+		if stored.AuthoringProjection == nil {
+			writeError(w, http.StatusServiceUnavailable, "durable script content revisions unavailable")
+			return
+		}
+		tag, tagErr := scriptAuthoringETag(stored.ContentRevision)
+		if tagErr != nil {
+			writeError(w, http.StatusServiceUnavailable, "durable script content revision unavailable")
+			return
+		}
+		w.Header().Set("ETag", tag)
+		w.Header().Set("Cache-Control", "private, no-store")
+		writeJSON(w, http.StatusOK, stored.AuthoringProjection)
 		return
 	}
-	if !s.scriptLibraryAssignments(w, []*StoredScript{script}) {
+	if !s.scriptLibraryAssignments(w, []*StoredScript{stored}) {
 		return
 	}
-	writeJSON(w, http.StatusOK, viewStoredScript(script))
+	// This enriched representation includes independently changing usage and
+	// joined names, so its authored nonce is not a byte-strong ETag.
+	writeJSON(w, http.StatusOK, viewStoredScript(stored))
 }
 
 func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {

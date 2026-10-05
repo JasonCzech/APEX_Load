@@ -1,0 +1,5 @@
+
+> apexload-dashboard@0.1.0 build
+> tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && vite build --outDir ../pkg/api/static --emptyOutDir
+
+src/components/ScriptJsonAuthoringView.test.tsx(18,9): error TS2739: Type '{ value: string; status: "synced"; actionCount: number; onChange: Mock<Procedure>; onApply: Mock<Procedure>; onCopy: Mock<Procedure>; onDownload: Mock<...>; onFormat: Mock<...>; onReset: Mock<...>; }' is missing the following properties from type 'ScriptCodePaneProps': statusMessage, activePath, activeRange

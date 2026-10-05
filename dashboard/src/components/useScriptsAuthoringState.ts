@@ -1,3 +1,5 @@
+import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
+import { baselineFromSavedScript } from '../utils/scriptAuthoringRevision'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { type AuthoringComponent, type StoredScenario, type StoredScript } from '../types'
@@ -25,6 +27,11 @@ export interface AuthoringReturnTarget {
 export interface AuthoringState {
   subView: ScriptsAuthoringSubView
   editingId: string | null
+  editingAuthoring?: ScriptAuthoringBaseline | null
+  editingRetainedDraft?: ScriptDefinition | null
+  editingRetainedNeedsReview?: boolean
+  editingRetainedJsonText?: string
+  editingRetainedCreatedSecretNames?: string[]
   editingScript: ScriptDefinition | null
   editingActivity?: ObjectActivitySummary
   draftScript: ScriptDefinition | null
@@ -51,6 +58,7 @@ interface UseScriptsAuthoringStateOptions {
   api: ReturnType<typeof useApi>
   initialMode?: ScriptsAuthoringSubView
   initialEditId?: string
+  projectId?: string
 }
 
 export interface ScriptsCreateOptionActions {
@@ -91,7 +99,7 @@ interface ScriptsAuthoringStateModel {
   openCreateOptions: () => void
   openCreateOptionsWithNotice: (notice: string) => void
   handleEdit: (id: string) => Promise<void>
-  handleSavedScript: (script: StoredScript, notice?: string | null) => void
+  handleSavedScript: (script: StoredScript, notice?: string | null, retainedDraft?: ScriptDefinition, retainedState?: ScriptSaveOptions) => void
   handleDraftEdit: (script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null, options?: { initiallyDirty?: boolean }) => void
   returnToDraftSource: () => void
   startDraft: (factory: () => ScriptDefinition) => void
@@ -204,6 +212,7 @@ export function useScriptsAuthoringState({
   api,
   initialMode,
   initialEditId,
+  projectId,
 }: UseScriptsAuthoringStateOptions): ScriptsAuthoringStateModel {
   const [authoringState, setAuthoringState] = useState<AuthoringState>(() => createAuthoringState(initialMode, initialEditId))
   const editRequestGenerationRef = useRef(0)
@@ -349,7 +358,8 @@ export function useScriptsAuthoringState({
   // Pairing a recorder changes the composite API object. It must not reset the
   // active authoring surface through the initial-route effect below.
   const getScript = api.getScript
-  const handleEdit = useCallback(async (id: string, notice?: string | null) => {
+  const getScriptAuthoring = api.getScriptAuthoring
+  const handleEdit = useCallback(async (id: string, notice?: string | null, retainedDraft?: ScriptDefinition, retainedState?: ScriptSaveOptions) => {
     const requestGeneration = ++editRequestGenerationRef.current
     setAuthoringState(previous => previous.subView === 'edit'
       ? {
@@ -367,12 +377,17 @@ export function useScriptsAuthoringState({
         }
       : previous)
     try {
-      const res = await getScript(id)
+      const [authoring, res] = await Promise.all([getScriptAuthoring(id, projectId), getScript(id)])
       if (editRequestGenerationRef.current !== requestGeneration) return
       setAuthoringState({
         subView: 'edit',
         editingId: id,
-        editingScript: res.script ?? null,
+        editingAuthoring: authoring,
+        editingRetainedDraft: retainedDraft,
+        editingRetainedJsonText: retainedState?.retainedJsonText,
+        editingRetainedCreatedSecretNames: retainedState?.retainedCreatedSecretNames,
+        editingRetainedNeedsReview: Boolean(retainedDraft),
+        editingScript: res.script?.archived_at ? { ...authoring.projection.script, archived_at: res.script.archived_at } : authoring.projection.script,
         editingActivity: res.activity,
         draftScript: null,
         draftInitiallyDirty: false,
@@ -386,9 +401,14 @@ export function useScriptsAuthoringState({
     } catch (error) {
       if (editRequestGenerationRef.current !== requestGeneration) return
       setAuthoringState({
-        subView: 'list',
-        editingId: null,
-        editingScript: null,
+        subView: retainedDraft ? 'edit' : 'list',
+        editingId: retainedDraft ? id : null,
+        editingScript: retainedDraft || null,
+        editingAuthoring: null,
+        editingRetainedDraft: retainedDraft,
+        editingRetainedJsonText: retainedState?.retainedJsonText,
+        editingRetainedCreatedSecretNames: retainedState?.retainedCreatedSecretNames,
+        editingRetainedNeedsReview: Boolean(retainedDraft),
         draftScript: null,
         draftInitiallyDirty: false,
         draftEditorFocus: null,
@@ -399,18 +419,28 @@ export function useScriptsAuthoringState({
         importFiles: null,
       })
     }
-  }, [getScript])
+  }, [getScript, getScriptAuthoring, projectId])
 
-  const handleSavedScript = useCallback((savedScript: StoredScript, notice?: string | null) => {
+  const handleSavedScript = useCallback((savedScript: StoredScript, notice?: string | null, retainedDraft?: ScriptDefinition, retainedState?: ScriptSaveOptions) => {
+    let authoring: ScriptAuthoringBaseline
+    try { authoring = baselineFromSavedScript(savedScript, savedScript.project_id) } catch {
+      void handleEdit(savedScript.id, notice, retainedDraft, retainedState)
+      return
+    }
     if (!savedScript.script) {
-      void handleEdit(savedScript.id, notice)
+      void handleEdit(savedScript.id, notice, retainedDraft, retainedState)
       return
     }
     invalidateEditRequest()
     setAuthoringState({
       subView: 'edit',
       editingId: savedScript.id,
-      editingScript: savedScript.script,
+      editingAuthoring: authoring,
+      editingRetainedDraft: retainedDraft,
+      editingRetainedJsonText: retainedState?.retainedJsonText,
+      editingRetainedCreatedSecretNames: retainedState?.retainedCreatedSecretNames,
+      editingRetainedNeedsReview: false,
+      editingScript: authoring.projection.script,
       editingActivity: savedScript.activity,
       draftScript: null,
       draftInitiallyDirty: false,
