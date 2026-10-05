@@ -867,11 +867,28 @@ func (vu *VUser) Run(ctx context.Context) {
 				if !markerOwned && !claimActionTransaction() {
 					return flowTeardown
 				}
+				// A concurrent group whose every child names a transaction
+				// records those, each timed by its request, in place of its
+				// aggregate; the slot claimed above is its first one.
+				requestTransactions := dsl.HTTPSequenceRequestTransactions(action) != nil
+				aggregateTransaction := !markerOwned && !requestTransactions
+				slotClaimed := !markerOwned
+				claimRequestTransaction := func() bool {
+					if slotClaimed {
+						slotClaimed = false
+						return true
+					}
+					return claimActionTransaction()
+				}
 				vu.markUserWorkStarted()
-				result, err := vu.executeHTTPSequenceAction(iterCtx, action, cfg.ErrorHandling)
+				result, err := vu.executeHTTPSequenceAction(iterCtx, action, cfg.ErrorHandling, claimRequestTransaction)
+				if errors.Is(err, errTransactionGoalReached) {
+					restoreIterationBoundary()
+					return flowTeardown
+				}
 				if err != nil {
 					vu.noteSourceTransactionResult(action, false)
-					if !markerOwned {
+					if aggregateTransaction {
 						if result == nil {
 							result = &protocol.Result{
 								ActionName:   action.Name,
@@ -885,6 +902,8 @@ func (vu *VUser) Run(ctx context.Context) {
 							}
 						}
 						vu.recordTransaction(action.Name, result.Duration, false, result)
+					}
+					if !markerOwned {
 						restoreIterationBoundary()
 					}
 					logger.Error("action error", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
@@ -897,8 +916,10 @@ func (vu *VUser) Run(ctx context.Context) {
 				}
 				iterTxDuration += result.Duration
 				vu.noteSourceTransactionResult(action, result.Success)
-				if !markerOwned {
+				if aggregateTransaction {
 					vu.recordTransaction(action.Name, result.Duration, result.Success, result)
+				}
+				if !markerOwned {
 					restoreIterationBoundary()
 				}
 				if !result.Success {
@@ -1494,11 +1515,27 @@ func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.
 				}
 				return flowTeardown
 			}
+			requestTransactions := dsl.HTTPSequenceRequestTransactions(action) != nil
+			aggregateTransaction := !markerOwned && !requestTransactions
+			slotClaimed := !markerOwned
+			claimRequestTransaction := func() bool {
+				if slotClaimed {
+					slotClaimed = false
+					return true
+				}
+				return claimLifecycleTransaction()
+			}
 			vu.markUserWorkStarted()
-			result, err := vu.executeHTTPSequenceAction(actionCtx, action, errCfg)
+			result, err := vu.executeHTTPSequenceAction(actionCtx, action, errCfg, claimRequestTransaction)
+			if errors.Is(err, errTransactionGoalReached) {
+				if ignoreErrors {
+					return flowNext
+				}
+				return flowTeardown
+			}
 			if err != nil {
 				vu.noteSourceTransactionResult(action, false)
-				if !markerOwned {
+				if aggregateTransaction {
 					if result == nil {
 						result = &protocol.Result{
 							ActionName:   action.Name,
@@ -1521,7 +1558,7 @@ func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.
 			}
 			if result != nil {
 				vu.noteSourceTransactionResult(action, result.Success)
-				if !markerOwned {
+				if aggregateTransaction {
 					vu.recordTransaction(action.Name, result.Duration, result.Success, result)
 				}
 				if !result.Success && !ignoreErrors {

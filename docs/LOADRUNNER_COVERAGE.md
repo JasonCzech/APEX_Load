@@ -30,7 +30,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_cleanup_auto_headers` | web | `executable` | Request headers | Clears all persistent auto headers. |
 | `web_cleanup_cookies` | web | `executable` | cookie_clear action | Executable positional cookie clear. |
 | `web_concurrent_end` | web | `executable` | Concurrent http_sequence boundary | Closes a validated explicit source group; unsupported spans remain execution-gated review cases. |
-| `web_concurrent_start` | web | `executable` | Concurrent http_sequence boundary | Only matched same-scope groups of 1–256 independent HTTP requests; barriers, conflicts, waits and malformed boundaries require review. |
+| `web_concurrent_start` | web | `executable` | Concurrent http_sequence boundary | Only matched same-scope groups of 1–256 independent HTTP requests; a request wrapped in its own LR_AUTO transaction records that transaction, timed by the request; barriers, conflicts, waits and malformed boundaries require review. |
 | `web_convert_date_param` | parameter | `review_only` | Import review | Date conversion is preserved for review; no APEX runtime equivalent yet. |
 | `web_convert_from_formatted` | parameter | `review_only` | Import review | Formatted-string parse is preserved for review; no APEX runtime equivalent yet. |
 | `web_convert_param` | parameter | `executable` | source_parameter action | Encoding/format conversion. |

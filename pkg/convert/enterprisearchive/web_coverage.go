@@ -83,7 +83,7 @@ var webFunctionCoverageDetail = map[string]webCoverageDetail{
 	"web_add_filter":                 {"config.web_runtime attribute", "No auto-resource fetch; native no-op."},
 	"web_add_auto_filter":            {"config.web_runtime attribute", "No auto-resource fetch; native no-op."},
 	"web_remove_auto_filter":         {"config.web_runtime attribute", "No auto-resource fetch; native no-op."},
-	"web_concurrent_start":           {"Concurrent http_sequence boundary", "Only matched same-scope groups of 1–256 independent HTTP requests; barriers, conflicts, waits and malformed boundaries require review."},
+	"web_concurrent_start":           {"Concurrent http_sequence boundary", "Only matched same-scope groups of 1–256 independent HTTP requests; a request wrapped in its own LR_AUTO transaction records that transaction, timed by the request; barriers, conflicts, waits and malformed boundaries require review."},
 	"web_concurrent_end":             {"Concurrent http_sequence boundary", "Closes a validated explicit source group; unsupported spans remain execution-gated review cases."},
 	"web_convert_param":              {"source_parameter action", "Encoding/format conversion."},
 	"web_convert_date_param":         {"Import review", "Date conversion is preserved for review; no APEX runtime equivalent yet."},

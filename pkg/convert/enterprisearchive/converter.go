@@ -426,6 +426,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if action, mode, ok := convertSourceFunctionAction(fn); ok {
 				action = labelSourceTransactionMarker(action, fn, "Start")
 				appendTrackedSourceAction(fn, action, mode, "Started an executable source transaction at the original source position.")
+				tagSourceConcurrentTransaction(result, fn, functionIndex, concurrentPlan)
 			}
 			recordSourceTransactionName(result, convertutil.FirstNonEmpty(sourceControlArgAt(fn, 0), fn.StepName))
 			currentTransaction = fn.StepName
@@ -437,6 +438,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if action, mode, ok := convertSourceFunctionAction(fn); ok {
 				action = labelSourceTransactionMarker(action, fn, "End")
 				appendTrackedSourceAction(fn, action, mode, "Ended the executable source transaction with the source PASS/FAIL status.")
+				tagSourceConcurrentTransaction(result, fn, functionIndex, concurrentPlan)
 			}
 			result.Stats.TransactionMarkers++
 			currentTransaction = ""

@@ -393,11 +393,29 @@ func (vu *VUser) useConcurrentChildRedaction(child *preparedHTTPChild) error {
 		runtimeCredentialScriptActionScope: child.scriptCredentials,
 	})
 }
-func (vu *VUser) executeConcurrentHTTPSequence(ctx context.Context, action dsl.Action, errCfg dsl.ErrorHandlingConfig) (*protocol.Result, error) {
+func (vu *VUser) executeConcurrentHTTPSequence(ctx context.Context, action dsl.Action, errCfg dsl.ErrorHandlingConfig, claimTransaction func() bool) (*protocol.Result, error) {
 	previousConfig, previousUnavailable := vu.concurrentPublicationRedaction, vu.concurrentPublicationUnavailable
 	defer func() {
 		vu.concurrentPublicationRedaction, vu.concurrentPublicationUnavailable = previousConfig, previousUnavailable
 	}()
+	transactions := dsl.HTTPSequenceRequestTransactions(action)
+	goalReached := false
+	// recordRequestTransaction records one child's own transaction, claiming
+	// its goal slot first; LR_AUTO semantics make the request's outcome the
+	// transaction's status.
+	recordRequestTransaction := func(name string, started time.Time, duration time.Duration, success bool, source *protocol.Result) {
+		if goalReached {
+			return
+		}
+		if claimTransaction != nil && !claimTransaction() {
+			goalReached = true
+			return
+		}
+		if source == nil {
+			source = &protocol.Result{ActionName: name, StartTime: started}
+		}
+		vu.recordTransaction(name, duration, success, source)
+	}
 	group, err := vu.runConcurrentHTTP(ctx, action, errCfg)
 	aggregate := &protocol.Result{ActionName: action.Name, StartTime: group.started, Duration: group.completed.Sub(group.started), Success: err == nil, BusinessTransaction: true, Group: vu.Group, Extractions: cloneStringMap(group.extractions)}
 	if err != nil {
@@ -413,16 +431,18 @@ func (vu *VUser) executeConcurrentHTTPSequence(ctx context.Context, action dsl.A
 			aggregate.ErrorMessage = "concurrent HTTP publication redaction failed"
 			clearUnredactableResultEvidence(child.result)
 		}
-		if child.err != nil {
+		if child.err != nil || child.result == nil {
 			aggregate.Success = false
-			if aggregate.ErrorMessage == "" {
-				aggregate.ErrorMessage = scrubSensitiveTextWithConfig(child.err.Error(), child.redaction)
+			message := "concurrent HTTP child returned no result"
+			if child.err != nil {
+				message = scrubSensitiveTextWithConfig(child.err.Error(), child.redaction)
 			}
-			continue
-		}
-		if child.result == nil {
-			aggregate.Success = false
-			aggregate.ErrorMessage = "concurrent HTTP child returned no result"
+			if aggregate.ErrorMessage == "" || child.err == nil {
+				aggregate.ErrorMessage = message
+			}
+			if index < len(transactions) {
+				recordRequestTransaction(transactions[index], child.started, child.completed.Sub(child.started), false, &protocol.Result{ActionName: transactions[index], StartTime: child.started, ErrorMessage: message})
+			}
 			continue
 		}
 		vu.logDiagnosticResult("concurrent sequence action", child.authored.Name, child.action, child.result)
@@ -433,6 +453,16 @@ func (vu *VUser) executeConcurrentHTTPSequence(ctx context.Context, action dsl.A
 			if aggregate.ErrorMessage == "" {
 				aggregate.ErrorMessage = firstEngineValue(child.result.ErrorMessage, fmt.Sprintf("concurrent HTTP child %d failed", index+1))
 			}
+		}
+		if index < len(transactions) {
+			recordRequestTransaction(transactions[index], child.started, child.completed.Sub(child.started), child.result.Success, child.result)
+		}
+	}
+	if len(group.children) == 0 {
+		// The group failed before any request ran: each request's transaction
+		// fails, as each would in the source's sequential order.
+		for _, name := range transactions {
+			recordRequestTransaction(name, group.started, 0, false, &protocol.Result{ActionName: name, StartTime: group.started, ErrorMessage: aggregate.ErrorMessage})
 		}
 	}
 	if err != nil {
@@ -446,6 +476,9 @@ func (vu *VUser) executeConcurrentHTTPSequence(ctx context.Context, action dsl.A
 	}
 	if ctx.Err() != nil {
 		return aggregate, ctx.Err()
+	}
+	if goalReached {
+		return aggregate, errTransactionGoalReached
 	}
 	return aggregate, nil
 }

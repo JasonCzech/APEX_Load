@@ -188,7 +188,7 @@ func TestConcurrentHTTPParentSessionJoinAndSourceOrder(t *testing.T) {
 	}
 	done := make(chan *protocol.Result, 1)
 	go func() {
-		r, _ := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{})
+		r, _ := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{}, nil)
 		done <- r
 	}()
 	waitConcurrentArrival(t, f)
@@ -332,11 +332,6 @@ func TestConcurrentHTTPRejectsWholeGroupBeforeTraffic(t *testing.T) {
 			v.Variables["first_value_1"] = "old"
 			g.Params["requests"] = c
 		}},
-		{"unresolved variable", func(g *dsl.Action, v *VUser) {
-			c := g.Params["requests"].([]dsl.Action)
-			c[1].Body = "{{var.absent}}"
-			g.Params["requests"] = c
-		}},
 		{"nonzero child wait", func(g *dsl.Action, v *VUser) {
 			c := g.Params["requests"].([]dsl.Action)
 			c[1].ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 1}
@@ -389,13 +384,98 @@ func TestConcurrentHTTPRejectsWholeGroupBeforeTraffic(t *testing.T) {
 			_, g, _ := concurrentActions()
 			tc.edit(&g, vu)
 			before := traffic.Load()
-			result, err := vu.executeHTTPSequenceAction(context.Background(), g, dsl.ErrorHandlingConfig{})
+			result, err := vu.executeHTTPSequenceAction(context.Background(), g, dsl.ErrorHandlingConfig{}, nil)
 			if err != nil || result.Success || traffic.Load() != before {
 				t.Fatalf("invalid group sent traffic: success=%t err=%v", result.Success, err)
 			}
 		})
 	}
 }
+
+// An unresolved variable reaches the server literally in a concurrent group,
+// exactly as it does when the same request runs on its own.
+func TestConcurrentHTTPUnresolvedVariableMatchesSequential(t *testing.T) {
+	var mu sync.Mutex
+	bodies := map[string]string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies[r.URL.Path] = string(body)
+		mu.Unlock()
+		io.WriteString(w, `{"value":"v"}`)
+	}))
+	defer server.Close()
+	vu := newConcurrentVU(t, server.URL)
+	_, group, _ := concurrentActions()
+	children := group.Params["requests"].([]dsl.Action)
+	children[1].Type, children[1].Method, children[1].Body = "POST", "POST", "{{var.absent}}"
+	group.Params["requests"] = children
+	result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{}, nil)
+	if err != nil || !result.Success {
+		t.Fatalf("group with an unresolved variable failed: success=%t err=%v", result.Success, err)
+	}
+	sequential := children[1]
+	sequential.Target = "/sequential"
+	if r, err := vu.executeWithRetry(context.Background(), vu.resolveAction(sequential), dsl.ErrorHandlingConfig{}); err != nil || !r.Success {
+		t.Fatalf("sequential request failed: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if bodies["/child/second"] != "{{var.absent}}" || bodies["/sequential"] != bodies["/child/second"] {
+		t.Fatalf("concurrent body %q, sequential body %q", bodies["/child/second"], bodies["/sequential"])
+	}
+}
+
+func TestConcurrentHTTPRecordsPerRequestTransactions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "second") {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		io.WriteString(w, `{"value":"v"}`)
+	}))
+	defer server.Close()
+	for _, tc := range []struct {
+		name            string
+		named           bool
+		maxTransactions int64
+		want            string
+	}{
+		{"each request records its own", true, 0, "first.json:true,second.woff2:false"},
+		{"transaction goal counts each request", true, 1, "first.json:true"},
+		{"unnamed group records its aggregate", false, 0, "Concurrent fetches:false"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runLogic := dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "none", MaxTransactions: tc.maxTransactions}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			vu := newConcurrentVU(t, server.URL)
+			_, group, _ := concurrentActions()
+			if tc.named {
+				children := group.Params["requests"].([]dsl.Action)
+				children[0].Metadata = map[string]any{dsl.HTTPConcurrentRequestTransactionMetadataKey: "first.json"}
+				children[1].Metadata = map[string]any{dsl.HTTPConcurrentRequestTransactionMetadataKey: "second.woff2"}
+				group.Params["requests"] = children
+			}
+			sink := &sequenceCaptureSink{}
+			vu.ResultSink = sink
+			vu.ExecutionGoals = NewExecutionGoalLimiter(runLogic, cancel)
+			vu.HardStopCtx = context.Background()
+			vu.ActionBoundaryCtx = ctx
+			vu.Script.Config.RunLogic = runLogic
+			vu.Script.Config.ErrorHandling.ContinueOnError = dsl.ContinueOnErrorValue(true)
+			vu.Script.Actions = []dsl.Action{group}
+			vu.Run(ctx)
+			got := make([]string, 0, len(sink.transactions))
+			for _, transaction := range sink.transactions {
+				got = append(got, fmt.Sprintf("%s:%t", transaction.ActionName, transaction.Success))
+			}
+			if strings.Join(got, ",") != tc.want {
+				t.Fatalf("transactions = %v, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestConcurrentHTTPCancellationJoinsInflightRequests(t *testing.T) {
 	f := newConcurrentFixture(t)
 	vu := newConcurrentVU(t, f.server.URL)
@@ -403,7 +483,7 @@ func TestConcurrentHTTPCancellationJoinsInflightRequests(t *testing.T) {
 	vu.executeWithRetry(context.Background(), vu.resolveAction(login), dsl.ErrorHandlingConfig{})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { _, err := vu.executeHTTPSequenceAction(ctx, g, dsl.ErrorHandlingConfig{}); done <- err }()
+	go func() { _, err := vu.executeHTTPSequenceAction(ctx, g, dsl.ErrorHandlingConfig{}, nil); done <- err }()
 	waitConcurrentArrival(t, f)
 	cancel()
 	select {
@@ -434,7 +514,7 @@ func TestConcurrentHTTPAllowedTargetPolicyRejectsMixedGroup(t *testing.T) {
 	defer p.Teardown(context.Background())
 	vu := &VUser{Proto: p, Script: &dsl.Script{Protocol: "http"}, Metrics: NewMetricsCollector(8), Variables: map[string]string{}}
 	group := dsl.Action{Name: "Policy group", Type: "http_sequence", Params: map[string]any{"execution_mode": "concurrent", "requests": []dsl.Action{{Type: "GET", Target: s.URL}, {Type: "GET", Target: "http://not-allowed.invalid/path"}}}}
-	result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{})
+	result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{}, nil)
 	if err != nil || result.Success || traffic.Load() != 0 {
 		t.Fatal("mixed forbidden group sent allowed sibling traffic")
 	}
@@ -446,7 +526,7 @@ func TestConcurrentHTTPExpansionIsBoundedBeforeLargeAllocation(t *testing.T) {
 	runtime.GC()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	r, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{})
+	r, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{}, nil)
 	runtime.ReadMemStats(&after)
 	if err != nil || r.Success || after.TotalAlloc-before.TotalAlloc > 4<<20 {
 		t.Fatalf("expanded request allocation was not bounded: %d", after.TotalAlloc-before.TotalAlloc)
@@ -484,7 +564,7 @@ func TestHTTPSequenceRawSensitiveExtractionSurvivesPublication(t *testing.T) {
 			vu.ResultSink = sink
 			child := dsl.Action{Name: "Extract session", Type: "GET", Target: "/token", Extractors: []dsl.Extractor{{Name: "session_token", Source: "body", Type: "jsonpath", Expression: "$.value", OnMiss: "fail"}}}
 			group := dsl.Action{Name: "Group", Type: "http_sequence", Params: map[string]any{"execution_mode": mode, "requests": []dsl.Action{child}}}
-			result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{})
+			result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{}, nil)
 			if err != nil || !result.Success {
 				t.Fatal("group failed")
 			}
@@ -564,7 +644,7 @@ func TestConcurrentHTTPGroupAttributionAndRetry(t *testing.T) {
 	group := dsl.Action{Name: "Attributed group", Type: "http_sequence", Attribution: &dsl.AnalyticsAttribution{HierarchyPath: "Wrapper hierarchy", PageName: "{{var.page}}"}, Params: map[string]any{"execution_mode": "concurrent", "requests": children}}
 	sink := &concurrentCaptureSink{}
 	vu.ResultSink = sink
-	r, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{MaxRetries: 1, RetryDelayMs: 1})
+	r, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{MaxRetries: 1, RetryDelayMs: 1}, nil)
 	if err != nil || !r.Success || first.Load() != 2 {
 		t.Fatal("joined retry failed")
 	}
@@ -582,7 +662,7 @@ func TestConcurrentHTTPInheritedPercentageWaitRejectsBeforeTraffic(t *testing.T)
 	vu := newConcurrentVU(t, server.URL)
 	vu.Script.Config.ThinkTime = dsl.ThinkTimeConfig{Type: "random_percentage", MinPercent: 50, MaxPercent: 100}
 	child := dsl.Action{Name: "Waiting leaf", Type: "GET", Target: "/", ThinkTimeAfter: true}
-	r, err := vu.executeHTTPSequenceAction(context.Background(), dsl.Action{Name: "Group", Type: "http_sequence", Params: map[string]any{"execution_mode": "concurrent", "requests": []dsl.Action{child}}}, dsl.ErrorHandlingConfig{})
+	r, err := vu.executeHTTPSequenceAction(context.Background(), dsl.Action{Name: "Group", Type: "http_sequence", Params: map[string]any{"execution_mode": "concurrent", "requests": []dsl.Action{child}}}, dsl.ErrorHandlingConfig{}, nil)
 	if err != nil || r.Success || requests.Load() != 0 {
 		t.Fatal("inherited child percentage wait silently ignored")
 	}
@@ -667,7 +747,7 @@ func TestConcurrentHTTPAggregateExtractionLimitsMatchLoadAndReplay(t *testing.T)
 			vu := newConcurrentVU(t, server.URL)
 			sink := &concurrentCaptureSink{}
 			vu.ResultSink = sink
-			load, err := vu.executeHTTPSequenceAction(context.Background(), action, dsl.ErrorHandlingConfig{})
+			load, err := vu.executeHTTPSequenceAction(context.Background(), action, dsl.ErrorHandlingConfig{}, nil)
 			expectedSuccess := count == 3
 			if err != nil || load.Success != expectedSuccess || len(sink.results) != count || received.Load() != int32(count) {
 				t.Fatal("load output admission or joined leaf evidence incorrect")
@@ -792,7 +872,7 @@ func TestConcurrentHTTPFreshSensitiveOutputsProtectEarlierSiblingsAndRemainExact
 	defer vu.closeErrorLogs()
 	sink := &concurrentCaptureSink{}
 	vu.ResultSink = sink
-	result, err := vu.executeHTTPSequenceAction(context.Background(), action, dsl.ErrorHandlingConfig{})
+	result, err := vu.executeHTTPSequenceAction(context.Background(), action, dsl.ErrorHandlingConfig{}, nil)
 	if err != nil || result.Success || result.Extractions["session_token"] != token || len(sink.results) != count {
 		t.Fatal("raw joined output or assertion outcomes lost")
 	}
@@ -887,7 +967,7 @@ func TestConcurrentHTTPJoinedAdmissionFailureOmitsUnknownSiblingSecretEvidence(t
 	defer vu.closeErrorLogs()
 	sink := &concurrentCaptureSink{}
 	vu.ResultSink = sink
-	result, err := vu.executeHTTPSequenceAction(context.Background(), action, dsl.ErrorHandlingConfig{})
+	result, err := vu.executeHTTPSequenceAction(context.Background(), action, dsl.ErrorHandlingConfig{}, nil)
 	if err != nil || result.Success || result.Extractions != nil || result.ErrorMessage != "concurrent HTTP extraction retention failed" || len(sink.results) != len(children) {
 		t.Fatalf("combined output failure: error_present=%t success=%t outputs_nil=%t expected_reason=%t leaves=%d", err != nil, result.Success, result.Extractions == nil, result.ErrorMessage == "concurrent HTTP extraction retention failed", len(sink.results))
 	}
@@ -1099,7 +1179,7 @@ func TestConcurrentHTTPVariableCapacityRetainsSensitiveObservation(t *testing.T)
 	slog.SetDefault(slog.New(slog.NewTextHandler(&futureLogs, nil)))
 	defer slog.SetDefault(previousLogger)
 	retainedLogger := vu.makeLogger(dsl.LogConfig{Level: "extended"}).With("ordinary_alias", token).WithGroup("future")
-	result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{})
+	result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{}, nil)
 	if err != nil || result.Success || vu.Variables["ordinary_value"] != token || vu.Variables["session_token_95"] != "" || vu.extractedVariableBytes > maxVUserExtractionBytes {
 		t.Fatal("real variable-capacity fixture did not reject the later producer atomically")
 	}
@@ -1337,7 +1417,7 @@ func TestConcurrentHTTPWorkerClassificationFailureClosesWholeGroup(t *testing.T)
 			vu.ResultSink = sink
 			before := traffic.Load()
 			if !replay {
-				result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{})
+				result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{}, nil)
 				if err != nil || result.Success || result.ErrorMessage != "concurrent HTTP publication redaction failed" {
 					t.Fatal("worker failure was not an authoritative group failure")
 				}

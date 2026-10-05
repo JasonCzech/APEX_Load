@@ -886,10 +886,6 @@ func (vu *VUser) interpolateWithSecretsPolicyBounded(s string, transform func(in
 		} else if strings.HasPrefix(expr, "run.") {
 			vu.unresolvedRunRefs = append(vu.unresolvedRunRefs, expr)
 		}
-		if vu.concurrentPreparation != nil && !resolvedOK {
-			vu.concurrentPreparation.err = fmt.Errorf("concurrent HTTP template resolution failed")
-			return "", "", vu.concurrentPreparation.err
-		}
 		if strings.HasPrefix(expr, "secret.") {
 			hasRedaction = true
 			redactedValue = "[REDACTED]"

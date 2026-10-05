@@ -959,10 +959,13 @@ func boundedRetryBackoff(base time.Duration, attempt int) time.Duration {
 	return min(delay, maximum)
 }
 
-func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Action, errCfg dsl.ErrorHandlingConfig) (*protocol.Result, error) {
+// executeHTTPSequenceAction runs a sequence. claimTransaction claims one
+// transaction-goal slot for each per-request transaction a concurrent group
+// records (see dsl.HTTPSequenceRequestTransactions).
+func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Action, errCfg dsl.ErrorHandlingConfig, claimTransaction func() bool) (*protocol.Result, error) {
 	mode, _, modeErr := dsl.HTTPSequenceExecutionSettings(action)
 	if modeErr == nil && mode == dsl.HTTPSequenceConcurrent {
-		return vu.executeConcurrentHTTPSequence(ctx, action, errCfg)
+		return vu.executeConcurrentHTTPSequence(ctx, action, errCfg, claimTransaction)
 	}
 	children, err := httpSequenceChildActions(action)
 	if modeErr != nil {

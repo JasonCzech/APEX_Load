@@ -56,7 +56,7 @@ func httpActionSpecs() []ActionSpec {
 		Protocols: []string{"http"},
 		Summary:   "Composite HTTP step with sequential execution by default or bounded concurrent requests sharing one VUser session.",
 		Fields: []FieldSpec{
-			{Name: "params.requests", Required: true, Kind: FieldKindArray, Doc: "Child HTTP requests with full action fields. At least one required; concurrent mode permits at most 256. Concurrent children are prepared in source order, joined, then publish extractions in source order."},
+			{Name: "params.requests", Required: true, Kind: FieldKindArray, Doc: "Child HTTP requests with full action fields. At least one required; concurrent mode permits at most 256. Concurrent children are prepared in source order, joined, then publish extractions in source order. A concurrent group whose every child sets metadata.source_request_transaction records one transaction per child under that name, timed by the child's request and passing when it succeeds, instead of the group's aggregate transaction; each counts toward a transaction goal. Naming only some children is rejected."},
 			{Name: "params.execution_mode", Kind: FieldKindEnum, Enum: []string{HTTPSequenceSequential, HTTPSequenceConcurrent}, SchemaEnum: true, Doc: "Sequential when absent. Concurrent requests share the parent HTTP session; debugger pause and step occur at the group boundary."},
 			{Name: "params.max_concurrency", Kind: FieldKindInt, Maximum: MaxHTTPConcurrency, Doc: "Integer 1..16. Concurrent default is min(8, child count). Concurrent preparation is bounded to 16 MiB of source and prepared surfaces and 64 MiB of work. Duplicate extractor names and nonzero child think time are rejected before traffic."},
 		},

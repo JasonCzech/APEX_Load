@@ -1020,7 +1020,7 @@ Composite HTTP step with sequential execution by default or bounded concurrent r
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `params.requests` | array | yes | Child HTTP requests with full action fields. At least one required; concurrent mode permits at most 256. Concurrent children are prepared in source order, joined, then publish extractions in source order. |
+| `params.requests` | array | yes | Child HTTP requests with full action fields. At least one required; concurrent mode permits at most 256. Concurrent children are prepared in source order, joined, then publish extractions in source order. A concurrent group whose every child sets metadata.source_request_transaction records one transaction per child under that name, timed by the child's request and passing when it succeeds, instead of the group's aggregate transaction; each counts toward a transaction goal. Naming only some children is rejected. |
 | `params.execution_mode` | enum: sequential\|concurrent |  | Sequential when absent. Concurrent requests share the parent HTTP session; debugger pause and step occur at the group boundary. |
 | `params.max_concurrency` | int |  | Integer 1..16. Concurrent default is min(8, child count). Concurrent preparation is bounded to 16 MiB of source and prepared surfaces and 64 MiB of work. Duplicate extractor names and nonzero child think time are rejected before traffic. |
 
