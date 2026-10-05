@@ -2125,7 +2125,11 @@ func ensureMetadata(script *dsl.Script) map[string]any {
 const (
 	maxSalesforceShapeCandidates   = 4096
 	maxSalesforceShapeCorrelations = 4096
-	maxSalesforceShapeSearchBytes  = int64(64 << 20)
+	// Matches the shared detector's ceiling. Request surfaces are decoded once
+	// per analysis (correlate.RequestSearch), so complete analysis of real
+	// Lightning captures charges 1-3 GiB and scans in about a second; the old
+	// 64 MiB ceiling stopped after a few dozen candidates.
+	maxSalesforceShapeSearchBytes  = int64(8 << 30)
 	maxSalesforceConstructionBytes = int64(16 << 20)
 	maxSalesforceJSONTokens        = 8192
 	maxSalesforceJSONDepth         = 128
@@ -2144,6 +2148,18 @@ type salesforceCorrelationBudget struct {
 	maxCorrelations      int
 	maxSearchBytes       int64
 	maxConstructionBytes int64
+	// requests caches each observation's searchable request surfaces for the
+	// one analysis this budget belongs to.
+	requests     *correlate.RequestSearch
+	requestsSize int
+}
+
+func (budget *salesforceCorrelationBudget) requestSearch(observations []correlate.Observation) *correlate.RequestSearch {
+	if budget.requests == nil || budget.requestsSize != len(observations) {
+		budget.requests = correlate.NewRequestSearch(observations)
+		budget.requestsSize = len(observations)
+	}
+	return budget.requests
 }
 
 func newSalesforceCorrelationBudget() *salesforceCorrelationBudget {
@@ -2195,14 +2211,22 @@ func (budget *salesforceCorrelationBudget) chargeCorrelation() error {
 }
 
 func (budget *salesforceCorrelationBudget) chargeSearch(observation correlate.Observation) error {
-	// ObservationContains scans raw URL/body/headers, their query-decoded forms,
-	// and parsed form values. Decoding cannot expand the bytes, and parsed form
+	// A reuse query scans raw URL/body/headers, their query-decoded forms, and
+	// parsed form values. Decoding cannot expand the bytes, and parsed form
 	// keys/values are bounded by the body, so this is a conservative upper bound
-	// for one reconstruction and search.
+	// for one search.
 	cost := int64(2*len(observation.RequestURL) + 3*len(observation.RequestBody))
 	for _, value := range observation.RequestHeaders {
 		cost += int64(2 * len(value))
 	}
+	if cost < 0 || cost > budget.maxSearchBytes-budget.searchBytes {
+		return fmt.Errorf("%w: Salesforce request-surface search exceeds %d bytes", correlate.ErrCorrelationWorkLimit, maxSalesforceShapeSearchBytes)
+	}
+	budget.searchBytes += cost
+	return nil
+}
+
+func (budget *salesforceCorrelationBudget) chargeSearchBytes(cost int64) error {
 	if cost < 0 || cost > budget.maxSearchBytes-budget.searchBytes {
 		return fmt.Errorf("%w: Salesforce request-surface search exceeds %d bytes", correlate.ErrCorrelationWorkLimit, maxSalesforceShapeSearchBytes)
 	}
@@ -2311,6 +2335,22 @@ func detectCorrelationsChecked(entries []harEntry) ([]correlate.Correlation, []s
 			break
 		}
 	}
+	// Shape extractors pre-empt the generic candidate for the same value only
+	// when they read it from the same or an earlier response. An earlier
+	// generic producer (for example Set-Cookie sid before an Aura response
+	// echoing sfdcSessionKey) must keep the value, or every request between
+	// the two producers loses its variable.
+	firstGeneric := make(map[string]correlate.Correlation, len(genericCorrelations))
+	for _, corr := range genericCorrelations {
+		if _, found := firstGeneric[corr.Value]; !found {
+			firstGeneric[corr.Value] = corr
+		}
+	}
+	for index, corr := range correlations {
+		if generic, found := firstGeneric[corr.Value]; found && generic.FoundInID < corr.FoundInID {
+			correlations[index] = generic
+		}
+	}
 	for _, corr := range genericCorrelations {
 		if seenValues[corr.Value] {
 			continue
@@ -2351,7 +2391,7 @@ func detectCometdCorrelations(observations []correlate.Observation, seenValues m
 			if candidate.Value == "" {
 				continue
 			}
-			reuses, err := salesforceCandidateReuses(observations, index, candidate.Value, budget)
+			reuses, err := salesforceCorrelatableReuses(observations, index, candidate, budget)
 			if err != nil {
 				return correlations, err
 			}
@@ -2435,7 +2475,7 @@ func detectCompositeCorrelations(observations []correlate.Observation, seenValue
 			if candidate.Value == "" {
 				continue
 			}
-			reuses, err := salesforceCandidateReuses(observations, index, candidate.Value, budget)
+			reuses, err := salesforceCorrelatableReuses(observations, index, candidate, budget)
 			if err != nil {
 				return correlations, err
 			}
@@ -2704,7 +2744,7 @@ func salesforceCandidateReuses(observations []correlate.Observation, startIndex 
 		if err := budget.chargeSearch(observations[later]); err != nil {
 			return nil, err
 		}
-		if correlate.ObservationContains(observations[later], value) {
+		if budget.requestSearch(observations).Contains(later, value) {
 			exactUsed = append(exactUsed, observations[later].ID)
 		}
 	}
@@ -2744,6 +2784,30 @@ func salesforceCandidateReuses(observations []correlate.Observation, startIndex 
 		})
 	}
 	return out, nil
+}
+
+// salesforceCorrelatableReuses applies the shared precision rules to a shape
+// candidate: values that are not server state are never correlated, and weak
+// heuristic values the client already sent before the producer are dropped.
+func salesforceCorrelatableReuses(observations []correlate.Observation, index int, candidate correlate.Candidate, budget *salesforceCorrelationBudget) ([]salesforceCandidateReuse, error) {
+	if !correlate.CandidateCanCorrelate(candidate) {
+		return nil, nil
+	}
+	reuses, err := salesforceCandidateReuses(observations, index, candidate.Value, budget)
+	if err != nil || len(reuses) == 0 || !correlate.ClientOriginCheckApplies(candidate.RuleID) {
+		return reuses, err
+	}
+	kept := reuses[:0]
+	for _, reuse := range reuses {
+		sent, err := budget.requestSearch(observations).ClientSentThrough(index, reuse.value, budget.chargeSearchBytes)
+		if err != nil {
+			return nil, err
+		}
+		if !sent {
+			kept = append(kept, reuse)
+		}
+	}
+	return kept, nil
 }
 
 func observationContainsSalesforceID15(observation correlate.Observation, id15 string) bool {
@@ -2828,7 +2892,7 @@ func detectBulkQueryLocatorCorrelations(observations []correlate.Observation, se
 			if err := budget.chargeSearch(observations[later]); err != nil {
 				return correlations, err
 			}
-			if correlate.ObservationContains(observations[later], locator) {
+			if budget.requestSearch(observations).Contains(later, locator) {
 				usedIn = append(usedIn, observations[later].ID)
 			}
 		}
@@ -2892,7 +2956,7 @@ func detectNestedJSONCorrelations(observations []correlate.Observation, seenValu
 			if candidate.Value == "" {
 				continue
 			}
-			reuses, err := salesforceCandidateReuses(observations, index, candidate.Value, budget)
+			reuses, err := salesforceCorrelatableReuses(observations, index, candidate, budget)
 			if err != nil {
 				return correlations, err
 			}
