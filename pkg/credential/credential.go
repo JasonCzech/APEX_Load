@@ -116,6 +116,37 @@ func SensitiveName(name string) bool {
 	return false
 }
 
+// MinNamedValueBytes is the shortest value under a credential-like name in a
+// URL-encoded pair (a query string or form body) treated as credential
+// material, unless the name is password-like (a PIN can be short). A shorter
+// value, such as a cookie=1 flag, cannot be told apart from ordinary text:
+// matching it marks unrelated tokens such as a DNT header or an HTTP/1.1
+// version.
+const MinNamedValueBytes = 4
+
+// MatchableNamedValue reports whether a value found under a credential-like
+// name in a URL-encoded pair is credential material (see MinNamedValueBytes).
+func MatchableNamedValue(name, value string) bool {
+	return len(strings.TrimSpace(value)) >= MinNamedValueBytes || PasswordLikeName(name)
+}
+
+// PasswordLikeName reports names whose values are secrets however short:
+// passwords, passcodes, PINs, one-time codes and secrets.
+func PasswordLikeName(name string) bool {
+	normalized := NormalizeName(name)
+	for _, word := range []string{"password", "passwd", "passcode", "passphrase", "secret"} {
+		if strings.Contains(normalized, word) {
+			return true
+		}
+	}
+	for _, word := range []string{"pwd", "pass", "pin", "otp"} {
+		if strings.HasSuffix(normalized, word) {
+			return true
+		}
+	}
+	return false
+}
+
 // SensitiveHeader reports whether an HTTP header should be governed by
 // import-time credential handling. It retains the established broad authoring
 // heuristic, including names such as X-Auth and Subscription-Key.

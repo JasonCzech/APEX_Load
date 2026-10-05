@@ -289,7 +289,11 @@ func resolvedActionContentType(action *protocol.Action) string {
 }
 
 func (collector *importedCredentialCollector) collectHeaderCredential(name, value string) {
-	collector.add(value)
+	// A header is a credential by name, so a value too short to tell apart
+	// from ordinary text is not matched (see credential.MatchableNamedValue).
+	if credential.MatchableNamedValue(name, value) {
+		collector.add(value)
+	}
 	collector.collectCookieHeaderValues(name, value)
 	if !strings.EqualFold(strings.TrimSpace(name), "Authorization") &&
 		!strings.EqualFold(strings.TrimSpace(name), "Proxy-Authorization") {
@@ -304,7 +308,9 @@ func (collector *importedCredentialCollector) collectHeaderCredential(name, valu
 	}
 	scheme := value[:separator]
 	payload := strings.TrimSpace(value[separator:])
-	collector.add(payload)
+	if credential.MatchableNamedValue(name, payload) {
+		collector.add(payload)
+	}
 	if strings.EqualFold(scheme, "basic") {
 		decoded, err := base64.StdEncoding.DecodeString(payload)
 		if err == nil {
@@ -335,7 +341,7 @@ func (collector *importedCredentialCollector) collectAuthorizationParameters(pay
 		if unquoted, err := strconv.Unquote(value); err == nil {
 			value = unquoted
 		}
-		collector.add(value)
+		collector.addNamed(name, value)
 	}
 }
 

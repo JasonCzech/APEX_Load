@@ -1312,3 +1312,64 @@ func TestProjectMasksCredentialsThatResembleDisclosureSentinels(t *testing.T) {
 		t.Fatalf("data source redaction count = %d, want 2: %q", got, projected.DataSources[0].InlineData)
 	}
 }
+
+// A short value under a credential-like query name (a cookie=1 flag) is not
+// credential material, so it never marks a DNT header or an HTTP version.
+func TestProjectShortNamedQueryValueDoesNotMarkOrdinaryTokens(t *testing.T) {
+	script := &dsl.Script{
+		Name: "flags", Version: "1", Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "har",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name: "page", Type: "request", Method: "GET", Target: "https://example.test/x?cookie=1",
+			HeaderList: dsl.HeaderList{{Name: "DNT", Value: "1"}},
+			Metadata: map[string]any{
+				"http_version": "HTTP/1.1",
+				dsl.ImportPreservedCredentialTargetsMetadataKey: []any{map[string]any{"field": "url.query", "index": 0}},
+			},
+		}},
+	}
+	projected, err := Project(script)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	if got := projected.Actions[0]; got.HeaderList[0].Value != "1" || got.Metadata["http_version"] != "HTTP/1.1" {
+		t.Fatalf("short named value marked ordinary tokens: %#v", got)
+	}
+}
+
+// Short values under credential-like header and field names are not credential
+// material either, unless the name is password-like.
+func TestProjectShortNamedHeaderAndFieldValues(t *testing.T) {
+	script := &dsl.Script{
+		Name: "fields", Version: "1", Protocol: "http",
+		Actions: []dsl.Action{{
+			Name: "request", Type: "request", Method: "GET", Target: "https://example.test",
+			HeaderList: dsl.HeaderList{{Name: "X-Auth-Token", Value: "2"}},
+			Params: map[string]any{
+				"session_token": "1",
+				"api_token":     "abcd1234",
+				"password":      "12",
+				"count":         "1",
+				"level":         "2",
+				"token_echo":    "abcd1234",
+				"password_echo": "12",
+			},
+		}},
+	}
+	projected, err := Project(script)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	params := projected.Actions[0].Params
+	if params["count"] != "1" || params["level"] != "2" {
+		t.Fatalf("short named values marked ordinary values: %#v", params)
+	}
+	if params["token_echo"] != credential.Redacted || params["password_echo"] != credential.Redacted {
+		t.Fatalf("long and password-like values were not matched: %#v", params)
+	}
+}

@@ -1215,3 +1215,79 @@ func TestImportedCookieCredentialsSkipShortPreferenceValues(t *testing.T) {
 		}
 	}
 }
+
+func TestImportedNamedQueryCredentialsSkipShortValues(t *testing.T) {
+	const token = "query-token-value-1234"
+	script := &dsl.Script{
+		Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "har",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name: "request", Type: "GET", Method: "GET",
+			Target: "https://example.test/x?cookie=1&token=" + token + "&pin=12&sid=en",
+			Metadata: map[string]any{
+				dsl.ImportPreservedCredentialTargetsMetadataKey: []any{
+					map[string]any{"field": "url.query", "index": 0},
+					map[string]any{"field": "url.query", "index": 1},
+					map[string]any{"field": "url.query", "index": 2},
+				},
+			},
+		}},
+	}
+	values, err := ImportedCredentialValuesForDisclosure(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{token, "12"} {
+		if !containsExactString(values, want) {
+			t.Fatalf("values = %#v, want %q", values, want)
+		}
+	}
+	for _, notWant := range []string{"1", "en"} {
+		if containsExactString(values, notWant) {
+			t.Fatalf("values = %#v, short named value %q treated as a credential", values, notWant)
+		}
+	}
+}
+
+func TestImportedLegacyBodyCredentialsSkipShortNamedValues(t *testing.T) {
+	const token = "body-token-value-1234"
+	request := func(contentType, body string) dsl.Action {
+		return dsl.Action{
+			Name: "request", Type: "POST", Method: "POST", Target: "https://example.test/x",
+			HeaderList: dsl.HeaderList{{Name: "Content-Type", Value: contentType}}, Body: body,
+		}
+	}
+	script := &dsl.Script{
+		Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "har",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Actions: []dsl.Action{
+			request("application/x-www-form-urlencoded", "token="+token+"&session=1&passcode=12"),
+			request("application/json", `{"auth":{"token":"`+token+`","sid":"en","pin":"34"}}`),
+			request("application/xml", `<login><token>2</token><password>56</password></login>`),
+		},
+	}
+	values, err := ImportedCredentialValuesForDisclosure(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{token, "12", "34", "56"} {
+		if !containsExactString(values, want) {
+			t.Fatalf("values = %#v, want %q", values, want)
+		}
+	}
+	for _, notWant := range []string{"1", "2", "en"} {
+		if containsExactString(values, notWant) {
+			t.Fatalf("values = %#v, short named value %q treated as a credential", values, notWant)
+		}
+	}
+}
