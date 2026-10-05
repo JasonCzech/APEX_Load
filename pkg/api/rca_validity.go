@@ -145,51 +145,13 @@ func archiveValidityInput(manifest *RunArchiveManifest, intervals []rca.Validity
 // VUser count for a closed model, the target arrival rate for an open one
 // (whose VUsers float with latency), and both for a mixed run.
 func archiveSteadyLevels(summaries []IntervalSummaryRecord, started time.Time, arrivalModel string) []rca.TimeRange {
-	if started.IsZero() {
+	levels := archiveLoadLevels(summaries, started, arrivalModel)
+	if levels == nil {
 		return nil
 	}
-	ranges := func(windows []BaselineLoadWindow) []rca.TimeRange {
-		out := make([]rca.TimeRange, 0, len(windows))
-		for _, window := range windows {
-			out = append(out, rca.TimeRange{
-				Start: started.Add(time.Duration(window.StartSeconds * float64(time.Second))),
-				End:   started.Add(time.Duration(window.EndSeconds * float64(time.Second))),
-			})
-		}
-		return out
-	}
-	vusers := ranges(baselineStableWindows(summaries, started, "", BaselineComparisonWindow{}))
-	if arrivalModel != rca.ArrivalOpen && arrivalModel != rca.ArrivalMixed {
-		return vusers
-	}
-	rate := ranges(stableLoadWindows(summaries, started, "", BaselineComparisonWindow{}, func(s IntervalSummaryRecord) (float64, bool) {
-		return s.TargetTPS, s.TargetTPS > 0
-	}))
-	if arrivalModel == rca.ArrivalOpen {
-		return rate
-	}
-	return intersectTimeRanges(vusers, rate)
-}
-
-// intersectTimeRanges returns the overlaps of two sorted, disjoint range lists.
-func intersectTimeRanges(a, b []rca.TimeRange) []rca.TimeRange {
-	var out []rca.TimeRange
-	for i, j := 0, 0; i < len(a) && j < len(b); {
-		start, end := a[i].Start, a[i].End
-		if b[j].Start.After(start) {
-			start = b[j].Start
-		}
-		if b[j].End.Before(end) {
-			end = b[j].End
-		}
-		if start.Before(end) {
-			out = append(out, rca.TimeRange{Start: start, End: end})
-		}
-		if a[i].End.Before(b[j].End) {
-			i++
-		} else {
-			j++
-		}
+	out := make([]rca.TimeRange, 0, len(levels))
+	for _, level := range levels {
+		out = append(out, rca.TimeRange{Start: level.Start, End: level.End})
 	}
 	return out
 }

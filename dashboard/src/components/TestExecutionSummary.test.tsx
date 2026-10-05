@@ -989,6 +989,7 @@ it('explains statistical evidence without presenting an SLA failure', async () =
     await act(async () => root.render(<TestExecutionSummary transactions={[]} metrics={{ statistical_findings: [{ metric_name: 'tps', current: 30, baseline_mean: 10.5, baseline_stddev: 0.5, baseline_buckets: 30, z_score: 39, threshold: 3, timestamp: '2026-01-01T00:00:30Z', baseline_start: '2026-01-01T00:00:00Z', baseline_end: '2026-01-01T00:00:29Z', advisory: true }] }} />))
     expect(container.textContent).toContain('30 comparable buckets')
     expect(container.textContent).toContain('Advisory')
+    expect(container.textContent).toContain('advisory (live)')
     expect(container.textContent).toContain('Baseline:')
   } finally { await act(async () => root.unmount()) }
 })

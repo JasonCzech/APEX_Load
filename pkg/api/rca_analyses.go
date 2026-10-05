@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -8,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -26,7 +29,7 @@ const (
 	rcaBundleSchema   = "apexload.rca_bundle.v1"
 	// rcaEngineVersion changes whenever the engine's output for the same
 	// frozen inputs could change, so it is part of every input digest.
-	rcaEngineVersion  = "apexload.rca.engine.v1+" + rca.ValidityRulesVersion
+	rcaEngineVersion  = "apexload.rca.engine.v1+" + rca.ValidityRulesVersion + "+" + rca.DetectParamsVersion
 	rcaMaxBundleBytes = 256 << 10
 	// An analysis lease outlives the engine's 120 s wall-time budget plus
 	// archive reading, so a live owner is not overtaken.
@@ -421,8 +424,9 @@ func (s *Server) handleGetRCABundle(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, boundRCABundle(bundle))
 }
 
-// boundRCABundle trims the validity windows, then the evidence, then the SLA
-// details, until the bundle fits 256 KiB, and marks what it cut.
+// boundRCABundle trims the validity windows, the spikes, the weakest
+// anomalies, the evidence and then the SLA details until the bundle fits
+// 256 KiB, and marks what it cut.
 func boundRCABundle(bundle RCABundle) RCABundle {
 	fits := func() bool {
 		body, err := json.Marshal(bundle)
@@ -431,6 +435,22 @@ func boundRCABundle(bundle RCABundle) RCABundle {
 	for !fits() && len(bundle.Assessment.Validity.Windows) > 0 {
 		bundle.Assessment.Validity.Windows = bundle.Assessment.Validity.Windows[:len(bundle.Assessment.Validity.Windows)/2]
 		bundle.Truncated = true
+	}
+	for !fits() && len(bundle.Assessment.Detection.Spikes) > 0 {
+		bundle.Assessment.Detection.Spikes = bundle.Assessment.Detection.Spikes[:len(bundle.Assessment.Detection.Spikes)/2]
+		bundle.Truncated = true
+	}
+	if !fits() && len(bundle.Assessment.Anomalies) > 0 {
+		// Keep the strongest anomalies, still in onset order.
+		anomalies := slices.Clone(bundle.Assessment.Anomalies)
+		slices.SortStableFunc(anomalies, func(a, b rca.Anomaly) int { return cmp.Compare(math.Abs(b.PeakZ), math.Abs(a.PeakZ)) })
+		for !fits() && len(anomalies) > 0 {
+			anomalies = anomalies[:len(anomalies)/2]
+			kept := slices.Clone(anomalies)
+			slices.SortStableFunc(kept, func(a, b rca.Anomaly) int { return a.Onset.Compare(b.Onset) })
+			bundle.Assessment.Anomalies = kept
+			bundle.Truncated = true
+		}
 	}
 	if !fits() && bundle.Evidence != nil {
 		bundle.Evidence = nil
@@ -646,7 +666,8 @@ func recoverRCAAssessment(analysisID string, assess func() (*rca.Assessment, err
 
 // assessRCAAnalysis computes an analysis's assessment from its frozen inputs.
 func (s *Server) assessRCAAnalysis(ctx context.Context, analysis *storage.RCAAnalysis, payload rcaAnalysisPayload) (*rca.Assessment, error) {
-	budgeter := rca.NewBudgeter(rca.DefaultBudget, nil, rca.LiveHeapBytes)
+	budget := rca.DefaultBudget
+	budgeter := rca.NewBudgeter(budget, nil, rca.LiveHeapBytes)
 	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, analysis.TestID)
 	if !ok {
 		return nil, errors.New("run archive not found")
@@ -686,7 +707,10 @@ func (s *Server) assessRCAAnalysis(ctx context.Context, analysis *storage.RCAAna
 		Acceptance: archiveAcceptance(manifest),
 		Validity:   archiveValidityInput(manifest, counter.counted(), summaries, resources),
 	}
-	input.Coverage = s.rcaCoverage(ctx, analysis, payload, manifest, input.Validity)
+	if input.Detection, err = archiveDetectionInput(ctx, record, manifest, summaries, input.Validity.ArrivalModel, budgeter, budget); err != nil {
+		return nil, err
+	}
+	input.Coverage, input.Detection.Baseline = s.rcaCoverage(ctx, analysis, payload, manifest, input.Validity, input.Detection, budgeter, budget)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -711,8 +735,9 @@ func archiveAcceptance(manifest *RunArchiveManifest) rca.Acceptance {
 	return acceptance
 }
 
-// rcaCoverage says how much of each kind of evidence the analysis had.
-func (s *Server) rcaCoverage(ctx context.Context, analysis *storage.RCAAnalysis, payload rcaAnalysisPayload, manifest *RunArchiveManifest, validity rca.ValidityInput) []rca.Coverage {
+// rcaCoverage says how much of each kind of evidence the analysis had, and
+// returns the requested baseline's detection evidence when it qualifies.
+func (s *Server) rcaCoverage(ctx context.Context, analysis *storage.RCAAnalysis, payload rcaAnalysisPayload, manifest *RunArchiveManifest, validity rca.ValidityInput, detection rca.DetectionInput, budgeter *rca.Budgeter, budget rca.Budget) ([]rca.Coverage, *rca.DetectionBaseline) {
 	coverage := []rca.Coverage{}
 	status := rca.CoverageComplete
 	switch {
@@ -727,6 +752,22 @@ func (s *Server) rcaCoverage(ctx context.Context, analysis *storage.RCAAnalysis,
 		intervalStatus = rca.CoverageMissing
 	}
 	coverage = append(coverage, rca.Coverage{Evidence: "intervals", Status: intervalStatus, Detail: fmt.Sprintf("%d intervals", len(validity.Intervals))})
+	transactions, providers := 0, 0
+	for _, series := range detection.Series {
+		if series.Kind == rca.SeriesProvider {
+			providers++
+		} else {
+			transactions++
+		}
+	}
+	seriesStatus := rca.CoverageComplete
+	switch {
+	case len(detection.Series) == 0 || len(detection.Levels) == 0:
+		seriesStatus = rca.CoverageMissing
+	case len(detection.Limitations) > 0:
+		seriesStatus = rca.CoveragePartial
+	}
+	coverage = append(coverage, rca.Coverage{Evidence: "detection_series", Status: seriesStatus, Detail: fmt.Sprintf("%d transaction series, %d provider series, %d load levels", transactions, providers, len(detection.Levels))})
 	if store, ok := s.store.(storage.RCAStore); ok {
 		if revision, err := store.GetRCAEvidenceRevision(analysis.ProjectID, analysis.TestID, payload.Inputs.EvidenceRevision); err == nil {
 			var evidence rcaEvidence
@@ -756,34 +797,39 @@ func (s *Server) rcaCoverage(ctx context.Context, analysis *storage.RCAAnalysis,
 			}
 		}
 	}
+	var baseline *rca.DetectionBaseline
 	if baselineID := payload.Request.BaselineTestID; baselineID != "" {
-		coverage = append(coverage, s.rcaBaselineCoverage(ctx, manifest, baselineID, payload.Inputs.Baseline))
+		var baselineCoverage rca.Coverage
+		baselineCoverage, baseline = s.rcaBaselineEvidence(ctx, manifest, baselineID, payload.Inputs.Baseline, budgeter, budget)
+		coverage = append(coverage, baselineCoverage)
 	}
-	return coverage
+	return coverage, baseline
 }
 
-// rcaBaselineCoverage qualifies the requested baseline's workload against
-// the run's.
-func (s *Server) rcaBaselineCoverage(ctx context.Context, manifest *RunArchiveManifest, baselineID, digest string) rca.Coverage {
+// rcaBaselineEvidence qualifies the requested baseline's workload against
+// the run's and, unless it is unqualified, reads its load levels and series
+// so detection can compare each level with the baseline's same level.
+func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveManifest, baselineID, digest string, budgeter *rca.Budgeter, budget rca.Budget) (rca.Coverage, *rca.DetectionBaseline) {
 	missing := rca.Coverage{Evidence: "baseline", Status: rca.CoverageMissing, Detail: "baseline archive unavailable"}
 	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, baselineID)
 	if !ok {
-		return missing
+		return missing, nil
 	}
 	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
-		return missing
+		return missing, nil
 	}
 	defer lease.Release()
 	if current, err := rcaArchiveDigest(record); err != nil || current != digest {
 		missing.Detail = "baseline archive changed after the analysis was requested"
-		return missing
+		return missing, nil
 	}
-	baseline, err := loadRunArchiveManifestFromRecord(record)
+	baselineManifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
-		return missing
+		return missing, nil
 	}
-	qualification := rca.QualifyBaseline(comparisonWorkloadKey(&baselineComparisonRun{manifest: manifest}, nil, ""), comparisonWorkloadKey(&baselineComparisonRun{manifest: baseline}, nil, ""))
+	baselineKey := comparisonWorkloadKey(&baselineComparisonRun{manifest: baselineManifest}, nil, "")
+	qualification := rca.QualifyBaseline(comparisonWorkloadKey(&baselineComparisonRun{manifest: manifest}, nil, ""), baselineKey)
 	status := rca.CoverageComplete
 	if qualification.Status != rca.BaselineQualified {
 		status = rca.CoveragePartial
@@ -792,5 +838,27 @@ func (s *Server) rcaBaselineCoverage(ctx context.Context, manifest *RunArchiveMa
 	if len(qualification.Reasons) > 0 {
 		detail += ": " + strings.Join(qualification.Reasons, ", ")
 	}
-	return rca.Coverage{Evidence: "baseline", Status: status, Detail: detail}
+	coverage := rca.Coverage{Evidence: "baseline", Status: status, Detail: detail}
+	if qualification.Status == rca.BaselineUnqualified {
+		return coverage, nil
+	}
+	summaries, err := readAllArchiveSummaries(record)
+	if err == nil {
+		var evidence rca.DetectionInput
+		if evidence, err = archiveDetectionInput(ctx, record, baselineManifest, summaries, archiveArrivalModel(&baselineKey), budgeter, budget); err == nil {
+			// What limited the baseline's own evidence limits every
+			// comparison with it.
+			if len(evidence.Limitations) > 0 {
+				codes := make([]string, 0, len(evidence.Limitations))
+				for _, l := range evidence.Limitations {
+					codes = append(codes, l.Code)
+				}
+				coverage.Status = rca.CoveragePartial
+				coverage.Detail += "; baseline evidence: " + strings.Join(slices.Compact(slices.Sorted(slices.Values(codes))), ", ")
+			}
+			return coverage, &rca.DetectionBaseline{TestID: baselineID, Qualification: qualification.Status, Levels: evidence.Levels, Series: evidence.Series}
+		}
+	}
+	coverage.Status, coverage.Detail = rca.CoveragePartial, detail+"; its series could not be read"
+	return coverage, nil
 }

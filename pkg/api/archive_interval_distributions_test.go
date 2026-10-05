@@ -172,11 +172,16 @@ func TestIntervalDistributionsReconstructionBounds(t *testing.T) {
 		comparisonArchiveFixture(t, server, store, "bounded", 100, 100)
 		record, manifest := persistIntervalDistributionsForTest(t, server, "bounded")
 		total := int64(0)
-		for _, r := range readIntervalDistributions(t, record) {
+		records := readIntervalDistributions(t, record)
+		for _, r := range records {
 			total += r.Dimensions["transaction"]["request"].Count
 		}
 		if total != 500 || !manifest.IntervalDistributionsTruncated {
 			t.Fatalf("kept %d observations, truncated %v", total, manifest.IntervalDistributionsTruncated)
+		}
+		// The interval the bound stopped in holds only part of its rows.
+		if last := records[len(records)-1]; !last.Incomplete || records[0].Incomplete {
+			t.Fatalf("incomplete flags: first %v, last %v", records[0].Incomplete, last.Incomplete)
 		}
 	})
 	t.Run("buckets", func(t *testing.T) {

@@ -23,9 +23,9 @@ const (
 	OutcomeNoSupportedHypothesis = "no_supported_hypothesis"
 )
 
-// LimitationDetectionUnavailable: onset detection and hypotheses are not
-// built yet (Phase 3b), so no anomaly can be supported.
-const LimitationDetectionUnavailable = "detection_unavailable"
+// LimitationHypothesesUnavailable: hypotheses arrive with the signatures
+// (WP3.8), so no anomaly can be explained yet.
+const LimitationHypothesesUnavailable = "hypotheses_unavailable"
 
 // Coverage statuses.
 const (
@@ -49,6 +49,8 @@ type Assessment struct {
 	Coverage      []Coverage   `json:"coverage"`
 	Limitations   []Limitation `json:"limitations"`
 	Budget        Budget       `json:"budget"`
+
+	Detection Detection `json:"detection"`
 }
 
 // InputDigests identify the frozen inputs an assessment read.
@@ -68,17 +70,27 @@ type Acceptance struct {
 	Details []string `json:"details"`
 }
 
-// Anomaly is a detected change in one series (Phase 3b).
+// Anomaly is a detected change in one series.
 type Anomaly struct {
-	ID               string        `json:"id"`
-	Series           string        `json:"series"`
-	Onset            time.Time     `json:"onset"`
+	ID     string    `json:"id"`
+	Series string    `json:"series"`
+	Onset  time.Time `json:"onset"`
+	// End is where in-band buckets resumed when Recovered, otherwise the end
+	// of the level span the anomaly was found in.
 	End              time.Time     `json:"end"`
 	OnsetUncertainty time.Duration `json:"onset_uncertainty_ns"`
-	// Scope is load or time.
-	Scope    string        `json:"scope"`
-	Effect   float64       `json:"effect"`
-	Unit     string        `json:"unit"`
+	// Scope is time (against earlier intervals at the same load in this run)
+	// or load (against the baseline run at the same level).
+	Scope     string `json:"scope"`
+	Direction string `json:"direction"`
+	Recovered bool   `json:"recovered"`
+	// Level labels the load level the anomaly was found at.
+	Level string `json:"level"`
+	// Effect is the anomaly's median minus the baseline median, in Unit.
+	Effect float64 `json:"effect"`
+	Unit   string  `json:"unit"`
+	// PeakZ is the largest robust z-score in the anomaly, signed.
+	PeakZ    float64       `json:"peak_z"`
 	Baseline BaselineRef   `json:"baseline"`
 	Evidence []EvidenceRef `json:"evidence"`
 }
@@ -138,11 +150,12 @@ type AnalysisInput struct {
 	Acceptance Acceptance
 	Validity   ValidityInput
 	Coverage   []Coverage
+	Detection  DetectionInput
 }
 
-// Analyze builds an assessment within budget. Phase 3a judges acceptance and
-// validity; anomalies and hypotheses need onset detection (Phase 3b), so the
-// outcome is insufficient_evidence.
+// Analyze builds an assessment within budget: acceptance, validity and the
+// anomalies onset detection finds. Hypotheses need the signatures (WP3.8),
+// so the outcome is insufficient_evidence.
 func Analyze(input AnalysisInput, budgeter *Budgeter) Assessment {
 	if budgeter == nil {
 		budgeter = NewBudgeter(DefaultBudget, nil, nil)
@@ -163,7 +176,15 @@ func Analyze(input AnalysisInput, budgeter *Budgeter) Assessment {
 	} else {
 		out.Validity = AssessValidity(input.Validity, DefaultValidityRules)
 	}
-	out.Limitations = append(out.Limitations, Limitation{Code: LimitationDetectionUnavailable, Detail: "onset detection and hypotheses are not available yet"})
+	if budgeter.Exhausted() {
+		out.Detection = Detection{Status: DetectionSkipped, ParamsVersion: DetectParamsVersion, Params: DefaultDetectParams, Levels: []LoadLevel{}, Spikes: []Spike{}}
+		out.Limitations = append(out.Limitations, input.Detection.Limitations...)
+	} else {
+		var limitations []Limitation
+		out.Anomalies, out.Detection, limitations = Detect(input.Detection, DefaultDetectParams, budgeter)
+		out.Limitations = append(out.Limitations, limitations...)
+	}
+	out.Limitations = append(out.Limitations, Limitation{Code: LimitationHypothesesUnavailable, Detail: "hypotheses are not available yet"})
 	// Only limits that cut evidence or skipped a stage are reported; a stage
 	// that finished over time still used everything it was given.
 	for _, t := range budgeter.Truncations() {

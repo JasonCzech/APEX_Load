@@ -102,7 +102,7 @@ func TestPhase3aAssessment(t *testing.T) {
 	got := Analyze(input, NewBudgeter(DefaultBudget, clock.Now, nil))
 	if got.SchemaVersion != AssessmentSchemaVersion || got.Acceptance.Status != AcceptanceBreached || got.Validity.Verdict != ValiditySuspect ||
 		got.Outcome != OutcomeInsufficientEvidence || len(got.Anomalies) != 0 || len(got.Hypotheses) != 0 ||
-		got.Coverage[0].Evidence != "generator_stats" || got.Limitations[0].Code != LimitationDetectionUnavailable {
+		got.Coverage[0].Evidence != "generator_stats" || !hasLimitation(got.Limitations, LimitationHypothesesUnavailable) {
 		t.Fatalf("%+v", got)
 	}
 	// Identical frozen inputs give byte-identical assessments.

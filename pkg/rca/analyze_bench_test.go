@@ -2,6 +2,7 @@ package rca
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 )
@@ -45,6 +46,37 @@ func BenchmarkRCAAnalyze(b *testing.B) {
 				got := Analyze(input, NewBudgeter(DefaultBudget, nil, LiveHeapBytes))
 				if got.Validity.Verdict != ValidityInvalid {
 					b.Fatalf("verdict %s", got.Validity.Verdict)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkRCADetect baselines onset detection at a large run's shape: 128
+// transactions' three series over six hours of 10-second buckets at one
+// steady level, a quarter of them stepping halfway; docs/ANALYSIS_WORKFLOWS.md
+// records the results.
+func BenchmarkRCADetect(b *testing.B) {
+	for _, series := range []int{48, 384} {
+		b.Run(fmt.Sprintf("series=%d", series), func(b *testing.B) {
+			const buckets = 2160
+			rng := rand.New(rand.NewSource(1))
+			input := DetectionInput{Levels: []LoadLevel{{Start: detectStart, End: detectStart.Add(buckets * detectBucket), VUsers: 500}}}
+			for s := 0; s < series; s++ {
+				values := noisy(rng, buckets, 200, 10)
+				if s%4 == 0 {
+					for i := buckets / 2; i < buckets; i++ {
+						values[i] += 60
+					}
+				}
+				input.Series = append(input.Series, detectSeries(fmt.Sprintf("transaction/t%03d/p95_ms", s), values))
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				anomalies, detection, _ := Detect(input, DefaultDetectParams, NewBudgeter(DefaultBudget, nil, LiveHeapBytes))
+				if detection.SeriesEvaluated != series || len(anomalies) < series/4 {
+					b.Fatalf("%d series, %d anomalies", detection.SeriesEvaluated, len(anomalies))
 				}
 			}
 		})

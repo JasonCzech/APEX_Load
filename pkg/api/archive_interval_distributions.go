@@ -283,6 +283,9 @@ func reconstructIntervalDistributions(ctx context.Context, record *storage.RunAr
 	// buckets[window][dimension][key]
 	buckets := make([]map[string]map[string]*accumulator, len(windows))
 	observations := 0
+	// The interval the observation bound stopped in, and every later one,
+	// hold only part of their rows.
+	stopped := len(windows)
 	err = forEachArchiveRecordContext(ctx, record, func(m *RunArchiveManifest) string { return m.TransactionsFile }, func(tx *intervalDistributionRow) error {
 		at := tx.Timestamp.UTC()
 		index := sort.Search(len(windows), func(i int) bool { return !windows[i].end.Before(at) })
@@ -297,7 +300,7 @@ func reconstructIntervalDistributions(ctx context.Context, record *storage.RunAr
 			return nil
 		}
 		if observations >= intervalDistributionMaxObservations {
-			truncated = true
+			truncated, stopped = true, index
 			return errStopIntervalReconstruction
 		}
 		observations++
@@ -326,7 +329,7 @@ func reconstructIntervalDistributions(ctx context.Context, record *storage.RunAr
 		if buckets[i] == nil {
 			continue
 		}
-		out := IntervalDistributionRecord{Schema: intervalDistributionSchema, Timestamp: window.end, WindowSeconds: window.end.Sub(window.start).Seconds(), Source: intervalDistributionSourceRows, DigestUnit: intervalDistributionDigestUnit, Dimensions: map[string]map[string]IntervalDistributionMetric{}}
+		out := IntervalDistributionRecord{Schema: intervalDistributionSchema, Timestamp: window.end, WindowSeconds: window.end.Sub(window.start).Seconds(), Source: intervalDistributionSourceRows, DigestUnit: intervalDistributionDigestUnit, Incomplete: i >= stopped, Dimensions: map[string]map[string]IntervalDistributionMetric{}}
 		for dimension, values := range buckets[i] {
 			keys := make([]string, 0, len(values))
 			for key := range values {

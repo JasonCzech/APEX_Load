@@ -176,10 +176,11 @@ func TestArchiveSteadyLevelsFollowTheArrivalModel(t *testing.T) {
 	if mixed := archiveSteadyLevels(summaries, started, rca.ArrivalMixed); len(mixed) != 0 {
 		t.Fatalf("a mixed run needs both measures steady: %v", mixed)
 	}
-	a := []rca.TimeRange{{Start: started, End: started.Add(100 * time.Second)}, {Start: started.Add(150 * time.Second), End: started.Add(300 * time.Second)}}
-	b := []rca.TimeRange{{Start: started.Add(50 * time.Second), End: started.Add(200 * time.Second)}}
-	got := intersectTimeRanges(a, b)
-	if len(got) != 2 || !got[0].Start.Equal(started.Add(50*time.Second)) || !got[1].End.Equal(started.Add(200*time.Second)) {
+	a := []rca.LoadLevel{{Start: started, End: started.Add(100 * time.Second), VUsers: 10}, {Start: started.Add(150 * time.Second), End: started.Add(300 * time.Second), VUsers: 20}}
+	b := []rca.LoadLevel{{Start: started.Add(50 * time.Second), End: started.Add(200 * time.Second), Rate: 100}}
+	got := intersectLoadLevels(a, b)
+	if len(got) != 2 || !got[0].Start.Equal(started.Add(50*time.Second)) || !got[1].End.Equal(started.Add(200*time.Second)) ||
+		got[0].VUsers != 10 || got[1].VUsers != 20 || got[0].Rate != 100 || got[1].Rate != 100 {
 		t.Fatalf("intersection: %v", got)
 	}
 }

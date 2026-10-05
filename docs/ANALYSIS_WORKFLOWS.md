@@ -325,23 +325,96 @@ jobs run in the controller process, at most two at a time (see the
 root-cause analysis service below); they do not take the native analytical
 pipeline's single slot, whose limits govern DuckDB imports and queries.
 
-Until onset detection lands, an assessment judges acceptance (the run's SLA
-verdict) and validity, and its outcome is `insufficient_evidence` with a
-`detection_unavailable` limitation; anomalies and hypotheses stay empty.
+An assessment judges acceptance (the run's SLA verdict) and validity, and
+lists the anomalies onset detection finds (below). Hypotheses arrive with the
+signatures, so the outcome stays `insufficient_evidence` with a
+`hypotheses_unavailable` limitation.
 
-`BenchmarkRCAAnalyze` baselines (Apple M4, Go 1.26.5, darwin/arm64,
-2026-10-05; a row is one generator resource sample, ten generators at one
-steady level):
+Baselines (Apple M4, Go 1.26.5, darwin/arm64, 2026-10-05, load average 4–6).
+`BenchmarkRCAAnalyze` measures acceptance and validity, where a row is one
+generator resource sample from ten generators at one steady level;
+`BenchmarkRCADetect` measures onset detection over six hours of 10-second
+buckets at one level, a quarter of the series stepping halfway:
 
-| Rows | Time per analysis | Allocated | Allocations |
+| Benchmark | Time per analysis | Allocated | Allocations |
 | --- | --- | --- | --- |
-| 10,000 | 1.5–2.1 ms | 0.67 MB | 69 |
-| 1,000,000 | 180–220 ms | 67 MB | 884 |
+| Analyze, 10,000 rows | 0.9–2.1 ms | 0.67 MB | 73 |
+| Analyze, 1,000,000 rows | 95–220 ms | 67 MB | 888 |
+| Detect, 48 series × 2,160 buckets | 17 ms | 6 MB | 1,654 |
+| Detect, 384 series × 2,160 buckets | 136–151 ms | 48 MB | 13,484 |
 
-Times are from a quiet machine; under heavy load (load average about 15) the
-same runs took about 2.5 ms and 290–305 ms. Allocation does not vary.
+The upper analysis times are from a heavily loaded machine (load average
+about 15). Allocation does not vary with load.
 
-Rerun with `go test ./pkg/rca -run '^$' -bench BenchmarkRCAAnalyze -benchtime 5x`.
+Rerun with `go test ./pkg/rca -run '^$' -bench BenchmarkRCA -benchtime 5x`.
+
+## Root-cause onset detection
+
+Onset detection (`pkg/rca/detect.go`, parameters `detect.v1` in
+`detect_params.go`, recorded in each assessment's `detection` block) finds
+where a series changed and whether it recovered. It reads only frozen
+evidence.
+
+- **Series.** Per transaction: the interval p95, error rate and throughput
+  from `interval_distributions.jsonl`. Archives without that sidecar are
+  rebuilt from their rows within bounds (`interval_distributions_reconstructed`).
+  A run that defined no business transactions is judged on its actions
+  (`actions_judged`). A transaction absent from a complete interval completed
+  nothing in it, so its throughput there is zero. Provider series come from the
+  archived monitor points, one per provider, source, metric, query, statistic
+  and dimension set. Interval and snapshot providers are compared bucket to
+  bucket. Counters and cumulative providers are excluded
+  (`cumulative_series_excluded`), and points from providers that declare no
+  observation semantics are skipped (`monitor_semantics_unknown`).
+- **Levels.** Only buckets inside a steady load level are judged: the same
+  settled spans validity and baseline comparison use, which skip each level's
+  first 30 s. Ramps and pauses are never judged; a run with no steady level
+  gets `load_levels_unavailable` and no anomalies. Levels whose load is within
+  5% are the same level.
+- **Two baselines.** A `time` anomaly compares each bucket with earlier buckets
+  at the same load in this run. The baseline is the level's first ten buckets,
+  growing to 120 while nothing is alarming, so a slow drift is measured against
+  where the level began; buckets from an onset on never join it. A `load`
+  anomaly compares the level with the baseline run's buckets at the same level,
+  when `baseline_test_id` names a run whose workload qualification is not
+  `unqualified`. A level with fewer than ten baseline buckets is not judged
+  (`insufficient_baseline`).
+- **Statistic.** Robust z = (x − median) / max(1.4826 × MAD, 5% of the median,
+  unit floor): 5 ms of latency, 0.5 points of error rate, 0.1 requests per
+  second of throughput, and for providers the unit's latency or percentage
+  floor. Two-sided CUSUM with k = 0.5 and h = 5. An onset needs three
+  consecutive buckets beyond k while the alarm is on, so noise just before a
+  change cannot complete it. The onset is the maximum-likelihood change point
+  since the CUSUM last left zero. Its uncertainty spans every change point
+  within two log-likelihood units, plus one bucket and the series' clock
+  uncertainty (WP2.2). Three in-band buckets end an anomaly as `recovered`. A
+  single bucket that alone reaches the alarm, with an in-band bucket after it,
+  is a spike: listed under `detection.spikes`, never an onset. A gap of more
+  than three buckets resets the CUSUM.
+- **Anomalies** carry a stable ID, series, onset, end, uncertainty, scope,
+  direction, level, effect (median minus baseline median, in the series' unit),
+  peak z, baseline and an evidence reference to the series window. At most 500
+  anomalies and 200 spikes are kept, the largest first (`anomalies_truncated`,
+  `spikes_truncated`).
+- **Evidence limits.** A sidecar that cannot be read costs its series, not
+  the analysis (`detection_evidence_unreadable`). Transaction series take the
+  series budget first and provider series get the rest; what the budget or
+  the analysis budget leaves out is `detection_evidence_cut`. A baseline run
+  none of whose series matches one of the run's is `baseline_series_unmatched`,
+  and the limits of the baseline's own evidence are listed in its `baseline`
+  coverage.
+- **Live findings.** The run's live 3σ findings stay as they are, labelled
+  "advisory (live)" in the run summary.
+
+Measured on synthetic 10-second series with noise of one standard deviation,
+500 trials each: a step of 3σ is placed exactly in 82% of trials and within
+one bucket in 94%; 5σ, 97% and 99%; 10σ, 99.6%. Healthy one-hour series
+produce about 0.24 false onsets per series-hour. That is inherent to k = 0.5 and
+h = 5, which alarm about once per 465 buckets even with a perfect baseline.
+Raising h to 8 would cut false onsets to about 0.03 while missing no more 3σ
+steps (about 2% at either setting).
+The fault corpus (WP3.9) calibrates these values; until then they are the
+plan's starting values.
 
 ## Root-cause analysis service
 
@@ -370,8 +443,9 @@ MCP tools keep returning v1.
   monitor sources with their outcomes. A POST captures one when the run has
   none, when the archive changed since the latest, or when `enrich` is true.
   `APEXLOAD_RCA_AUTO_ENRICH_PROJECTS` captures an enriched revision at archive
-  finalize. Provider evidence pulls (traces, logs) arrive with onset
-  detection; until then enrichment records the same inventory.
+  finalize. Provider evidence pulls (topology and diagnostics) arrive with the
+  per-run graph and signatures (WP3.7–WP3.8); until then enrichment records
+  the same inventory.
 - **Jobs** run on the execution leader, at most two at a time per controller,
   inside the engine's budgets. A job holds the archive's materialization
   lease while it reads; an analysis whose archive changed after the request
@@ -385,8 +459,9 @@ MCP tools keep returning v1.
 - **Retention.** Analyses and evidence revisions are deleted with their run,
   their project, or the run's archive.
 - **Baselines.** `baseline_test_id` names an archived run in the same
-  project; its workload qualification against the run appears as `baseline`
-  coverage.
+  project. Its workload qualification against the run appears as `baseline`
+  coverage. Unless it is `unqualified`, onset detection compares each load
+  level with the baseline's same level.
 - **Clients.** `apexctl rca analyze --id RUN [--enrich] [--baseline-id RUN]`,
   `apexctl rca status --id RUN --analysis-id ID`, `apexctl rca show --id RUN`
   and `apexctl rca bundle --id RUN --analysis-id ID`; MCP tools
