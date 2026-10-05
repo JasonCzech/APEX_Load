@@ -66,7 +66,7 @@ pkg/
   runtimetuning/ — GOMAXPROCS/GOMEMLIMIT resolution from cgroup limits
   perfevidence/  — Controlled local performance probes + component evidence reports
   analysis/      — Shared validated metric-point model and time-series correlation primitives
-  rca/           — Pure root-cause analysis engine (workload qualification, run validity, budgets, onset detection, typed run graph, v2 assessment); no storage, provider or HTTP imports
+  rca/           — Pure root-cause analysis engine (workload qualification, run validity, budgets, onset detection, typed run graph, signatures and hypotheses, capacity, v2 assessment); no storage, provider or HTTP imports
   prometheus/    — Governed PromQL target monitoring and Azure managed Prometheus query adapter
   monitorprovider/ — Provider-neutral monitoring topology, diagnostics, coverage, cursors, and the governed provider registry (dispatch through it; never compare provider names)
   deeplink/      — Provider link templates (HTTPS on the connection's own hosts, four placeholders, identifier values percent-encoded) and the shared provider-link target check

@@ -15,6 +15,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/rca"
+	"github.com/jasonczech/apexload/pkg/rca/signatures"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -370,6 +371,16 @@ func readMonitorSeries(ctx context.Context, record *storage.RunArchiveRecord, ma
 			unknown++
 			return nil
 		}
+		if len(point.Provider.EntityIDs) > 0 {
+			// Entity IDs are not part of a series' identity; a later point
+			// may name more of what the series measures.
+			if nodes := addSeriesNodes(template.Nodes, pointNodes(*point)); len(nodes) != len(template.Nodes) {
+				template.Nodes = nodes
+				if s := reader.series[template.ID]; s != nil {
+					s.Nodes = slices.Clone(nodes)
+				}
+			}
+		}
 		if clock := pointClockUncertainty(*point); clock > template.ClockUncertainty {
 			// The series is widened by its least certain point.
 			template.ClockUncertainty = clock
@@ -424,6 +435,7 @@ func monitorSeriesTemplate(point analysis.MetricPoint, identity, file string) (r
 		ID: id, Kind: rca.SeriesProvider, Unit: point.Unit, Observation: observation,
 		Bucket: time.Duration(seconds) * time.Second, ClockUncertainty: pointClockUncertainty(point),
 		Evidence: rca.EvidenceRef{Kind: "monitor_series", Locator: file + "#" + id},
+		Measures: signatures.Classify(point.MetricName + " " + m.MetricID), Nodes: pointNodes(point),
 	}, true
 }
 

@@ -13,12 +13,18 @@ import (
 // The engine must stay pure: it may use the standard library (without network,
 // database or process access) and the shared analysis primitives, nothing else.
 func TestRCAImportsNoStorageProviderOrHTTPPackage(t *testing.T) {
-	allowedModule := map[string]bool{"github.com/jasonczech/apexload/pkg/analysis": true}
+	allowedModule := map[string]bool{"github.com/jasonczech/apexload/pkg/analysis": true, "github.com/jasonczech/apexload/pkg/rca/signatures": true}
 	forbiddenStd := []string{"net", "database", "os/exec", "syscall"}
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The signatures are part of the engine and held to the same rule.
+	nested, err := filepath.Glob("signatures/*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files = append(files, nested...)
 	for _, name := range files {
 		if strings.HasSuffix(name, "_test.go") {
 			continue

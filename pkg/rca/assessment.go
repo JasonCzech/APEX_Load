@@ -23,9 +23,8 @@ const (
 	OutcomeNoSupportedHypothesis = "no_supported_hypothesis"
 )
 
-// LimitationHypothesesUnavailable: hypotheses arrive with the signatures
-// (WP3.8), so no anomaly can be explained yet.
-const LimitationHypothesesUnavailable = "hypotheses_unavailable"
+// LimitationStageSkipped: the analysis budget ran out before a stage began.
+const LimitationStageSkipped = "stage_skipped"
 
 // Coverage statuses.
 const (
@@ -50,8 +49,10 @@ type Assessment struct {
 	Limitations   []Limitation `json:"limitations"`
 	Budget        Budget       `json:"budget"`
 
-	Detection Detection `json:"detection"`
-	Graph     Graph     `json:"graph"`
+	Detection  Detection    `json:"detection"`
+	Graph      Graph        `json:"graph"`
+	Capacity   []Capacity   `json:"capacity"`
+	LittlesLaw []LittlesLaw `json:"littles_law"`
 }
 
 // InputDigests identify the frozen inputs an assessment read.
@@ -104,9 +105,12 @@ type BaselineRef struct {
 
 // Hypothesis is one ranked explanation (Phase 3b).
 type Hypothesis struct {
-	ID                string        `json:"id"`
-	Signature         string        `json:"signature"`
+	ID        string `json:"id"`
+	Signature string `json:"signature"`
+	// Symptoms are the anomalies the hypothesis explains.
+	Symptoms          []string      `json:"symptoms"`
 	Rank              int           `json:"rank"`
+	Score             float64       `json:"score"`
 	Confidence        string        `json:"confidence"`
 	ConfidenceReasons []string      `json:"confidence_reasons"`
 	Chain             []ChainStep   `json:"chain"`
@@ -156,8 +160,10 @@ type AnalysisInput struct {
 }
 
 // Analyze builds an assessment within budget: acceptance, validity, the
-// anomalies onset detection finds and the run's typed graph. Hypotheses need the signatures (WP3.8),
-// so the outcome is insufficient_evidence.
+// anomalies onset detection finds, the run's typed graph, the hypotheses
+// that explain the anomalies, and capacity: latency knees and Little's law
+// at broker hops. Each stage starts only within the wall-time and heap
+// budget; a skipped stage is listed.
 func Analyze(input AnalysisInput, budgeter *Budgeter) Assessment {
 	if budgeter == nil {
 		budgeter = NewBudgeter(DefaultBudget, nil, nil)
@@ -194,7 +200,25 @@ func Analyze(input AnalysisInput, budgeter *Budgeter) Assessment {
 		out.Graph, limitations = BuildGraph(input.Graph, budgeter)
 		out.Limitations = append(out.Limitations, limitations...)
 	}
-	out.Limitations = append(out.Limitations, Limitation{Code: LimitationHypothesesUnavailable, Detail: "hypotheses are not available yet"})
+	switch {
+	case out.Detection.Status == DetectionUnavailable || out.Detection.Status == DetectionSkipped:
+		// Without detection there is no saying whether anything changed.
+		out.Outcome = OutcomeInsufficientEvidence
+	case budgeter.Exhausted():
+		out.Outcome = OutcomeInsufficientEvidence
+		out.Limitations = append(out.Limitations, Limitation{Code: LimitationStageSkipped, Detail: "hypotheses: the analysis budget ran out first"})
+	default:
+		var limitations []Limitation
+		out.Hypotheses, out.Outcome, limitations = Hypothesize(out.Anomalies, input.Detection.Series, out.Detection.Judged, out.Graph, out.Detection.Levels, DefaultDetectParams)
+		out.Limitations = append(out.Limitations, limitations...)
+	}
+	out.Capacity, out.LittlesLaw = []Capacity{}, []LittlesLaw{}
+	if budgeter.Exhausted() {
+		out.Limitations = append(out.Limitations, Limitation{Code: LimitationStageSkipped, Detail: "capacity: the analysis budget ran out first"})
+	} else {
+		out.Capacity = Capacities(input.Detection.Series, out.Detection.Levels, DefaultDetectParams)
+		out.LittlesLaw = LittlesLawChecks(input.Detection.Series, out.Detection.Levels)
+	}
 	// Only limits that cut evidence or skipped a stage are reported; a stage
 	// that finished over time still used everything it was given.
 	for _, t := range budgeter.Truncations() {

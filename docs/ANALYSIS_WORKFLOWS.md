@@ -325,10 +325,11 @@ jobs run in the controller process, at most two at a time (see the
 root-cause analysis service below); they do not take the native analytical
 pipeline's single slot, whose limits govern DuckDB imports and queries.
 
-An assessment judges acceptance (the run's SLA verdict) and validity, and
-lists the anomalies onset detection finds (below). Hypotheses arrive with the
-signatures, so the outcome stays `insufficient_evidence` with a
-`hypotheses_unavailable` limitation.
+An assessment judges acceptance (the run's SLA verdict) and validity, lists
+the anomalies onset detection finds, builds the run's graph, ranks the
+hypotheses that explain the anomalies and reports capacity (all below). Each
+stage starts only within the wall-time and heap budget; a skipped stage is
+listed as `stage_skipped`.
 
 Baselines (Apple M4, Go 1.26.5, darwin/arm64, 2026-10-05, load average 4–6).
 `BenchmarkRCAAnalyze` measures acceptance and validity, where a row is one
@@ -469,6 +470,74 @@ points and the mapping decisions frozen into the evidence revision.
   entities and infrastructure nodes per source (`graph_truncated`,
   `graph_evidence_cut`). The bundle drops unused edges first.
 
+## Root-cause hypotheses and capacity
+
+Hypotheses (`pkg/rca/hypotheses.go`, signatures `signatures.v1` in
+`pkg/rca/signatures/`, one file each) explain symptoms: rising latency or
+errors, or falling throughput, on a transaction or action series.
+
+- **Evidence kinds.** Provider series are classified by keywords in their
+  metric names (`signatures.Classify`): CPU, memory, GC, pool, consumer lag,
+  rebalances, dead letters, retries, scaling (replicas, restarts, OOM kills,
+  cold starts), database wait, and the queue depth, arrival rate and
+  residence time Little's law reads. The run's own DNS, connect and TLS time
+  per dependency, averaged per interval over the requests that spent any,
+  become `dependency/<label>/dns_ms`, `connect_ms` and `tls_ms` series and are
+  detected like any other.
+- **Window and path.** For each symptom, the anomalies of the same scope that
+  began within five minutes before its onset and before its end are
+  candidates. The graph is walked from the symptom's transaction or action
+  through used `calls`, `contains`, `maps_to` and `shares_infrastructure`
+  edges (eight hops at most); evidence on a reached node, or on one of its
+  aliases, is connected. Only series detection judged in the symptom's scope
+  count as measured: a series it cut, excluded or could not baseline says
+  nothing by staying quiet.
+- **Ordering.** A cause precedes a symptom only when the symptom began later
+  by more than both onsets' uncertainty; otherwise they are unordered, and a
+  cause that began later by more than that contradicts. An onset within its
+  uncertainty of a level's settle period is `load_coincident`.
+- **Signatures.** `resource_pressure`, `garbage_collection`,
+  `pool_exhaustion`, `consumer_lag`, `rebalance`, `dead_letters`, `retries`,
+  `cold_start`, `database_wait` and `network_phase`. Each names its required
+  evidence kinds, the indicators that support it, its competitors and its
+  falsification check. With none of its required kinds measured it lacks
+  evidence, and one that cannot explain the symptom's kind is not
+  applicable. Each indicator that moved the right way no later than the
+  symptom adds weight: more for a strong anomaly, half when unconnected, 0.6
+  when unordered. One that followed the symptom subtracts 0.5. When nothing
+  supports the signature, each indicator measured on the path that stayed in
+  band subtracts 1 (0.25 off the path). A signature is supported with any
+  support and a positive score. A cold start scores higher when the symptom
+  began at a load step.
+- **Hypotheses** carry the symptoms they explain (one cause behind several
+  symptoms is one hypothesis), score, rank, chain of onsets, the supporting
+  and contradicting evidence, the other supported signatures for the same
+  symptoms, the falsification check, and limitations naming competitors that
+  could not be judged. Confidence is `high` when connected,
+  preceding and uncontradicted; `medium` when connected; `low` otherwise,
+  with the reasons. The 100 strongest are kept, best first.
+- **Outcome.** `supported` with any hypothesis; `insufficient_evidence` when
+  detection could not run (no steady level, or no budget left) or no
+  signature's evidence was measured (`signatures_unmeasured`);
+  `no_supported_hypothesis` otherwise, including a run whose detection found
+  no symptom (`no_symptoms`).
+
+Capacity is reported beside the hypotheses:
+
+- **Knee.** For each transaction or action latency series measured at three
+  or more steady loads, the median p95 per load is fitted with two lines
+  joined at an interior level, choosing the join with the least squared
+  error. The join is the knee when the second slope is positive, at least
+  three times the first, and raises p95 by more than 5 ms; otherwise the
+  result says why there is none.
+- **Little's law** applies only at a broker queue (a queue named in the
+  series' dimensions, or else the provider entity they name) whose depth, arrival rate
+  (per second) and residence time (a time unit) were all measured, in each
+  steady level with at least three points of each and a depth trend that
+  moves it by no more than 10% of its mean (or one message). It reports the
+  time-average depth against arrival rate × residence time and their ratio.
+  Any other queue or level is `eligible: false` with the reason.
+
 ## Root-cause analysis service
 
 v2 root-cause analyses run as revisioned jobs over a run's archive.
@@ -489,7 +558,7 @@ MCP tools keep returning v1.
 - **Frozen inputs.** An analysis's `input_digest` hashes the archive's
   manifest digest, the evidence revision, the baseline archive's digest, the
   digest of the mapping decisions frozen into the evidence revision, the
-  policy revision (none yet) and the engine version. A POST
+  policy revision (none yet), the signature set and the engine version. A POST
   whose digest matches a queued, running or completed analysis returns it;
   a failed or cancelled one can be retried. A run keeps at most 200
   analyses and 200 evidence revisions.

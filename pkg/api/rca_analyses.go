@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/rca"
+	"github.com/jasonczech/apexload/pkg/rca/signatures"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -29,7 +30,7 @@ const (
 	rcaBundleSchema   = "apexload.rca_bundle.v1"
 	// rcaEngineVersion changes whenever the engine's output for the same
 	// frozen inputs could change, so it is part of every input digest.
-	rcaEngineVersion  = "apexload.rca.engine.v1+" + rca.ValidityRulesVersion + "+" + rca.DetectParamsVersion + "+" + rca.GraphSchemaVersion
+	rcaEngineVersion  = "apexload.rca.engine.v1+" + rca.ValidityRulesVersion + "+" + rca.DetectParamsVersion + "+" + rca.GraphSchemaVersion + "+" + signatures.Version
 	rcaMaxBundleBytes = 256 << 10
 	// An analysis lease outlives the engine's 120 s wall-time budget plus
 	// archive reading, so a live owner is not overtaken.
@@ -291,7 +292,7 @@ func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	inputs := rca.InputDigests{Archive: archiveDigest, Engine: rcaEngineVersion}
+	inputs := rca.InputDigests{Archive: archiveDigest, Engine: rcaEngineVersion, SignatureSet: signatures.Version}
 	if request.BaselineTestID != "" {
 		baseline, status, message := s.rcaBaselineArchive(r.Context(), test.ID, project, request.BaselineTestID)
 		if status != 0 {
@@ -440,10 +441,11 @@ func (s *Server) handleGetRCABundle(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, boundRCABundle(bundle))
 }
 
-// boundRCABundle trims the validity windows, the spikes, the weakest
-// anomalies, the graph's unused and then lowest-confidence edges and its
-// nodes, the evidence and then the SLA details until the bundle fits
-// 256 KiB, and marks what it cut.
+// boundRCABundle trims the validity windows, the spikes, the capacity
+// results, the weakest anomalies, the graph's unused and then
+// lowest-confidence edges and its nodes, the lowest-ranked hypotheses, the
+// evidence and then the SLA details until the bundle fits 256 KiB, and
+// marks what it cut.
 func boundRCABundle(bundle RCABundle) RCABundle {
 	fits := func() bool {
 		body, err := json.Marshal(bundle)
@@ -455,6 +457,11 @@ func boundRCABundle(bundle RCABundle) RCABundle {
 	}
 	for !fits() && len(bundle.Assessment.Detection.Spikes) > 0 {
 		bundle.Assessment.Detection.Spikes = bundle.Assessment.Detection.Spikes[:len(bundle.Assessment.Detection.Spikes)/2]
+		bundle.Truncated = true
+	}
+	for !fits() && len(bundle.Assessment.LittlesLaw)+len(bundle.Assessment.Capacity) > 0 {
+		bundle.Assessment.LittlesLaw = bundle.Assessment.LittlesLaw[:len(bundle.Assessment.LittlesLaw)/2]
+		bundle.Assessment.Capacity = bundle.Assessment.Capacity[:len(bundle.Assessment.Capacity)/2]
 		bundle.Truncated = true
 	}
 	if !fits() && len(bundle.Assessment.Anomalies) > 0 {
@@ -484,6 +491,11 @@ func boundRCABundle(bundle RCABundle) RCABundle {
 		for !fits() && len(graph.Nodes) > 0 {
 			graph.Nodes = graph.Nodes[:len(graph.Nodes)/2]
 		}
+	}
+	// Hypotheses are stored best first.
+	for !fits() && len(bundle.Assessment.Hypotheses) > 0 {
+		bundle.Assessment.Hypotheses = bundle.Assessment.Hypotheses[:len(bundle.Assessment.Hypotheses)/2]
+		bundle.Truncated = true
 	}
 	if !fits() && bundle.Evidence != nil {
 		bundle.Evidence = nil
@@ -739,9 +751,11 @@ func (s *Server) assessRCAAnalysis(ctx context.Context, analysis *storage.RCAAna
 	// calls the graph is built from.
 	counter := newValidityResultCounter(archiveValidityIntervals(manifest, summaries))
 	calls := newGraphCallCollector()
+	phases := newNetworkPhaseCollector(summaries, manifest.TransactionsFile)
 	if err := forEachArchiveTransaction(record, func(tx *TransactionEvent) error {
 		counter.add(tx.Timestamp)
 		calls.add(tx)
+		phases.add(tx)
 		return ctx.Err()
 	}); err != nil {
 		return nil, err
@@ -753,6 +767,12 @@ func (s *Server) assessRCAAnalysis(ctx context.Context, analysis *storage.RCAAna
 	observations := newGraphObservationCollector()
 	if input.Detection, err = archiveDetectionInput(ctx, record, manifest, summaries, input.Validity.ArrivalModel, budgeter, budget, observations.observe); err != nil {
 		return nil, err
+	}
+	// The run's own connection timing per dependency joins the detected
+	// series, for the network-phase signature.
+	input.Detection.Series = append(input.Detection.Series, phases.series()...)
+	if phases.truncated {
+		input.Detection.Limitations = append(input.Detection.Limitations, rca.Limitation{Code: limitationPhaseEvidence, Detail: fmt.Sprintf("network timing was kept for the first %d dependencies", maxPhaseDependencies)})
 	}
 	input.Graph = archiveGraphInput(manifest, calls, observations, evidence.Mappings)
 	input.Coverage, input.Detection.Baseline = s.rcaCoverage(ctx, payload, manifest, input, evidence, frozen, budgeter, budget)

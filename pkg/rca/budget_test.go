@@ -102,7 +102,7 @@ func TestPhase3aAssessment(t *testing.T) {
 	got := Analyze(input, NewBudgeter(DefaultBudget, clock.Now, nil))
 	if got.SchemaVersion != AssessmentSchemaVersion || got.Acceptance.Status != AcceptanceBreached || got.Validity.Verdict != ValiditySuspect ||
 		got.Outcome != OutcomeInsufficientEvidence || len(got.Anomalies) != 0 || len(got.Hypotheses) != 0 ||
-		got.Coverage[0].Evidence != "generator_stats" || !hasLimitation(got.Limitations, LimitationHypothesesUnavailable) {
+		got.Coverage[0].Evidence != "generator_stats" || !hasLimitation(got.Limitations, LimitationLoadLevelsUnavailable) {
 		t.Fatalf("%+v", got)
 	}
 	// Identical frozen inputs give byte-identical assessments.
@@ -113,7 +113,7 @@ func TestPhase3aAssessment(t *testing.T) {
 		t.Fatal("assessments differ")
 	}
 	// The contract keeps empty lists as lists.
-	for _, key := range []string{`"anomalies":[]`, `"hypotheses":[]`, `"details":["checkout`} {
+	for _, key := range []string{`"anomalies":[]`, `"hypotheses":[]`, `"capacity":[]`, `"littles_law":[]`, `"details":["checkout`} {
 		if !strings.Contains(string(first), key) {
 			t.Fatalf("%s missing from %s", key, first)
 		}

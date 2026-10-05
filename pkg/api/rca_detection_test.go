@@ -80,7 +80,7 @@ func TestRCADetectsALatencyStepInTheArchive(t *testing.T) {
 	}
 	d := assessment.Detection
 	if d.Status != rca.DetectionComplete || d.ParamsVersion != rca.DetectParamsVersion || d.SeriesEvaluated != 3 || len(d.Levels) != 1 ||
-		assessment.Outcome != rca.OutcomeInsufficientEvidence || !rcaLimitation(assessment, rca.LimitationHypothesesUnavailable) ||
+		assessment.Outcome != rca.OutcomeInsufficientEvidence || !rcaLimitation(assessment, rca.LimitationSignaturesUnmeasured) ||
 		!rcaLimitation(assessment, limitationIntervalDistributionsReconstructed) || !rcaLimitation(assessment, limitationActionsJudged) {
 		t.Fatalf("detection %+v limitations %+v", d, assessment.Limitations)
 	}

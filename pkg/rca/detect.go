@@ -85,6 +85,12 @@ type Series struct {
 	// their window.
 	Evidence EvidenceRef
 	Points   []SeriesPoint
+	// Measures is the evidence kind the series measures (signatures.Kind*),
+	// or "" when none applies; transaction series default by Kind.
+	Measures string
+	// Nodes are the graph nodes the series measures. Transaction, action
+	// and dependency series default to their own node.
+	Nodes []string
 }
 
 // LoadLevel is one steady span of offered load, after its settle period.
@@ -140,6 +146,20 @@ type DetectionInput struct {
 	Limitations []Limitation
 }
 
+// JudgedSeries records, per scope, the series detection compared with a
+// baseline. A series it never judged says nothing by staying quiet.
+type JudgedSeries map[string]map[string]bool
+
+// Judged reports whether detection judged a series in a scope.
+func (j JudgedSeries) Judged(scope, series string) bool { return j[scope][series] }
+
+func (j JudgedSeries) mark(scope, series string) {
+	if j[scope] == nil {
+		j[scope] = map[string]bool{}
+	}
+	j[scope][series] = true
+}
+
 // Detection summarizes how onset detection ran.
 type Detection struct {
 	Status          string       `json:"status"`
@@ -150,6 +170,9 @@ type Detection struct {
 	Levels          []LoadLevel  `json:"levels"`
 	// Spikes are single-bucket excursions: annotated, never onsets.
 	Spikes []Spike `json:"spikes"`
+	// Judged is what detection compared with a baseline; it is not part of
+	// the assessment.
+	Judged JudgedSeries `json:"-"`
 }
 
 // Spike is a one-bucket excursion beyond the alarm, with in-band neighbours.
@@ -195,7 +218,7 @@ func Detect(input DetectionInput, params DetectParams, budgeter *Budgeter) ([]An
 			baseline[s.ID] = boundedSeries(s, budgeter)
 		}
 	}
-	out := &detectOutput{params: params}
+	out := &detectOutput{params: params, judged: JudgedSeries{}}
 	matched := 0
 	for _, s := range series {
 		if budgeter.Exhausted() {
@@ -239,7 +262,7 @@ func Detect(input DetectionInput, params DetectParams, budgeter *Budgeter) ([]An
 		}
 		return spikes[i].Series+spikes[i].Scope < spikes[j].Series+spikes[j].Scope
 	})
-	detection.Spikes = spikes
+	detection.Spikes, detection.Judged = spikes, out.judged
 	if anomalies == nil {
 		anomalies = []Anomaly{}
 	}
@@ -257,9 +280,8 @@ func sortedLevels(levels []LoadLevel) []LoadLevel {
 	return out
 }
 
-// comparableSeries drops cumulative series and orders the rest: transaction
-// series before provider series, so a series budget keeps what the run
-// measured itself, then by ID.
+// comparableSeries drops cumulative series and orders the rest by rank, so a
+// series budget keeps what the run measured itself, then by ID.
 func comparableSeries(series []Series) ([]Series, int) {
 	out := make([]Series, 0, len(series))
 	excluded := 0
@@ -271,12 +293,24 @@ func comparableSeries(series []Series) ([]Series, int) {
 		out = append(out, s)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		if pi, pj := out[i].Kind == SeriesProvider, out[j].Kind == SeriesProvider; pi != pj {
-			return pj
+		if ri, rj := seriesRank(out[i]), seriesRank(out[j]); ri != rj {
+			return ri < rj
 		}
 		return out[i].ID < out[j].ID
 	})
 	return out, excluded
+}
+
+// seriesRank orders series for the budget: transactions and actions, then
+// the run's own dependency timing, then providers.
+func seriesRank(s Series) int {
+	switch {
+	case s.Kind == SeriesProvider:
+		return 2
+	case strings.HasPrefix(s.ID, NodeDependency+"/"):
+		return 1
+	}
+	return 0
 }
 
 // boundedSeries orders a series' points and keeps the earliest its budget
@@ -323,6 +357,7 @@ func strongest[T any](items []T, n int, score func(T) float64, key func(T) strin
 }
 
 type detectOutput struct {
+	judged       JudgedSeries
 	params       DetectParams
 	anomalies    []Anomaly
 	spikes       []Spike
@@ -618,6 +653,7 @@ func (d *detector) observe(point SeriesPoint, z float64) time.Time {
 		}
 	}
 	d.last = point.At
+	d.o.judged.mark(d.scope, d.series.ID)
 	d.points = append(d.points, point)
 	d.zs = append(d.zs, z)
 	i := len(d.points) - 1

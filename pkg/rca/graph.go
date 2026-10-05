@@ -106,6 +106,17 @@ type Graph struct {
 	Nodes  []GraphNode `json:"nodes"`
 	Edges  []GraphEdge `json:"edges"`
 	Cycles [][]string  `json:"cycles"`
+	// Aliases map another ID's node to the entity node it names, such as a
+	// Dynatrace classic ID to its Smartscape entity.
+	Aliases map[string]string `json:"aliases,omitempty"`
+}
+
+// Resolve maps a node ID through the graph's aliases.
+func (g Graph) Resolve(id string) string {
+	if target, ok := g.Aliases[id]; ok {
+		return target
+	}
+	return id
 }
 
 // GraphCall is one archived call: an action and the dependency it reached,
@@ -484,6 +495,18 @@ func BuildGraph(input GraphInput, budgeter *Budgeter) (Graph, []Limitation) {
 		limitations = append(limitations, Limitation{Code: LimitationGraphTruncated, Detail: cut})
 	}
 	graph.Cycles = callCycles(graph)
+	kept := make(map[string]bool, len(graph.Nodes))
+	for _, n := range graph.Nodes {
+		kept[n.ID] = true
+	}
+	for alias, target := range b.aliases {
+		if kept[target] {
+			if graph.Aliases == nil {
+				graph.Aliases = map[string]string{}
+			}
+			graph.Aliases[alias] = target
+		}
+	}
 	return graph, limitations
 }
 
